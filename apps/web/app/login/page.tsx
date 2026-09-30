@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { Button, Input, useToast, Icon, Badge } from '@podscare/ui';
+import { Button, Input, useToast, Icon } from '@podscare/ui';
 import { usePodsCare } from '../providers';
 
 export default function LoginPage() {
@@ -10,8 +10,8 @@ export default function LoginPage() {
   const { toast } = useToast();
   const { isAuthenticated, login } = usePodsCare();
 
-  const [emailOrPhone, setEmailOrPhone] = useState('admin@podscare.vn');
-  const [password, setPassword] = useState('password123');
+  const [emailOrPhone, setEmailOrPhone] = useState('');
+  const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
 
@@ -27,99 +27,42 @@ export default function LoginPage() {
     setErrorMessage('');
 
     try {
-      let resData: any = null;
-      let isSuccess = false;
+      const res = await fetch('/api/v1/auth/login', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Accept: 'application/json',
+        },
+        body: JSON.stringify({
+          email: loginEmail,
+          password: loginPass,
+        }),
+      });
 
-      // Try backend API via Next.js proxy or direct localhost:8000
-      try {
-        const endpoints = [
-          '/api/v1/auth/login',
-          'http://127.0.0.1:8000/api/v1/auth/login',
-        ];
+      const json = await res.json().catch(() => null);
 
-        for (const endpoint of endpoints) {
-          try {
-            const res = await fetch(endpoint, {
-              method: 'POST',
-              headers: {
-                'Content-Type': 'application/json',
-                Accept: 'application/json',
-              },
-              body: JSON.stringify({
-                email: loginEmail,
-                password: loginPass,
-              }),
-            });
-
-            if (res.ok) {
-              const json = await res.json();
-              if (json.success && json.data) {
-                resData = json.data;
-                isSuccess = true;
-                break;
-              }
-            }
-          } catch {
-            // continue fallback
-          }
-        }
-      } catch (err: any) {
-        console.warn('Backend API request error:', err);
-      }
-
-      // If backend was successfully reached
-      if (isSuccess && resData) {
+      if (res.ok && json?.success && json?.data) {
         login({
-          token: resData.token,
-          user: resData.user,
+          token: json.data.token,
+          user: json.data.user,
         });
-        toast(`Đăng nhập thành công! Xin chào ${resData.user.name}.`, 'success');
+        toast(`Đăng nhập thành công! Xin chào ${json.data.user.name}.`, 'success');
         router.push('/');
         return;
       }
 
-      // Offline / Demo fallback if backend API server is stopped
-      const demoUsersMap: Record<string, any> = {
-        'admin@podscare.vn': {
-          id: 1,
-          name: 'Minh Lê',
-          email: 'admin@podscare.vn',
-          phone: '0901 000 001',
-          role: 'admin',
-          branch: 'Quận 1',
-        },
-        'cskh.lan@podscare.vn': {
-          id: 2,
-          name: 'Lan Phạm',
-          email: 'cskh.lan@podscare.vn',
-          phone: '0902 000 002',
-          role: 'cskh',
-          branch: 'Quận 1',
-        },
-        'tuan.kt@podscare.vn': {
-          id: 3,
-          name: 'Tuấn K.',
-          email: 'tuan.kt@podscare.vn',
-          phone: '0903 000 003',
-          role: 'technician',
-          branch: 'Quận 1',
-        },
-      };
-
-      const matchedUser = demoUsersMap[loginEmail.trim().toLowerCase()];
-      if (matchedUser && (loginPass === 'password123' || loginPass === 'password')) {
-        login({
-          token: `demo-bearer-token-${Date.now()}`,
-          user: matchedUser,
-        });
-        toast(`Đăng nhập thành công (Demo)! Xin chào ${matchedUser.name}.`, 'success');
-        router.push('/');
-        return;
-      }
-
-      setErrorMessage('Email hoặc mật khẩu không chính xác. Vui lòng kiểm tra lại.');
+      // Handle server error responses
+      const serverMsg =
+        json?.message ||
+        json?.error ||
+        (res.status === 401
+          ? 'Email hoặc mật khẩu không chính xác. Vui lòng kiểm tra lại.'
+          : 'Đăng nhập không thành công. Vui lòng kiểm tra lại thông tin.');
+      setErrorMessage(serverMsg);
     } catch (err: any) {
-      setErrorMessage(err?.message || 'Có lỗi xảy ra trong quá trình đăng nhập.');
+      setErrorMessage(
+        err?.message || 'Không thể kết nối đến máy chủ. Vui lòng kiểm tra kết nối mạng và thử lại.'
+      );
     } finally {
       setLoading(false);
     }
@@ -136,12 +79,6 @@ export default function LoginPage() {
       return;
     }
     executeLogin(emailOrPhone, password);
-  };
-
-  const handleQuickLogin = (email: string) => {
-    setEmailOrPhone(email);
-    setPassword('password123');
-    executeLogin(email, 'password123');
   };
 
   return (
@@ -216,93 +153,6 @@ export default function LoginPage() {
             Đăng nhập vào ca làm việc →
           </Button>
         </form>
-
-        {/* Quick Login Divider */}
-        <div className="relative my-7">
-          <div className="absolute inset-0 flex items-center">
-            <div className="w-full border-t border-[#edf1ee]" />
-          </div>
-          <div className="relative flex justify-center text-xs">
-            <span className="bg-white px-3 text-[#87968f] font-semibold">
-              Đăng nhập nhanh cho Demo (1-Click)
-            </span>
-          </div>
-        </div>
-
-        {/* 3 Quick Login Buttons */}
-        <div className="space-y-2.5">
-          <button
-            type="button"
-            onClick={() => handleQuickLogin('admin@podscare.vn')}
-            disabled={loading}
-            className="w-full p-3 sm:p-3.5 rounded-[12px] border border-[#e5ece8] bg-[#fbfcfb] hover:bg-[#f1f6f3] hover:border-[#96c4b0] transition-all flex items-center justify-between text-left group disabled:opacity-50"
-          >
-            <div className="flex items-center gap-3.5 min-w-0 flex-1 mr-3">
-              <div className="w-9 h-9 rounded-full bg-[#176b58] text-white font-bold text-xs grid place-items-center shrink-0">
-                ML
-              </div>
-              <div className="min-w-0 flex-1">
-                <b className="block text-sm font-bold text-[#1c302b] group-hover:text-[#176b58] truncate">
-                  Admin (Minh Lê)
-                </b>
-                <span className="block text-xs text-[#7e8d85] truncate">
-                  admin@podscare.vn · pass: password123
-                </span>
-              </div>
-            </div>
-            <Badge variant="brand" className="whitespace-nowrap shrink-0">
-              Quản trị viên
-            </Badge>
-          </button>
-
-          <button
-            type="button"
-            onClick={() => handleQuickLogin('cskh.lan@podscare.vn')}
-            disabled={loading}
-            className="w-full p-3 sm:p-3.5 rounded-[12px] border border-[#e5ece8] bg-[#fbfcfb] hover:bg-[#f1f6f3] hover:border-[#96c4b0] transition-all flex items-center justify-between text-left group disabled:opacity-50"
-          >
-            <div className="flex items-center gap-3.5 min-w-0 flex-1 mr-3">
-              <div className="w-9 h-9 rounded-full bg-[#3b82f6] text-white font-bold text-xs grid place-items-center shrink-0">
-                LP
-              </div>
-              <div className="min-w-0 flex-1">
-                <b className="block text-sm font-bold text-[#1c302b] group-hover:text-[#176b58] truncate">
-                  CSKH (Lan Phạm)
-                </b>
-                <span className="block text-xs text-[#7e8d85] truncate">
-                  cskh.lan@podscare.vn · pass: password123
-                </span>
-              </div>
-            </div>
-            <span className="inline-flex items-center text-xs font-semibold px-2.5 py-0.5 rounded-[10px] bg-[#eef4ff] text-[#2563eb] whitespace-nowrap shrink-0">
-              CSKH Tiếp nhận
-            </span>
-          </button>
-
-          <button
-            type="button"
-            onClick={() => handleQuickLogin('tuan.kt@podscare.vn')}
-            disabled={loading}
-            className="w-full p-3 sm:p-3.5 rounded-[12px] border border-[#e5ece8] bg-[#fbfcfb] hover:bg-[#f1f6f3] hover:border-[#96c4b0] transition-all flex items-center justify-between text-left group disabled:opacity-50"
-          >
-            <div className="flex items-center gap-3.5 min-w-0 flex-1 mr-3">
-              <div className="w-9 h-9 rounded-full bg-[#f59e0b] text-white font-bold text-xs grid place-items-center shrink-0">
-                TK
-              </div>
-              <div className="min-w-0 flex-1">
-                <b className="block text-sm font-bold text-[#1c302b] group-hover:text-[#176b58] truncate">
-                  Kỹ thuật (Tuấn K.)
-                </b>
-                <span className="block text-xs text-[#7e8d85] truncate">
-                  tuan.kt@podscare.vn · pass: password123
-                </span>
-              </div>
-            </div>
-            <span className="inline-flex items-center text-xs font-semibold px-2.5 py-0.5 rounded-[10px] bg-[#fef5e7] text-[#b45309] whitespace-nowrap shrink-0">
-              Kỹ thuật viên
-            </span>
-          </button>
-        </div>
 
         {/* Security Footer Note */}
         <p className="text-xs text-[#819089] text-center mt-7 mb-0 leading-relaxed">
