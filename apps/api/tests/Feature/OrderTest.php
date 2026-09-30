@@ -1,0 +1,188 @@
+<?php
+
+namespace Tests\Feature;
+
+use App\Models\Branch;
+use App\Models\Customer;
+use App\Models\DeviceModel;
+use App\Models\RepairOrder;
+use App\Models\User;
+use Tests\TestCase;
+
+class OrderTest extends TestCase
+{
+    private function getAuthenticatedUser(): User
+    {
+        $user = User::where('email', 'admin@podscare.vn')->first();
+        if (! $user) {
+            $user = User::first();
+        }
+        $this->assertNotNull($user, 'Authenticated user must exist');
+        return $user;
+    }
+
+    private function createTestOrder(string $status = 'inspecting'): RepairOrder
+    {
+        $branch = Branch::first();
+        $customer = Customer::first();
+        $device = DeviceModel::first();
+        $user = $this->getAuthenticatedUser();
+
+        $year = date('y');
+        $randomNum = str_pad((string) random_int(1000, 99999), 5, '0', STR_PAD_LEFT);
+
+        return RepairOrder::create([
+            'order_code'          => "PC{$year}-T{$randomNum}",
+            'branch_id'           => $branch->id,
+            'customer_id'         => $customer->id,
+            'device_model_id'     => $device->id,
+            'issue_description'   => 'Kiểm tra lỗi mic đàm thoại và pin',
+            'status'              => $status,
+            'total_price'         => 650000,
+            'price_note'          => 'Thay pin dock sạc',
+            'warranty_terms_days' => 90,
+            'created_by_user_id'  => $user->id,
+        ]);
+    }
+
+    /**
+     * Test 1: GET /api/v1/orders/{id} hoạt động với numeric primary key ID.
+     */
+    public function test_show_order_by_numeric_id(): void
+    {
+        $user = $this->getAuthenticatedUser();
+        $order = $this->createTestOrder();
+
+        $response = $this->actingAs($user, 'sanctum')->getJson("/api/v1/orders/{$order->id}");
+
+        $response->assertStatus(200)
+            ->assertJsonPath('success', true)
+            ->assertJsonPath('data.id', $order->id)
+            ->assertJsonPath('data.order_code', $order->order_code);
+    }
+
+    /**
+     * Test 2: GET /api/v1/orders/{order_code} hoạt động với chuỗi mã đơn hàng (Dual-Lookup).
+     */
+    public function test_show_order_by_string_order_code(): void
+    {
+        $user = $this->getAuthenticatedUser();
+        $order = $this->createTestOrder();
+
+        $response = $this->actingAs($user, 'sanctum')->getJson("/api/v1/orders/{$order->order_code}");
+
+        $response->assertStatus(200)
+            ->assertJsonPath('success', true)
+            ->assertJsonPath('data.id', $order->id)
+            ->assertJsonPath('data.order_code', $order->order_code);
+    }
+
+    /**
+     * Test 3: GET /api/v1/orders/{id} trả về 404 khi không tìm thấy cả theo ID lẫn order_code.
+     */
+    public function test_show_order_returns_404_when_not_found(): void
+    {
+        $user = $this->getAuthenticatedUser();
+
+        $response = $this->actingAs($user, 'sanctum')->getJson('/api/v1/orders/PC99-NONEXIST');
+
+        $response->assertStatus(404)
+            ->assertJsonPath('success', false)
+            ->assertJsonPath('message', 'Không tìm thấy đơn sửa chữa.');
+    }
+
+    /**
+     * Test 4: PUT /api/v1/orders/{order_code} cập nhật đơn qua chuỗi mã đơn hàng.
+     */
+    public function test_update_order_by_string_order_code(): void
+    {
+        $user = $this->getAuthenticatedUser();
+        $order = $this->createTestOrder();
+
+        $response = $this->actingAs($user, 'sanctum')->putJson("/api/v1/orders/{$order->order_code}", [
+            'price_note'         => 'Cập nhật ghi chú sửa chữa qua order_code',
+            'parts_used_summary' => 'Pin AirPods Pro Gen 2',
+        ]);
+
+        $response->assertStatus(200)
+            ->assertJsonPath('success', true)
+            ->assertJsonPath('data.price_note', 'Cập nhật ghi chú sửa chữa qua order_code');
+
+        $this->assertEquals('Cập nhật ghi chú sửa chữa qua order_code', $order->fresh()->price_note);
+    }
+
+    /**
+     * Test 5: POST /api/v1/orders/{order_code}/transition chuyển trạng thái qua mã đơn hàng.
+     */
+    public function test_transition_order_by_string_order_code(): void
+    {
+        $user = $this->getAuthenticatedUser();
+        $order = $this->createTestOrder('inspecting');
+
+        $response = $this->actingAs($user, 'sanctum')->postJson("/api/v1/orders/{$order->order_code}/transition", [
+            'status' => 'waiting_approval',
+        ]);
+
+        $response->assertStatus(200)
+            ->assertJsonPath('success', true)
+            ->assertJsonPath('data.status', 'waiting_approval');
+
+        $this->assertEquals('waiting_approval', $order->fresh()->status);
+    }
+
+    /**
+     * Test 6: POST /api/v1/orders/{order_code}/checklists lưu checklist qua mã đơn hàng.
+     */
+    public function test_store_checklist_by_string_order_code(): void
+    {
+        $user = $this->getAuthenticatedUser();
+        $order = $this->createTestOrder();
+
+        $response = $this->actingAs($user, 'sanctum')->postJson("/api/v1/orders/{$order->order_code}/checklists", [
+            'items' => [
+                [
+                    'item_name' => 'Kiểm tra mic thu âm',
+                    'status'    => 'pass',
+                    'note'      => 'Âm lượng rõ ràng',
+                ],
+                [
+                    'item_name' => 'Kiểm tra cảm ứng chạm',
+                    'status'    => 'fail',
+                    'note'      => 'Chạm tai phải không phản hồi',
+                ],
+            ],
+        ]);
+
+        $response->assertStatus(200)
+            ->assertJsonPath('success', true);
+
+        $this->assertDatabaseHas('intake_checklists', [
+            'repair_order_id' => $order->id,
+            'item_name'       => 'Kiểm tra mic thu âm',
+            'status'          => 'pass',
+        ]);
+    }
+
+    /**
+     * Test 7: POST /api/v1/orders/{order_code}/photos tải ảnh hiện trạng qua mã đơn hàng.
+     */
+    public function test_upload_photo_by_string_order_code(): void
+    {
+        $user = $this->getAuthenticatedUser();
+        $order = $this->createTestOrder();
+
+        $response = $this->actingAs($user, 'sanctum')->postJson("/api/v1/orders/{$order->order_code}/photos", [
+            'photo_url' => 'https://images.unsplash.com/photo-test-airpods.jpg',
+            'caption'   => 'Hiện trạng trầy xước tai trái',
+        ]);
+
+        $response->assertStatus(201)
+            ->assertJsonPath('success', true)
+            ->assertJsonPath('data.repair_order_id', $order->id);
+
+        $this->assertDatabaseHas('intake_photos', [
+            'repair_order_id' => $order->id,
+            'photo_url'       => 'https://images.unsplash.com/photo-test-airpods.jpg',
+        ]);
+    }
+}

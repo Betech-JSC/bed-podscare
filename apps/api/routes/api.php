@@ -1,0 +1,138 @@
+<?php
+
+use App\Http\Controllers\Api\V1\AuditLogController;
+use App\Http\Controllers\Api\V1\AuthController;
+use App\Http\Controllers\Api\V1\BranchController;
+use App\Http\Controllers\Api\V1\CustomerController;
+use App\Http\Controllers\Api\V1\DeviceController;
+use App\Http\Controllers\Api\V1\InventoryController;
+use App\Http\Controllers\Api\V1\KpiController;
+use App\Http\Controllers\Api\V1\NotificationController;
+use App\Http\Controllers\Api\V1\OrderController;
+use App\Http\Controllers\Api\V1\PartnerController;
+use App\Http\Controllers\Api\V1\PaymentController;
+use App\Http\Controllers\Api\V1\QcController;
+use App\Http\Controllers\Api\V1\QuoteController;
+use App\Http\Controllers\Api\V1\ServiceController;
+use App\Http\Controllers\Api\V1\ShipmentController;
+use App\Http\Controllers\Api\V1\TrackingController;
+use App\Http\Controllers\Api\V1\UserController;
+use App\Http\Controllers\Api\V1\WarrantyController;
+use Illuminate\Support\Facades\Route;
+
+/*
+|--------------------------------------------------------------------------
+| PodsCare Repair OS - API Routes (v1)
+|--------------------------------------------------------------------------
+*/
+
+Route::prefix('v1')->group(function () {
+
+    // --- 1. PUBLIC ROUTES (Không cần xác thực) ---
+    Route::prefix('auth')->group(function () {
+        Route::post('/login', [AuthController::class, 'login'])->name('api.v1.auth.login');
+    });
+
+    // Public customer tracking portal
+    Route::get('/tracking/{code}', [TrackingController::class, 'track'])->name('api.v1.tracking.show');
+
+    // Public catalog & checklist template
+    Route::get('/devices/checklist-template', [DeviceController::class, 'checklistTemplate'])->name('api.v1.devices.template');
+    Route::get('/devices', [DeviceController::class, 'index'])->name('api.v1.devices.index');
+    Route::get('/devices/{id}', [DeviceController::class, 'show'])->name('api.v1.devices.show');
+
+    Route::get('/services/common-issues', [ServiceController::class, 'commonIssues'])->name('api.v1.services.common_issues');
+    Route::get('/services', [ServiceController::class, 'index'])->name('api.v1.services.index');
+    Route::get('/services/{id}', [ServiceController::class, 'show'])->name('api.v1.services.show');
+
+    Route::get('/warranties/lookup', [WarrantyController::class, 'lookup'])->name('api.v1.warranties.lookup');
+
+
+    // --- 2. PROTECTED ROUTES (Yêu cầu Bearer Token - Sanctum) ---
+    Route::middleware('auth:sanctum')->group(function () {
+
+        // Auth management
+        Route::prefix('auth')->group(function () {
+            Route::post('/logout', [AuthController::class, 'logout'])->name('api.v1.auth.logout');
+            Route::get('/me', [AuthController::class, 'me'])->name('api.v1.auth.me');
+        });
+
+        // Users & Role Management
+        Route::get('/users', [UserController::class, 'index'])->name('api.v1.users.index');
+        Route::post('/users', [UserController::class, 'store'])->name('api.v1.users.store');
+        Route::put('/users/{id}', [UserController::class, 'update'])->name('api.v1.users.update');
+        Route::post('/users/{id}/toggle-status', [UserController::class, 'toggleStatus'])->name('api.v1.users.toggle_status');
+
+        // Branches
+        Route::get('/branches', [BranchController::class, 'index'])->name('api.v1.branches.index');
+        Route::get('/branches/{id}', [BranchController::class, 'show'])->name('api.v1.branches.show');
+
+        // Customers
+        Route::get('/customers', [CustomerController::class, 'index'])->name('api.v1.customers.index');
+        Route::post('/customers', [CustomerController::class, 'store'])->name('api.v1.customers.store');
+        Route::get('/customers/{id}', [CustomerController::class, 'show'])->name('api.v1.customers.show');
+        Route::get('/customers/{id}/history', [CustomerController::class, 'history'])->name('api.v1.customers.history');
+
+        // Repair Orders & FSM Workflow
+        Route::get('/orders', [OrderController::class, 'index'])->name('api.v1.orders.index');
+        Route::post('/orders', [OrderController::class, 'store'])->name('api.v1.orders.store');
+        Route::get('/orders/{id}', [OrderController::class, 'show'])->name('api.v1.orders.show');
+        Route::put('/orders/{id}', [OrderController::class, 'update'])->name('api.v1.orders.update');
+        Route::post('/orders/{id}/transition', [OrderController::class, 'transition'])->name('api.v1.orders.transition');
+        Route::post('/orders/{id}/checklists', [OrderController::class, 'storeChecklist'])->name('api.v1.orders.checklists');
+        Route::post('/orders/{id}/photos', [OrderController::class, 'uploadPhoto'])->name('api.v1.orders.photos');
+
+        // Quotes
+        Route::get('/quotes', [QuoteController::class, 'index'])->name('api.v1.quotes.index');
+        Route::post('/quotes', [QuoteController::class, 'store'])->name('api.v1.quotes.store');
+        Route::post('/quotes/{id}/approve', [QuoteController::class, 'approve'])->name('api.v1.quotes.approve');
+        Route::post('/quotes/{id}/reject', [QuoteController::class, 'reject'])->name('api.v1.quotes.reject');
+
+        // QC Inspections
+        Route::get('/qc', [QcController::class, 'index'])->name('api.v1.qc.index');
+        Route::post('/qc', [QcController::class, 'store'])->name('api.v1.qc.store');
+
+        // Inventory
+        Route::get('/inventory/parts', [InventoryController::class, 'parts'])->name('api.v1.inventory.parts.index');
+        Route::get('/inventory/parts/{id}', [InventoryController::class, 'showPart'])->name('api.v1.inventory.parts.show');
+        Route::get('/inventory/transactions', [InventoryController::class, 'transactions'])->name('api.v1.inventory.transactions.index');
+        Route::post('/inventory/transactions', [InventoryController::class, 'createTransaction'])->name('api.v1.inventory.transactions.store');
+
+        // Shipments
+        Route::get('/shipments', [ShipmentController::class, 'index'])->name('api.v1.shipments.index');
+        Route::post('/shipments', [ShipmentController::class, 'store'])->name('api.v1.shipments.store');
+        Route::post('/shipments/{id}/proofs', [ShipmentController::class, 'uploadProof'])->name('api.v1.shipments.proofs');
+        Route::put('/shipments/{id}/status', [ShipmentController::class, 'updateStatus'])->name('api.v1.shipments.update_status');
+
+        // Partners
+        Route::apiResource('partners', PartnerController::class);
+
+        // Warranties
+        Route::get('/warranties', [WarrantyController::class, 'index'])->name('api.v1.warranties.index');
+        Route::get('/warranties/claims', [WarrantyController::class, 'claims'])->name('api.v1.warranties.claims.index');
+        Route::post('/warranties/claims', [WarrantyController::class, 'createClaim'])->name('api.v1.warranties.claims.store');
+
+        // Payments
+        Route::get('/payments', [PaymentController::class, 'index'])->name('api.v1.payments.index');
+        Route::post('/payments', [PaymentController::class, 'store'])->name('api.v1.payments.store');
+
+        // Notifications
+        Route::get('/notifications', [NotificationController::class, 'index'])->name('api.v1.notifications.index');
+        Route::patch('/notifications/{id}/read', [NotificationController::class, 'markAsRead'])->name('api.v1.notifications.mark_read');
+        Route::post('/notifications/read-all', [NotificationController::class, 'markAllAsRead'])->name('api.v1.notifications.mark_all_read');
+
+        // Audit Logs
+        Route::get('/audit-logs', [AuditLogController::class, 'index'])->name('api.v1.audit_logs.index');
+        Route::get('/audit-logs/{id}', [AuditLogController::class, 'show'])->name('api.v1.audit_logs.show');
+
+        // Partners
+        Route::get('/partners', [PartnerController::class, 'index'])->name('api.v1.partners.index');
+        Route::post('/partners', [PartnerController::class, 'store'])->name('api.v1.partners.store');
+        Route::get('/partners/{id}', [PartnerController::class, 'show'])->name('api.v1.partners.show');
+        Route::put('/partners/{id}', [PartnerController::class, 'update'])->name('api.v1.partners.update');
+
+        // Staff KPI & Performance
+        Route::get('/kpi/dashboard', [KpiController::class, 'dashboard'])->name('api.v1.kpi.dashboard');
+        Route::get('/kpi/staff', [KpiController::class, 'staff'])->name('api.v1.kpi.staff');
+    });
+});

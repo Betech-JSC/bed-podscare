@@ -1,0 +1,102 @@
+export type OrderStatusType = 'wait' | 'progress' | 'ready' | 'danger' | 'new' | 'gray';
+
+export type StandardOrderStatus =
+  | 'Tiếp nhận mới'
+  | 'Chờ kỹ thuật'
+  | 'Đã nhận đơn'
+  | 'Đang kiểm tra'
+  | 'Chờ khách duyệt'
+  | 'Đã duyệt'
+  | 'Đang sửa'
+  | 'Chờ linh kiện'
+  | 'Hoàn tất kỹ thuật'
+  | 'Chờ QC'
+  | 'Cần sửa lại'
+  | 'Sẵn sàng trả'
+  | 'Chờ khách nhận'
+  | 'Hoàn tất'
+  | 'Đã hủy';
+
+export type ChecklistStatus = 'Hoạt động' | 'Lỗi' | 'Không kiểm tra';
+
+export interface IntakeCheckItem {
+  label: string;
+  status: ChecklistStatus;
+}
+
+export interface DevicePhoto {
+  name: string;
+  url: string;
+}
+
+export interface RepairOrder {
+  id: string;
+  name: string;
+  phone: string;
+  deviceCategory?: string;
+  device: string;
+  serial?: string;
+  issue: string;
+  status: string;
+  statusType: OrderStatusType;
+  price: number;
+  tech: string;
+  date: string;
+  branch: string;
+  branchId?: number | string;
+  branchName?: string;
+  accessories?: string;
+  appearance?: string;
+  checks?: IntakeCheckItem[];
+  photos?: DevicePhoto[];
+  testNote?: string;
+  priceNote?: string;
+  warrantyTerm?: string;
+  repairNote?: string;
+  partsUsed?: string;
+  finalCheck?: string;
+  qcIssue?: string;
+  qcApprovedBy?: string;
+  qcCheckedAt?: string;
+  customerApprovedAt?: string | null;
+  acceptedAt?: string;
+  startedAt?: string;
+  completedAt?: string;
+  handedAt?: string;
+  createdBy?: string;
+  createdAt?: string;
+}
+
+export interface CreateIntakeDTO {
+  name: string;
+  phone: string;
+  category: string;
+  device: string;
+  serial?: string;
+  issue: string;
+  accessories?: string;
+  branch: string;
+  branchId?: number | string;
+  branchName?: string;
+  checks: IntakeCheckItem[];
+  photos?: DevicePhoto[];
+  appearance?: string;
+  testNote?: string;
+  price?: number;
+  priceNote?: string;
+  consent?: boolean;
+}
+
+export interface UpdateOrderQuoteDTO {
+  orderId: string;
+  amount: number;
+  warranty?: string;
+  note: string;
+}
+
+export interface CompleteTechOrderDTO {
+  orderId: string;
+  repairNote: string;
+  partsUsed?: string;
+  finalCheck?: string;
+}

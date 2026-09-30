@@ -1,0 +1,33 @@
+# OpenSpec
+openspec/
+.agents/
+
+# Dependencies
+node_modules/
+.pnpm-store/
+
+# Next.js & Turborepo
+.next/
+out/
+dist/
+.turbo/
+
+# Environment Variables
+.env*.local
+.env
+
+# Logs & Debugging
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# OS Files
+.DS_Store
+*.pem
+
+# Cache & Build
+.next-dev/
+.composer/
+*.tsbuildinfo
+vendor/

@@ -1,0 +1,15 @@
+{
+  "name": "bed-podscare-monorepo",
+  "private": true,
+  "scripts": {
+    "build": "turbo build",
+    "dev": "turbo dev",
+    "lint": "turbo lint",
+    "check-types": "turbo check-types",
+    "clean": "turbo clean"
+  },
+  "devDependencies": {
+    "turbo": "^2.1.0"
+  },
+  "packageManager": "pnpm@9.15.9"
+}

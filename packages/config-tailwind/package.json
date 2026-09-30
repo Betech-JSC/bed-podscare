@@ -1,0 +1,12 @@
+{
+  "name": "@podscare/config-tailwind",
+  "version": "0.0.1",
+  "private": true,
+  "main": "./tailwind.preset.js",
+  "files": [
+    "tailwind.preset.js"
+  ],
+  "devDependencies": {
+    "tailwindcss": "^3.4.1"
+  }
+}
