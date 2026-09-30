@@ -59,21 +59,50 @@ export const AppSidebar: React.FC<AppSidebarProps> = ({
   qcCount = 4,
 }) => {
   const [branchDropdownOpen, setBranchDropdownOpen] = useState(false);
-  const activeItemRef = useRef<HTMLButtonElement | null>(null);
+  const navRef = useRef<HTMLElement | null>(null);
+  const branchDropdownRef = useRef<HTMLDivElement | null>(null);
 
+  // Restore scroll position on mount without smooth animation to prevent jump
   useEffect(() => {
-    if (activeItemRef.current) {
-      activeItemRef.current.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+    try {
+      const savedScroll = sessionStorage.getItem('podscare_sidebar_scroll');
+      if (savedScroll && navRef.current) {
+        navRef.current.scrollTop = Number(savedScroll);
+      }
+    } catch {
+      // ignore
     }
-  }, [currentPath]);
+  }, []);
+
+  // Listen click outside to close branch dropdown cleanly
+  useEffect(() => {
+    if (!branchDropdownOpen) return;
+    const handleClickOutside = (event: MouseEvent) => {
+      if (branchDropdownRef.current && !branchDropdownRef.current.contains(event.target as Node)) {
+        setBranchDropdownOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, [branchDropdownOpen]);
 
   // Normalize role
   const rawRole = (user?.role || 'admin') as string;
-  const normalizedRole: 'admin' | 'cskh' | 'tech' =
-    rawRole === 'technician' ? 'tech' : rawRole === 'cskh' ? 'cskh' : 'admin';
+  const normalizedRole: 'admin' | 'cskh' | 'tech' | 'qc' | 'inventory' =
+    rawRole === 'technician' || rawRole === 'tech'
+      ? 'tech'
+      : rawRole === 'cskh'
+      ? 'cskh'
+      : rawRole === 'qc'
+      ? 'qc'
+      : rawRole === 'inventory'
+      ? 'inventory'
+      : 'admin';
 
   // Role menu item permissions matrix
-  const rolePermissions: Record<'admin' | 'cskh' | 'tech', string[]> = {
+  const rolePermissions: Record<'admin' | 'cskh' | 'tech' | 'qc' | 'inventory', string[]> = {
     admin: [
       'dashboard',
       'repairs',
@@ -110,6 +139,20 @@ export const AppSidebar: React.FC<AppSidebarProps> = ({
       'timeline',
       'tech',
       'qc',
+    ],
+    qc: [
+      'dashboard',
+      'repairs',
+      'qc',
+      'devices',
+      'timeline',
+    ],
+    inventory: [
+      'dashboard',
+      'repairs',
+      'inventory',
+      'partners',
+      'devices',
     ],
   };
 
@@ -168,9 +211,15 @@ export const AppSidebar: React.FC<AppSidebarProps> = ({
             return (
               <button
                 key={item.id}
-                ref={isActive ? activeItemRef : undefined}
                 type="button"
                 onClick={() => {
+                  try {
+                    if (navRef.current) {
+                      sessionStorage.setItem('podscare_sidebar_scroll', String(navRef.current.scrollTop));
+                    }
+                  } catch {
+                    // ignore
+                  }
                   onNavigate(item.href ? item.href.replace(/^\//, '') : item.id);
                   onClose?.();
                 }}
@@ -247,7 +296,7 @@ export const AppSidebar: React.FC<AppSidebarProps> = ({
         </div>
 
         {/* Branch Selector Dropdown */}
-        <div className="relative mb-3">
+        <div ref={branchDropdownRef} className="relative mb-3 z-30">
           <button
             type="button"
             onClick={() => setBranchDropdownOpen(!branchDropdownOpen)}
@@ -280,10 +329,10 @@ export const AppSidebar: React.FC<AppSidebarProps> = ({
           {branchDropdownOpen && (
             <>
               <div
-                className="fixed inset-0 z-20"
+                className="fixed inset-0 z-40"
                 onClick={() => setBranchDropdownOpen(false)}
               />
-              <div className="absolute left-0 right-0 top-full mt-1 bg-white border border-[#dce5e0] rounded-[10px] shadow-lg py-1 z-30 divide-y divide-[#f2f5f3]">
+              <div className="absolute left-0 right-0 top-full mt-1 bg-white border border-[#dce5e0] rounded-[10px] shadow-2xl py-1 z-50 divide-y divide-[#f2f5f3]">
                 <div className="px-3 py-1.5 text-xs font-bold text-[#86958e] uppercase tracking-wider">
                   CHỌN CHI NHÁNH / KHO
                 </div>
@@ -297,46 +346,48 @@ export const AppSidebar: React.FC<AppSidebarProps> = ({
                       { id: 2, name: 'PodsCare · Quận 3', code: 'Q3' },
                       { id: 3, name: 'PodsCare · TP. Thủ Đức', code: 'THUDUC' },
                     ]
-                  ).map((b) => {
-                    const isSelected = selectedBranchId
-                      ? String(selectedBranchId) === String(b.id)
-                      : branchName === b.name;
-                    return (
-                      <button
-                        key={b.id}
-                        type="button"
-                        onClick={() => {
-                          onBranchChange?.(b);
-                          setBranchDropdownOpen(false);
-                        }}
-                        className={`w-full flex items-center justify-between px-3 py-2 text-xs font-medium transition-colors text-left ${
-                          isSelected
-                            ? 'bg-[#eaf4ef] text-[#176b58] font-bold'
-                            : 'text-[#475750] hover:bg-[#f6f9f7] hover:text-[#1c302b]'
-                        }`}
-                      >
-                        <div className="flex items-center gap-2 truncate">
-                          {b.code && (
-                            <span
-                              className={`text-xs font-mono px-1.5 py-0.5 rounded font-bold ${
-                                isSelected
-                                  ? 'bg-[#d0e8dd] text-[#176b58]'
-                                  : 'bg-[#eef2ef] text-[#6a7b73]'
-                              }`}
-                            >
-                              {b.code}
+                  )
+                    .filter((b) => (normalizedRole === 'admin' ? true : b.id !== 'all'))
+                    .map((b) => {
+                      const isSelected = selectedBranchId
+                        ? String(selectedBranchId) === String(b.id)
+                        : branchName === b.name;
+                      return (
+                        <button
+                          key={b.id}
+                          type="button"
+                          onClick={() => {
+                            onBranchChange?.(b);
+                            setBranchDropdownOpen(false);
+                          }}
+                          className={`w-full flex items-center justify-between px-3 py-2 text-xs font-medium transition-colors text-left ${
+                            isSelected
+                              ? 'bg-[#eaf4ef] text-[#176b58] font-bold'
+                              : 'text-[#475750] hover:bg-[#f6f9f7] hover:text-[#1c302b]'
+                          }`}
+                        >
+                          <div className="flex items-center gap-2 truncate">
+                            {b.code && (
+                              <span
+                                className={`text-xs font-mono px-1.5 py-0.5 rounded font-bold ${
+                                  isSelected
+                                    ? 'bg-[#d0e8dd] text-[#176b58]'
+                                    : 'bg-[#eef2ef] text-[#6a7b73]'
+                                }`}
+                              >
+                                {b.code}
+                              </span>
+                            )}
+                            <span className="truncate">{b.name}</span>
+                          </div>
+                          {isSelected && (
+                            <span className="text-[#176b58] text-xs font-bold ml-1.5 flex-none">
+                              ✓
                             </span>
                           )}
-                          <span className="truncate">{b.name}</span>
-                        </div>
-                        {isSelected && (
-                          <span className="text-[#176b58] text-xs font-bold ml-1.5 flex-none">
-                            ✓
-                          </span>
-                        )}
-                      </button>
-                    );
-                  })}
+                        </button>
+                      );
+                    })}
                 </div>
                 {normalizedRole === 'admin' && (
                   <div className="p-1.5 border-t border-[#f0f3f1] bg-[#fafbfa]">
@@ -361,7 +412,17 @@ export const AppSidebar: React.FC<AppSidebarProps> = ({
 
 
         {/* Scrollable Navigation */}
-        <nav className="flex-1 overflow-y-auto pr-1 space-y-1">
+        <nav
+          ref={navRef}
+          onScroll={(e) => {
+            try {
+              sessionStorage.setItem('podscare_sidebar_scroll', String(e.currentTarget.scrollTop));
+            } catch {
+              // ignore
+            }
+          }}
+          className="flex-1 overflow-y-auto pr-1 space-y-1 relative z-10"
+        >
           {renderNavGroup('WORKSPACE', workspaceNav)}
           {renderNavGroup('VẬN HÀNH', operationsNav, true)}
           {renderNavGroup('HỆ THỐNG', systemNav, true)}

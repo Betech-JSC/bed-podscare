@@ -141,7 +141,12 @@ export default function PrintReceiptPage() {
     );
   }
 
-  const renderSingleReceipt = (copyTitle: string) => (
+  const renderSingleReceipt = (copyTitle: string) => {
+    const mid = Math.ceil((order.checks?.length || 0) / 2);
+    const leftCol = order.checks ? order.checks.slice(0, mid) : [];
+    const rightCol = order.checks ? order.checks.slice(mid) : [];
+
+    return (
     <article className="print-receipt bg-white text-[#111111] p-4 sm:p-6 border border-[#e5ece8] rounded-[8px] mb-4 sm:mb-6 shadow-sm print:shadow-none print:border-none print:rounded-none print:p-2 print:m-0 max-h-[132mm] overflow-hidden box-border">
       {/* Header */}
       <header className="flex justify-between items-center border-b-[2px] border-[#176b51] pb-2 sm:pb-3 mb-2 sm:mb-3 print:pb-1 print:mb-1">
@@ -206,33 +211,56 @@ export default function PrintReceiptPage() {
           <h3 className="font-bold text-[8pt] print:text-[7pt] text-[#176b58] uppercase mb-0.5">
             Kết quả kiểm tra tính năng tại quầy
           </h3>
-          <table className="w-full border-collapse border border-[#dddddd] text-left">
-            <tbody>
-              {order.checks.slice(0, 5).map((c, i) => (
-                <tr key={i} className="border-b border-[#dddddd] last:border-b-0">
-                  <td className="p-0.5 px-1.5 border-r border-[#dddddd] text-[#333333]">{c.label}</td>
-                  <td className="p-0.5 px-1.5 font-bold w-[35%]">
-                    <span
-                      className={
-                        c.status === 'Hoạt động'
-                          ? 'text-[#287452]'
-                          : c.status === 'Lỗi'
-                          ? 'text-[#b85c51]'
-                          : 'text-[#777777]'
-                      }
-                    >
-                      {c.status}
-                    </span>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-          {order.checks.length > 5 && (
-            <p className="text-[6.5pt] print:text-[6pt] text-[#777777] my-0.5">
-              (+{order.checks.length - 5} hạng mục kiểm tra khác đạt tiêu chuẩn)
-            </p>
-          )}
+          <div className="grid grid-cols-2 gap-2">
+            <table className="w-full border-collapse border border-[#dddddd] text-left">
+              <tbody>
+                {leftCol.map((c, i) => (
+                  <tr key={i} className="border-b border-[#dddddd] last:border-b-0">
+                    <td className="p-0.5 px-1.5 border-r border-[#dddddd] text-[#333333]">{c.label}</td>
+                    <td className="p-0.5 px-1.5 font-bold w-[35%]">
+                      <span
+                        className={
+                          c.status === 'Hoạt động'
+                            ? 'text-[#287452]'
+                            : c.status === 'Lỗi'
+                            ? 'text-[#b85c51]'
+                            : 'text-[#777777]'
+                        }
+                      >
+                        {c.status}
+                      </span>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            {rightCol.length > 0 ? (
+              <table className="w-full border-collapse border border-[#dddddd] text-left">
+                <tbody>
+                  {rightCol.map((c, i) => (
+                    <tr key={i} className="border-b border-[#dddddd] last:border-b-0">
+                      <td className="p-0.5 px-1.5 border-r border-[#dddddd] text-[#333333]">{c.label}</td>
+                      <td className="p-0.5 px-1.5 font-bold w-[35%]">
+                        <span
+                          className={
+                            c.status === 'Hoạt động'
+                              ? 'text-[#287452]'
+                              : c.status === 'Lỗi'
+                              ? 'text-[#b85c51]'
+                              : 'text-[#777777]'
+                          }
+                        >
+                          {c.status}
+                        </span>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            ) : (
+              <div />
+            )}
+          </div>
           {order.testNote && (
             <p className="text-[7pt] print:text-[6.5pt] text-[#555555] mt-0.5">
               <b>Ghi chú test:</b> {order.testNote}
@@ -296,6 +324,7 @@ export default function PrintReceiptPage() {
       </footer>
     </article>
   );
+  };
 
   return (
     <div className="min-h-screen bg-[#f4f7f5] p-4 sm:p-8 print:p-0 print:bg-white print:min-h-0">

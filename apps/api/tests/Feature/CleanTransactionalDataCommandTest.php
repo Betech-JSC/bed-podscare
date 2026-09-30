@@ -246,4 +246,11 @@ class CleanTransactionalDataCommandTest extends TestCase
             $this->assertDatabaseCount($table, 0);
         }
     }
+
+    protected function tearDown(): void
+    {
+        $this->seed(DatabaseSeeder::class);
+        parent::tearDown();
+    }
 }
+

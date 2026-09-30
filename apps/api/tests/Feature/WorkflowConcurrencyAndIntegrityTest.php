@@ -32,7 +32,11 @@ class WorkflowConcurrencyAndIntegrityTest extends TestCase
     private function createTestOrder(string $status = 'inspecting', int $warrantyDays = 90): RepairOrder
     {
         $branch = Branch::first();
-        $customer = Customer::first();
+        $customer = Customer::first() ?? Customer::create([
+            'name'  => 'Nguyễn Minh Anh',
+            'phone' => '0900000001',
+            'email' => 'minhanh.nguyen@gmail.com',
+        ]);
         $device = DeviceModel::first();
         $user = $this->getAuthenticatedUser();
 

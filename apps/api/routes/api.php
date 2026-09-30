@@ -46,6 +46,10 @@ Route::prefix('v1')->group(function () {
         Route::get('/services', [ServiceController::class, 'index'])->name('api.v1.services.index');
         Route::get('/services/{id}', [ServiceController::class, 'show'])->name('api.v1.services.show');
 
+        // Public branches
+        Route::get('/branches', [BranchController::class, 'index'])->name('api.v1.branches.index');
+        Route::get('/branches/{id}', [BranchController::class, 'show'])->name('api.v1.branches.show');
+
         Route::get('/warranties/lookup', [WarrantyController::class, 'lookup'])->name('api.v1.warranties.lookup');
     });
 
@@ -67,10 +71,8 @@ Route::prefix('v1')->group(function () {
             Route::post('/users/{id}/toggle-status', [UserController::class, 'toggleStatus'])->name('api.v1.users.toggle_status');
         });
 
-        // Branches
-        Route::get('/branches', [BranchController::class, 'index'])->name('api.v1.branches.index');
+        // Branches (write operations protected by admin role)
         Route::post('/branches', [BranchController::class, 'store'])->name('api.v1.branches.store');
-        Route::get('/branches/{id}', [BranchController::class, 'show'])->name('api.v1.branches.show');
         Route::put('/branches/{id}', [BranchController::class, 'update'])->name('api.v1.branches.update');
         Route::post('/branches/{id}/toggle-status', [BranchController::class, 'toggleStatus'])->name('api.v1.branches.toggle_status');
 
@@ -87,6 +89,7 @@ Route::prefix('v1')->group(function () {
         Route::get('/orders/{id}', [OrderController::class, 'show'])->name('api.v1.orders.show');
         Route::put('/orders/{id}', [OrderController::class, 'update'])->name('api.v1.orders.update');
         Route::post('/orders/{id}/transition', [OrderController::class, 'transition'])->name('api.v1.orders.transition');
+        Route::get('/orders/{id}/allowed-transitions', [OrderController::class, 'allowedTransitions'])->name('api.v1.orders.allowed_transitions');
         Route::post('/orders/{id}/checklists', [OrderController::class, 'storeChecklist'])->name('api.v1.orders.checklists');
         Route::post('/orders/{id}/photos', [OrderController::class, 'uploadPhoto'])->name('api.v1.orders.photos');
 

@@ -68,6 +68,39 @@ export const invalidateOrdersQuery = async (client: QueryClient) => {
   ]);
 };
 
+export const DEFAULT_MASTER_BRANCHES: BranchItem[] = [
+  {
+    id: 'all',
+    name: 'Tất cả chi nhánh',
+    code: 'ALL',
+    address: 'Toàn hệ thống PodsCare',
+  },
+  {
+    id: 1,
+    name: 'PodsCare · Quận 1',
+    code: 'Q1',
+    address: '142 Nguyễn Thị Minh Khai, Phường Bến Thành, Quận 1, TP.HCM',
+    phone: '028 7300 1234',
+    is_active: true,
+  },
+  {
+    id: 2,
+    name: 'PodsCare · Quận 3',
+    code: 'Q3',
+    address: '285 Cách Mạng Tháng Tám, Phường 12, Quận 3, TP.HCM',
+    phone: '028 7300 5678',
+    is_active: true,
+  },
+  {
+    id: 3,
+    name: 'PodsCare · TP. Thủ Đức',
+    code: 'THUDUC',
+    address: '56 Võ Văn Ngân, Phường Bình Thọ, TP. Thủ Đức, TP.HCM',
+    phone: '028 7300 9012',
+    is_active: true,
+  },
+];
+
 export const Providers: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [queryClient] = useState(
     () =>
@@ -87,7 +120,7 @@ export const Providers: React.FC<{ children: React.ReactNode }> = ({ children })
   const [role, setRoleState] = useState<UserRole>('admin');
   const [branch, setBranchState] = useState<string>('Tất cả chi nhánh');
   const [branchId, setBranchIdState] = useState<string | number>('all');
-  const [branches, setBranches] = useState<BranchItem[]>([]);
+  const [branches, setBranches] = useState<BranchItem[]>(DEFAULT_MASTER_BRANCHES);
   const [orders, setOrders] = useState<RepairOrder[]>([]);
   const [categories, setCategories] = useState<string[]>([
     'AirPods',
@@ -485,8 +518,18 @@ export const Providers: React.FC<{ children: React.ReactNode }> = ({ children })
     id: role === 'admin' ? '1' : role === 'cskh' ? '2' : '3',
     name: role === 'admin' ? 'Minh Lê' : role === 'cskh' ? 'Lan Phạm' : 'Tuấn K.',
     role,
-    roleLabel: role === 'admin' ? 'Quản trị viên' : role === 'cskh' ? 'CSKH Tiếp nhận' : 'Kỹ thuật viên',
-    branch: 'Quận 1',
+    roleLabel:
+      role === 'admin'
+        ? 'Quản trị viên'
+        : role === 'cskh'
+        ? 'CSKH Tiếp nhận'
+        : role === 'tech'
+        ? 'Kỹ thuật viên'
+        : role === 'qc'
+        ? 'Kiểm định QC'
+        : 'Nhân viên kho',
+    branch: 'PodsCare · Quận 1',
+    branch_id: 1,
     initials: role === 'admin' ? 'ML' : role === 'cskh' ? 'LP' : 'TK',
   };
 

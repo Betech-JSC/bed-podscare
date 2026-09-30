@@ -19,6 +19,10 @@ import { usePodsCare } from '../providers';
 import type { RepairOrder } from '@podscare/types';
 import { repairService } from '@podscare/api-client';
 import { useQuery } from '@tanstack/react-query';
+import {
+  normalizeStatusCode,
+  getQuickActionsForStatus,
+} from './fsm';
 
 export default function RepairsPage() {
   const router = useRouter();
@@ -30,6 +34,7 @@ export default function RepairsPage() {
   const [statusFilter, setStatusFilter] = useState('');
   const [selectedOrder, setSelectedOrder] = useState<RepairOrder | null>(null);
   const [intakeModalOpen, setIntakeModalOpen] = useState(false);
+  const [isTransitioning, setIsTransitioning] = useState(false);
 
   // Map label to backend status code
   const statusToBackendMap: Record<string, string> = {
@@ -148,8 +153,13 @@ export default function RepairsPage() {
     { value: 'Hoàn tất', label: 'Hoàn tất' },
   ];
 
-  const handleUpdateStatus = async (nextStatus: string, nextType: any) => {
-    if (!selectedOrder) return;
+  const handleUpdateStatus = async (
+    nextStatus: string,
+    nextType: any,
+    targetStatus?: string
+  ) => {
+    if (!selectedOrder || isTransitioning) return;
+    setIsTransitioning(true);
     const previousOrder = { ...selectedOrder };
     const prevStatus = selectedOrder.status;
     const prevType = selectedOrder.statusType;
@@ -170,8 +180,14 @@ export default function RepairsPage() {
         'Hoàn tất': 'completed',
         'Chờ kỹ thuật': 'waiting_tech',
         'Chờ khách duyệt': 'waiting_approval',
+        'Chờ linh kiện': 'waiting_parts',
+        'Khách từ chối': 'rejected',
+        'Đã hủy': 'cancelled',
+        'Chờ khách nhận': 'waiting_pickup',
+        'Cần sửa lại': 'rework_needed',
       };
-      const transitionKey = statusToTransitionMap[nextStatus];
+      const transitionKey =
+        targetStatus || statusToTransitionMap[nextStatus] || normalizeStatusCode(nextStatus);
       if (transitionKey) {
         await repairService.transition(selectedOrder.id, { transition: transitionKey });
         refetch();
@@ -195,6 +211,8 @@ export default function RepairsPage() {
         err?.message ||
         'Không thể chuyển trạng thái do vi phạm quy tắc quy trình FSM.';
       toast(errMsg, 'error');
+    } finally {
+      setIsTransitioning(false);
     }
   };
 
@@ -414,38 +432,67 @@ export default function RepairsPage() {
               </div>
             </div>
 
-            {/* Quick State Transitions */}
-            <div className="flex flex-wrap items-center gap-2 pt-1 pb-3 border-b border-[#f0f3f1]">
-              <span className="text-xs text-[#75857d] font-bold">Chuyển trạng thái nhanh:</span>
-              <Button
-                variant="secondary"
-                size="sm"
-                onClick={() => handleUpdateStatus('Đang sửa', 'progress')}
-              >
-                Đang sửa
-              </Button>
-              <Button
-                variant="secondary"
-                size="sm"
-                onClick={() => handleUpdateStatus('Chờ QC', 'wait')}
-              >
-                Chờ QC
-              </Button>
-              <Button
-                variant="secondary"
-                size="sm"
-                onClick={() => handleUpdateStatus('Sẵn sàng trả', 'ready')}
-              >
-                Sẵn sàng trả
-              </Button>
-              <Button
-                variant="secondary"
-                size="sm"
-                onClick={() => handleUpdateStatus('Hoàn tất', 'gray')}
-              >
-                Hoàn tất
-              </Button>
-            </div>
+            {/* Quick State Transitions & Dynamic FSM UI Guard */}
+            {(() => {
+              const currentStatusCode = normalizeStatusCode(selectedOrder.status);
+              const isWaitingQc = currentStatusCode === 'waiting_qc';
+              const actions = getQuickActionsForStatus(currentStatusCode);
+
+              return (
+                <div className="space-y-2.5 pt-1 pb-3 border-b border-[#f0f3f1]">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="text-xs text-[#75857d] font-bold">Chuyển trạng thái nhanh:</span>
+                    {actions.length === 0 ? (
+                      <span className="text-xs text-[#86968f] italic">
+                        {currentStatusCode === 'completed'
+                          ? 'Đơn hàng đã hoàn tất vòng đời'
+                          : currentStatusCode === 'cancelled'
+                          ? 'Đơn hàng đã hủy'
+                          : 'Không có bước chuyển trạng thái tiếp theo'}
+                      </span>
+                    ) : (
+                      actions.map((act) => (
+                        <Button
+                          key={act.targetStatus}
+                          variant={act.variant || 'secondary'}
+                          size="sm"
+                          icon={act.icon}
+                          disabled={isTransitioning}
+                          onClick={() =>
+                            handleUpdateStatus(act.label, act.statusType, act.targetStatus)
+                          }
+                        >
+                          {act.label}
+                        </Button>
+                      ))
+                    )}
+
+                    {/* Nút phụ điều hướng kiểm định QC khi đơn ở trạng thái Chờ QC */}
+                    {isWaitingQc && (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        icon="arrow"
+                        onClick={() => router.push(`/qc?id=${selectedOrder.id}`)}
+                        className="text-[#176b58] font-semibold border-[#b8d9cb] hover:bg-[#eaf4ef]"
+                      >
+                        Mở phiếu kiểm định QC ↗
+                      </Button>
+                    )}
+                  </div>
+
+                  {/* Thông báo nghiệp vụ chuyên biệt cho trạng thái Chờ QC */}
+                  {isWaitingQc && (
+                    <div className="flex items-center gap-2 p-2.5 rounded-[8px] bg-[#f0f7f4] border border-[#d2e7dd] text-xs text-[#1c4d3d]">
+                      <span className="w-2 h-2 rounded-full bg-[#176b58] animate-pulse flex-none" />
+                      <span>
+                        <strong>Lưu ý QC:</strong> Đơn hàng đang chờ kiểm định chất lượng. Kỹ thuật viên cần phối hợp với bộ phận QC để hoàn tất biên bản kiểm tra trước khi chuyển sang sẵn sàng giao trả.
+                      </span>
+                    </div>
+                  )}
+                </div>
+              );
+            })()}
 
             {/* Specs & info */}
             <div className="space-y-2.5">

@@ -24,6 +24,28 @@ abstract class BaseWorkflowService
     public const ALLOWED_TRANSITIONS = [];
 
     /**
+     * Từ điển ánh xạ nhãn trạng thái tiếng Việt chuẩn cho quy trình workflow.
+     */
+    public const STATUS_LABELS = [
+        'inspecting'       => 'Đang kiểm tra',
+        'waiting_approval' => 'Chờ khách duyệt',
+        'quote_pending'    => 'Chờ khách duyệt',
+        'rejected'         => 'Khách từ chối sửa',
+        'waiting_tech'     => 'Chờ kỹ thuật',
+        'assigned'         => 'KTV đã nhận',
+        'in_repair'        => 'Đang sửa',
+        'waiting_parts'    => 'Chờ linh kiện',
+        'rework_needed'    => 'Cần sửa lại',
+        'waiting_qc'       => 'Chờ QC',
+        'qc_pending'       => 'Chờ QC',
+        'qc_inspecting'    => 'Chờ QC',
+        'ready_for_return' => 'Sẵn sàng trả',
+        'waiting_pickup'   => 'Chờ khách nhận',
+        'completed'        => 'Hoàn tất',
+        'cancelled'        => 'Đã hủy',
+    ];
+
+    /**
      * Tên class Model Audit Log tương ứng (VD: \App\Models\OrderStatusLog::class).
      * Nếu null, service sẽ bỏ qua bước ghi log này.
      */
@@ -107,6 +129,10 @@ abstract class BaseWorkflowService
 
     /**
      * Xác thực xem bước chuyển trạng thái có nằm trong ALLOWED_TRANSITIONS hay không.
+     *
+     * @param string $fromStatus Trạng thái hiện tại
+     * @param string $toStatus Trạng thái đích
+     * @throws \DomainException Khi bước chuyển không hợp lệ
      */
     public function validateTransition(string $fromStatus, string $toStatus): void
     {
@@ -120,10 +146,32 @@ abstract class BaseWorkflowService
         $allowedNextStatuses = $matrix[$fromStatus] ?? [];
 
         if (!in_array($toStatus, $allowedNextStatuses, true)) {
+            $fromLabel = $this->getStatusLabel($fromStatus);
+            $toLabel = $this->getStatusLabel($toStatus);
+
+            // Đặc thù cho case waiting_qc (hoặc alias của nó) sang completed
+            if (in_array($fromStatus, ['waiting_qc', 'qc_pending', 'qc_inspecting'], true) && $toStatus === 'completed') {
+                throw new \DomainException(
+                    "Không thể chuyển trực tiếp từ 'Chờ QC' sang 'Hoàn tất'. Thiết bị bắt buộc phải có biên bản kiểm định chất lượng (QC Pass) và chuyển sang 'Sẵn sàng trả' trước khi hoàn tất."
+                );
+            }
+
+            // Case tổng quát
+            $allowedLabels = array_values(array_unique(array_map(fn ($s) => $this->getStatusLabel($s), $allowedNextStatuses)));
+            $allowedList = !empty($allowedLabels) ? implode(', ', $allowedLabels) : 'Không có';
+
             throw new \DomainException(
-                "Không được phép chuyển trạng thái từ [{$fromStatus}] sang [{$toStatus}]."
+                "Không thể chuyển trạng thái từ '{$fromLabel}' sang '{$toLabel}'. Các trạng thái hợp lệ tiếp theo: {$allowedList}."
             );
         }
+    }
+
+    /**
+     * Lấy nhãn tiếng Việt tương ứng với mã trạng thái.
+     */
+    public function getStatusLabel(string $status): string
+    {
+        return static::STATUS_LABELS[$status] ?? $status;
     }
 
     /**
@@ -132,6 +180,23 @@ abstract class BaseWorkflowService
     public function getNextAllowedStatuses(string $currentStatus): array
     {
         return static::ALLOWED_TRANSITIONS[$currentStatus] ?? [];
+    }
+
+    /**
+     * Lấy danh sách các trạng thái tiếp theo được phép chuyển kèm nhãn tiếng Việt.
+     *
+     * @return array<string, string> Mảng dạng [mã_trạng_thái => nhãn_tiếng_việt]
+     */
+    public function getNextAllowedStatusesWithLabels(string $currentStatus): array
+    {
+        $statuses = $this->getNextAllowedStatuses($currentStatus);
+        $result = [];
+
+        foreach ($statuses as $status) {
+            $result[$status] = $this->getStatusLabel($status);
+        }
+
+        return $result;
     }
 
     /**

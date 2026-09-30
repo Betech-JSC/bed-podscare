@@ -2,9 +2,104 @@
 
 import React, { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { Button, Input, useToast, Icon, Badge } from '@podscare/ui';
+import { Button, Input, useToast, Icon } from '@podscare/ui';
 import { usePodsCare } from '../providers';
 import { unlockAudio } from '../utils/audioChime';
+
+interface StaffCard {
+  name: string;
+  roleTitle: string;
+  roleBadge: string;
+  badgeStyle: string;
+  branchLabel: string;
+  branchCode: string;
+  duty: string;
+  email: string;
+  initials: string;
+  avatarBg: string;
+  targetRoute: string;
+}
+
+const STAFF_CARDS: StaffCard[] = [
+  {
+    name: 'Minh Lê',
+    roleTitle: 'Quản trị viên',
+    roleBadge: 'Quản trị toàn chuỗi',
+    badgeStyle: 'bg-[#eaf4ef] text-[#176b58] border border-[#cde2d6]',
+    branchLabel: 'PodsCare · Quận 1',
+    branchCode: 'Q1',
+    duty: 'Toàn quyền điều hành, phân quyền & cấu hình hệ thống',
+    email: 'admin@podscare.vn',
+    initials: 'ML',
+    avatarBg: '#176b58',
+    targetRoute: '/',
+  },
+  {
+    name: 'Lan Phạm',
+    roleTitle: 'CSKH Tiếp nhận',
+    roleBadge: 'Tiếp nhận & Báo giá',
+    badgeStyle: 'bg-[#eff6ff] text-[#1d4ed8] border border-[#bfdbfe]',
+    branchLabel: 'PodsCare · Quận 1',
+    branchCode: 'Q1',
+    duty: 'Tiếp nhận máy tại quầy, test checklist & lập báo giá',
+    email: 'cskh.lan@podscare.vn',
+    initials: 'LP',
+    avatarBg: '#2563eb',
+    targetRoute: '/',
+  },
+  {
+    name: 'Tuấn K.',
+    roleTitle: 'Kỹ thuật viên',
+    roleBadge: 'Sửa chữa & Linh kiện',
+    badgeStyle: 'bg-[#fffbeb] text-[#b45309] border border-[#fde68a]',
+    branchLabel: 'PodsCare · Quận 1',
+    branchCode: 'Q1',
+    duty: 'Chẩn đoán mạch, bóc tách linh kiện & sửa chữa phần cứng',
+    email: 'ktv.tuan@podscare.vn',
+    initials: 'TK',
+    avatarBg: '#d97706',
+    targetRoute: '/tech',
+  },
+  {
+    name: 'Duy T.',
+    roleTitle: 'Kỹ thuật viên',
+    roleBadge: 'Cách ly chi nhánh Q3',
+    badgeStyle: 'bg-[#fff7ed] text-[#c2410c] border border-[#fed7aa]',
+    branchLabel: 'PodsCare · Quận 3',
+    branchCode: 'Q3',
+    duty: 'Trạm kỹ thuật sửa chữa độc lập cách ly chi nhánh Quận 3',
+    email: 'ktv.duy@podscare.vn',
+    initials: 'DT',
+    avatarBg: '#ea580c',
+    targetRoute: '/tech',
+  },
+  {
+    name: 'Hải N.',
+    roleTitle: 'QC Inspector',
+    roleBadge: 'Kiểm định & Rework',
+    badgeStyle: 'bg-[#faf5ff] text-[#6b21a8] border border-[#e9d5ff]',
+    branchLabel: 'PodsCare · Quận 1',
+    branchCode: 'Q1',
+    duty: 'Kiểm tra chất lượng âm thanh, ANC, sạc & duyệt xuất xưởng',
+    email: 'qc.inspector@podscare.vn',
+    initials: 'HN',
+    avatarBg: '#7c3aed',
+    targetRoute: '/qc',
+  },
+  {
+    name: 'Việt Trần',
+    roleTitle: 'Quản lý kho',
+    roleBadge: 'Tồn kho & Phiếu xuất/nhập',
+    badgeStyle: 'bg-[#fdf2f8] text-[#be185d] border border-[#fbcfe8]',
+    branchLabel: 'PodsCare · Quận 1',
+    branchCode: 'Q1',
+    duty: 'Quản trị kho linh kiện, kiểm kê & điều phối phiếu xuất nhập',
+    email: 'kho.viet@podscare.vn',
+    initials: 'VT',
+    avatarBg: '#db2777',
+    targetRoute: '/inventory',
+  },
+];
 
 export default function LoginPage() {
   const router = useRouter();
@@ -23,7 +118,7 @@ export default function LoginPage() {
     }
   }, [isAuthenticated, router]);
 
-  const executeLogin = async (loginEmail: string, loginPass: string) => {
+  const executeLogin = async (loginEmail: string, loginPass: string, targetPath?: string) => {
     setLoading(true);
     setErrorMessage('');
 
@@ -48,7 +143,21 @@ export default function LoginPage() {
           user: json.data.user,
         });
         toast(`Đăng nhập thành công! Xin chào ${json.data.user.name}.`, 'success');
-        router.push('/');
+
+        let destination = targetPath;
+        if (!destination) {
+          const userRole = json.data.user.role;
+          if (userRole === 'technician' || userRole === 'tech') {
+            destination = '/tech';
+          } else if (userRole === 'qc') {
+            destination = '/qc';
+          } else if (userRole === 'inventory' || userRole === 'warehouse') {
+            destination = '/inventory';
+          } else {
+            destination = '/';
+          }
+        }
+        router.push(destination);
         return;
       }
 
@@ -83,16 +192,16 @@ export default function LoginPage() {
     executeLogin(emailOrPhone, password);
   };
 
-  const handleQuickLogin = (email: string) => {
+  const handleQuickLogin = (card: StaffCard) => {
     unlockAudio();
-    setEmailOrPhone(email);
-    setPassword('password123');
-    executeLogin(email, 'password123');
+    setEmailOrPhone(card.email);
+    setPassword('password');
+    executeLogin(card.email, 'password', card.targetRoute);
   };
 
   return (
     <div className="min-h-screen bg-[#f4f7f5] flex items-center justify-center p-4 sm:p-6 md:p-8">
-      <div className="w-full max-w-[560px] bg-white rounded-[16px] border border-[#e5ece8] shadow-[0_24px_90px_rgba(18,37,27,0.08)] p-6 sm:p-8 md:p-10 animate-in fade-in zoom-in-95 duration-200">
+      <div className="w-full max-w-[780px] bg-white rounded-[16px] border border-[#e5ece8] shadow-[0_24px_90px_rgba(18,37,27,0.08)] p-6 sm:p-8 md:p-10 animate-in fade-in zoom-in-95 duration-200">
         {/* Brand Header */}
         <div className="flex flex-col items-center text-center mb-8">
           <div className="w-12 h-12 rounded-[14px] bg-[#196d52] flex items-center justify-center gap-0.5 shadow-md mb-3">
@@ -110,7 +219,7 @@ export default function LoginPage() {
             Đăng nhập hệ thống
           </h2>
           <p className="text-xs text-[#788880] mt-1 mb-0">
-            Nhập tài khoản được phân quyền để bắt đầu ca làm việc
+            Nhập tài khoản được phân quyền hoặc chọn thẻ nhân sự để bắt đầu ca làm việc
           </p>
         </div>
 
@@ -124,32 +233,34 @@ export default function LoginPage() {
 
         {/* Login Form */}
         <form onSubmit={handleSubmit} className="space-y-4">
-          <div>
-            <label className="block text-xs font-semibold text-[#52635a] mb-1.5">
-              Email hoặc Số điện thoại
-            </label>
-            <Input
-              type="text"
-              value={emailOrPhone}
-              onChange={(e) => setEmailOrPhone(e.target.value)}
-              placeholder="admin@podscare.vn hoặc 0901..."
-              icon={<Icon name="customers" size={16} />}
-              required
-            />
-          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div>
+              <label className="block text-xs font-semibold text-[#52635a] mb-1.5">
+                Email hoặc Số điện thoại
+              </label>
+              <Input
+                type="text"
+                value={emailOrPhone}
+                onChange={(e) => setEmailOrPhone(e.target.value)}
+                placeholder="admin@podscare.vn hoặc 0901..."
+                icon={<Icon name="customers" size={16} />}
+                required
+              />
+            </div>
 
-          <div>
-            <label className="block text-xs font-semibold text-[#52635a] mb-1.5">
-              Mật khẩu truy cập
-            </label>
-            <Input
-              type="password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              placeholder="••••••••"
-              icon={<Icon name="audit" size={16} />}
-              required
-            />
+            <div>
+              <label className="block text-xs font-semibold text-[#52635a] mb-1.5">
+                Mật khẩu truy cập
+              </label>
+              <Input
+                type="password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                placeholder="••••••••"
+                icon={<Icon name="audit" size={16} />}
+                required
+              />
+            </div>
           </div>
 
           <Button
@@ -170,84 +281,55 @@ export default function LoginPage() {
           </div>
           <div className="relative flex justify-center text-xs">
             <span className="bg-white px-3 text-[#87968f] font-semibold">
-              Đăng nhập nhanh cho Demo (1-Click)
+              Đăng nhập nhanh theo Thẻ nhân sự (Staff ID Cards)
             </span>
           </div>
         </div>
 
-        {/* 3 Quick Login Buttons */}
-        <div className="space-y-2.5">
-          <button
-            type="button"
-            onClick={() => handleQuickLogin('admin@podscare.vn')}
-            disabled={loading}
-            className="w-full p-3 sm:p-3.5 rounded-[12px] border border-[#e5ece8] bg-[#fbfcfb] hover:bg-[#f1f6f3] hover:border-[#96c4b0] transition-all flex items-center justify-between text-left group disabled:opacity-50 cursor-pointer"
-          >
-            <div className="flex items-center gap-3.5 min-w-0 flex-1 mr-3">
-              <div className="w-9 h-9 rounded-full bg-[#176b58] text-white font-bold text-xs grid place-items-center shrink-0">
-                ML
+        {/* 6 Staff ID Cards Grid */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          {STAFF_CARDS.map((card) => (
+            <button
+              key={card.email}
+              type="button"
+              onClick={() => handleQuickLogin(card)}
+              disabled={loading}
+              className="p-3.5 rounded-[12px] border border-[#e5ece8] bg-[#fbfcfb] hover:bg-[#f3f7f4] hover:border-[#75a994] hover:shadow-md transition-all text-left group disabled:opacity-50 cursor-pointer flex flex-col justify-between"
+            >
+              <div className="flex items-start gap-3">
+                <div
+                  className="w-10 h-10 rounded-[10px] text-white font-bold text-xs grid place-items-center shrink-0 shadow-xs"
+                  style={{ backgroundColor: card.avatarBg }}
+                >
+                  {card.initials}
+                </div>
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center justify-between gap-1.5 mb-1">
+                    <b className="text-sm font-bold text-[#1c302b] group-hover:text-[#176b58] truncate">
+                      {card.name}
+                    </b>
+                    <span className="text-[10px] font-mono px-1.5 py-0.5 rounded font-bold bg-[#edf2ef] text-[#54645c] shrink-0">
+                      {card.branchCode}
+                    </span>
+                  </div>
+                  <div className="mb-1.5">
+                    <span className={`inline-block text-[11px] font-semibold px-2 py-0.5 rounded-[6px] ${card.badgeStyle}`}>
+                      {card.roleBadge}
+                    </span>
+                  </div>
+                  <p className="text-xs text-[#6e7d75] leading-snug line-clamp-2 m-0">
+                    {card.duty}
+                  </p>
+                </div>
               </div>
-              <div className="min-w-0 flex-1">
-                <b className="block text-sm font-bold text-[#1c302b] group-hover:text-[#176b58] truncate">
-                  Admin (Minh Lê)
-                </b>
-                <span className="block text-xs text-[#7e8d85] truncate">
-                  admin@podscare.vn · pass: password123
+              <div className="mt-2.5 pt-2 border-t border-[#edf1ee] flex items-center justify-between text-[11px] text-[#86968f] font-medium">
+                <span>{card.branchLabel}</span>
+                <span className="text-[#176b58] font-semibold group-hover:translate-x-0.5 transition-transform flex items-center gap-0.5">
+                  Vào ca →
                 </span>
               </div>
-            </div>
-            <Badge variant="brand" className="whitespace-nowrap shrink-0">
-              Quản trị viên
-            </Badge>
-          </button>
-
-          <button
-            type="button"
-            onClick={() => handleQuickLogin('cskh.lan@podscare.vn')}
-            disabled={loading}
-            className="w-full p-3 sm:p-3.5 rounded-[12px] border border-[#e5ece8] bg-[#fbfcfb] hover:bg-[#f1f6f3] hover:border-[#96c4b0] transition-all flex items-center justify-between text-left group disabled:opacity-50 cursor-pointer"
-          >
-            <div className="flex items-center gap-3.5 min-w-0 flex-1 mr-3">
-              <div className="w-9 h-9 rounded-full bg-[#3b82f6] text-white font-bold text-xs grid place-items-center shrink-0">
-                LP
-              </div>
-              <div className="min-w-0 flex-1">
-                <b className="block text-sm font-bold text-[#1c302b] group-hover:text-[#176b58] truncate">
-                  CSKH (Lan Phạm)
-                </b>
-                <span className="block text-xs text-[#7e8d85] truncate">
-                  cskh.lan@podscare.vn · pass: password123
-                </span>
-              </div>
-            </div>
-            <span className="inline-flex items-center text-xs font-semibold px-2.5 py-0.5 rounded-[10px] bg-[#eef4ff] text-[#2563eb] whitespace-nowrap shrink-0">
-              CSKH Tiếp nhận
-            </span>
-          </button>
-
-          <button
-            type="button"
-            onClick={() => handleQuickLogin('tuan.kt@podscare.vn')}
-            disabled={loading}
-            className="w-full p-3 sm:p-3.5 rounded-[12px] border border-[#e5ece8] bg-[#fbfcfb] hover:bg-[#f1f6f3] hover:border-[#96c4b0] transition-all flex items-center justify-between text-left group disabled:opacity-50 cursor-pointer"
-          >
-            <div className="flex items-center gap-3.5 min-w-0 flex-1 mr-3">
-              <div className="w-9 h-9 rounded-full bg-[#f59e0b] text-white font-bold text-xs grid place-items-center shrink-0">
-                TK
-              </div>
-              <div className="min-w-0 flex-1">
-                <b className="block text-sm font-bold text-[#1c302b] group-hover:text-[#176b58] truncate">
-                  Kỹ thuật (Tuấn K.)
-                </b>
-                <span className="block text-xs text-[#7e8d85] truncate">
-                  tuan.kt@podscare.vn · pass: password123
-                </span>
-              </div>
-            </div>
-            <span className="inline-flex items-center text-xs font-semibold px-2.5 py-0.5 rounded-[10px] bg-[#fef5e7] text-[#b45309] whitespace-nowrap shrink-0">
-              Kỹ thuật viên
-            </span>
-          </button>
+            </button>
+          ))}
         </div>
 
         {/* Security Footer Note */}

@@ -304,4 +304,38 @@ class BranchManagementTest extends TestCase
         $this->actingAs($admin, 'sanctum')->postJson('/api/v1/branches/999999/toggle-status')
             ->assertStatus(404);
     }
+
+    /**
+     * Test 10: Người dùng vãng lai (unauthenticated) có thể truy cập danh sách chi nhánh (GET /branches) công khai.
+     */
+    public function test_public_can_get_branches_list_without_auth(): void
+    {
+        $response = $this->getJson('/api/v1/branches');
+
+        $response->assertStatus(200)
+            ->assertJsonPath('success', true)
+            ->assertJsonPath('message', 'Lấy danh sách chi nhánh thành công.')
+            ->assertJsonStructure([
+                'data' => [
+                    '*' => ['id', 'code', 'name', 'address', 'phone', 'is_active'],
+                ],
+            ]);
+    }
+
+    /**
+     * Test 11: Người dùng vãng lai (unauthenticated) có thể xem chi tiết chi nhánh (GET /branches/{id}) công khai.
+     */
+    public function test_public_can_get_branch_details_without_auth(): void
+    {
+        $branch = Branch::first();
+        $this->assertNotNull($branch);
+
+        $response = $this->getJson("/api/v1/branches/{$branch->id}");
+
+        $response->assertStatus(200)
+            ->assertJsonPath('success', true)
+            ->assertJsonPath('message', 'Lấy chi tiết chi nhánh thành công.')
+            ->assertJsonPath('data.id', $branch->id);
+    }
 }
+

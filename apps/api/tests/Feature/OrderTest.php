@@ -28,9 +28,23 @@ class OrderTest extends TestCase
 
     private function createTestOrder(string $status = 'inspecting'): RepairOrder
     {
-        $branch = Branch::first();
-        $customer = Customer::first();
-        $device = DeviceModel::first();
+        $branch = Branch::first() ?? Branch::create([
+            'name'      => 'Chi nhánh Quận 1',
+            'code'      => 'BR_Q1_' . uniqid(),
+            'phone'     => '0901234567',
+            'address'   => '123 Lê Lợi, Q1, TP.HCM',
+            'is_active' => true,
+        ]);
+        $customer = Customer::first() ?? Customer::create([
+            'name'  => 'Nguyễn Minh Anh',
+            'phone' => '090' . random_int(1000000, 9999999),
+            'email' => 'minhanh_' . uniqid() . '@gmail.com',
+        ]);
+        $device = DeviceModel::first() ?? DeviceModel::create([
+            'name'       => 'AirPods Pro 2',
+            'model_code' => 'A2698_' . uniqid(),
+            'category'   => 'airpods',
+        ]);
         $user = $this->getAuthenticatedUser();
 
         $year = date('y');

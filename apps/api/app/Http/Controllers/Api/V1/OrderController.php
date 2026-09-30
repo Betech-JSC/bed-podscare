@@ -327,6 +327,27 @@ class OrderController extends Controller
     }
 
     /**
+     * Lấy danh sách các trạng thái tiếp theo được phép chuyển kèm nhãn tiếng Việt cho đơn hàng.
+     */
+    public function allowedTransitions(int|string $id): JsonResponse
+    {
+        $order = $this->resolveOrder($id);
+
+        if (! $order) {
+            return $this->empty('Không tìm thấy đơn sửa chữa.');
+        }
+
+        $allowed = $this->workflowService->getNextAllowedStatusesWithLabels($order->status);
+
+        return $this->success([
+            'order_id'          => $order->id,
+            'current_status'    => $order->status,
+            'current_label'     => $this->workflowService->getStatusLabel($order->status),
+            'allowed_statuses'  => $allowed,
+        ], 'Lấy danh sách trạng thái tiếp theo hợp lệ thành công.');
+    }
+
+    /**
      * Chuẩn hóa trạng thái / alias trước khi đưa vào FSM Workflow hoặc bộ lọc.
      */
     public function normalizeStatus(?string $status): ?string

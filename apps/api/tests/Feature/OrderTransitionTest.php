@@ -11,15 +11,25 @@ use App\Models\QcInspection;
 use App\Models\RepairOrder;
 use App\Models\User;
 use App\Models\Warranty;
+use App\Services\BaseWorkflowService;
+use App\Services\OrderWorkflowService;
+use Illuminate\Foundation\Testing\DatabaseTransactions;
 use Tests\TestCase;
 
 class OrderTransitionTest extends TestCase
 {
+    use DatabaseTransactions;
+
     private function getAuthenticatedUser(): User
     {
         $user = User::where('email', 'admin@podscare.vn')->first();
         if (! $user) {
-            $user = User::first();
+            $user = User::first() ?? User::create([
+                'name'     => 'Admin PodsCare',
+                'email'    => 'admin@podscare.vn',
+                'role'     => 'admin',
+                'password' => bcrypt('password'),
+            ]);
         }
         $this->assertNotNull($user, 'Authenticated user must exist');
         return $user;
@@ -27,9 +37,23 @@ class OrderTransitionTest extends TestCase
 
     private function createTestOrder(string $status = 'inspecting'): RepairOrder
     {
-        $branch = Branch::first();
-        $customer = Customer::first();
-        $device = DeviceModel::first();
+        $branch = Branch::first() ?? Branch::create([
+            'name'      => 'Chi nhánh Quận 1',
+            'code'      => 'BR_Q1_' . uniqid(),
+            'phone'     => '0901234567',
+            'address'   => '123 Lê Lợi, Q1, TP.HCM',
+            'is_active' => true,
+        ]);
+        $customer = Customer::first() ?? Customer::create([
+            'name'  => 'Nguyễn Minh Anh',
+            'phone' => '090' . random_int(1000000, 9999999),
+            'email' => 'minhanh_' . uniqid() . '@gmail.com',
+        ]);
+        $device = DeviceModel::first() ?? DeviceModel::create([
+            'name'       => 'AirPods Pro 2',
+            'model_code' => 'A2698_' . uniqid(),
+            'category'   => 'airpods',
+        ]);
         $user = $this->getAuthenticatedUser();
 
         $year = date('y');
@@ -357,5 +381,161 @@ class OrderTransitionTest extends TestCase
         $responseNotFound = $this->actingAs($user, 'sanctum')->getJson('/api/v1/partners/999999');
         $responseNotFound->assertStatus(404)
             ->assertJsonPath('success', false);
+    }
+
+    /**
+     * Test 9 (Task 1.1): Chuẩn hóa từ điển STATUS_LABELS cho 13 trạng thái và các helper methods.
+     */
+    public function test_status_labels_and_helpers_for_all_13_lifecycle_statuses(): void
+    {
+        $workflowService = app(OrderWorkflowService::class);
+
+        // 1. Kiểm tra 13 trạng thái chính và alias có trong STATUS_LABELS
+        $expectedLabels = [
+            'inspecting'       => 'Đang kiểm tra',
+            'waiting_approval' => 'Chờ khách duyệt',
+            'quote_pending'    => 'Chờ khách duyệt',
+            'rejected'         => 'Khách từ chối sửa',
+            'waiting_tech'     => 'Chờ kỹ thuật',
+            'assigned'         => 'KTV đã nhận',
+            'in_repair'        => 'Đang sửa',
+            'waiting_parts'    => 'Chờ linh kiện',
+            'rework_needed'    => 'Cần sửa lại',
+            'waiting_qc'       => 'Chờ QC',
+            'qc_pending'       => 'Chờ QC',
+            'qc_inspecting'    => 'Chờ QC',
+            'ready_for_return' => 'Sẵn sàng trả',
+            'waiting_pickup'   => 'Chờ khách nhận',
+            'completed'        => 'Hoàn tất',
+            'cancelled'        => 'Đã hủy',
+        ];
+
+        foreach ($expectedLabels as $statusCode => $expectedLabel) {
+            $this->assertEquals(
+                $expectedLabel,
+                $workflowService->getStatusLabel($statusCode),
+                "Nhãn của trạng thái '{$statusCode}' phải là '{$expectedLabel}'."
+            );
+        }
+
+        // 2. Helper getNextAllowedStatusesWithLabels cho waiting_qc
+        $qcNext = $workflowService->getNextAllowedStatusesWithLabels('waiting_qc');
+        $this->assertArrayHasKey('ready_for_return', $qcNext);
+        $this->assertEquals('Sẵn sàng trả', $qcNext['ready_for_return']);
+        $this->assertArrayHasKey('rework_needed', $qcNext);
+        $this->assertEquals('Cần sửa lại', $qcNext['rework_needed']);
+        $this->assertArrayNotHasKey('completed', $qcNext, 'waiting_qc tuyệt đối không được chứa completed');
+
+        // 3. Helper getNextAllowedStatusesWithLabels cho in_repair
+        $repairNext = $workflowService->getNextAllowedStatusesWithLabels('in_repair');
+        $this->assertArrayHasKey('waiting_parts', $repairNext);
+        $this->assertEquals('Chờ linh kiện', $repairNext['waiting_parts']);
+        $this->assertArrayHasKey('waiting_qc', $repairNext);
+        $this->assertEquals('Chờ QC', $repairNext['waiting_qc']);
+    }
+
+    /**
+     * Test 10 (Task 1.2 & 1.3): Chuyển trực tiếp waiting_qc sang completed ném lỗi 422 thân thiện có định hướng.
+     */
+    public function test_transition_from_waiting_qc_to_completed_throws_friendly_actionable_error(): void
+    {
+        $user = $this->getAuthenticatedUser();
+        $order = $this->createTestOrder('waiting_qc');
+
+        $response = $this->actingAs($user, 'sanctum')->postJson("/api/v1/orders/{$order->id}/transition", [
+            'status' => 'completed',
+        ]);
+
+        $response->assertStatus(422)
+            ->assertJsonPath('success', false)
+            ->assertJsonPath(
+                'message',
+                "Không thể chuyển trực tiếp từ 'Chờ QC' sang 'Hoàn tất'. Thiết bị bắt buộc phải có biên bản kiểm định chất lượng (QC Pass) và chuyển sang 'Sẵn sàng trả' trước khi hoàn tất."
+            );
+    }
+
+    /**
+     * Test 11 (Task 1.2 & 1.3): Chuyển trạng thái bất hợp lệ tổng quát trả về danh sách bước kế tiếp hợp lệ.
+     */
+    public function test_general_invalid_transition_returns_friendly_message_with_allowed_next_statuses(): void
+    {
+        $user = $this->getAuthenticatedUser();
+
+        // Case A: Đang sửa (in_repair) không thể nhảy sang Hoàn tất (completed)
+        $orderRepair = $this->createTestOrder('in_repair');
+        $responseRepair = $this->actingAs($user, 'sanctum')->postJson("/api/v1/orders/{$orderRepair->id}/transition", [
+            'status' => 'completed',
+        ]);
+
+        $responseRepair->assertStatus(422)
+            ->assertJsonPath('success', false)
+            ->assertJsonPath(
+                'message',
+                "Không thể chuyển trạng thái từ 'Đang sửa' sang 'Hoàn tất'. Các trạng thái hợp lệ tiếp theo: Chờ linh kiện, Chờ QC."
+            );
+
+        // Case B: Đang kiểm tra (inspecting) không thể nhảy sang Hoàn tất (completed)
+        $orderInspect = $this->createTestOrder('inspecting');
+        $responseInspect = $this->actingAs($user, 'sanctum')->postJson("/api/v1/orders/{$orderInspect->id}/transition", [
+            'status' => 'completed',
+        ]);
+
+        $responseInspect->assertStatus(422)
+            ->assertJsonPath('success', false)
+            ->assertJsonPath(
+                'message',
+                "Không thể chuyển trạng thái từ 'Đang kiểm tra' sang 'Hoàn tất'. Các trạng thái hợp lệ tiếp theo: Chờ khách duyệt, Chờ kỹ thuật, Đang sửa, Đã hủy."
+            );
+    }
+
+    /**
+     * Test 12 (Task 1.2): Chuyển sang Sẵn sàng trả khi chưa có QC Pass báo lỗi thân thiện.
+     */
+    public function test_transition_to_ready_for_return_requires_qc_pass_friendly_message(): void
+    {
+        $user = $this->getAuthenticatedUser();
+        $order = $this->createTestOrder('waiting_qc');
+
+        $response = $this->actingAs($user, 'sanctum')->postJson("/api/v1/orders/{$order->id}/transition", [
+            'status' => 'ready_for_return',
+        ]);
+
+        $response->assertStatus(422)
+            ->assertJsonPath('success', false)
+            ->assertJsonPath(
+                'message',
+                'Đơn hàng chưa có biên bản kiểm định chất lượng đạt chuẩn (QC Pass). Không thể chuyển sang trạng thái sẵn sàng giao trả.'
+            );
+    }
+
+    /**
+     * Test 13: Endpoint GET /api/v1/orders/{id}/allowed-transitions trả về ma trận chuyển đổi hợp lệ kèm nhãn.
+     */
+    public function test_order_allowed_transitions_api_endpoint(): void
+    {
+        $user = $this->getAuthenticatedUser();
+        $order = $this->createTestOrder('waiting_qc');
+
+        $response = $this->actingAs($user, 'sanctum')->getJson("/api/v1/orders/{$order->id}/allowed-transitions");
+
+        $response->assertStatus(200)
+            ->assertJsonPath('success', true)
+            ->assertJsonPath('data.current_status', 'waiting_qc')
+            ->assertJsonPath('data.current_label', 'Chờ QC')
+            ->assertJsonStructure([
+                'success',
+                'message',
+                'data' => [
+                    'order_id',
+                    'current_status',
+                    'current_label',
+                    'allowed_statuses',
+                ],
+            ]);
+
+        $allowedStatuses = $response->json('data.allowed_statuses');
+        $this->assertArrayHasKey('ready_for_return', $allowedStatuses);
+        $this->assertEquals('Sẵn sàng trả', $allowedStatuses['ready_for_return']);
+        $this->assertArrayNotHasKey('completed', $allowedStatuses);
     }
 }

@@ -193,3 +193,43 @@ cp -r .agent/skills/sepay-payment-integration /path/to/new-project/.agent/skills
 - [Cơ chế Chống Trùng Lặp (Idempotency) & Bảo Mật](./references/idempotency_and_security.md)
 - [Đặc tả Mã VietQR NAPAS 247 & Quy Chuẩn Mã Đối Soát](./references/vietqr_specification.md)
 - [Kịch Bản Kiểm Thử Thanh Toán (5 Test Cases & cURL)](./references/test_scenarios.md)
+
+---
+
+## 7. Quy Chuẩn Toàn Vẹn Thanh Toán & Cổng Bàn Giao Đơn Hàng (Payment Integrity & Handover Gate)
+
+> 📌 **Lưu ý triển khai**: Đây là các yêu cầu kỹ thuật và chốt chặn toàn vẹn dữ liệu được bóc tách từ Gói 2 để triển khai trọn gói trong Phase tích hợp SePay kế tiếp, tránh làm gián đoạn luồng vận hành của CSKH, KTV và QC ở giai đoạn hiện tại.
+
+### 7.1. Chống Thanh Toán Trùng Lặp (Double Payment Prevention & Idempotency)
+- **Ràng buộc duy nhất `unique` trên `transaction_ref`**:
+  - Bảng `payments` hoặc `sepay_transactions` bắt buộc đánh chỉ mục `unique` trên trường `transaction_ref` (hoặc `sepay_transaction_id`).
+  - Mọi request tạo phiếu thu từ Webhook SePay hoặc API thủ công nếu gửi trùng `transaction_ref` đã có trong hệ thống sẽ bị chặn ngay lập tức và trả về cảnh báo hoặc HTTP `200 ALREADY_PROCESSED` (đối với webhook) để tránh cộng tiền lặp lại.
+- **Idempotency Key & Pessimistic Locking**:
+  - Khi xử lý giao dịch ghi nhận thanh toán, sử dụng `DB::transaction()` kết hợp `RepairOrder::where('id', $orderId)->lockForUpdate()` để khóa dòng đơn hàng, loại bỏ race condition khi nhiều webhook hoặc client click đúp đồng thời.
+
+### 7.2. Kiểm Soát Hạn Mức Thu Tiền (Overpayment Prevention)
+- **Chặn thu vượt quá số dư còn lại**:
+  - Công thức kiểm tra: `$remaining = $order->total_price - $order->paid_amount`.
+  - Nếu số tiền thanh toán `$amount > $remaining`, hệ thống từ chối giao dịch và phản hồi lỗi HTTP 422: *"Số tiền thanh toán vượt quá số dư còn lại của đơn hàng"*.
+  - Đối với webhook ngân hàng nhận tiền thừa (khách chuyển thừa), hệ thống ghi nhận giao dịch vào bảng `sepay_transactions` với trạng thái `OVERPAID` và tạo thông báo (Notification/AuditLog) để kế toán xử lý hoàn tiền thủ công, không tự ý phá vỡ toàn vẹn tài chính của đơn hàng.
+
+### 7.3. Đồng Bộ Dữ Liệu Thanh Toán Trên Đơn Hàng (`repair_orders`)
+- **Bổ sung các trường quản lý thanh toán**:
+  - Thêm cột `paid_amount`: kiểu `decimal(15, 2)->default(0.00)` ghi nhận tổng lũy kế tiền khách đã thanh toán.
+  - Thêm cột `payment_status`: kiểu `enum('unpaid', 'partially_paid', 'paid')->default('unpaid')`.
+- **Logic tự động cập nhật khi nhận Webhook SePay**:
+  - Khi giao dịch thanh toán thành công, cộng dồn `$order->paid_amount += $transaction->amount`.
+  - Phân loại trạng thái thanh toán tự động:
+    - Nếu `$order->paid_amount >= $order->total_price`: gán `$order->payment_status = 'paid'`.
+    - Nếu `$order->paid_amount > 0 && $order->paid_amount < $order->total_price`: gán `$order->payment_status = 'partially_paid'`.
+    - Nếu `$order->paid_amount == 0`: gán `$order->payment_status = 'unpaid'`.
+
+### 7.4. Cổng Kiểm Soát Bàn Giao Máy (Handover Payment Gate)
+- **Chốt chặn chuyển trạng thái sang `completed` / `delivered`**:
+  - Tại hook `beforeTransition` của `OrderWorkflowService` và tại `ShipmentController::updateStatus` khi chuyển vận đơn sang `delivered`:
+    - Kiểm tra điều kiện: `$order->payment_status === 'paid'` hoặc `$order->paid_amount >= $order->total_price`.
+    - Nếu chưa thanh toán đủ: Hệ thống từ chối chuyển trạng thái và trả về HTTP 422: *"Đơn hàng chưa được thanh toán đầy đủ, không thể hoàn tất hoặc bàn giao máy"*.
+- **Trường hợp ngoại lệ hợp lệ (Bypass Rules)**:
+  - Đơn bảo hành hoặc dịch vụ miễn phí có `$order->total_price == 0`.
+  - Đơn hàng có chính sách công nợ B2B / khách quen được phê duyệt đặc biệt bởi Quản lý chi nhánh (`is_debt_approved == true` hoặc có mã phê duyệt công nợ kèm log kiểm toán).
+

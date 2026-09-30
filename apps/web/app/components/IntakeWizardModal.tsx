@@ -49,9 +49,12 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
   // Form State
   const [name, setName] = useState('');
   const [phone, setPhone] = useState('');
-  const [selectedBranchId, setSelectedBranchId] = useState<string | number>(
-    branchId === 'all' ? 1 : branchId || 1
-  );
+  const [selectedBranchId, setSelectedBranchId] = useState<string | number>(() => {
+    const userBranchId = (currentUser as any)?.branch_id || (currentUser as any)?.branchId;
+    if (userBranchId) return userBranchId;
+    if (branchId && branchId !== 'all') return branchId;
+    return 1;
+  });
   const [selectedCategory, setSelectedCategory] = useState('AirPods');
   const [selectedDevice, setSelectedDevice] = useState('AirPods Pro 2');
   const [serial, setSerial] = useState('');
@@ -80,8 +83,18 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
       setMaxReachedStepIndex(0);
       setCompletedSteps(new Set());
       setErrors({});
+
+      // Auto assign branch based on current logged in user or active branch
+      const userBranchId = (currentUser as any)?.branch_id || (currentUser as any)?.branchId;
+      if (userBranchId) {
+        setSelectedBranchId(userBranchId);
+      } else if (branchId && branchId !== 'all') {
+        setSelectedBranchId(branchId);
+      } else {
+        setSelectedBranchId(1);
+      }
     }
-  }, [isOpen]);
+  }, [isOpen, currentUser, branchId]);
 
   useEffect(() => {
     deviceService
@@ -507,6 +520,7 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
                   label="Chi nhánh tiếp nhận thiết bị *"
                   value={String(selectedBranchId)}
                   onChange={(e) => {
+                    if (currentUser?.role !== 'admin') return;
                     setSelectedBranchId(e.target.value);
                     if (errors.branch) {
                       setErrors((prev) => {
@@ -517,13 +531,27 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
                     }
                   }}
                   error={errors.branch}
-                  options={branches
-                    .filter((b) => b.id !== 'all')
-                    .map((b) => ({
-                      value: String(b.id),
-                      label: `${b.name} (${b.code}) — ${b.address || ''}`,
-                    }))}
+                  disabled={currentUser?.role !== 'admin'}
+                  options={((branches && branches.filter((b) => b.id !== 'all').length > 0)
+                    ? branches.filter((b) => b.id !== 'all')
+                    : [
+                        { id: 1, name: 'PodsCare · Quận 1', code: 'Q1', address: '142 Nguyễn Thị Minh Khai, Phường Bến Thành, Quận 1, TP.HCM' },
+                        { id: 2, name: 'PodsCare · Quận 3', code: 'Q3', address: '285 Cách Mạng Tháng Tám, Phường 12, Quận 3, TP.HCM' },
+                        { id: 3, name: 'PodsCare · TP. Thủ Đức', code: 'THUDUC', address: '56 Võ Văn Ngân, Phường Bình Thọ, TP. Thủ Đức, TP.HCM' },
+                      ]
+                  ).map((b) => ({
+                    value: String(b.id),
+                    label: `${b.name} (${b.code}) — ${b.address || ''}`,
+                  }))}
                 />
+                {currentUser?.role !== 'admin' && (
+                  <div className="mt-1.5 flex items-center gap-1.5 text-xs font-semibold text-[#176b58] bg-[#eaf4ef] px-3 py-1.5 rounded-[6px] border border-[#d2e8dd]">
+                    <span>🔒 Chi nhánh tiếp nhận: {
+                      branches.find((b) => String(b.id) === String(selectedBranchId))?.name ||
+                      (String(selectedBranchId) === '2' ? 'PodsCare · Quận 3' : String(selectedBranchId) === '3' ? 'PodsCare · TP. Thủ Đức' : 'PodsCare · Quận 1')
+                    } — Gán tự động theo ca tiếp nhận</span>
+                  </div>
+                )}
               </div>
             </div>
           </section>

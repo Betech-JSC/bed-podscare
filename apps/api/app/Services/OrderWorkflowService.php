@@ -33,6 +33,28 @@ class OrderWorkflowService extends BaseWorkflowService
         'waiting_pickup'   => ['completed'],
     ];
 
+    /**
+     * Từ điển nhãn trạng thái tiếng Việt chuẩn cho 13 trạng thái vòng đời đơn sửa chữa PodsCare.
+     */
+    public const STATUS_LABELS = [
+        'inspecting'       => 'Đang kiểm tra',
+        'waiting_approval' => 'Chờ khách duyệt',
+        'quote_pending'    => 'Chờ khách duyệt',
+        'rejected'         => 'Khách từ chối sửa',
+        'waiting_tech'     => 'Chờ kỹ thuật',
+        'assigned'         => 'KTV đã nhận',
+        'in_repair'        => 'Đang sửa',
+        'waiting_parts'    => 'Chờ linh kiện',
+        'rework_needed'    => 'Cần sửa lại',
+        'waiting_qc'       => 'Chờ QC',
+        'qc_pending'       => 'Chờ QC',
+        'qc_inspecting'    => 'Chờ QC',
+        'ready_for_return' => 'Sẵn sàng trả',
+        'waiting_pickup'   => 'Chờ khách nhận',
+        'completed'        => 'Hoàn tất',
+        'cancelled'        => 'Đã hủy',
+    ];
+
     protected ?string $logModel = AuditLog::class;
 
     protected string $foreignKeyName = 'auditable_id';
@@ -59,6 +81,14 @@ class OrderWorkflowService extends BaseWorkflowService
         }
 
         return parent::transition($model, $newStatus, $options);
+    }
+
+    /**
+     * Xác thực bước chuyển trạng thái cho RepairOrder theo ma trận và ném DomainException tiếng Việt thân thiện.
+     */
+    public function validateTransition(string $fromStatus, string $toStatus): void
+    {
+        parent::validateTransition($fromStatus, $toStatus);
     }
 
     /**

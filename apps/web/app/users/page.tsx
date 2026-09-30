@@ -36,6 +36,12 @@ export interface UserItem {
   created_at?: string;
 }
 
+const FALLBACK_BRANCHES = [
+  { id: 1, name: 'PodsCare · Quận 1', code: 'Q1' },
+  { id: 2, name: 'PodsCare · Quận 3', code: 'Q3' },
+  { id: 3, name: 'PodsCare · TP. Thủ Đức', code: 'THUDUC' },
+];
+
 export default function UsersPage() {
   const { toast } = useToast();
   const { branches } = usePodsCare();
@@ -51,12 +57,17 @@ export default function UsersPage() {
   const [editModalOpen, setEditModalOpen] = useState(false);
   const [selectedUser, setSelectedUser] = useState<UserItem | null>(null);
 
-  const branchOptions = branches
-    .filter((b) => b.id !== 'all')
-    .map((b) => ({
+  const effectiveBranches = React.useMemo(() => {
+    const filtered = (branches || []).filter((b) => b.id !== 'all');
+    return filtered.length > 0 ? filtered : FALLBACK_BRANCHES;
+  }, [branches]);
+
+  const branchOptions = React.useMemo(() => {
+    return effectiveBranches.map((b) => ({
       value: String(b.id),
       label: b.name,
     }));
+  }, [effectiveBranches]);
 
   // Form states for Create User
   const [formData, setFormData] = useState({
@@ -82,7 +93,7 @@ export default function UsersPage() {
           const resolvedBranchId = u.branch_id ?? u.branch?.id ?? null;
           const resolvedBranchName =
             u.branch?.name ||
-            branches.find((b) => Number(b.id) === Number(resolvedBranchId))?.name ||
+            effectiveBranches.find((b) => Number(b.id) === Number(resolvedBranchId))?.name ||
             (resolvedBranchId ? `Chi nhánh #${resolvedBranchId}` : 'Chưa phân công');
 
           return {
@@ -108,7 +119,7 @@ export default function UsersPage() {
     } finally {
       setLoading(false);
     }
-  }, [branches]);
+  }, [effectiveBranches]);
 
   useEffect(() => {
     fetchUsers();
@@ -192,22 +203,24 @@ export default function UsersPage() {
 
     setSubmitting(true);
     try {
+      const chosenBranchId =
+        selectedUser.branch_id !== undefined && selectedUser.branch_id !== null
+          ? Number(selectedUser.branch_id)
+          : Number(branchOptions[0]?.value) || 1;
+
       await userService.updateUser(selectedUser.id, {
         name: selectedUser.name,
         phone: selectedUser.phone,
         role: selectedUser.role,
-        branch_id:
-          selectedUser.branch_id !== undefined && selectedUser.branch_id !== null
-            ? Number(selectedUser.branch_id)
-            : undefined,
+        branch_id: chosenBranchId,
       });
 
       toast(`Đã cập nhật thông tin nhân viên ${selectedUser.name}!`, 'success');
       setEditModalOpen(false);
       setSelectedUser(null);
       fetchUsers();
-    } catch {
-      toast('Không thể cập nhật tài khoản.', 'error');
+    } catch (err: any) {
+      toast(err?.response?.data?.message || err?.message || 'Không thể cập nhật tài khoản.', 'error');
     } finally {
       setSubmitting(false);
     }
@@ -494,7 +507,12 @@ export default function UsersPage() {
                               variant="secondary"
                               size="sm"
                               onClick={() => {
-                                setSelectedUser({ ...user });
+                                const currentBranchId = user.branch_id || Number(branchOptions[0]?.value) || 1;
+                                setSelectedUser({
+                                  ...user,
+                                  branch_id: currentBranchId,
+                                  branch_name: branchOptions.find((b) => Number(b.value) === Number(currentBranchId))?.label || user.branch_name,
+                                });
                                 setEditModalOpen(true);
                               }}
                             >
@@ -752,14 +770,16 @@ export default function UsersPage() {
                 <div>
                   <Select
                     label="Chi nhánh công tác"
-                    value={String(selectedUser.branch_id ?? branchOptions[0]?.value ?? '1')}
-                    onChange={(e) =>
+                    value={String(selectedUser.branch_id || branchOptions[0]?.value || '1')}
+                    onChange={(e) => {
+                      const newBranchId = Number(e.target.value);
+                      const newBranchName = branchOptions.find((b) => b.value === e.target.value)?.label;
                       setSelectedUser({
                         ...selectedUser,
-                        branch_id: Number(e.target.value),
-                        branch_name: branchOptions.find((b) => b.value === e.target.value)?.label,
-                      })
-                    }
+                        branch_id: newBranchId,
+                        branch_name: newBranchName,
+                      });
+                    }}
                     options={branchOptions}
                   />
                 </div>

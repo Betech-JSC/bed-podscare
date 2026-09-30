@@ -69,6 +69,18 @@ class ApiV1EndpointsTest extends TestCase
     }
 
     /**
+     * Test public branches endpoint.
+     */
+    public function test_public_branches_endpoint(): void
+    {
+        $response = $this->getJson('/api/v1/branches');
+        $response->assertStatus(200)
+            ->assertJsonPath('success', true);
+        $this->assertNotEmpty($response->json('data'));
+    }
+
+
+    /**
      * Test auth login with valid and invalid credentials.
      */
     public function test_auth_login_with_valid_and_invalid_credentials(): void
