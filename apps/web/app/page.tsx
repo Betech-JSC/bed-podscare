@@ -2,884 +2,840 @@
 
 import React, { useState } from 'react';
 import { useRouter } from 'next/navigation';
-import {
-  Button,
-  StatCard,
-  StatusTag,
-  Avatar,
-  Icon,
-  Modal,
-  useToast,
-} from '@podscare/ui';
-import { AppShell } from './components/AppShell';
-import { IntakeWizardModal } from './components/IntakeWizardModal';
+import { Icon } from '@podscare/ui';
 import { usePodsCare } from './providers';
-import type { RepairOrder } from '@podscare/types';
-import { kpiService, repairService } from '@podscare/api-client';
-import { useQuery } from '@tanstack/react-query';
 
-export default function DashboardPage() {
+export default function LandingPage() {
   const router = useRouter();
-  const { toast } = useToast();
-  const { role, currentUser, orders, updateOrder, branchId, branch, invalidateOrders } = usePodsCare();
+  const { isAuthenticated } = usePodsCare();
 
-  const [intakeModalOpen, setIntakeModalOpen] = useState(false);
-  const [cskhPendingModalOpen, setCskhPendingModalOpen] = useState(false);
-  const [period, setPeriod] = useState<'7_days' | '14_days' | '30_days'>('14_days');
+  const [trackQuery, setTrackQuery] = useState('');
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
-  // Đấu nối KPI Dashboard API
-  const { data: kpiData } = useQuery({
-    queryKey: ['kpi-dashboard', branchId, period],
-    queryFn: async () => {
-      const res = await kpiService.getDashboardKpi({
-        branch_id: branchId && branchId !== 'all' ? branchId : undefined,
-        period,
-      });
-      return res?.data || res;
-    },
-  });
+  const handleTrackSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    const query = trackQuery.trim();
+    if (!query) return;
+    router.push(`/track?code=${encodeURIComponent(query)}`);
+  };
 
-  const moneyFormatted = (n: number) =>
-    n ? new Intl.NumberFormat('vi-VN').format(n) + ' ₫' : '—';
-
-  // Lọc orders theo chi nhánh hiện hành
-  const branchOrders = React.useMemo(() => {
-    if (!branchId || branchId === 'all') return orders;
-    return orders.filter(
-      (o) =>
-        String(o.branchId) === String(branchId) ||
-        o.branch === branch ||
-        o.branchName === branch
-    );
-  }, [orders, branchId, branch]);
-
-  // CSKH Pending calculations
-  const cskhPendingOrders = branchOrders
-    .filter((o) => !['Hoàn tất', 'Đã hủy', 'Đã trả máy'].includes(o.status))
-    .sort((a, b) => {
-      const priority: Record<string, number> = {
-        'Chờ khách duyệt': 1,
-        'Cần sửa lại': 2,
-        'Sẵn sàng trả': 3,
-        'Chờ QC': 4,
-        'Chờ kỹ thuật': 5,
-        'Đã nhận đơn': 6,
-        'Đang sửa': 7,
-      };
-      return (priority[a.status] || 9) - (priority[b.status] || 9);
-    });
-
-  const getCskhNextAction = (o: RepairOrder) => {
-    switch (o.status) {
-      case 'Chờ khách duyệt':
-        return 'Nhắc khách xác nhận báo giá';
-      case 'Cần sửa lại':
-        return 'Theo dõi kỹ thuật sửa lại';
-      case 'Sẵn sàng trả':
-        return 'Liên hệ khách đến nhận máy';
-      case 'Chờ QC':
-        return 'Theo dõi kết quả kiểm định QC';
-      case 'Chờ kỹ thuật':
-        return 'Theo dõi nhận đơn kỹ thuật';
-      case 'Đang sửa':
-        return 'Cập nhật tiến độ cho khách';
-      default:
-        return 'Mở phiếu để xử lý';
+  const scrollToSection = (id: string) => {
+    setMobileMenuOpen(false);
+    const element = document.getElementById(id);
+    if (element) {
+      element.scrollIntoView({ behavior: 'smooth' });
     }
   };
 
-  // Tech Queue calculations
-  const techActiveOrders = branchOrders.filter(
-    (o) =>
-      Number(o.technicianId || o.technician_id) === Number(currentUser.id) &&
-      !['Hoàn tất kỹ thuật', 'Chờ QC', 'Sẵn sàng trả', 'Hoàn tất'].includes(o.status)
-  );
-
-  const techAvailableOrders = branchOrders.filter(
-    (o) =>
-      (!o.technicianId && !o.technician_id) &&
-      ['Đã duyệt', 'Chờ kỹ thuật', 'Tiếp nhận mới'].includes(o.status)
-  );
-
-  // Statistics for Dashboard Cards (Ưu tiên API KPI, fallback linh hoạt theo orders)
-  const activeOrdersCount =
-    kpiData?.active_orders ??
-    branchOrders.filter((o) => !['Hoàn tất', 'Đã hủy'].includes(o.status)).length;
-
-  const todayOrdersCount =
-    kpiData?.intake_today ??
-    branchOrders.filter((o) => {
-      const todayStr = new Intl.DateTimeFormat('vi-VN').format(new Date());
-      return o.date === 'Hôm nay' || o.date === todayStr;
-    }).length;
-
-  const branchRevenue = branchOrders
-    .filter((o) => o.status === 'Hoàn tất')
-    .reduce((sum, o) => sum + (o.price || 0), 0);
-
-  const branchRevenueDisplay =
-    kpiData?.monthly_revenue_formatted ??
-    (branchRevenue >= 1000000
-      ? (branchRevenue / 1000000).toFixed(1).replace('.', ',') + 'tr'
-      : new Intl.NumberFormat('vi-VN').format(branchRevenue) + ' ₫');
-
-  const completedCount =
-    kpiData?.completed_orders ?? branchOrders.filter((o) => o.status === 'Hoàn tất').length;
-
-  const completionRateDisplay =
-    kpiData?.completion_rate !== undefined
-      ? `${kpiData.completion_rate}%`.replace('.', ',')
-      : branchOrders.length > 0
-      ? ((completedCount / branchOrders.length) * 100).toFixed(1).replace('.', ',') + '%'
-      : '0%';
-
-  const inspectingCount =
-    kpiData?.workload_by_status?.inspecting ??
-    branchOrders.filter((o) => o.status === 'Đang kiểm tra').length;
-
-  const waitingApprovalCount =
-    kpiData?.workload_by_status?.waiting_approval ??
-    branchOrders.filter((o) => o.status === 'Chờ khách duyệt').length;
-
-  const repairingCount =
-    kpiData?.workload_by_status?.in_repair ??
-    branchOrders.filter((o) => o.status === 'Đang sửa').length;
-
-  const readyCount =
-    kpiData?.workload_by_status?.ready_for_return ??
-    branchOrders.filter((o) =>
-      ['Chờ QC', 'Sẵn sàng trả', 'Chờ khách nhận'].includes(o.status)
-    ).length;
-
-  // Thuật toán sinh đồ thị doanh thu SVG động (Dynamic SVG Path Generator)
-  const renderRevenueChart = () => {
-    const rawChart: any[] = Array.isArray(kpiData?.revenue_chart) && kpiData.revenue_chart.length > 0
-      ? kpiData.revenue_chart
-      : Array.from({ length: period === '7_days' ? 7 : period === '30_days' ? 30 : 14 }, (_, i) => ({
-          date: `2026-09-${String(i + 1).padStart(2, '0')}`,
-          label: `T${i + 1}`,
-          revenue: 0,
-          completed_orders: 0,
-        }));
-
-    const maxRevRaw = Math.max(...rawChart.map((d) => Number(d.revenue) || 0), 10000000);
-    const maxRev = Math.ceil(maxRevRaw / 10000000) * 10000000 || 10000000;
-    const maxOrders = Math.max(...rawChart.map((d) => Number(d.completed_orders) || 0), 5);
-
-    const points = rawChart.map((item, index) => {
-      const x = 42 + (index / Math.max(rawChart.length - 1, 1)) * 568;
-      const yRev = 158 - ((Number(item.revenue) || 0) / maxRev) * 138;
-      const yOrd = 158 - ((Number(item.completed_orders) || 0) / maxOrders) * 110;
-      return {
-        x,
-        yRev: Math.max(20, Math.min(158, yRev)),
-        yOrd: Math.max(30, Math.min(158, yOrd)),
-        label: item.label || `T${index + 1}`,
-        revenue: item.revenue || 0,
-        orders: item.completed_orders || 0,
-      };
-    });
-
-    const pathArea =
-      `M ${points[0].x} ${points[0].yRev} ` +
-      points.slice(1).map((p) => `L ${p.x.toFixed(1)} ${p.yRev.toFixed(1)}`).join(' ') +
-      ` L ${points[points.length - 1].x} 158 L ${points[0].x} 158 Z`;
-
-    const pathLine =
-      `M ${points[0].x} ${points[0].yRev} ` +
-      points.slice(1).map((p) => `L ${p.x.toFixed(1)} ${p.yRev.toFixed(1)}`).join(' ');
-
-    const pathOrders =
-      `M ${points[0].x} ${points[0].yOrd} ` +
-      points.slice(1).map((p) => `L ${p.x.toFixed(1)} ${p.yOrd.toFixed(1)}`).join(' ');
-
-    const stepLabel = points.length > 20 ? 4 : points.length > 10 ? 2 : 1;
-    const displayedLabels = points.filter((_, idx) => idx % stepLabel === 0 || idx === points.length - 1);
-
-    const formatMil = (v: number) => (v >= 1000000 ? `${Math.round(v / 1000000)}tr` : '0');
-
-    return (
-      <div className="h-[210px] w-full p-2">
-        <svg viewBox="0 0 620 190" preserveAspectRatio="none" className="w-full h-full">
-          <defs>
-            <linearGradient id="chartFill" x1="0" y1="0" x2="0" y2="1">
-              <stop offset="0" stopColor="#4b9b77" stopOpacity="0.22" />
-              <stop offset="1" stopColor="#4b9b77" stopOpacity="0" />
-            </linearGradient>
-          </defs>
-
-          {/* Grid lines */}
-          <line x1="42" y1="20" x2="610" y2="20" stroke="#edf1ee" strokeDasharray="3 5" />
-          <line x1="42" y1="62" x2="610" y2="62" stroke="#edf1ee" strokeDasharray="3 5" />
-          <line x1="42" y1="104" x2="610" y2="104" stroke="#edf1ee" strokeDasharray="3 5" />
-          <line x1="42" y1="146" x2="610" y2="146" stroke="#edf1ee" strokeDasharray="3 5" />
-
-          {/* Y Axis Labels */}
-          <text x="3" y="23" className="text-xs fill-[#97a39c]">{formatMil(maxRev)}</text>
-          <text x="3" y="65" className="text-xs fill-[#97a39c]">{formatMil(maxRev * 0.75)}</text>
-          <text x="3" y="107" className="text-xs fill-[#97a39c]">{formatMil(maxRev * 0.5)}</text>
-          <text x="3" y="149" className="text-xs fill-[#97a39c]">{formatMil(maxRev * 0.25)}</text>
-          <text x="18" y="174" className="text-xs fill-[#97a39c]">0</text>
-
-          {/* Dynamic Fill Area */}
-          <path d={pathArea} fill="url(#chartFill)" />
-
-          {/* Dynamic Stroke Line: Revenue */}
-          <path
-            d={pathLine}
-            fill="none"
-            stroke="#176b58"
-            strokeWidth="2.5"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-          />
-
-          {/* Dynamic Dashed Stroke Line: Completed Orders */}
-          <path
-            d={pathOrders}
-            fill="none"
-            stroke="#bdc9c2"
-            strokeWidth="2"
-            strokeDasharray="4 4"
-          />
-
-          {/* Dynamic X Axis Labels */}
-          {displayedLabels.map((p, i) => (
-            <text
-              key={i}
-              x={Math.max(36, Math.min(594, p.x - 8))}
-              y="178"
-              className="text-xs fill-[#97a39c]"
-            >
-              {p.label}
-            </text>
-          ))}
-        </svg>
-      </div>
-    );
-  };
-
-  /* ========================================================================= */
-  /* ADMIN DASHBOARD VIEW                                                      */
-  /* ========================================================================= */
-  const renderAdminDashboard = () => (
-    <div className="space-y-6">
-      {/* Heading */}
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <div className="text-xs font-bold text-[#819089] uppercase tracking-[1.05px] mb-1">
-            PODSCARE · TỔNG QUAN
-          </div>
-          <h1 className="font-heading font-bold text-2xl md:text-3xl text-[#1c302b] m-0">
-            Chào buổi sáng, {currentUser.name} 👋
-          </h1>
-          <p className="text-sm text-[#7e8d85] mt-1 mb-0">
-            Đây là tình hình vận hành PodsCare hôm nay tại {branch || currentUser.branch}.
-          </p>
-        </div>
-        <div className="flex items-center gap-2.5">
-          <Button
-            variant="secondary"
-            size="md"
-            icon="download"
-            onClick={() => toast('Đang chuẩn bị xuất báo cáo Excel...')}
+  return (
+    <div className="min-h-screen bg-[#f6f8f6] text-[#1c302b] flex flex-col font-sans selection:bg-[#c8eadb] selection:text-[#176b51]">
+      {/* 1. STICKY HEADER */}
+      <header className="sticky top-0 z-50 bg-white/95 backdrop-blur-md border-b border-[#e5ece8] shadow-xs">
+        <div className="max-w-[1280px] mx-auto px-4 sm:px-6 lg:px-8 h-[70px] flex items-center justify-between gap-4">
+          {/* Logo Brand */}
+          <div
+            onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}
+            className="flex items-center gap-3 cursor-pointer select-none"
           >
-            Xuất báo cáo
-          </Button>
-          <Button
-            variant="primary"
-            size="md"
-            icon="plus"
-            onClick={() => setIntakeModalOpen(true)}
-          >
-            Tạo đơn mới
-          </Button>
-        </div>
-      </div>
-
-      {/* Stats Cards */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-3.5">
-        <StatCard
-          label="Đơn đang xử lý"
-          value={activeOrdersCount}
-          icon="clock"
-          foot="↑ 12,8%"
-          trend="up"
-        />
-        <StatCard
-          label="Tiếp nhận hôm nay"
-          value={String(todayOrdersCount).padStart(2, '0')}
-          icon="plus"
-          foot="↑ 8,3%"
-          trend="up"
-        />
-        <StatCard
-          label="Doanh thu tháng"
-          value={branchRevenueDisplay}
-          icon="payments"
-          foot="↑ 18,2%"
-          trend="up"
-        />
-        <StatCard
-          label="Tỷ lệ hoàn thành"
-          value={completionRateDisplay}
-          icon="check"
-          foot="↑ 2,4%"
-          trend="up"
-        />
-      </div>
-
-      {/* Grid: Revenue Chart & Workload breakdown */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-        {/* Chart */}
-        <div className="lg:col-span-2 bg-white rounded-[12px] border border-[#e5ece8] p-5 sm:p-6 shadow-xs">
-          <div className="flex items-center justify-between mb-2">
-            <div>
-              <h3 className="font-heading font-bold text-base text-[#1c302b] m-0">
-                Doanh thu & đơn hàng
-              </h3>
-              <p className="text-xs text-[#8a9891] mt-0.5 mb-0">
-                Tổng quan hoạt động trong tháng 9, 2026
-              </p>
+            <div className="w-10 h-10 rounded-[11px] bg-[#196d52] flex items-center justify-center gap-0.5 shadow-sm">
+              <span className="h-3.5 w-1.5 bg-[#c8eadb] rounded-full transform -rotate-[25deg]" />
+              <span className="h-5 w-1.5 bg-[#c8eadb] rounded-full transform -rotate-[25deg]" />
             </div>
-            <select
-              value={period}
-              onChange={(e) => setPeriod(e.target.value as any)}
-              className="text-xs border border-[#e4eae6] rounded-[7px] px-3 py-1.5 bg-white text-[#55655d] outline-none cursor-pointer"
+            <div>
+              <span className="font-heading font-extrabold text-[22px] tracking-[-1px] text-[#1c302b] block leading-none">
+                podscare
+              </span>
+              <span className="block text-[9px] tracking-[1.3px] text-[#819089] font-bold mt-1 uppercase">
+                REPAIR OPERATING SYSTEM
+              </span>
+            </div>
+          </div>
+
+          {/* Desktop Navigation Links */}
+          <nav className="hidden md:flex items-center gap-8 text-[13px] font-semibold text-[#516059]">
+            <button
+              type="button"
+              onClick={() => scrollToSection('services')}
+              className="hover:text-[#176b51] transition-colors"
             >
-              <option value="14_days">14 ngày gần nhất</option>
-              <option value="7_days">7 ngày gần nhất</option>
-              <option value="30_days">30 ngày gần nhất</option>
-            </select>
+              Dịch vụ Lab
+            </button>
+            <button
+              type="button"
+              onClick={() => scrollToSection('process')}
+              className="hover:text-[#176b51] transition-colors"
+            >
+              Quy trình QC 14 bước
+            </button>
+            <button
+              type="button"
+              onClick={() => scrollToSection('track-widget')}
+              className="hover:text-[#176b51] transition-colors"
+            >
+              Tra cứu đơn
+            </button>
+            <button
+              type="button"
+              onClick={() => scrollToSection('branches')}
+              className="hover:text-[#176b51] transition-colors"
+            >
+              Mạng lưới Chi nhánh
+            </button>
+          </nav>
+
+          {/* Action CTAs */}
+          <div className="hidden sm:flex items-center gap-3">
+            <button
+              type="button"
+              onClick={() => router.push('/track')}
+              className="h-[38px] px-3.5 rounded-[7px] text-[12px] font-semibold text-[#516059] bg-white border border-[#e5ece8] hover:bg-[#f6f8f6] hover:border-[#b7ccc0] transition-colors inline-flex items-center gap-2 shadow-xs"
+            >
+              <Icon name="search" size={15} />
+              <span>Tra cứu đơn</span>
+            </button>
+
+            {isAuthenticated ? (
+              <button
+                type="button"
+                onClick={() => router.push('/dashboard')}
+                className="h-[38px] px-4 rounded-[7px] text-[12px] font-bold text-white bg-[#176b51] hover:bg-[#10583f] border border-[#176b51] transition-colors inline-flex items-center gap-2 shadow-sm"
+              >
+                <Icon name="dashboard" size={15} />
+                <span>Vào trang điều hành →</span>
+              </button>
+            ) : (
+              <button
+                type="button"
+                onClick={() => router.push('/login')}
+                className="h-[38px] px-4 rounded-[7px] text-[12px] font-bold text-white bg-[#176b51] hover:bg-[#10583f] border border-[#176b51] transition-colors inline-flex items-center gap-2 shadow-sm"
+              >
+                <span>Vào ca làm việc →</span>
+              </button>
+            )}
           </div>
-          {renderRevenueChart()}
-          <div className="flex items-center gap-5 text-xs text-[#808f87] px-2 pt-3 border-t border-[#f0f3f1]">
-            <span className="flex items-center gap-1.5">
-              <i className="w-2.5 h-2.5 rounded-full bg-[#176b58]" /> Doanh thu
-            </span>
-            <span className="flex items-center gap-1.5">
-              <i className="w-2.5 h-2.5 rounded-full bg-[#bdc9c2]" /> Đơn hoàn tất
-            </span>
-          </div>
+
+          {/* Mobile Menu Button */}
+          <button
+            type="button"
+            onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
+            className="md:hidden p-2 rounded-[8px] border border-[#e5ece8] text-[#516059] hover:bg-[#f6f8f6]"
+            aria-label="Toggle menu"
+          >
+            <Icon name={mobileMenuOpen ? 'close' : 'menu'} size={20} />
+          </button>
         </div>
 
-        {/* Workload */}
-        <div className="bg-white rounded-[12px] border border-[#e5ece8] p-5 sm:p-6 shadow-xs flex flex-col justify-between">
-          <div className="flex items-center justify-between mb-3">
-            <div>
-              <h3 className="font-heading font-bold text-base text-[#1c302b] m-0">
-                Đơn theo trạng thái
-              </h3>
-              <p className="text-xs text-[#8a9891] mt-0.5 mb-0">
-                Phân bổ {branchOrders.length} đơn trong hệ thống
+        {/* Mobile Dropdown Menu */}
+        {mobileMenuOpen && (
+          <div className="md:hidden bg-white border-b border-[#e5ece8] px-4 pt-3 pb-5 space-y-3">
+            <button
+              type="button"
+              onClick={() => scrollToSection('services')}
+              className="block w-full text-left py-2 text-sm font-semibold text-[#516059]"
+            >
+              Dịch vụ Lab
+            </button>
+            <button
+              type="button"
+              onClick={() => scrollToSection('process')}
+              className="block w-full text-left py-2 text-sm font-semibold text-[#516059]"
+            >
+              Quy trình QC 14 bước
+            </button>
+            <button
+              type="button"
+              onClick={() => scrollToSection('track-widget')}
+              className="block w-full text-left py-2 text-sm font-semibold text-[#516059]"
+            >
+              Tra cứu đơn hàng
+            </button>
+            <button
+              type="button"
+              onClick={() => scrollToSection('branches')}
+              className="block w-full text-left py-2 text-sm font-semibold text-[#516059]"
+            >
+              Mạng lưới Chi nhánh
+            </button>
+            <div className="pt-3 border-t border-[#f0f3f1] flex flex-col gap-2">
+              <button
+                type="button"
+                onClick={() => {
+                  setMobileMenuOpen(false);
+                  router.push('/track');
+                }}
+                className="w-full h-10 rounded-[7px] border border-[#e5ece8] text-sm font-semibold text-[#516059] flex items-center justify-center gap-2"
+              >
+                <Icon name="search" size={16} />
+                <span>Tra cứu đơn hàng</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setMobileMenuOpen(false);
+                  router.push(isAuthenticated ? '/dashboard' : '/login');
+                }}
+                className="w-full h-10 rounded-[7px] bg-[#176b51] text-white text-sm font-bold flex items-center justify-center gap-2"
+              >
+                <span>{isAuthenticated ? 'Vào trang điều hành →' : 'Vào ca làm việc →'}</span>
+              </button>
+            </div>
+          </div>
+        )}
+      </header>
+
+      {/* 2. HERO SECTION */}
+      <section className="relative pt-12 pb-16 md:pt-20 md:pb-24 overflow-hidden border-b border-[#e5ece8]">
+        <div className="max-w-[1280px] mx-auto px-4 sm:px-6 lg:px-8">
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-12 lg:gap-8 items-center">
+            {/* Left Content Column */}
+            <div className="lg:col-span-7">
+              {/* Eyebrow Badge */}
+              <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-[20px] bg-[#e9f4ef] border border-[#c8eadb] text-[#176b51] text-[11px] font-bold tracking-[1.1px] uppercase mb-6 shadow-xs">
+                <span className="w-2 h-2 rounded-full bg-[#176b51] animate-pulse" />
+                HỆ ĐIỀU HÀNH SỬA CHỮA THIẾT BỊ ÂM THANH & APPLE
+              </div>
+
+              {/* Main Headline */}
+              <h1 className="font-heading font-extrabold text-[34px] sm:text-[44px] md:text-[50px] leading-[1.15] tracking-[-1.5px] text-[#17231f] mb-6">
+                Chuẩn Mực Phòng Lab <br />
+                <span className="text-[#176b51]">Phục Hồi Âm Thanh</span> & Phần Cứng Apple
+              </h1>
+
+              {/* Core Value Proposition */}
+              <p className="text-[15px] sm:text-[16px] text-[#55665f] leading-relaxed mb-8 max-w-[620px]">
+                Quy trình vận hành khép kín chuẩn lab kỹ thuật y sinh: Đo phổ tần âm học chuyên dụng,
+                bóc tách linh kiện định danh không vết mở, và kiểm định chất lượng nghiêm ngặt 14 bước
+                trước khi xuất xưởng.
               </p>
-            </div>
-            <Button
-              variant="ghost"
-              size="sm"
-              icon="arrow"
-              onClick={() => router.push('/repairs')}
-            />
-          </div>
 
-          <div className="space-y-4">
-            <div className="grid grid-cols-[30px_1fr_30px] gap-3 items-center">
-              <div className="w-[30px] h-[30px] rounded-[8px] bg-[#edf5f0] text-[#478065] grid place-items-center">
-                <Icon name="search" size={15} />
-              </div>
-              <div>
-                <div className="flex justify-between text-xs mb-1">
-                  <span className="font-medium text-[#2d3d35]">Đang kiểm tra</span>
-                  <span className="text-[#7c8982]">{String(inspectingCount).padStart(2, '0')} đơn</span>
-                </div>
-                <div className="h-2 bg-[#f0f3f1] rounded-full overflow-hidden">
-                  <div
-                    className="h-full bg-[#4d9877] rounded-full"
-                    style={{ width: `${branchOrders.length > 0 ? (inspectingCount / branchOrders.length) * 100 : 0}%` }}
-                  />
-                </div>
-              </div>
-              <b className="text-xs text-right text-[#1c302b]">{inspectingCount}</b>
-            </div>
-
-            <div className="grid grid-cols-[30px_1fr_30px] gap-3 items-center">
-              <div className="w-[30px] h-[30px] rounded-[8px] bg-[#fbf3e5] text-[#a4722f] grid place-items-center">
-                <Icon name="money" size={15} />
-              </div>
-              <div>
-                <div className="flex justify-between text-xs mb-1">
-                  <span className="font-medium text-[#2d3d35]">Chờ khách duyệt</span>
-                  <span className="text-[#7c8982]">{String(waitingApprovalCount).padStart(2, '0')} đơn</span>
-                </div>
-                <div className="h-2 bg-[#f0f3f1] rounded-full overflow-hidden">
-                  <div
-                    className="h-full bg-[#d2a25d] rounded-full"
-                    style={{ width: `${branchOrders.length > 0 ? (waitingApprovalCount / branchOrders.length) * 100 : 0}%` }}
-                  />
-                </div>
-              </div>
-              <b className="text-xs text-right text-[#1c302b]">{waitingApprovalCount}</b>
-            </div>
-
-            <div className="grid grid-cols-[30px_1fr_30px] gap-3 items-center">
-              <div className="w-[30px] h-[30px] rounded-[8px] bg-[#edf4f7] text-[#477b98] grid place-items-center">
-                <Icon name="wrench" size={15} />
-              </div>
-              <div>
-                <div className="flex justify-between text-xs mb-1">
-                  <span className="font-medium text-[#2d3d35]">Đang sửa chữa</span>
-                  <span className="text-[#7c8982]">{String(repairingCount).padStart(2, '0')} đơn</span>
-                </div>
-                <div className="h-2 bg-[#f0f3f1] rounded-full overflow-hidden">
-                  <div
-                    className="h-full bg-[#477b98] rounded-full"
-                    style={{ width: `${branchOrders.length > 0 ? (repairingCount / branchOrders.length) * 100 : 0}%` }}
-                  />
-                </div>
-              </div>
-              <b className="text-xs text-right text-[#1c302b]">{repairingCount}</b>
-            </div>
-
-            <div className="grid grid-cols-[30px_1fr_30px] gap-3 items-center">
-              <div className="w-[30px] h-[30px] rounded-[8px] bg-[#eaf4ef] text-[#28805e] grid place-items-center">
-                <Icon name="check" size={15} />
-              </div>
-              <div>
-                <div className="flex justify-between text-xs mb-1">
-                  <span className="font-medium text-[#2d3d35]">Chờ QC / trả máy</span>
-                  <span className="text-[#7c8982]">{String(readyCount).padStart(2, '0')} đơn</span>
-                </div>
-                <div className="h-2 bg-[#f0f3f1] rounded-full overflow-hidden">
-                  <div
-                    className="h-full bg-[#28805e] rounded-full"
-                    style={{ width: `${branchOrders.length > 0 ? (readyCount / branchOrders.length) * 100 : 0}%` }}
-                  />
-                </div>
-              </div>
-              <b className="text-xs text-right text-[#1c302b]">{readyCount}</b>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* Recent Orders table preview */}
-      <div className="bg-white rounded-[12px] border border-[#e5ece8] p-5 sm:p-6 shadow-xs">
-        <div className="flex items-center justify-between mb-4">
-          <div className="flex items-center gap-3">
-            <h3 className="font-heading font-bold text-base text-[#1c302b] m-0">
-              Đơn sửa chữa gần đây
-            </h3>
-            <span className="text-xs text-[#7e8e86] bg-[#f0f4f2] px-2.5 py-0.5 rounded-[10px] font-medium">
-              {branchOrders.slice(0, 5).length} đơn mới
-            </span>
-          </div>
-          <Button variant="secondary" size="sm" onClick={() => router.push('/repairs')}>
-            Xem tất cả đơn ↗
-          </Button>
-        </div>
-
-        <div className="overflow-x-auto -mx-5 sm:mx-0">
-          <table className="w-full text-left border-collapse min-w-[700px]">
-            <thead>
-              <tr className="border-y border-[#f0f3f1] bg-[#fafbfa] text-xs font-bold text-[#809088] uppercase tracking-wider h-9">
-                <th className="px-4">Mã đơn</th>
-                <th className="px-4">Khách hàng</th>
-                <th className="px-4">Thiết bị</th>
-                <th className="px-4">Trạng thái</th>
-                <th className="px-4">Chi phí</th>
-                <th className="px-4">Kỹ thuật</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-[#f1f3f2] text-sm">
-              {branchOrders.slice(0, 5).map((o, i) => (
-                <tr
-                  key={o.id}
-                  onClick={() => router.push('/repairs')}
-                  className="h-12 hover:bg-[#fafcfa] cursor-pointer transition-colors"
+              {/* Dual Action CTAs */}
+              <div className="flex flex-wrap items-center gap-3 sm:gap-4 mb-10">
+                <button
+                  type="button"
+                  onClick={() => router.push(isAuthenticated ? '/dashboard' : '/login')}
+                  className="h-[48px] px-6 rounded-[8px] bg-[#176b51] hover:bg-[#10583f] text-white font-heading font-bold text-sm tracking-wide transition-all shadow-sm hover:shadow inline-flex items-center gap-2.5"
                 >
-                  <td className="px-4 font-mono font-bold text-[#176b58]">{o.id}</td>
-                  <td className="px-4">
-                    <div className="flex items-center gap-2">
-                      <Avatar initials={o.name} variant={(i % 4) as any} size="sm" />
-                      <span className="font-semibold text-[#273730]">{o.name}</span>
+                  <Icon name="arrow" size={17} />
+                  <span>{isAuthenticated ? 'Vào trang điều hành →' : 'Bắt đầu ca làm việc →'}</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => scrollToSection('track-widget')}
+                  className="h-[48px] px-6 rounded-[8px] bg-white hover:bg-[#fafcfb] text-[#1c302b] border border-[#e2e9e4] hover:border-[#b7ccc0] font-semibold text-sm transition-all shadow-xs inline-flex items-center gap-2"
+                >
+                  <Icon name="search" size={17} />
+                  <span>Tra cứu tiến độ sửa chữa</span>
+                </button>
+              </div>
+
+              {/* Credibility Stats Bar */}
+              <div className="pt-8 border-t border-[#e9eeeb] grid grid-cols-2 sm:grid-cols-4 gap-6">
+                <div>
+                  <b className="block font-heading font-extrabold text-[26px] tracking-[-1px] text-[#176b51]">
+                    12.500+
+                  </b>
+                  <span className="block text-xs text-[#758780] font-medium mt-0.5">
+                    Máy đã phục hồi chuẩn
+                  </span>
+                </div>
+                <div>
+                  <b className="block font-heading font-extrabold text-[26px] tracking-[-1px] text-[#176b51]">
+                    14 Bước
+                  </b>
+                  <span className="block text-xs text-[#758780] font-medium mt-0.5">
+                    Kiểm định QC âm học
+                  </span>
+                </div>
+                <div>
+                  <b className="block font-heading font-extrabold text-[26px] tracking-[-1px] text-[#176b51]">
+                    100%
+                  </b>
+                  <span className="block text-xs text-[#758780] font-medium mt-0.5">
+                    Linh kiện định danh
+                  </span>
+                </div>
+                <div>
+                  <b className="block font-heading font-extrabold text-[26px] tracking-[-1px] text-[#176b51]">
+                    &lt; 2 Giờ
+                  </b>
+                  <span className="block text-xs text-[#758780] font-medium mt-0.5">
+                    SLA xử lý tiêu chuẩn
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            {/* Right Column: Visual Mockup Card (Live Acoustic & Hardware Inspection Console) */}
+            <div className="lg:col-span-5">
+              <div className="bg-white rounded-[14px] border border-[#e5ece8] shadow-[0_12px_38px_rgba(28,49,34,0.06)] p-5 sm:p-6 relative">
+                {/* Header Mockup */}
+                <div className="flex items-center justify-between pb-4 border-b border-[#edf1ee] mb-4">
+                  <div className="flex items-center gap-2.5">
+                    <div className="w-9 h-9 rounded-[9px] bg-[#e9f4ef] text-[#176b51] grid place-items-center">
+                      <Icon name="headphones" size={18} />
                     </div>
-                  </td>
-                  <td className="px-4 font-medium text-[#4b5b53]">{o.device}</td>
-                  <td className="px-4">
-                    <StatusTag label={o.status} type={o.statusType} />
-                  </td>
-                  <td className="px-4 font-semibold text-[#405048]">{moneyFormatted(o.price)}</td>
-                  <td className="px-4 text-[#667770]">{o.tech}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </div>
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <b className="text-sm font-bold text-[#1c302b]">AirPods Pro (Gen 2)</b>
+                        <span className="text-[10px] font-mono px-1.5 py-0.5 rounded font-bold bg-[#edf2ef] text-[#4a5852]">
+                          A2931
+                        </span>
+                      </div>
+                      <span className="text-xs text-[#819089]">Mã phiếu: PC-2024-8902 · Quận 1</span>
+                    </div>
+                  </div>
+                  <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-[20px] text-[10px] font-bold text-[#28805e] bg-[#eaf5ef] border border-[#cbe6d7]">
+                    <span className="w-1.5 h-1.5 rounded-full bg-[#28805e]" />
+                    QC ĐẠT 14/14
+                  </span>
+                </div>
 
-      {/* Quick shortcuts */}
-      <div className="bg-white rounded-[12px] border border-[#e5ece8] p-5 sm:p-6 shadow-xs">
-        <h3 className="font-heading font-bold text-base text-[#1c302b] mb-4">
-          Thao tác nhanh
-        </h3>
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-          <button
-            onClick={() => setIntakeModalOpen(true)}
-            className="p-3.5 rounded-[10px] border border-[#edf1ee] bg-white hover:bg-[#f7faf8] hover:border-[#b4d6c4] flex items-center gap-3 text-left transition-all"
-          >
-            <div className="w-9 h-9 rounded-[8px] bg-[#eaf4ef] text-[#176b58] grid place-items-center flex-none">
-              <Icon name="plus" size={18} />
-            </div>
-            <div>
-              <b className="text-sm text-[#1c302b] block font-bold">Tạo đơn mới</b>
-              <small className="text-xs text-[#87968f]">Tiếp nhận thiết bị</small>
-            </div>
-          </button>
+                {/* Acoustic Spectrum Chart Simulation */}
+                <div className="mb-4">
+                  <div className="flex items-center justify-between text-xs mb-2">
+                    <span className="font-bold text-[#44554e] flex items-center gap-1.5">
+                      <Icon name="volume" size={14} className="text-[#176b51]" />
+                      Đo Phổ Tần Số Âm Học (20Hz - 20kHz)
+                    </span>
+                    <span className="text-[10px] text-[#819089] font-mono">Độ lệch L/R: 0.1 dB</span>
+                  </div>
 
-          <button
-            onClick={() => router.push('/qc')}
-            className="p-3.5 rounded-[10px] border border-[#edf1ee] bg-white hover:bg-[#f7faf8] hover:border-[#b4d6c4] flex items-center gap-3 text-left transition-all"
-          >
-            <div className="w-9 h-9 rounded-[8px] bg-[#eaf4ef] text-[#176b58] grid place-items-center flex-none">
-              <Icon name="check" size={18} />
-            </div>
-            <div>
-              <b className="text-sm text-[#1c302b] block font-bold">Kiểm định QC</b>
-              <small className="text-xs text-[#87968f]">Thẩm định chất lượng</small>
-            </div>
-          </button>
+                  <div className="h-32 w-full bg-[#f9fbf9] rounded-[8px] border border-[#eef3f0] p-2 relative flex flex-col justify-end">
+                    {/* SVG Graphic Curves */}
+                    <svg
+                      viewBox="0 0 300 100"
+                      className="w-full h-full overflow-visible"
+                      preserveAspectRatio="none"
+                    >
+                      {/* Grid Lines */}
+                      <line x1="0" y1="25" x2="300" y2="25" stroke="#e5ece8" strokeDasharray="3 3" />
+                      <line x1="0" y1="50" x2="300" y2="50" stroke="#e5ece8" strokeDasharray="3 3" />
+                      <line x1="0" y1="75" x2="300" y2="75" stroke="#e5ece8" strokeDasharray="3 3" />
 
-          <button
-            onClick={() => router.push('/track')}
-            className="p-3.5 rounded-[10px] border border-[#edf1ee] bg-white hover:bg-[#f7faf8] hover:border-[#b4d6c4] flex items-center gap-3 text-left transition-all"
-          >
-            <div className="w-9 h-9 rounded-[8px] bg-[#eaf4ef] text-[#176b58] grid place-items-center flex-none">
-              <Icon name="search" size={18} />
-            </div>
-            <div>
-              <b className="text-sm text-[#1c302b] block font-bold">Tra cứu đơn</b>
-              <small className="text-xs text-[#87968f]">Dành cho khách hàng</small>
-            </div>
-          </button>
+                      {/* Reference Target Curve (Muted) */}
+                      <path
+                        d="M 0 65 Q 50 45, 100 50 T 200 40 T 300 45"
+                        fill="none"
+                        stroke="#b5c7bd"
+                        strokeWidth="1.5"
+                        strokeDasharray="4 2"
+                      />
 
-          <button
-            onClick={() => router.push('/devices')}
-            className="p-3.5 rounded-[10px] border border-[#edf1ee] bg-white hover:bg-[#f7faf8] hover:border-[#b4d6c4] flex items-center gap-3 text-left transition-all"
-          >
-            <div className="w-9 h-9 rounded-[8px] bg-[#eaf4ef] text-[#176b58] grid place-items-center flex-none">
-              <Icon name="device" size={18} />
-            </div>
-            <div>
-              <b className="text-sm text-[#1c302b] block font-bold">Cấu hình máy</b>
-              <small className="text-xs text-[#87968f]">Checklist động</small>
-            </div>
-          </button>
-        </div>
-      </div>
-    </div>
-  );
+                      {/* Measured Frequency Response (Calm Jade Solid) */}
+                      <path
+                        d="M 0 63 Q 50 44, 100 49 T 200 39 T 300 44"
+                        fill="none"
+                        stroke="#176b51"
+                        strokeWidth="2.5"
+                      />
 
-  /* ========================================================================= */
-  /* CSKH DASHBOARD VIEW                                                       */
-  /* ========================================================================= */
-  const renderCskhDashboard = () => (
-    <div className="space-y-6">
-      {/* Head */}
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <div className="text-xs font-bold text-[#819089] uppercase tracking-[1.05px] mb-1">
-            CSKH · WORKSPACE
+                      {/* Accent Points */}
+                      <circle cx="100" cy="49" r="3.5" fill="#176b51" />
+                      <circle cx="200" cy="39" r="3.5" fill="#176b51" />
+                    </svg>
+
+                    <div className="flex justify-between text-[9px] text-[#8fa098] font-mono pt-1">
+                      <span>20 Hz</span>
+                      <span>250 Hz</span>
+                      <span>1 kHz</span>
+                      <span>4 kHz</span>
+                      <span>20 kHz</span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* 4-Item Diagnostic Check Grid */}
+                <div className="grid grid-cols-2 gap-2 text-xs mb-4">
+                  <div className="p-2.5 rounded-[8px] bg-[#f8faf8] border border-[#edf2ef]">
+                    <span className="text-[10px] text-[#7d8e86] block">Khử ồn chủ động (ANC)</span>
+                    <strong className="text-[#1c302b] font-bold text-[12px] flex items-center gap-1 mt-0.5">
+                      <Icon name="check" size={13} className="text-[#176b51]" /> -32 dB (Chuẩn Lab)
+                    </strong>
+                  </div>
+                  <div className="p-2.5 rounded-[8px] bg-[#f8faf8] border border-[#edf2ef]">
+                    <span className="text-[10px] text-[#7d8e86] block">Dung lượng Cell Pin</span>
+                    <strong className="text-[#1c302b] font-bold text-[12px] flex items-center gap-1 mt-0.5">
+                      <Icon name="check" size={13} className="text-[#176b51]" /> 100% Sức khỏe Pin
+                    </strong>
+                  </div>
+                  <div className="p-2.5 rounded-[8px] bg-[#f8faf8] border border-[#edf2ef]">
+                    <span className="text-[10px] text-[#7d8e86] block">Áp suất buồng âm</span>
+                    <strong className="text-[#1c302b] font-bold text-[12px] flex items-center gap-1 mt-0.5">
+                      <Icon name="check" size={13} className="text-[#176b51]" /> Kín khí đạt 100%
+                    </strong>
+                  </div>
+                  <div className="p-2.5 rounded-[8px] bg-[#f8faf8] border border-[#edf2ef]">
+                    <span className="text-[10px] text-[#7d8e86] block">Microphone Beamforming</span>
+                    <strong className="text-[#1c302b] font-bold text-[12px] flex items-center gap-1 mt-0.5">
+                      <Icon name="check" size={13} className="text-[#176b51]" /> SNR 68 dB rõ nét
+                    </strong>
+                  </div>
+                </div>
+
+                {/* Lab Certificate Footnote */}
+                <div className="pt-3 border-t border-[#edf1ee] flex items-center justify-between text-[11px] text-[#778880]">
+                  <div className="flex items-center gap-2">
+                    <span className="w-2 h-2 rounded-full bg-[#176b51]" />
+                    <span>Chứng nhận bởi Trạm QC · Chi nhánh Q1</span>
+                  </div>
+                  <span className="font-mono text-[10px] text-[#176b51] font-bold">ESD SAFE</span>
+                </div>
+              </div>
+            </div>
           </div>
-          <h1 className="font-heading font-bold text-2xl md:text-3xl text-[#1c302b] m-0">
-            Chào buổi sáng, {currentUser.name} 👋
-          </h1>
-          <p className="text-sm text-[#7e8d85] mt-1 mb-0">
-            Bảng công việc CSKH · Tập trung tiếp nhận, báo giá và chăm sóc khách hàng.
-          </p>
         </div>
-        <Button
-          variant="primary"
-          size="md"
-          icon="plus"
-          onClick={() => setIntakeModalOpen(true)}
-        >
-          Tiếp nhận khách mới
-        </Button>
-      </div>
+      </section>
 
-      {/* CSKH Stats */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-3.5">
-        <StatCard
-          label="Tiếp nhận hôm nay"
-          value={String(todayOrdersCount).padStart(2, '0')}
-          icon="plus"
-          foot={`${branchOrders.length} đơn tại chi nhánh`}
-        />
-        <StatCard
-          label="Chờ khách phản hồi"
-          value={String(waitingApprovalCount).padStart(2, '0')}
-          icon="clock"
-          foot="Cần nhắc khách duyệt"
-          trend="down"
-        />
-        <StatCard
-          label="Cần cập nhật tiến độ"
-          value={String(repairingCount).padStart(2, '0')}
-          icon="arrow"
-          foot="Đơn đang trong ca sửa"
-        />
-        <StatCard
-          label="Máy chưa hoàn tất"
-          value={String(cskhPendingOrders.length)}
-          icon="alert"
-          foot="Bấm để mở danh sách"
-          trend="down"
-          onClick={() => setCskhPendingModalOpen(true)}
-        />
-      </div>
-
-      {/* Panel: "Máy còn cần xử lý hôm nay" */}
-      <div className="bg-white rounded-[12px] border border-[#e5ece8] p-5 sm:p-6 shadow-xs">
-        <div className="flex items-center justify-between mb-4">
-          <div>
-            <h3 className="font-heading font-bold text-base text-[#1c302b] m-0">
-              Máy còn cần xử lý hôm nay
-            </h3>
-            <p className="text-xs text-[#8a9891] mt-0.5 mb-0">
-              Các phiếu chưa hoàn tất, xếp theo thứ tự ưu tiên việc cần làm tiếp theo.
+      {/* 3. SHOWCASE DỊCH VỤ CHUYÊN SÂU */}
+      <section id="services" className="py-16 md:py-24 bg-white border-b border-[#e5ece8]">
+        <div className="max-w-[1280px] mx-auto px-4 sm:px-6 lg:px-8">
+          <div className="text-center max-w-[700px] mx-auto mb-14">
+            <span className="text-[11px] font-bold tracking-[1.2px] text-[#176b51] uppercase bg-[#e9f4ef] px-3 py-1 rounded-[20px] inline-block mb-3">
+              DANH MỤC PHỤC HỒI CHUYÊN SÂU
+            </span>
+            <h2 className="font-heading font-extrabold text-[28px] sm:text-[36px] tracking-[-1px] text-[#17231f]">
+              Chuyên Gia Hàng Đầu Về Thiết Bị Âm Thanh & Apple
+            </h2>
+            <p className="text-sm sm:text-base text-[#65766f] mt-3">
+              Mỗi thiết bị đều được áp dụng quy trình vi phẫu phòng sạch, bảo tồn tối đa ngoại quan gốc và phục hồi hoàn toàn thông số âm học của nhà sản xuất.
             </p>
           </div>
-          <span className="text-xs font-bold text-[#176b58] bg-[#eaf4ef] px-3 py-1 rounded-[10px]">
-            {cskhPendingOrders.length} máy
-          </span>
-        </div>
 
-        <div className="divide-y divide-[#edf1ee]">
-          {cskhPendingOrders.slice(0, 6).map((o) => (
-            <div
-              key={o.id}
-              onClick={() => router.push('/repairs')}
-              className="py-3.5 flex flex-wrap items-center justify-between gap-3 hover:bg-[#fafcfa] cursor-pointer transition-colors"
-            >
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-[10px] bg-[#eaf4ef] text-[#176b58] grid place-items-center flex-none">
-                  <Icon name="device" size={19} />
-                </div>
-                <div>
-                  <div className="flex items-center gap-2">
-                    <b className="text-sm text-[#1c302b]">{o.device}</b>
-                    <span className="font-mono text-xs text-[#176b58] font-bold">{o.id}</span>
-                  </div>
-                  <div className="text-xs text-[#7e8e86] mt-0.5">
-                    {o.name} · <span className="text-[#495952]">{o.issue}</span>
-                  </div>
-                  <div className="text-xs text-[#287452] font-semibold mt-1">
-                    Việc tiếp theo: <b>{getCskhNextAction(o)}</b>
-                  </div>
-                </div>
-              </div>
-
-              <div className="flex items-center gap-2.5">
-                <StatusTag label={o.status} type={o.statusType} />
-                <Button variant="secondary" size="sm">
-                  Mở phiếu ↗
-                </Button>
-              </div>
-            </div>
-          ))}
-        </div>
-      </div>
-    </div>
-  );
-
-  /* ========================================================================= */
-  /* TECH DASHBOARD VIEW                                                       */
-  /* ========================================================================= */
-  const renderTechDashboard = () => (
-    <div className="space-y-6">
-      {/* Head */}
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <div className="text-xs font-bold text-[#819089] uppercase tracking-[1.05px] mb-1">
-            TECHNICIAN OS
-          </div>
-          <h1 className="font-heading font-bold text-2xl md:text-3xl text-[#1c302b] m-0">
-            Không gian kỹ thuật
-          </h1>
-          <p className="text-sm text-[#7e8d85] mt-1 mb-0">
-            Xin chào {currentUser.name} · Đây là danh sách việc cần xử lý trong ca hôm nay.
-          </p>
-        </div>
-        <Button variant="primary" size="md" icon="wrench" onClick={() => router.push('/tech')}>
-          Mở toàn bộ hàng đợi KTV ↗
-        </Button>
-      </div>
-
-      {/* Tech Stats */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-3.5">
-        <StatCard
-          label="Đơn đang phụ trách"
-          value={String(techActiveOrders.length).padStart(2, '0')}
-          icon="wrench"
-          foot="Trong ca hiện tại"
-        />
-        <StatCard
-          label="Đơn chờ nhận"
-          value={String(techAvailableOrders.length).padStart(2, '0')}
-          icon="plus"
-          foot="Có phiếu CSKH kèm theo"
-        />
-        <StatCard
-          label="Đang sửa chữa"
-          value={String(
-            techActiveOrders.filter((o) => o.status === 'Đang sửa').length
-          ).padStart(2, '0')}
-          icon="clock"
-          foot="Cập nhật theo phiếu"
-        />
-        <StatCard
-          label="Đã sửa xong hôm nay"
-          value={String(
-            branchOrders.filter(
-              (o) =>
-                Number(o.technicianId || o.technician_id) === Number(currentUser.id) &&
-                ['Chờ QC', 'Sẵn sàng trả', 'Hoàn tất'].includes(o.status)
-            ).length
-          ).padStart(2, '0')}
-          icon="check"
-          foot="Chờ QC tiếp nhận"
-        />
-      </div>
-
-      {/* Section: Đơn mới chờ nhận preview */}
-      <div className="bg-white rounded-[12px] border border-[#e5ece8] p-5 sm:p-6 shadow-xs">
-        <div className="flex items-center justify-between mb-4">
-          <h3 className="font-heading font-bold text-base text-[#1c302b] m-0">
-            Đơn mới sẵn sàng nhận ({techAvailableOrders.length})
-          </h3>
-          <Button variant="secondary" size="sm" onClick={() => router.push('/tech')}>
-            Xem tất cả ↗
-          </Button>
-        </div>
-
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3.5">
-          {techAvailableOrders.slice(0, 3).map((o) => (
-            <div
-              key={o.id}
-              className="bg-white border border-[#e5ece8] rounded-[10px] p-4 flex flex-col justify-between"
-            >
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6 sm:gap-8">
+            {/* Service 1: AirPods & TWS */}
+            <div className="rounded-[12px] border border-[#e5ece8] bg-[#fbfdfb] p-6 hover:border-[#176b51]/40 transition-all flex flex-col justify-between shadow-xs">
               <div>
-                <div className="flex justify-between items-center mb-1.5">
-                  <span className="font-mono font-bold text-xs text-[#176b58]">{o.id}</span>
-                  <StatusTag label={o.status} type={o.statusType} />
+                <div className="w-12 h-12 rounded-[10px] bg-[#e9f4ef] text-[#176b51] grid place-items-center mb-5">
+                  <Icon name="headphones" size={24} />
                 </div>
-                <b className="font-heading text-sm text-[#1c302b] block font-bold">{o.device}</b>
-                <p className="text-xs text-[#708078] my-2">{o.issue}</p>
+                <h3 className="font-heading font-bold text-[18px] text-[#17231f] mb-2">
+                  AirPods & Tai nghe TWS
+                </h3>
+                <p className="text-xs text-[#6e7f77] leading-relaxed mb-4">
+                  Chuyên trị các ca khó trên AirPods 2, 3, Pro 1/2 và các dòng True Wireless cao cấp.
+                </p>
+                <ul className="space-y-2 text-xs text-[#43534c] mb-6">
+                  <li className="flex items-start gap-2">
+                    <span className="text-[#176b51] font-bold">✓</span>
+                    <span>Thay pin vi mô cell zin không để lại vết mở vỏ nhựa</span>
+                  </li>
+                  <li className="flex items-start gap-2">
+                    <span className="text-[#176b51] font-bold">✓</span>
+                    <span>Sửa rè loa, nghẹt màng loa, mất cân bằng âm lượng L/R</span>
+                  </li>
+                  <li className="flex items-start gap-2">
+                    <span className="text-[#176b51] font-bold">✓</span>
+                    <span>Xử lý case sạc không vào điện, phục hồi bản lề lỏng</span>
+                  </li>
+                  <li className="flex items-start gap-2">
+                    <span className="text-[#176b51] font-bold">✓</span>
+                    <span>Hiệu chỉnh chip ANC chống ồn chủ động & âm thanh không gian</span>
+                  </li>
+                </ul>
               </div>
-              <Button
-                variant="primary"
-                size="sm"
-                className="w-full mt-2"
-                onClick={async () => {
-                  try {
-                    await repairService.transition(o.id, { transition: 'assigned' });
-                    if (invalidateOrders) await invalidateOrders();
-                  } catch {
-                    const updated: RepairOrder = {
-                      ...o,
-                      tech: currentUser.name,
-                      status: 'Đã nhận đơn',
-                      statusType: 'progress',
-                    };
-                    updateOrder(updated);
-                  }
-                  toast(`Bạn đã nhận đơn ${o.id}`, 'success');
-                }}
-              >
-                Nhận đơn →
-              </Button>
+              <div className="pt-4 border-t border-[#edf2ee] flex items-center justify-between text-xs">
+                <span className="text-[#7d8f87]">Thời gian: <strong>45 - 90 phút</strong></span>
+                <span className="text-[#176b51] font-bold">Bảo hành 6 - 12 tháng</span>
+              </div>
             </div>
-          ))}
-        </div>
-      </div>
-    </div>
-  );
 
-  return (
-    <AppShell crumbName={role === 'admin' ? 'Tổng quan' : role === 'cskh' ? 'Bàn CSKH' : 'Kỹ thuật'}>
-      {role === 'cskh'
-        ? renderCskhDashboard()
-        : role === 'tech' || role === 'technician'
-        ? renderTechDashboard()
-        : renderAdminDashboard()}
+            {/* Service 2: Apple Watch & Smartwatch */}
+            <div className="rounded-[12px] border border-[#e5ece8] bg-[#fbfdfb] p-6 hover:border-[#176b51]/40 transition-all flex flex-col justify-between shadow-xs">
+              <div>
+                <div className="w-12 h-12 rounded-[10px] bg-[#e9f4ef] text-[#176b51] grid place-items-center mb-5">
+                  <Icon name="watch" size={24} />
+                </div>
+                <h3 className="font-heading font-bold text-[18px] text-[#17231f] mb-2">
+                  Apple Watch & Smartwatch
+                </h3>
+                <p className="text-xs text-[#6e7f77] leading-relaxed mb-4">
+                  Phục hồi Apple Watch Series 4 đến Series 9 & Ultra với chuẩn kháng nước nhà máy.
+                </p>
+                <ul className="space-y-2 text-xs text-[#43534c] mb-6">
+                  <li className="flex items-start gap-2">
+                    <span className="text-[#176b51] font-bold">✓</span>
+                    <span>Ép kính cong Retina OLED bằng máy hút chân không chuyên dụng</span>
+                  </li>
+                  <li className="flex items-start gap-2">
+                    <span className="text-[#176b51] font-bold">✓</span>
+                    <span>Thay pin dung lượng cao, dán keo gioăng chịu áp suất nước</span>
+                  </li>
+                  <li className="flex items-start gap-2">
+                    <span className="text-[#176b51] font-bold">✓</span>
+                    <span>Sửa lỗi sạc không nhận, nóng máy, liệt phím Digital Crown</span>
+                  </li>
+                  <li className="flex items-start gap-2">
+                    <span className="text-[#176b51] font-bold">✓</span>
+                    <span>Phục hồi cảm biến nhịp tim và nắp lưng gốm Ceramic</span>
+                  </li>
+                </ul>
+              </div>
+              <div className="pt-4 border-t border-[#edf2ee] flex items-center justify-between text-xs">
+                <span className="text-[#7d8f87]">Thời gian: <strong>60 - 120 phút</strong></span>
+                <span className="text-[#176b51] font-bold">Bảo hành 6 tháng</span>
+              </div>
+            </div>
 
-      {/* Intake Wizard Modal */}
-      <IntakeWizardModal
-        isOpen={intakeModalOpen}
-        onClose={() => setIntakeModalOpen(false)}
-        onSuccess={() => setIntakeModalOpen(false)}
-      />
-
-      {/* CSKH Pending Modal */}
-      <Modal
-        isOpen={cskhPendingModalOpen}
-        onClose={() => setCskhPendingModalOpen(false)}
-        maxWidth="lg"
-        eyebrow="CSKH · THEO DÕI TIẾN ĐỘ"
-        title="Danh sách máy chưa hoàn tất hôm nay"
-        subtitle={`${cskhPendingOrders.length} phiếu đang cần theo dõi tiến độ.`}
-        footer={
-          <div className="flex justify-end gap-2.5 w-full">
-            <Button variant="secondary" size="md" onClick={() => setCskhPendingModalOpen(false)}>
-              Đóng
-            </Button>
-            <Button
-              variant="primary"
-              size="md"
-              onClick={() => {
-                setCskhPendingModalOpen(false);
-                router.push('/repairs');
-              }}
-            >
-              Mở danh sách đơn ↗
-            </Button>
+            {/* Service 3: Over-Ear High-End */}
+            <div className="rounded-[12px] border border-[#e5ece8] bg-[#fbfdfb] p-6 hover:border-[#176b51]/40 transition-all flex flex-col justify-between shadow-xs">
+              <div>
+                <div className="w-12 h-12 rounded-[10px] bg-[#e9f4ef] text-[#176b51] grid place-items-center mb-5">
+                  <Icon name="volume" size={24} />
+                </div>
+                <h3 className="font-heading font-bold text-[18px] text-[#17231f] mb-2">
+                  Tai Nghe Trùm Đầu High-End
+                </h3>
+                <p className="text-xs text-[#6e7f77] leading-relaxed mb-4">
+                  Dành cho AirPods Max, Sony WH-1000XM4/XM5, Bose QuietComfort & Studio Monitors.
+                </p>
+                <ul className="space-y-2 text-xs text-[#43534c] mb-6">
+                  <li className="flex items-start gap-2">
+                    <span className="text-[#176b51] font-bold">✓</span>
+                    <span>Sửa lỗi gãy bản lề trục xoay, đứt cáp tín hiệu âm thanh</span>
+                  </li>
+                  <li className="flex items-start gap-2">
+                    <span className="text-[#176b51] font-bold">✓</span>
+                    <span>Khắc phục lỗi hú rít buồng âm ANC, chập chờn cảm biến đầu</span>
+                  </li>
+                  <li className="flex items-start gap-2">
+                    <span className="text-[#176b51] font-bold">✓</span>
+                    <span>Thay pin kép dung lượng gốc cho thời lượng nghe 30+ giờ</span>
+                  </li>
+                  <li className="flex items-start gap-2">
+                    <span className="text-[#176b51] font-bold">✓</span>
+                    <span>Thay thế headband lưới thở và đệm tai Memory Foam khử mùi</span>
+                  </li>
+                </ul>
+              </div>
+              <div className="pt-4 border-t border-[#edf2ee] flex items-center justify-between text-xs">
+                <span className="text-[#7d8f87]">Thời gian: <strong>1 - 3 giờ</strong></span>
+                <span className="text-[#176b51] font-bold">Bảo hành 6 - 12 tháng</span>
+              </div>
+            </div>
           </div>
-        }
-      >
-        <div className="space-y-3 max-h-[60vh] overflow-y-auto pr-1">
-          {cskhPendingOrders.map((o) => (
-            <div
-              key={o.id}
-              className="p-3.5 bg-white rounded-[10px] border border-[#e5ece8] flex flex-col gap-2"
-            >
-              <div className="flex justify-between items-center">
-                <div className="flex items-center gap-2.5">
-                  <b className="text-sm text-[#1c302b]">{o.device}</b>
-                  <span className="font-mono text-xs text-[#176b58] font-bold">{o.id}</span>
-                </div>
-                <StatusTag label={o.status} type={o.statusType} />
+        </div>
+      </section>
+
+      {/* 4. QUY TRÌNH 4 GIAI ĐOẠN CHUẨN PHÒNG LAB */}
+      <section id="process" className="py-16 md:py-24 bg-[#f6f8f6] border-b border-[#e5ece8]">
+        <div className="max-w-[1280px] mx-auto px-4 sm:px-6 lg:px-8">
+          <div className="text-center max-w-[700px] mx-auto mb-14">
+            <span className="text-[11px] font-bold tracking-[1.2px] text-[#176b51] uppercase bg-[#e9f4ef] px-3 py-1 rounded-[20px] inline-block mb-3">
+              QUY TRÌNH 4 BƯỚC KHÉP KÍN
+            </span>
+            <h2 className="font-heading font-extrabold text-[28px] sm:text-[36px] tracking-[-1px] text-[#17231f]">
+              Quy Trình Sửa Chữa Minh Bạch & Kiểm Định 14 Bước
+            </h2>
+            <p className="text-sm sm:text-base text-[#65766f] mt-3">
+              Mọi thiết bị tiếp nhận đều được gắn mã định danh barcode, lập biên bản chẩn đoán điện tử và kiểm định độc lập trước khi giao trả.
+            </p>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
+            {/* Step 1 */}
+            <div className="bg-white rounded-[12px] border border-[#e5ece8] p-5 shadow-xs relative">
+              <div className="flex items-center justify-between mb-4">
+                <span className="w-8 h-8 rounded-[8px] bg-[#176b51] text-white font-heading font-bold text-sm grid place-items-center">
+                  01
+                </span>
+                <span className="text-[11px] font-mono text-[#819089] uppercase">Tiếp nhận</span>
               </div>
-              <div className="grid grid-cols-2 gap-2 text-xs text-[#4e5e56]">
-                <div>
-                  <span className="text-[#84948c] block">Chủ máy:</span>
-                  <b>
-                    {o.name} · {o.phone}
-                  </b>
+              <h4 className="font-heading font-bold text-base text-[#17231f] mb-2">
+                Chẩn Đoán Đa Điểm
+              </h4>
+              <p className="text-xs text-[#62736b] leading-relaxed">
+                Soi kính nhiệt vi mạch, đo sóng âm acoustic 12 hạng mục và ghi nhận hiện trạng ban đầu bằng ảnh macro độ phân giải cao.
+              </p>
+            </div>
+
+            {/* Step 2 */}
+            <div className="bg-white rounded-[12px] border border-[#e5ece8] p-5 shadow-xs relative">
+              <div className="flex items-center justify-between mb-4">
+                <span className="w-8 h-8 rounded-[8px] bg-[#176b51] text-white font-heading font-bold text-sm grid place-items-center">
+                  02
+                </span>
+                <span className="text-[11px] font-mono text-[#819089] uppercase">Báo giá</span>
+              </div>
+              <h4 className="font-heading font-bold text-base text-[#17231f] mb-2">
+                Báo Giá Điện Tử Minh Bạch
+              </h4>
+              <p className="text-xs text-[#62736b] leading-relaxed">
+                Tạo phiếu báo giá chi tiết từng mã linh kiện kèm thời gian bảo hành. Khách hàng xem xét và duyệt sửa chữa trực tuyến qua SMS/QR.
+              </p>
+            </div>
+
+            {/* Step 3 */}
+            <div className="bg-white rounded-[12px] border border-[#e5ece8] p-5 shadow-xs relative">
+              <div className="flex items-center justify-between mb-4">
+                <span className="w-8 h-8 rounded-[8px] bg-[#176b51] text-white font-heading font-bold text-sm grid place-items-center">
+                  03
+                </span>
+                <span className="text-[11px] font-mono text-[#819089] uppercase">Thao tác</span>
+              </div>
+              <h4 className="font-heading font-bold text-base text-[#17231f] mb-2">
+                Vi Phẫu Phòng Lab ESD
+              </h4>
+              <p className="text-xs text-[#62736b] leading-relaxed">
+                Kỹ thuật viên thao tác trong phòng sạch chống tĩnh điện ESD, bóc tách bằng gia nhiệt chính xác và hàn vi mạch kính hiển vi 40x.
+              </p>
+            </div>
+
+            {/* Step 4 */}
+            <div className="bg-white rounded-[12px] border border-[#e5ece8] p-5 shadow-xs relative">
+              <div className="flex items-center justify-between mb-4">
+                <span className="w-8 h-8 rounded-[8px] bg-[#176b51] text-white font-heading font-bold text-sm grid place-items-center">
+                  04
+                </span>
+                <span className="text-[11px] font-mono text-[#819089] uppercase">Nghiệm thu</span>
+              </div>
+              <h4 className="font-heading font-bold text-base text-[#17231f] mb-2">
+                Kiểm Định QC 14 Bước
+              </h4>
+              <p className="text-xs text-[#62736b] leading-relaxed">
+                Chuyên viên QC độc lập kiểm tra phổ âm, xuyên âm ANC, áp suất kín khí, sạc xả pin và cấp tem bảo hành số điện tử.
+              </p>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* 5. WIDGET TRA CỨU TIẾN ĐỘ NHANH TRỰC TIẾP TRÊN TRANG CHỦ */}
+      <section id="track-widget" className="py-16 md:py-20 bg-white border-b border-[#e5ece8]">
+        <div className="max-w-[900px] mx-auto px-4 sm:px-6">
+          <div className="bg-[#f7faf8] rounded-[16px] border border-[#dce8e1] p-6 sm:p-10 shadow-sm text-center">
+            <div className="w-12 h-12 rounded-[12px] bg-[#176b51] text-white grid place-items-center mx-auto mb-4">
+              <Icon name="search" size={22} />
+            </div>
+
+            <h2 className="font-heading font-extrabold text-[24px] sm:text-[30px] text-[#17231f] mb-2">
+              Tra Cứu Tiến Độ Sửa Chữa Trực Tuyến
+            </h2>
+            <p className="text-xs sm:text-sm text-[#61736b] max-w-[540px] mx-auto mb-6">
+              Nhập mã tiếp nhận sửa chữa hoặc số điện thoại khách hàng để theo dõi tiến độ xử lý thời gian thực.
+            </p>
+
+            {/* Tracking Search Form */}
+            <form onSubmit={handleTrackSubmit} className="max-w-[560px] mx-auto flex flex-col sm:flex-row gap-2.5">
+              <div className="relative flex-1">
+                <input
+                  type="text"
+                  value={trackQuery}
+                  onChange={(e) => setTrackQuery(e.target.value)}
+                  placeholder="Nhập mã phiếu (PC-xxxx) hoặc SĐT..."
+                  className="w-full h-12 px-4 rounded-[8px] bg-white border border-[#ccd9d1] focus:border-[#176b51] focus:ring-2 focus:ring-[#176b51]/15 text-sm text-[#1c302b] placeholder-[#8ea097] outline-none transition-all"
+                  required
+                />
+              </div>
+              <button
+                type="submit"
+                className="h-12 px-6 rounded-[8px] bg-[#176b51] hover:bg-[#10583f] text-white font-bold text-sm flex items-center justify-center gap-2 transition-colors shrink-0 shadow-xs"
+              >
+                <span>Tra cứu ngay</span>
+                <Icon name="arrow" size={16} />
+              </button>
+            </form>
+          </div>
+        </div>
+      </section>
+
+      {/* 6. CAM KẾT & MẠNG LƯỚI CHI NHÁNH */}
+      <section id="branches" className="py-16 md:py-24 bg-[#f6f8f6] border-b border-[#e5ece8]">
+        <div className="max-w-[1280px] mx-auto px-4 sm:px-6 lg:px-8">
+          <div className="text-center max-w-[700px] mx-auto mb-14">
+            <span className="text-[11px] font-bold tracking-[1.2px] text-[#176b51] uppercase bg-[#e9f4ef] px-3 py-1 rounded-[20px] inline-block mb-3">
+              MẠNG LƯỚI PHÒNG LAB
+            </span>
+            <h2 className="font-heading font-extrabold text-[28px] sm:text-[36px] tracking-[-1px] text-[#17231f]">
+              Hệ Thống Chi Nhánh & Trạm Tiếp Nhận
+            </h2>
+            <p className="text-sm sm:text-base text-[#65766f] mt-3">
+              Được trang bị máy đo sóng âm chuẩn quốc tế, buồng kiểm định khử ồn ANC và đội ngũ kỹ thuật viên được đào tạo chuyên sâu.
+            </p>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-8 max-w-[1240px] mx-auto">
+            {/* Branch 1: Q1 */}
+            <div className="bg-white rounded-[14px] border border-[#e5ece8] p-6 sm:p-7 shadow-xs">
+              <div className="flex items-center justify-between mb-4">
+                <div className="flex items-center gap-2">
+                  <span className="w-2.5 h-2.5 rounded-full bg-[#176b51]" />
+                  <span className="font-mono text-xs font-bold text-[#176b51] uppercase tracking-wide">
+                    CHI NHÁNH TRUNG TÂM
+                  </span>
                 </div>
-                <div>
-                  <span className="text-[#84948c] block">Kỹ thuật viên giữ máy:</span>
-                  <b className={o.tech !== 'Chưa phân công' ? 'text-[#176b58]' : 'text-[#a4722f]'}>
-                    {o.tech}
-                  </b>
+                <span className="text-[11px] font-bold px-2 py-0.5 rounded bg-[#eaf5ef] text-[#28805e]">
+                  Đang mở cửa
+                </span>
+              </div>
+
+              <h3 className="font-heading font-bold text-[20px] text-[#17231f] mb-3">
+                PodsCare · Chi nhánh Quận 1
+              </h3>
+
+              <div className="space-y-3 mb-6">
+                <div className="grid grid-cols-[85px_1fr] gap-2 items-baseline text-sm text-[#52635b]">
+                  <span className="font-semibold text-[#1c302b]">Địa chỉ:</span>
+                  <span>135B Trần Hưng Đạo, Phường Cầu Ông Lãnh, Quận 1, TP. Hồ Chí Minh</span>
+                </div>
+                <div className="grid grid-cols-[85px_1fr] gap-2 items-baseline text-sm text-[#52635b]">
+                  <span className="font-semibold text-[#1c302b]">Hotline:</span>
+                  <a href="tel:0901888222" className="text-[#176b51] font-bold hover:underline">
+                    0901.888.222
+                  </a>
+                </div>
+                <div className="grid grid-cols-[85px_1fr] gap-2 items-baseline text-sm text-[#52635b]">
+                  <span className="font-semibold text-[#1c302b]">Giờ làm việc:</span>
+                  <span>08:30 - 20:30 (Tất cả các ngày trong tuần)</span>
+                </div>
+                <div className="grid grid-cols-[85px_1fr] gap-2 items-baseline text-sm text-[#52635b]">
+                  <span className="font-semibold text-[#1c302b]">Năng lực:</span>
+                  <span>Trạm Lab Phục hồi âm học & Vi phẫu mạch chuyên sâu</span>
                 </div>
               </div>
-              <div className="text-xs text-[#287452] pt-1.5 border-t border-[#f0f3f1]">
-                Việc tiếp theo: <b>{getCskhNextAction(o)}</b>
+
+              <div className="pt-4 border-t border-[#edf1ee] flex items-center justify-between text-xs">
+                <span className="text-[#819089]">Hỗ trợ kỹ thuật: 24/7 qua Hotline</span>
+                <button
+                  type="button"
+                  onClick={() => router.push('/track')}
+                  className="text-[#176b51] font-bold hover:underline"
+                >
+                  Tra cứu đơn Q1 →
+                </button>
               </div>
             </div>
-          ))}
+
+            {/* Branch 2: Q3 */}
+            <div className="bg-white rounded-[14px] border border-[#e5ece8] p-6 sm:p-7 shadow-xs">
+              <div className="flex items-center justify-between mb-4">
+                <div className="flex items-center gap-2">
+                  <span className="w-2.5 h-2.5 rounded-full bg-[#176b51]" />
+                  <span className="font-mono text-xs font-bold text-[#176b51] uppercase tracking-wide">
+                    CHI NHÁNH PHỤ TRÁCH
+                  </span>
+                </div>
+                <span className="text-[11px] font-bold px-2 py-0.5 rounded bg-[#eaf5ef] text-[#28805e]">
+                  Đang mở cửa
+                </span>
+              </div>
+
+              <h3 className="font-heading font-bold text-[20px] text-[#17231f] mb-3">
+                PodsCare · Chi nhánh Quận 3
+              </h3>
+
+              <div className="space-y-3 mb-6">
+                <div className="grid grid-cols-[85px_1fr] gap-2 items-baseline text-sm text-[#52635b]">
+                  <span className="font-semibold text-[#1c302b]">Địa chỉ:</span>
+                  <span>246 Cách Mạng Tháng 8, Phường 10, Quận 3, TP. Hồ Chí Minh</span>
+                </div>
+                <div className="grid grid-cols-[85px_1fr] gap-2 items-baseline text-sm text-[#52635b]">
+                  <span className="font-semibold text-[#1c302b]">Hotline:</span>
+                  <a href="tel:0901888333" className="text-[#176b51] font-bold hover:underline">
+                    0901.888.333
+                  </a>
+                </div>
+                <div className="grid grid-cols-[85px_1fr] gap-2 items-baseline text-sm text-[#52635b]">
+                  <span className="font-semibold text-[#1c302b]">Giờ làm việc:</span>
+                  <span>08:30 - 20:30 (Tất cả các ngày trong tuần)</span>
+                </div>
+                <div className="grid grid-cols-[85px_1fr] gap-2 items-baseline text-sm text-[#52635b]">
+                  <span className="font-semibold text-[#1c302b]">Năng lực:</span>
+                  <span>Trạm Sửa chữa nhanh & Trung tâm bảo hành phụ kiện</span>
+                </div>
+              </div>
+
+              <div className="pt-4 border-t border-[#edf1ee] flex items-center justify-between text-xs">
+                <span className="text-[#819089]">Hỗ trợ kỹ thuật: 24/7 qua Hotline</span>
+                <button
+                  type="button"
+                  onClick={() => router.push('/track')}
+                  className="text-[#176b51] font-bold hover:underline"
+                >
+                  Tra cứu đơn Q3 →
+                </button>
+              </div>
+            </div>
+          </div>
         </div>
-      </Modal>
-    </AppShell>
+      </section>
+
+      {/* 7. FOOTER CHUYÊN NGHIỆP & CỔNG NHÂN SỰ NỘI BỘ */}
+      <footer className="mt-auto bg-[#17231f] text-[#a4b4ad] pt-14 pb-10">
+        <div className="max-w-[1280px] mx-auto px-4 sm:px-6 lg:px-8">
+          <div className="grid grid-cols-1 md:grid-cols-12 gap-10 pb-12 border-b border-[#293a34]">
+            {/* Col 1: Brand Info */}
+            <div className="md:col-span-4">
+              <div className="flex items-center gap-2.5 mb-4">
+                <div className="w-8 h-8 rounded-[9px] bg-[#196d52] flex items-center justify-center gap-0.5">
+                  <span className="h-3 w-1 bg-[#c8eadb] rounded-full transform -rotate-[25deg]" />
+                  <span className="h-4.5 w-1 bg-[#c8eadb] rounded-full transform -rotate-[25deg]" />
+                </div>
+                <span className="font-heading font-extrabold text-[20px] text-white">podscare</span>
+              </div>
+              <p className="text-xs text-[#8c9f96] leading-relaxed mb-4 max-w-[320px]">
+                Hệ điều hành sửa chữa thiết bị âm thanh & Apple chuyên nghiệp.
+                Tiêu chuẩn phòng lab vi phẫu, linh kiện định danh và kiểm định chất lượng 14 bước độc lập.
+              </p>
+              <div className="text-xs text-[#7d9087]">
+                Hotline tổng đài: <b className="text-white">1900 888 999</b>
+              </div>
+            </div>
+
+            {/* Col 2: Services */}
+            <div className="md:col-span-3">
+              <h4 className="font-heading font-bold text-sm text-white uppercase tracking-wider mb-4">
+                Dịch Vụ Phục Hồi
+              </h4>
+              <ul className="space-y-2 text-xs">
+                <li><a href="#services" className="hover:text-white transition-colors">Sửa chữa & Thay pin AirPods</a></li>
+                <li><a href="#services" className="hover:text-white transition-colors">Ép kính & Thay pin Apple Watch</a></li>
+                <li><a href="#services" className="hover:text-white transition-colors">Phục hồi tai nghe High-End Over-Ear</a></li>
+                <li><a href="#services" className="hover:text-white transition-colors">Hiệu chuẩn buồng âm chống ồn ANC</a></li>
+                <li><a href="#services" className="hover:text-white transition-colors">Xử lý sạc không vào & bo mạch Case</a></li>
+              </ul>
+            </div>
+
+            {/* Col 3: Portal Links */}
+            <div className="md:col-span-2">
+              <h4 className="font-heading font-bold text-sm text-white uppercase tracking-wider mb-4">
+                Khách Hàng
+              </h4>
+              <ul className="space-y-2 text-xs">
+                <li><button type="button" onClick={() => router.push('/track')} className="hover:text-white transition-colors">Tra cứu đơn hàng</button></li>
+                <li><a href="#process" className="hover:text-white transition-colors">Quy trình kiểm định QC</a></li>
+                <li><a href="#branches" className="hover:text-white transition-colors">Địa chỉ chi nhánh</a></li>
+                <li><a href="#branches" className="hover:text-white transition-colors">Chính sách bảo hành</a></li>
+              </ul>
+            </div>
+
+            {/* Col 4: Dedicated Staff Portal Gateway Card */}
+            <div className="md:col-span-3">
+              <div className="rounded-[10px] bg-[#1d2d27] border border-[#2b3f37] p-4 text-left">
+                <span className="text-[10px] font-bold text-[#c8eadb] tracking-wider uppercase block mb-1">
+                  DÀNH CHO NHÂN SỰ NỘI BỘ
+                </span>
+                <p className="text-xs text-[#8c9f96] mb-3">
+                  Cổng đăng nhập hệ điều hành PodsCare dành cho Kỹ thuật viên, Quản trị viên và CSKH tiếp nhận.
+                </p>
+                <button
+                  type="button"
+                  onClick={() => router.push('/login')}
+                  className="w-full h-9 rounded-[6px] bg-[#176b51] hover:bg-[#10583f] text-white text-xs font-bold transition-colors flex items-center justify-center gap-1.5 shadow-xs"
+                >
+                  <span>Cổng đăng nhập ca làm việc →</span>
+                </button>
+              </div>
+            </div>
+          </div>
+
+          {/* Bottom Copyright */}
+          <div className="pt-6 flex flex-col sm:flex-row items-center justify-between gap-3 text-xs text-[#6e8077]">
+            <p className="m-0">© 2024 PodsCare Repair OS. Tất cả quyền được bảo lưu.</p>
+            <p className="m-0">Tiêu chuẩn kỹ thuật phòng lab kiểm định thiết bị âm thanh & Apple.</p>
+          </div>
+        </div>
+      </footer>
+    </div>
   );
 }

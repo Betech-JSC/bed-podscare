@@ -67,10 +67,13 @@ export const AppShell: React.FC<AppShellProps> = ({ children, crumbName = 'Tổn
     }
   }, [isLoadingAuth, isAuthenticated, router]);
 
-  const currentNav = pathname === '/' ? 'dashboard' : pathname.replace(/^\//, '');
+  const currentNav =
+    pathname === '/dashboard' || pathname.startsWith('/dashboard') || pathname === '/'
+      ? 'dashboard'
+      : pathname.replace(/^\//, '');
 
   const handleNavigate = (page: string) => {
-    const target = page === 'dashboard' ? '/' : `/${page}`;
+    const target = page === 'dashboard' ? '/dashboard' : `/${page}`;
     router.push(target, { scroll: false });
   };
 

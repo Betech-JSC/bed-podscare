@@ -32,7 +32,7 @@ const STAFF_CARDS: StaffCard[] = [
     email: 'admin@podscare.vn',
     initials: 'ML',
     avatarBg: '#176b58',
-    targetRoute: '/',
+    targetRoute: '/dashboard',
   },
   {
     name: 'Lan Phạm',
@@ -45,7 +45,7 @@ const STAFF_CARDS: StaffCard[] = [
     email: 'cskh.lan@podscare.vn',
     initials: 'LP',
     avatarBg: '#2563eb',
-    targetRoute: '/',
+    targetRoute: '/dashboard',
   },
   {
     name: 'Tuấn K.',
@@ -111,10 +111,10 @@ export default function LoginPage() {
   const [loading, setLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
 
-  // If already authenticated, redirect to home
+  // If already authenticated, redirect to dashboard
   useEffect(() => {
     if (isAuthenticated) {
-      router.replace('/');
+      router.replace('/dashboard');
     }
   }, [isAuthenticated, router]);
 
@@ -154,7 +154,7 @@ export default function LoginPage() {
           } else if (userRole === 'inventory' || userRole === 'warehouse') {
             destination = '/inventory';
           } else {
-            destination = '/';
+            destination = '/dashboard';
           }
         }
         router.push(destination);
@@ -202,6 +202,17 @@ export default function LoginPage() {
   return (
     <div className="min-h-screen bg-[#f4f7f5] flex items-center justify-center p-4 sm:p-6 md:p-8">
       <div className="w-full max-w-[780px] bg-white rounded-[16px] border border-[#e5ece8] shadow-[0_24px_90px_rgba(18,37,27,0.08)] p-6 sm:p-8 md:p-10 animate-in fade-in zoom-in-95 duration-200">
+        <div className="flex items-center justify-between mb-6 pb-3 border-b border-[#f0f3f1]">
+          <button
+            type="button"
+            onClick={() => router.push('/')}
+            className="inline-flex items-center gap-1.5 text-xs font-semibold text-[#176b51] hover:text-[#10583f] transition-colors"
+          >
+            ← Quay về Trang chủ
+          </button>
+          <span className="text-[11px] text-[#819089] font-medium">Cổng điều hành nội bộ</span>
+        </div>
+
         {/* Brand Header */}
         <div className="flex flex-col items-center text-center mb-8">
           <div className="w-12 h-12 rounded-[14px] bg-[#196d52] flex items-center justify-center gap-0.5 shadow-md mb-3">

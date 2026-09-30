@@ -159,7 +159,7 @@ export const AppSidebar: React.FC<AppSidebarProps> = ({
   const allowedIds = rolePermissions[normalizedRole] || rolePermissions.admin;
 
   const workspaceNav: NavItemDef[] = [
-    { id: 'dashboard', label: 'Tổng quan', icon: 'dashboard' },
+    { id: 'dashboard', label: 'Tổng quan', icon: 'dashboard', href: '/dashboard' },
     { id: 'repairs', label: 'Đơn sửa chữa', icon: 'repairs', badge: repairsCount },
     { id: 'customers', label: 'Khách hàng', icon: 'customers' },
     { id: 'devices', label: 'Thiết bị', icon: 'device' },
