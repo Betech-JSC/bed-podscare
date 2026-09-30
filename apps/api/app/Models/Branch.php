@@ -25,6 +25,15 @@ class Branch extends Model
         ];
     }
 
+    protected static function booted(): void
+    {
+        static::saving(function (Branch $branch) {
+            if ($branch->phone === null) {
+                $branch->phone = '';
+            }
+        });
+    }
+
     public function users(): HasMany
     {
         return $this->hasMany(User::class);
@@ -38,5 +47,10 @@ class Branch extends Model
     public function inventoryTransactions(): HasMany
     {
         return $this->hasMany(InventoryTransaction::class);
+    }
+
+    public function branchParts(): HasMany
+    {
+        return $this->hasMany(BranchPart::class);
     }
 }

@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api\V1;
 
 use App\Http\Controllers\Controller;
+use App\Models\ChecklistTemplate;
 use App\Models\DeviceModel;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -39,21 +40,28 @@ class DeviceController extends Controller
     }
 
     /**
-     * Danh sách 9 tiêu chí kiểm tra tiếp nhận tiêu chuẩn tại quầy.
+     * Danh sách tiêu chí kiểm tra tiếp nhận tiêu chuẩn tại quầy theo dòng thiết bị / danh mục.
      */
-    public function checklistTemplate(): JsonResponse
+    public function checklistTemplate(Request $request): JsonResponse
     {
-        $template = [
-            ['item_name' => 'Kết nối Bluetooth', 'description' => 'Kiểm tra tốc độ pop-up và duy trì kết nối ổn định'],
-            ['item_name' => 'Âm thanh tai trái', 'description' => 'Âm lượng, dải âm trầm/bổng, không rè'],
-            ['item_name' => 'Âm thanh tai phải', 'description' => 'Âm lượng, dải âm trầm/bổng, không rè'],
-            ['item_name' => 'Microphone', 'description' => 'Thu âm rõ ràng khi gọi thoại hoặc ghi âm'],
-            ['item_name' => 'Pin & thời lượng sử dụng', 'description' => 'Đo dung lượng thực tế và hao pin nhanh'],
-            ['item_name' => 'Hộp sạc / nhận sạc', 'description' => 'Chân sạc cắm dây hoặc đế sạc không dây MagSafe'],
-            ['item_name' => 'Chống ồn ANC', 'description' => 'Khử tiếng ồn chủ động không bị hú/rít gió (Pro/Max)'],
-            ['item_name' => 'Xuyên âm (Transparency)', 'description' => 'Thu âm thanh môi trường tự nhiên (Pro/Max)'],
-            ['item_name' => 'Nút cảm ứng lực', 'description' => 'Cảm ứng bóp thân tai nghe hoặc xoay Digital Crown'],
-        ];
+        $query = ChecklistTemplate::active();
+
+        if ($modelId = $request->input('device_model_id')) {
+            $hasModelSpecific = ChecklistTemplate::active()->where('device_model_id', $modelId)->exists();
+            if ($hasModelSpecific) {
+                $query->where('device_model_id', $modelId);
+            } else {
+                $model = DeviceModel::find($modelId);
+                $cat = $request->input('category') ?: ($model?->category ?? 'AirPods');
+                $query->where('category', $cat);
+            }
+        } elseif ($category = $request->input('category')) {
+            $query->where('category', $category);
+        } else {
+            $query->where('category', 'AirPods');
+        }
+
+        $template = $query->orderBy('order_index', 'asc')->get();
 
         return $this->success($template, 'Lấy checklist mẫu kiểm tra tiếp nhận thành công.');
     }

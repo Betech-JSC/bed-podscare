@@ -192,7 +192,13 @@ export function getReverbEchoConfig(): ReverbEchoConfig {
 
   const schemeEnv = process.env.NEXT_PUBLIC_REVERB_SCHEME?.toLowerCase();
   const scheme: 'http' | 'https' =
-    schemeEnv === 'https' || (!schemeEnv && protocol === 'https:') ? 'https' : 'http';
+    schemeEnv === 'https'
+      ? 'https'
+      : schemeEnv === 'http'
+      ? 'http'
+      : protocol === 'https:'
+      ? 'https'
+      : 'http';
 
   const host =
     process.env.NEXT_PUBLIC_REVERB_HOST ||
@@ -296,6 +302,17 @@ export class ReverbSocketClient {
 
     const { scheme, wsHost, wsPort, key } = this.config;
     const wsProtocol = scheme === 'https' ? 'wss' : 'ws';
+
+    // Nhận diện Mixed Content: Trang đang chạy trên HTTPS nhưng socket lại cấu hình ws:// không mã hóa
+    const isBrowserHttps = typeof window !== 'undefined' && window.location?.protocol === 'https:';
+    if (isBrowserHttps && wsProtocol === 'ws') {
+      console.debug(
+        '[ReverbSocketClient] Tạm dừng kết nối ws:// trên trang HTTPS (tránh Mixed Content) - Chuyển sang cơ chế Smart Polling.'
+      );
+      this.setConnected(false);
+      return;
+    }
+
     const wsUrl = `${wsProtocol}://${wsHost}:${wsPort}/app/${key}?protocol=7&client=js&version=8.4.0-reverb&flash=false`;
 
     try {
@@ -379,8 +396,13 @@ export class ReverbSocketClient {
 
       const eventName = msg.event;
       if (isOperationalEventWhitelisted(eventName, normalizedPayload)) {
-        realtimeEventBus.emit(eventName, normalizedPayload);
-        this.onEvent?.(eventName, normalizedPayload);
+        // Chỉ gọi callback this.onEvent nếu được cung cấp, ngược lại mới emit qua realtimeEventBus
+        // để tránh việc NotificationProvider vừa nhận onEvent vừa nhận từ bus gây double chime và trùng lặp toast
+        if (this.onEvent) {
+          this.onEvent(eventName, normalizedPayload);
+        } else {
+          realtimeEventBus.emit(eventName, normalizedPayload);
+        }
       }
     }
   }

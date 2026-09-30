@@ -97,16 +97,52 @@ class InventoryController extends Controller
         ]);
 
         return DB::transaction(function () use ($request, $validated) {
-            $part = Part::findOrFail($validated['part_id']);
+            $part = Part::where('id', $validated['part_id'])->lockForUpdate()->firstOrFail();
+
+            // Lấy hoặc khởi tạo tồn kho chi nhánh với pessimistic lock
+            $branchPart = \App\Models\BranchPart::where('branch_id', $validated['branch_id'])
+                ->where('part_id', $validated['part_id'])
+                ->lockForUpdate()
+                ->first();
+
+            if (! $branchPart) {
+                $hasOtherBranchParts = \App\Models\BranchPart::where('part_id', $validated['part_id'])->exists();
+                $initialStock = $hasOtherBranchParts ? 0 : $part->stock_quantity;
+
+                $branchPart = \App\Models\BranchPart::create([
+                    'branch_id'       => $validated['branch_id'],
+                    'part_id'         => $validated['part_id'],
+                    'stock_quantity'  => $initialStock,
+                    'min_stock_alert' => $part->min_stock_alert ?? 5,
+                ]);
+            }
 
             $date = date('Ymd');
-            $rand = str_pad((string) random_int(1, 999), 3, '0', STR_PAD_LEFT);
-            $txCode = "TX-{$date}-{$rand}";
+            do {
+                $rand = str_pad((string) random_int(1, 9999), 4, '0', STR_PAD_LEFT);
+                $txCode = "TX-{$date}-{$rand}";
+            } while (InventoryTransaction::where('transaction_code', $txCode)->exists());
 
             $qty = $validated['quantity'];
             // Nếu là xuất thì số lượng âm
             if (in_array($validated['transaction_type'], ['export_repair', 'export_damage'], true) && $qty > 0) {
                 $qty = -$qty;
+            }
+
+            // Kiểm tra tồn kho tại chi nhánh
+            if ($branchPart->stock_quantity + $qty < 0) {
+                return $this->failure(
+                    "Số lượng tồn kho tại chi nhánh không đủ để xuất linh kiện (Tồn chi nhánh: {$branchPart->stock_quantity}, Yêu cầu xuất: " . abs($qty) . ').',
+                    422
+                );
+            }
+
+            // Đồng bộ kiểm tra tồn tổng toàn cục
+            if ($part->stock_quantity + $qty < 0) {
+                return $this->failure(
+                    "Số lượng tồn kho không đủ để xuất linh kiện (Tồn hiện tại: {$part->stock_quantity}, Yêu cầu xuất: " . abs($qty) . ').',
+                    422
+                );
             }
 
             $tx = InventoryTransaction::create([
@@ -122,7 +158,8 @@ class InventoryController extends Controller
                 'created_by_user_id' => $request->user()->id,
             ]);
 
-            // Cập nhật số lượng tồn kho
+            // Cập nhật số lượng tồn kho chi nhánh và tổng kho
+            $branchPart->increment('stock_quantity', $qty);
             $part->increment('stock_quantity', $qty);
 
             AuditLog::create([
@@ -131,7 +168,7 @@ class InventoryController extends Controller
                 'action'         => 'Giao dịch kho: ' . $validated['transaction_type'],
                 'auditable_type' => 'InventoryTransaction',
                 'auditable_id'   => $tx->id,
-                'details'        => "Mã {$txCode} · Linh kiện {$part->sku} (SL: {$qty})",
+                'details'        => "Mã {$txCode} · Linh kiện {$part->sku} (SL: {$qty}) tại chi nhánh #{$validated['branch_id']}",
                 'ip_address'     => $request->ip(),
             ]);
 

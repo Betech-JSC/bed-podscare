@@ -22,13 +22,10 @@ async function handleProxy(req: NextRequest, { params }: { params: { proxy: stri
   ).replace(/\/$/, '');
   const path = (params?.proxy || []).join('/');
 
-  // Normalize path to always route to Laravel API (prefixed with /api)
+  // Loại bỏ /api hoặc /api/v1/ khỏi backendBase nếu có
+  const normalizedBase = backendBase.replace(/\/api(\/v\d+)?\/?$/, '');
   const cleanPath = path.startsWith('api/') ? path : `api/${path}`;
-  const targetBase = backendBase.endsWith('/api')
-    ? backendBase.slice(0, -4)
-    : backendBase;
-
-  const url = `${targetBase}/${cleanPath}${req.nextUrl.search}`;
+  const url = `${normalizedBase}/${cleanPath}${req.nextUrl.search}`;
 
   const forwardHeaders: Record<string, string> = {
     Accept: 'application/json',

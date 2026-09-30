@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\AuditLog;
 use App\Models\Warranty;
 use App\Models\WarrantyClaim;
+use App\Support\PiiHelper;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
@@ -69,6 +70,20 @@ class WarrantyController extends Controller
             return $this->empty('Không tìm thấy thông tin bảo hành phù hợp.');
         }
 
+        // Áp dụng Data Masking nếu tra cứu công khai bằng mã bảo hành mà chưa xác thực số điện thoại
+        foreach ($results as $warranty) {
+            $isVerified = false;
+            if (! empty($phone) && $warranty->customer && ! empty($warranty->customer->phone)) {
+                $isVerified = PiiHelper::isPhoneMatching($phone, $warranty->customer->phone);
+            }
+
+            if (! $isVerified && $warranty->customer) {
+                $warranty->customer->name = PiiHelper::maskName($warranty->customer->name);
+                $warranty->customer->phone = PiiHelper::maskPhone($warranty->customer->phone);
+                $warranty->customer->makeHidden(['email', 'notes']);
+            }
+        }
+
         return $this->success($results, 'Tra cứu thông tin bảo hành thành công.');
     }
 
@@ -103,9 +118,15 @@ class WarrantyController extends Controller
         return DB::transaction(function () use ($request, $validated) {
             $warranty = Warranty::findOrFail($validated['warranty_id']);
 
+            if ($warranty->status !== 'active' || Carbon::parse($warranty->end_date)->endOfDay()->isPast()) {
+                return $this->failure('Sổ bảo hành đã hết hạn hoặc không còn hiệu lực để tiếp nhận khiếu nại.', 422);
+            }
+
             $date = date('Ym');
-            $rand = str_pad((string) random_int(1, 99), 2, '0', STR_PAD_LEFT);
-            $claimCode = "CLM-{$date}-{$rand}";
+            do {
+                $rand = str_pad((string) random_int(1, 9999), 4, '0', STR_PAD_LEFT);
+                $claimCode = "CLM-{$date}-{$rand}";
+            } while (WarrantyClaim::where('claim_code', $claimCode)->exists());
 
             $claim = WarrantyClaim::create([
                 'claim_code'          => $claimCode,

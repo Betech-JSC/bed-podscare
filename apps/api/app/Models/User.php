@@ -26,9 +26,12 @@ class User extends Authenticatable
         'email',
         'phone',
         'password',
-        'role',
         'avatar_url',
         'is_active',
+    ];
+
+    protected $attributes = [
+        'role' => 'technician',
     ];
 
     /**

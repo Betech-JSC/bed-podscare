@@ -59,17 +59,21 @@ class UserController extends Controller
 
         $role = $validated['role'] === 'tech' ? 'technician' : $validated['role'];
 
-        $user = User::create([
+        $user = new User([
             'name'       => $validated['name'],
             'email'      => $validated['email'],
             'phone'      => $validated['phone'] ?? null,
             'password'   => Hash::make($validated['password']),
             'branch_id'  => $validated['branch_id'] ?? null,
-            'role'       => $role,
             'is_active'  => true,
             'avatar_url' => 'https://ui-avatars.com/api/?name=' . urlencode($validated['name']) . '&background=176B58&color=fff',
         ]);
 
+        if ($request->user() && $request->user()->role === 'admin') {
+            $user->role = $role;
+        }
+
+        $user->save();
         $user->load('branch');
 
         return $this->success($user, 'Cấp tài khoản nhân viên thành công.', 201);
@@ -100,6 +104,13 @@ class UserController extends Controller
             $validated['role'] = 'technician';
         }
 
+        if (isset($validated['role'])) {
+            if ($request->user() && $request->user()->role === 'admin') {
+                $user->role = $validated['role'];
+            }
+            unset($validated['role']);
+        }
+
         if (! empty($validated['password'])) {
             $validated['password'] = Hash::make($validated['password']);
         } else {
@@ -107,6 +118,7 @@ class UserController extends Controller
         }
 
         $user->update($validated);
+        $user->save();
         $user->load('branch');
 
         return $this->success($user, 'Cập nhật tài khoản thành công.');

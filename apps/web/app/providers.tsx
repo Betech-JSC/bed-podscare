@@ -43,6 +43,7 @@ interface PodsCareContextType {
   isLoadingAuth: boolean;
   login: (data: { token: string; user: any }) => void;
   logout: () => void;
+  isMounted: boolean;
 }
 
 const PodsCareContext = createContext<PodsCareContextType | null>(null);
@@ -82,20 +83,10 @@ export const Providers: React.FC<{ children: React.ReactNode }> = ({ children })
       })
   );
 
+  const [isMounted, setIsMounted] = useState<boolean>(false);
   const [role, setRoleState] = useState<UserRole>('admin');
-  const [branch, setBranchState] = useState<string>(() => {
-    if (typeof window !== 'undefined') {
-      return localStorage.getItem('podscare_branch') || 'Tất cả chi nhánh';
-    }
-    return 'Tất cả chi nhánh';
-  });
-  const [branchId, setBranchIdState] = useState<string | number>(() => {
-    if (typeof window !== 'undefined') {
-      const saved = localStorage.getItem('podscare_branch_id');
-      if (saved) return saved === 'all' ? 'all' : Number(saved) || saved;
-    }
-    return 'all';
-  });
+  const [branch, setBranchState] = useState<string>('Tất cả chi nhánh');
+  const [branchId, setBranchIdState] = useState<string | number>('all');
   const [branches, setBranches] = useState<BranchItem[]>([]);
   const [orders, setOrders] = useState<RepairOrder[]>([]);
   const [categories, setCategories] = useState<string[]>([
@@ -114,6 +105,7 @@ export const Providers: React.FC<{ children: React.ReactNode }> = ({ children })
 
   // Nạp danh sách chi nhánh từ API và đồng bộ localStorage
   const fetchBranches = useCallback(async () => {
+    if (!isAuthenticated || !token) return;
     try {
       const res = await branchService.getBranches();
       const raw = res?.data;
@@ -146,14 +138,36 @@ export const Providers: React.FC<{ children: React.ReactNode }> = ({ children })
     } catch (e) {
       console.warn('Could not fetch branches from API:', e);
     }
-  }, []);
+  }, [isAuthenticated, token]);
 
   // Nạp danh mục thiết bị từ API và đồng bộ localStorage
   const fetchDeviceProfiles = useCallback(async () => {
+    if (!isAuthenticated || !token) return;
     try {
       const res = await deviceService.getDevices();
       const raw = res?.data;
       const list = Array.isArray(raw) ? raw : (raw as any)?.data || (Array.isArray(res) ? res : []);
+      let defaultChecks = [
+        'Kết nối Bluetooth',
+        'Âm thanh tai trái',
+        'Âm thanh tai phải',
+        'Microphone',
+        'Pin & thời lượng sử dụng',
+        'Hộp sạc / nhận sạc',
+        'Chống ồn ANC',
+        'Xuyên âm',
+        'Cảm ứng / thao tác',
+      ];
+      try {
+        const tplRes = await deviceService.getChecklistTemplate();
+        const tplData = tplRes?.data || tplRes;
+        if (Array.isArray(tplData) && tplData.length > 0) {
+          defaultChecks = tplData.map((item: any) => item.item_name || item.name || String(item));
+        }
+      } catch (err) {
+        console.warn('Could not fetch default checklist templates:', err);
+      }
+
       if (Array.isArray(list) && list.length > 0) {
         const mapped: DeviceProfile[] = list.map((d: any) => ({
           name: d.name,
@@ -168,17 +182,7 @@ export const Providers: React.FC<{ children: React.ReactNode }> = ({ children })
               : d.category === 'MacBook' || d.category === 'iPad'
               ? 'device'
               : 'headphones',
-          checks: [
-            'Kết nối Bluetooth',
-            'Âm thanh tai trái',
-            'Âm thanh tai phải',
-            'Microphone',
-            'Pin & thời lượng sử dụng',
-            'Hộp sạc / nhận sạc',
-            'Chống ồn ANC',
-            'Xuyên âm',
-            'Cảm ứng / thao tác',
-          ],
+          checks: defaultChecks,
         }));
         setDeviceProfiles(mapped);
         try {
@@ -190,11 +194,21 @@ export const Providers: React.FC<{ children: React.ReactNode }> = ({ children })
     } catch (e) {
       console.warn('Could not fetch device profiles from API:', e);
     }
-  }, []);
+  }, [isAuthenticated, token]);
 
   // Sync auth, role, branch and cached data from localStorage on mount
   useEffect(() => {
+    setIsMounted(true);
     try {
+      const savedBranch = localStorage.getItem('podscare_branch');
+      if (savedBranch) {
+        setBranchState(savedBranch);
+      }
+      const savedBranchId = localStorage.getItem('podscare_branch_id');
+      if (savedBranchId) {
+        setBranchIdState(savedBranchId === 'all' ? 'all' : Number(savedBranchId) || savedBranchId);
+      }
+
       const savedToken = localStorage.getItem('podscare_token');
       const savedUserStr = localStorage.getItem('podscare_user');
       const savedRole = localStorage.getItem('podscare_role') as UserRole;
@@ -241,13 +255,16 @@ export const Providers: React.FC<{ children: React.ReactNode }> = ({ children })
     }
   }, []);
 
-  // Kích hoạt nạp chi nhánh và danh mục thiết bị từ API
+  // Kích hoạt nạp chi nhánh và danh mục thiết bị từ API khi đã đăng nhập
   useEffect(() => {
-    fetchBranches();
-    fetchDeviceProfiles();
-  }, [fetchBranches, fetchDeviceProfiles]);
+    if (isAuthenticated && token) {
+      fetchBranches();
+      fetchDeviceProfiles();
+    }
+  }, [isAuthenticated, token, fetchBranches, fetchDeviceProfiles]);
 
   const fetchOrders = useCallback(async (targetBranchId?: string | number) => {
+    if (!isAuthenticated || !token) return;
     try {
       const activeBranchId = targetBranchId !== undefined ? targetBranchId : branchId;
       const params: Record<string, any> = { per_page: 50 };
@@ -294,6 +311,18 @@ export const Providers: React.FC<{ children: React.ReactNode }> = ({ children })
             ? o.checks
             : [];
 
+          const mappedPhotos = Array.isArray(o.intake_photos)
+            ? o.intake_photos.map((p: any) => ({
+                name: p.photo_type || 'Ảnh thiết bị',
+                url: p.photo_url || p.file_path || p.url,
+              }))
+            : Array.isArray(o.photos)
+            ? o.photos.map((p: any) => ({
+                name: p.name || p.photo_type || 'Ảnh thiết bị',
+                url: p.photo_url || p.file_path || p.url,
+              }))
+            : [];
+
           return {
             id: o.order_code || String(o.id),
             name: o.customer?.name || 'Khách lẻ',
@@ -306,6 +335,8 @@ export const Providers: React.FC<{ children: React.ReactNode }> = ({ children })
             statusType: mappedStatus.type,
             price: Number(o.total_price) || Number(o.estimated_price) || 0,
             tech: o.technician?.name || 'Chưa phân công',
+            technicianId: o.technician_id ?? o.technician?.id ?? null,
+            technician_id: o.technician_id ?? o.technician?.id ?? null,
             date: o.created_at
               ? new Intl.DateTimeFormat('vi-VN').format(new Date(o.created_at))
               : 'Hôm nay',
@@ -324,6 +355,7 @@ export const Providers: React.FC<{ children: React.ReactNode }> = ({ children })
             customerApprovedAt: o.customer_approved_at,
             createdAt: o.created_at,
             checks: mappedChecks,
+            photos: mappedPhotos,
             createdBy: o.created_by_user?.name || o.createdBy || 'PodsCare',
           };
         });
@@ -336,11 +368,13 @@ export const Providers: React.FC<{ children: React.ReactNode }> = ({ children })
       console.warn('Could not fetch orders from API:', e);
       setOrders([]);
     }
-  }, [branchId]);
+  }, [branchId, isAuthenticated, token]);
 
   useEffect(() => {
-    fetchOrders(branchId);
-  }, [branchId, fetchOrders]);
+    if (isAuthenticated && token) {
+      fetchOrders(branchId);
+    }
+  }, [branchId, fetchOrders, isAuthenticated, token]);
 
   // Helper tập trung để invalidate React Query cache và làm mới danh sách đơn hàng
   const invalidateOrders = useCallback(async () => {
@@ -510,12 +544,14 @@ export const Providers: React.FC<{ children: React.ReactNode }> = ({ children })
           isLoadingAuth,
           login,
           logout,
+          isMounted,
         }}
       >
         <NotificationProvider
           branchId={branchId}
           role={role}
           userId={currentUser?.id}
+          enabled={isAuthenticated}
         >
           <ToastProvider>{children}</ToastProvider>
         </NotificationProvider>

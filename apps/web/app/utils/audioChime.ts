@@ -7,27 +7,47 @@ let globalAudioCtx: AudioContext | null = null;
 let isUnlockListenerAttached = false;
 
 /**
- * Lấy hoặc khởi tạo instance AudioContext an toàn trong môi trường trình duyệt.
+ * Mở khóa và khởi tạo AudioContext khi có tương tác người dùng.
+ * Áp dụng Lazy Initialization 100%: Tuyệt đối không tạo AudioContext khi tải trang ban đầu.
  */
-export function getAudioContext(): AudioContext | null {
+export function unlockAudio(): AudioContext | null {
   if (typeof window === 'undefined') return null;
 
-  if (!globalAudioCtx) {
-    const AudioCtxClass =
-      window.AudioContext ||
-      (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
+  try {
+    if (!globalAudioCtx) {
+      const AudioCtxClass =
+        window.AudioContext ||
+        (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
 
-    if (AudioCtxClass) {
-      globalAudioCtx = new AudioCtxClass();
+      if (AudioCtxClass) {
+        globalAudioCtx = new AudioCtxClass();
+      }
     }
-  }
 
-  return globalAudioCtx;
+    if (globalAudioCtx && globalAudioCtx.state === 'suspended') {
+      globalAudioCtx.resume().catch(() => {
+        // Trình duyệt có thể từ chối nếu cử chỉ chưa đủ điều kiện
+      });
+    }
+
+    return globalAudioCtx;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Lấy hoặc khởi tạo instance AudioContext an toàn trong môi trường trình duyệt.
+ * Lazy - Chỉ khởi tạo khi thực sự cần dùng.
+ */
+export function getAudioContext(): AudioContext | null {
+  return unlockAudio();
 }
 
 /**
  * Đăng ký listener mở khóa AudioContext ngay sau tương tác đầu tiên của người dùng
  * (Tuân thủ nghiêm ngặt chính sách Autoplay Policy của trình duyệt hiện đại).
+ * Tuyệt đối không tạo AudioContext trong hàm này, chỉ gắn listeners để chờ cử chỉ người dùng.
  */
 export function setupAudioContextUnlock(): void {
   if (typeof window === 'undefined' || isUnlockListenerAttached) return;
@@ -35,12 +55,7 @@ export function setupAudioContextUnlock(): void {
   const unlockEvents = ['click', 'keydown', 'pointerdown', 'touchstart'];
 
   const handleFirstInteraction = () => {
-    const ctx = getAudioContext();
-    if (ctx && ctx.state === 'suspended') {
-      ctx.resume().catch(() => {
-        // Trình duyệt có thể từ chối nếu tương tác chưa đủ điều kiện
-      });
-    }
+    unlockAudio();
 
     // Gỡ bỏ toàn bộ event listeners sau lần kích hoạt đầu tiên
     unlockEvents.forEach((evt) => {
@@ -63,7 +78,7 @@ export function setupAudioContextUnlock(): void {
  * - Không phụ thuộc file MP3 tĩnh hay băng thông mạng.
  */
 export function playChimeTone(volume: number = 0.25): void {
-  const ctx = getAudioContext();
+  const ctx = unlockAudio();
   if (!ctx) return;
 
   // Nếu AudioContext bị suspend, thử resume ngay

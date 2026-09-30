@@ -78,22 +78,25 @@ export default function KPIPage() {
             label="Đơn hoàn tất toàn hệ thống"
             value={String(summary.total_completed)}
             icon="check"
-            foot="↑ 11,6%"
-            trend="up"
+            foot="Dữ liệu tổng hợp theo chi nhánh"
+            periodLabel=""
+            trend="neutral"
           />
           <StatCard
             label="Thời gian sửa trung bình"
             value={summary.avg_repair_days}
             icon="clock"
-            foot="↓ 0,3 ngày"
-            trend="up"
+            foot="Tính trên các đơn hoàn tất"
+            periodLabel=""
+            trend="neutral"
           />
           <StatCard
             label="Điểm hài lòng khách hàng"
             value={summary.customer_satisfaction}
             icon="star"
-            foot="↑ 0,12 điểm"
-            trend="up"
+            foot="Đánh giá sau dịch vụ"
+            periodLabel=""
+            trend="neutral"
           />
         </div>
 

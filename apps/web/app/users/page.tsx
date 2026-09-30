@@ -15,6 +15,7 @@ import {
   useToast,
 } from '@podscare/ui';
 import { AppShell } from '../components/AppShell';
+import { usePodsCare } from '../providers';
 import { userService } from '@podscare/api-client';
 
 export interface UserItem {
@@ -25,6 +26,11 @@ export interface UserItem {
   role: 'admin' | 'cskh' | 'technician' | 'tech' | 'qc' | 'inventory' | 'warehouse';
   branch_name?: string;
   branch_id?: number | null;
+  branch?: {
+    id: number;
+    code?: string;
+    name: string;
+  };
   is_active: boolean;
   avatar_url?: string | null;
   created_at?: string;
@@ -32,6 +38,7 @@ export interface UserItem {
 
 export default function UsersPage() {
   const { toast } = useToast();
+  const { branches } = usePodsCare();
 
   const [users, setUsers] = useState<UserItem[]>([]);
   const [loading, setLoading] = useState(false);
@@ -44,6 +51,13 @@ export default function UsersPage() {
   const [editModalOpen, setEditModalOpen] = useState(false);
   const [selectedUser, setSelectedUser] = useState<UserItem | null>(null);
 
+  const branchOptions = branches
+    .filter((b) => b.id !== 'all')
+    .map((b) => ({
+      value: String(b.id),
+      label: b.name,
+    }));
+
   // Form states for Create User
   const [formData, setFormData] = useState({
     name: '',
@@ -51,7 +65,7 @@ export default function UsersPage() {
     password: '',
     phone: '',
     role: 'cskh' as UserItem['role'],
-    branch_name: 'Quận 1',
+    branch_id: '' as string | number,
   });
   const [formErrors, setFormErrors] = useState<Record<string, string>>({});
   const [submitting, setSubmitting] = useState(false);
@@ -64,16 +78,26 @@ export default function UsersPage() {
       const raw = res?.data;
       const list = Array.isArray(raw) ? raw : (raw?.data || []);
       if (Array.isArray(list)) {
-        const apiUsers: UserItem[] = list.map((u: any) => ({
-          id: u.id,
-          name: u.name,
-          email: u.email,
-          phone: u.phone || '—',
-          role: u.role,
-          branch_name: u.branch?.name || (u.branch_id === 1 ? 'Quận 1' : 'Quận 3'),
-          is_active: Boolean(u.is_active),
-          avatar_url: u.avatar_url,
-        }));
+        const apiUsers: UserItem[] = list.map((u: any) => {
+          const resolvedBranchId = u.branch_id ?? u.branch?.id ?? null;
+          const resolvedBranchName =
+            u.branch?.name ||
+            branches.find((b) => Number(b.id) === Number(resolvedBranchId))?.name ||
+            (resolvedBranchId ? `Chi nhánh #${resolvedBranchId}` : 'Chưa phân công');
+
+          return {
+            id: u.id,
+            name: u.name,
+            email: u.email,
+            phone: u.phone || '—',
+            role: u.role,
+            branch_id: resolvedBranchId,
+            branch_name: resolvedBranchName,
+            branch: u.branch,
+            is_active: Boolean(u.is_active),
+            avatar_url: u.avatar_url,
+          };
+        });
         setUsers(apiUsers);
       } else {
         setUsers([]);
@@ -84,7 +108,7 @@ export default function UsersPage() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [branches]);
 
   useEffect(() => {
     fetchUsers();
@@ -112,6 +136,7 @@ export default function UsersPage() {
     if (!validateForm()) return;
 
     setSubmitting(true);
+    const chosenBranchId = Number(formData.branch_id) || Number(branchOptions[0]?.value) || 1;
     try {
       await userService.createUser({
         name: formData.name,
@@ -119,7 +144,7 @@ export default function UsersPage() {
         password: formData.password,
         phone: formData.phone || undefined,
         role: formData.role,
-        branch_id: formData.branch_name === 'Quận 3' ? 2 : 1,
+        branch_id: chosenBranchId,
       });
 
       toast(`Cấp tài khoản cho "${formData.name}" thành công!`, 'success');
@@ -130,7 +155,7 @@ export default function UsersPage() {
         password: '',
         phone: '',
         role: 'cskh',
-        branch_name: 'Quận 1',
+        branch_id: branchOptions[0]?.value ? Number(branchOptions[0].value) : 1,
       });
       setFormErrors({});
       fetchUsers();
@@ -171,6 +196,10 @@ export default function UsersPage() {
         name: selectedUser.name,
         phone: selectedUser.phone,
         role: selectedUser.role,
+        branch_id:
+          selectedUser.branch_id !== undefined && selectedUser.branch_id !== null
+            ? Number(selectedUser.branch_id)
+            : undefined,
       });
 
       toast(`Đã cập nhật thông tin nhân viên ${selectedUser.name}!`, 'success');
@@ -287,14 +316,16 @@ export default function UsersPage() {
             value={users.length}
             icon="customers"
             foot="Toàn hệ thống"
-            trend="up"
+            periodLabel=""
+            trend="neutral"
           />
           <StatCard
             label="Quản trị viên (Admin)"
             value={users.filter((u) => u.role === 'admin').length}
             icon="spark"
             foot="Toàn quyền hệ thống"
-            trend="up"
+            periodLabel=""
+            trend="neutral"
           />
           <StatCard
             label="CSKH & Kỹ thuật"
@@ -303,14 +334,16 @@ export default function UsersPage() {
             }
             icon="repairs"
             foot="Nhân sự trực tiếp"
-            trend="up"
+            periodLabel=""
+            trend="neutral"
           />
           <StatCard
             label="Đang hoạt động"
             value={users.filter((u) => u.is_active).length}
             icon="check"
             foot={`${users.filter((u) => !u.is_active).length} tài khoản tạm khóa`}
-            trend="up"
+            periodLabel=""
+            trend="neutral"
           />
         </div>
 
@@ -427,7 +460,10 @@ export default function UsersPage() {
                         {/* Branch */}
                         <td className="py-3.5 px-4">
                           <span className="text-sm font-medium text-[#3b4c44]">
-                            {user.branch_name || 'Quận 1'}
+                            {user.branch?.name ||
+                              branches.find((b) => Number(b.id) === Number(user.branch_id))?.name ||
+                              user.branch_name ||
+                              'Chưa phân công'}
                           </span>
                         </td>
 
@@ -561,15 +597,11 @@ export default function UsersPage() {
               <div>
                 <Select
                   label="Chi nhánh công tác"
-                  value={formData.branch_name}
+                  value={String(formData.branch_id || branchOptions[0]?.value || '1')}
                   onChange={(e) =>
-                    setFormData({ ...formData, branch_name: e.target.value })
+                    setFormData({ ...formData, branch_id: Number(e.target.value) || e.target.value })
                   }
-                  options={[
-                    { value: 'Quận 1', label: 'PodsCare · Quận 1' },
-                    { value: 'Quận 3', label: 'PodsCare · Quận 3' },
-                    { value: 'Thủ Đức', label: 'PodsCare · TP. Thủ Đức' },
-                  ]}
+                  options={branchOptions}
                 />
               </div>
             </div>
@@ -697,24 +729,40 @@ export default function UsersPage() {
                 </div>
               </div>
 
-              <div>
-                <Select
-                  label="Đổi vai trò phân quyền"
-                  value={selectedUser.role}
-                  onChange={(e) =>
-                    setSelectedUser({
-                      ...selectedUser,
-                      role: e.target.value as UserItem['role'],
-                    })
-                  }
-                  options={[
-                    { value: 'admin', label: 'Quản trị viên (Admin)' },
-                    { value: 'cskh', label: 'CSKH Tiếp nhận' },
-                    { value: 'technician', label: 'Kỹ thuật viên' },
-                    { value: 'qc', label: 'Kiểm định QC' },
-                    { value: 'inventory', label: 'Thủ kho linh kiện' },
-                  ]}
-                />
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                  <Select
+                    label="Đổi vai trò phân quyền"
+                    value={selectedUser.role}
+                    onChange={(e) =>
+                      setSelectedUser({
+                        ...selectedUser,
+                        role: e.target.value as UserItem['role'],
+                      })
+                    }
+                    options={[
+                      { value: 'admin', label: 'Quản trị viên (Admin)' },
+                      { value: 'cskh', label: 'CSKH Tiếp nhận' },
+                      { value: 'technician', label: 'Kỹ thuật viên' },
+                      { value: 'qc', label: 'Kiểm định QC' },
+                      { value: 'inventory', label: 'Thủ kho linh kiện' },
+                    ]}
+                  />
+                </div>
+                <div>
+                  <Select
+                    label="Chi nhánh công tác"
+                    value={String(selectedUser.branch_id ?? branchOptions[0]?.value ?? '1')}
+                    onChange={(e) =>
+                      setSelectedUser({
+                        ...selectedUser,
+                        branch_id: Number(e.target.value),
+                        branch_name: branchOptions.find((b) => b.value === e.target.value)?.label,
+                      })
+                    }
+                    options={branchOptions}
+                  />
+                </div>
               </div>
             </form>
           </Modal>

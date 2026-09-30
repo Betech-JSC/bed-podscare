@@ -6,7 +6,7 @@ export interface StatCardProps {
   value: string | number;
   icon?: string;
   foot?: string;
-  trend?: 'up' | 'down';
+  trend?: 'up' | 'down' | 'neutral';
   periodLabel?: string;
   onClick?: () => void;
   className?: string;
@@ -17,8 +17,8 @@ export const StatCard: React.FC<StatCardProps> = ({
   value,
   icon = 'clock',
   foot,
-  trend = 'up',
-  periodLabel = 'so với tháng trước',
+  trend = 'neutral',
+  periodLabel = '',
   onClick,
   className = '',
 }) => {
@@ -45,7 +45,15 @@ export const StatCard: React.FC<StatCardProps> = ({
 
       {foot && (
         <div className="flex items-center gap-1.5 text-xs text-[#83918a]">
-          <span className={trend === 'up' ? 'text-[#368361] font-bold' : 'text-[#bd7650] font-bold'}>
+          <span
+            className={
+              trend === 'up'
+                ? 'text-[#368361] font-bold'
+                : trend === 'down'
+                ? 'text-[#bd7650] font-bold'
+                : 'text-[#687871] font-medium'
+            }
+          >
             {foot}
           </span>
           {periodLabel && <span className="text-[#9ba7a1]">{periodLabel}</span>}

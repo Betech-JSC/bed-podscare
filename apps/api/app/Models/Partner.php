@@ -20,6 +20,10 @@ class Partner extends Model
         'api_config',
     ];
 
+    protected $hidden = [
+        'api_config',
+    ];
+
     protected function casts(): array
     {
         return [

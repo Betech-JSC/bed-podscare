@@ -4,6 +4,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { useRouter, usePathname } from 'next/navigation';
 import { AppSidebar, Topbar, NotificationPopover, type NotificationItem } from '@podscare/ui';
 import { usePodsCare, useNotifications } from '../providers';
+import { playChimeTone } from '../utils/audioChime';
 
 export interface AppShellProps {
   children: React.ReactNode;
@@ -141,6 +142,7 @@ export const AppShell: React.FC<AppShellProps> = ({ children, crumbName = 'Tổn
                 onMarkAsRead={markAsRead}
                 isMuted={isMuted}
                 onToggleMute={toggleMute}
+                onTestSound={() => playChimeTone()}
               />
             </div>
           }

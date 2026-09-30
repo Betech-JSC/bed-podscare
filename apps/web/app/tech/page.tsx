@@ -46,12 +46,12 @@ export default function TechnicianQueuePage() {
     });
   }, [orders, branch, branchId]);
 
-  // Available orders: unassigned or waiting for tech in current branch
+  // Available orders: unassigned and waiting for tech in current branch (Task 3.5)
   const availableOrders = React.useMemo(() => {
     return branchFilteredOrders.filter(
       (o) =>
-        o.tech === 'Chưa phân công' &&
-        ['Chờ kỹ thuật', 'Đã duyệt', 'Tiếp nhận mới', 'Chờ khách duyệt'].includes(o.status)
+        (!o.technicianId && !o.technician_id) &&
+        (o.status === 'Chờ kỹ thuật' || o.status === 'waiting_tech')
     );
   }, [branchFilteredOrders]);
 
@@ -59,17 +59,19 @@ export default function TechnicianQueuePage() {
   const myActiveOrders = React.useMemo(() => {
     return branchFilteredOrders.filter(
       (o) =>
-        o.tech === techName &&
+        (currentUser.role === 'admin' || Number(o.technicianId || o.technician_id) === Number(currentUser.id)) &&
         !['Hoàn tất kỹ thuật', 'Chờ QC', 'Sẵn sàng trả', 'Hoàn tất', 'Đã hủy'].includes(o.status)
     );
-  }, [branchFilteredOrders, techName]);
+  }, [branchFilteredOrders, currentUser.id, currentUser.role]);
 
   // Completed today by this tech in current branch
   const completedToday = React.useMemo(() => {
     return branchFilteredOrders.filter(
-      (o) => o.tech === techName && ['Chờ QC', 'Sẵn sàng trả', 'Hoàn tất'].includes(o.status)
+      (o) =>
+        (currentUser.role === 'admin' || Number(o.technicianId || o.technician_id) === Number(currentUser.id)) &&
+        ['Chờ QC', 'Sẵn sàng trả', 'Hoàn tất'].includes(o.status)
     );
-  }, [branchFilteredOrders, techName]);
+  }, [branchFilteredOrders, currentUser.id, currentUser.role]);
 
   const handleAcceptOrder = async (order: RepairOrder) => {
     try {

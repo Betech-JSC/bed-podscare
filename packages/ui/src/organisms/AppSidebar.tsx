@@ -15,7 +15,12 @@ export interface NavItemDef {
   icon: string;
   badge?: number | string;
   hasDot?: boolean;
+  href?: string;
 }
+
+export const mainNavItems: NavItemDef[] = [
+  { id: 'tech', label: 'Kỹ thuật viên', icon: 'wrench', href: '/tech' },
+];
 
 export interface AppSidebarProps {
   currentPath: string;
@@ -76,11 +81,13 @@ export const AppSidebar: React.FC<AppSidebarProps> = ({
       'devices',
       'quotes',
       'timeline',
+      'tech',
       'qc',
       'inventory',
       'shipments',
       'partners',
       'warranty',
+      'branches',
       'users',
       'payments',
       'kpi',
@@ -101,6 +108,7 @@ export const AppSidebar: React.FC<AppSidebarProps> = ({
       'repairs',
       'devices',
       'timeline',
+      'tech',
       'qc',
     ],
   };
@@ -117,6 +125,7 @@ export const AppSidebar: React.FC<AppSidebarProps> = ({
   ];
 
   const operationsNav: NavItemDef[] = [
+    { id: 'tech', label: 'Kỹ thuật viên', icon: 'wrench', href: '/tech' },
     { id: 'qc', label: 'Kiểm định QC', icon: 'qc', badge: qcCount },
     { id: 'inventory', label: 'Kho linh kiện', icon: 'inventory' },
     { id: 'shipments', label: 'Giao nhận', icon: 'shipments' },
@@ -125,6 +134,7 @@ export const AppSidebar: React.FC<AppSidebarProps> = ({
   ];
 
   const systemNav: NavItemDef[] = [
+    { id: 'branches', label: 'Quản lý Chi nhánh', icon: 'spark' },
     { id: 'users', label: 'Tài khoản & Phân quyền', icon: 'customers' },
     { id: 'payments', label: 'Thanh toán', icon: 'payments' },
     { id: 'kpi', label: 'Hiệu suất KPI', icon: 'kpi' },
@@ -151,14 +161,17 @@ export const AppSidebar: React.FC<AppSidebarProps> = ({
         </div>
         <div className="space-y-1">
           {filteredItems.map((item) => {
-            const isActive = currentPath === item.id || currentPath === `/${item.id}`;
+            const isActive =
+              currentPath === item.id ||
+              currentPath === `/${item.id}` ||
+              (item.href ? currentPath === item.href.replace(/^\//, '') : false);
             return (
               <button
                 key={item.id}
                 ref={isActive ? activeItemRef : undefined}
                 type="button"
                 onClick={() => {
-                  onNavigate(item.id);
+                  onNavigate(item.href ? item.href.replace(/^\//, '') : item.id);
                   onClose?.();
                 }}
                 className={`w-full h-10 rounded-[8px] flex items-center gap-3 px-3 text-sm font-medium transition-colors text-left ${
@@ -325,6 +338,22 @@ export const AppSidebar: React.FC<AppSidebarProps> = ({
                     );
                   })}
                 </div>
+                {normalizedRole === 'admin' && (
+                  <div className="p-1.5 border-t border-[#f0f3f1] bg-[#fafbfa]">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setBranchDropdownOpen(false);
+                        onNavigate('branches');
+                        onClose?.();
+                      }}
+                      className="w-full flex items-center justify-center gap-1.5 py-1.5 px-3 rounded-[6px] text-xs font-bold text-[#176b58] hover:bg-[#eaf4ef] transition-colors"
+                    >
+                      <span className="text-sm font-bold leading-none">+</span>
+                      <span>Thêm chi nhánh mới</span>
+                    </button>
+                  </div>
+                )}
               </div>
             </>
           )}

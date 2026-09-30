@@ -109,6 +109,8 @@ export default function RepairsPage() {
         statusType: mappedStatus.type,
         price: Number(o.total_price) || Number(o.estimated_price) || 0,
         tech: o.technician?.name || 'Chưa phân công',
+        technicianId: o.technician_id ?? o.technician?.id ?? null,
+        technician_id: o.technician_id ?? o.technician?.id ?? null,
         date: o.created_at
           ? new Intl.DateTimeFormat('vi-VN').format(new Date(o.created_at))
           : 'Hôm nay',
@@ -148,6 +150,10 @@ export default function RepairsPage() {
 
   const handleUpdateStatus = async (nextStatus: string, nextType: any) => {
     if (!selectedOrder) return;
+    const previousOrder = { ...selectedOrder };
+    const prevStatus = selectedOrder.status;
+    const prevType = selectedOrder.statusType;
+
     const updated: RepairOrder = {
       ...selectedOrder,
       status: nextStatus,
@@ -171,11 +177,25 @@ export default function RepairsPage() {
         refetch();
         if (invalidateOrders) await invalidateOrders();
       }
-    } catch (err) {
-      console.warn('Transition API warning:', err);
-    }
+      toast(`Đã cập nhật ${selectedOrder.id} sang: ${nextStatus}`, 'success');
+    } catch (err: any) {
+      console.warn('Transition API error:', err);
+      // Rollback RAM state về trạng thái trước đó
+      const revertedOrder: RepairOrder = {
+        ...previousOrder,
+        status: prevStatus,
+        statusType: prevType,
+      };
+      updateOrder(revertedOrder);
+      setSelectedOrder(revertedOrder);
 
-    toast(`Đã cập nhật ${selectedOrder.id} sang: ${nextStatus}`, 'success');
+      const errMsg =
+        err?.response?.data?.message ||
+        err?.data?.message ||
+        err?.message ||
+        'Không thể chuyển trạng thái do vi phạm quy tắc quy trình FSM.';
+      toast(errMsg, 'error');
+    }
   };
 
   return (
@@ -356,10 +376,10 @@ export default function RepairsPage() {
             <div className="flex items-center justify-between w-full">
               <Button
                 variant="secondary"
-                icon="download"
+                icon="arrow"
                 onClick={() => router.push(`/print/${selectedOrder.id}`)}
               >
-                In lại 2 liên A4 ▤
+                Xem phiếu tiếp nhận ↗
               </Button>
               <div className="flex gap-2">
                 <Button variant="ghost" onClick={() => setSelectedOrder(null)}>

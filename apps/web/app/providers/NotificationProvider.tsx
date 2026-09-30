@@ -207,6 +207,7 @@ export interface NotificationProviderProps {
   role?: string | null;
   userId?: string | number | null;
   initialNotifications?: NotificationItem[];
+  enabled?: boolean;
 }
 
 export const NotificationProvider: React.FC<NotificationProviderProps> = ({
@@ -215,6 +216,7 @@ export const NotificationProvider: React.FC<NotificationProviderProps> = ({
   role: explicitRole,
   userId: explicitUserId,
   initialNotifications,
+  enabled = true,
 }) => {
   const [notifications, setNotifications] = useState<NotificationItem[]>(
     initialNotifications || []
@@ -234,6 +236,7 @@ export const NotificationProvider: React.FC<NotificationProviderProps> = ({
 
   // Tải danh sách thông báo thực tế từ REST API
   const refreshNotifications = useCallback(async () => {
+    if (!enabled) return;
     try {
       setIsLoading(true);
       const params: any = { per_page: 30 };
@@ -274,7 +277,7 @@ export const NotificationProvider: React.FC<NotificationProviderProps> = ({
     } finally {
       setIsLoading(false);
     }
-  }, [explicitBranchId]);
+  }, [explicitBranchId, enabled]);
 
   // Callback nhận sự kiện hợp lệ từ Socket / Event Bus
   const handleIncomingOperationalEvent = useCallback(
@@ -340,10 +343,12 @@ export const NotificationProvider: React.FC<NotificationProviderProps> = ({
     role: explicitRole,
     userId: explicitUserId,
     onOperationalEvent: handleIncomingOperationalEvent,
-    enabled: true,
+    enabled,
   });
 
   useEffect(() => {
+    if (!enabled) return;
+
     refreshNotifications();
 
     // Chu kỳ polling thông minh mỗi 15 giây để tự động đồng bộ thông báo mới từ database
@@ -365,7 +370,7 @@ export const NotificationProvider: React.FC<NotificationProviderProps> = ({
         window.removeEventListener('focus', handleFocus);
       }
     };
-  }, [refreshNotifications]);
+  }, [enabled, refreshNotifications]);
 
   // Đánh dấu đã đọc một thông báo (Optimistic update + Sync REST API)
   const markAsRead = useCallback(async (id: string | number) => {

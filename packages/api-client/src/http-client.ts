@@ -48,12 +48,27 @@ export class HttpClient {
     return null;
   }
 
+  public buildUrl(endpoint: string): string {
+    if (endpoint.startsWith('http://') || endpoint.startsWith('https://')) {
+      return endpoint;
+    }
+    const cleanBase = this.baseURL.replace(/\/+$/, '');
+    let cleanEndpoint = endpoint.replace(/^\/+/, '');
+
+    // Strip duplicate /api/v1 if both base and endpoint declare it
+    if (cleanBase.endsWith('/api/v1') && cleanEndpoint.startsWith('api/v1/')) {
+      cleanEndpoint = cleanEndpoint.substring('api/v1/'.length);
+    } else if (cleanBase.endsWith('/api/v1') && cleanEndpoint === 'api/v1') {
+      cleanEndpoint = '';
+    }
+
+    return cleanEndpoint ? `${cleanBase}/${cleanEndpoint}` : cleanBase;
+  }
+
   public async request<T>(endpoint: string, options: RequestOptions = {}): Promise<T> {
     const { params, timeoutMs = 15000, headers: customHeaders, ...fetchOptions } = options;
 
-    let url = endpoint.startsWith('http')
-      ? endpoint
-      : `${this.baseURL.replace(/\/$/, '')}/${endpoint.replace(/^\//, '')}`;
+    let url = this.buildUrl(endpoint);
 
     if (params) {
       const searchParams = new URLSearchParams();
@@ -98,6 +113,14 @@ export class HttpClient {
         } catch {
           errorData = await response.text();
         }
+
+        if (response.status === 401) {
+          this.setToken(null);
+          if (typeof window !== 'undefined' && window.location.pathname !== '/login') {
+            window.location.href = '/login';
+          }
+        }
+
         throw new ApiClientError(
           `Request failed with status ${response.status}`,
           response.status,

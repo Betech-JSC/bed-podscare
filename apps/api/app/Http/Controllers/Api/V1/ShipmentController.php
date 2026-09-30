@@ -7,13 +7,18 @@ use App\Models\AuditLog;
 use App\Models\RepairOrder;
 use App\Models\Shipment;
 use App\Models\ShipmentProof;
+use App\Services\OrderWorkflowService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Storage;
 
 class ShipmentController extends Controller
 {
+    public function __construct(
+        protected OrderWorkflowService $workflowService
+    ) {}
     /**
      * Danh sách đơn giao nhận / vận chuyển.
      */
@@ -50,9 +55,11 @@ class ShipmentController extends Controller
             'notes'            => 'nullable|string',
         ]);
 
-        $year = date('y');
-        $randomNum = str_pad((string) random_int(10, 999), 3, '0', STR_PAD_LEFT);
-        $shipmentCode = "PC{$year}-SH-{$randomNum}";
+        $date = date('Ymd');
+        do {
+            $rand = str_pad((string) random_int(1, 9999), 4, '0', STR_PAD_LEFT);
+            $shipmentCode = "SH-{$date}-{$rand}";
+        } while (Shipment::where('shipment_code', $shipmentCode)->exists());
 
         $shipment = Shipment::create([
             'shipment_code'      => $shipmentCode,
@@ -83,13 +90,28 @@ class ShipmentController extends Controller
         }
 
         $validated = $request->validate([
-            'photo_url' => 'required|url',
+            'proof'     => 'nullable|file|mimes:jpeg,png,jpg,webp|max:10240',
+            'photo'     => 'nullable|file|mimes:jpeg,png,jpg,webp|max:10240',
+            'file'      => 'nullable|file|mimes:jpeg,png,jpg,webp|max:10240',
+            'photo_url' => 'nullable|string',
             'caption'   => 'nullable|string|max:255',
         ]);
 
+        $uploadedFile = $request->file('proof') ?? $request->file('photo') ?? $request->file('file');
+        $photoUrl = $validated['photo_url'] ?? null;
+
+        if (! $uploadedFile && ! $photoUrl) {
+            return $this->failure('Vui lòng tải lên tệp ảnh (proof/photo/file) hoặc cung cấp đường dẫn ảnh (photo_url).', 422);
+        }
+
+        if ($uploadedFile) {
+            $path = $uploadedFile->store("shipments/{$shipment->id}", 'public');
+            $photoUrl = url(Storage::url($path));
+        }
+
         $proof = ShipmentProof::create([
             'shipment_id' => $shipment->id,
-            'photo_url'   => $validated['photo_url'],
+            'photo_url'   => $photoUrl,
             'caption'     => $validated['caption'] ?? 'Ảnh xác minh giao hàng',
         ]);
 
@@ -136,6 +158,26 @@ class ShipmentController extends Controller
                 'delivered_at' => $newStatus === 'delivered' ? Carbon::now() : $shipment->delivered_at,
                 'notes'        => $validated['notes'] ?? $shipment->notes,
             ]);
+
+            // Khi trạng thái chuyển sang delivered, tự động hoàn tất đơn sửa chữa liên quan
+            if ($newStatus === 'delivered' && $shipment->repair_order_id) {
+                $order = RepairOrder::find($shipment->repair_order_id);
+                if ($order && $order->status !== 'completed') {
+                    if (! in_array($order->status, ['ready_for_return', 'waiting_pickup', 'rejected'], true)) {
+                        $order->status = 'ready_for_return';
+                        $order->save();
+                    }
+
+                    $this->workflowService->transition($order, 'completed', [
+                        'user'       => $request->user(),
+                        'admin_id'   => $request->user()?->id,
+                        'admin_name' => $request->user()?->name,
+                        'reason'     => 'Giao hàng thành công qua vận đơn ' . $shipment->shipment_code,
+                        'ip'         => $request->ip(),
+                        'user_agent' => $request->userAgent(),
+                    ]);
+                }
+            }
 
             AuditLog::create([
                 'user_id'        => $request->user()->id,

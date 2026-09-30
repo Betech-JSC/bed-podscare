@@ -18,69 +18,6 @@ interface FormattedPartner {
   shipmentsCount: number;
 }
 
-const fallbackPartners: FormattedPartner[] = [
-  {
-    id: 1,
-    code: 'GHN',
-    name: 'Giao Hàng Nhanh (GHN Express)',
-    serviceType: 'logistics',
-    serviceTypeLabel: 'Vận chuyển / Logistics',
-    contactPerson: 'Nguyễn Văn Giao',
-    phone: '1900 1206',
-    status: 'Hoạt động',
-    statusType: 'ready',
-    shipmentsCount: 38,
-  },
-  {
-    id: 2,
-    code: 'GrabExpress',
-    name: 'GrabExpress Giao Siêu Tốc',
-    serviceType: 'logistics',
-    serviceTypeLabel: 'Vận chuyển / Logistics',
-    contactPerson: 'Trần Grab',
-    phone: '028 7108 7108',
-    status: 'Hoạt động',
-    statusType: 'ready',
-    shipmentsCount: 24,
-  },
-  {
-    id: 3,
-    code: 'FixHub',
-    name: 'FixHub - Trạm Sửa Phần Cứng Chuyên Sâu',
-    serviceType: 'specialized_repair',
-    serviceTypeLabel: 'Sửa phần cứng chuyên sâu',
-    contactPerson: 'Lê Văn Fix',
-    phone: '0988 112 233',
-    status: 'Hoạt động',
-    statusType: 'ready',
-    shipmentsCount: 15,
-  },
-  {
-    id: 4,
-    code: 'CarePlus',
-    name: 'CarePlus - Bảo Hành Mở Rộng Toàn Diện',
-    serviceType: 'warranty_extended',
-    serviceTypeLabel: 'Bảo hành mở rộng',
-    contactPerson: 'Phạm Thị Care',
-    phone: '0977 445 566',
-    status: 'Hoạt động',
-    statusType: 'ready',
-    shipmentsCount: 19,
-  },
-  {
-    id: 5,
-    code: 'AppleParts-VN',
-    name: 'Nhà cung cấp linh kiện AppleParts VN',
-    serviceType: 'parts_supplier',
-    serviceTypeLabel: 'Nhà cung ứng linh kiện',
-    contactPerson: 'Hoàng Minh Kho',
-    phone: '0912 334 455',
-    status: 'Hoạt động',
-    statusType: 'ready',
-    shipmentsCount: 42,
-  },
-];
-
 export default function PartnersPage() {
   const { toast } = useToast();
   const [partners, setPartners] = useState<FormattedPartner[]>([]);
@@ -134,11 +71,11 @@ export default function PartnersPage() {
         }));
         setPartners(mapped);
       } else {
-        setPartners(fallbackPartners);
+        setPartners([]);
       }
     } catch (err) {
       console.warn('Could not fetch partners from API:', err);
-      setPartners(fallbackPartners);
+      setPartners([]);
     } finally {
       setIsLoading(false);
     }
@@ -256,7 +193,8 @@ export default function PartnersPage() {
             value={String(partners.length).padStart(2, '0')}
             icon="partners"
             foot="Đang liên kết hoạt động"
-            trend="up"
+            periodLabel=""
+            trend="neutral"
           />
           <StatCard
             label="Đối tác giao nhận"
@@ -310,9 +248,22 @@ export default function PartnersPage() {
             </div>
           ) : filtered.length === 0 ? (
             <EmptyState
-              title="Không tìm thấy đối tác nào"
-              description="Không có đối tác nào phù hợp với điều kiện tìm kiếm."
-              icon="search"
+              title={search || typeFilter !== 'all' ? 'Không tìm thấy đối tác nào' : 'Chưa có đối tác nào'}
+              description={
+                search || typeFilter !== 'all'
+                  ? 'Không có đối tác nào phù hợp với điều kiện tìm kiếm.'
+                  : 'Hiện tại hệ thống chưa ghi nhận đối tác hoặc đại lý nào trong danh bạ.'
+              }
+              icon="users"
+              actionLabel={search || typeFilter !== 'all' ? 'Xóa bộ lọc' : 'Thêm đối tác mới'}
+              onAction={() => {
+                if (search || typeFilter !== 'all') {
+                  setSearch('');
+                  setTypeFilter('all');
+                } else {
+                  setAddModalOpen(true);
+                }
+              }}
             />
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">

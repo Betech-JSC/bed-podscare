@@ -44,4 +44,9 @@ class Part extends Model
     {
         return $this->hasMany(QuoteItem::class, 'part_id');
     }
+
+    public function branchParts(): HasMany
+    {
+        return $this->hasMany(BranchPart::class);
+    }
 }

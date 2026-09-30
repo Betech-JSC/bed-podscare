@@ -2,8 +2,9 @@
 
 import React, { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { Button, Input, useToast, Icon } from '@podscare/ui';
+import { Button, Input, useToast, Icon, Badge } from '@podscare/ui';
 import { usePodsCare } from '../providers';
+import { unlockAudio } from '../utils/audioChime';
 
 export default function LoginPage() {
   const router = useRouter();
@@ -70,6 +71,7 @@ export default function LoginPage() {
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+    unlockAudio();
     if (!emailOrPhone.trim()) {
       setErrorMessage('Vui lòng nhập Email hoặc Số điện thoại.');
       return;
@@ -79,6 +81,13 @@ export default function LoginPage() {
       return;
     }
     executeLogin(emailOrPhone, password);
+  };
+
+  const handleQuickLogin = (email: string) => {
+    unlockAudio();
+    setEmailOrPhone(email);
+    setPassword('password123');
+    executeLogin(email, 'password123');
   };
 
   return (
@@ -153,6 +162,93 @@ export default function LoginPage() {
             Đăng nhập vào ca làm việc →
           </Button>
         </form>
+
+        {/* Quick Login Divider */}
+        <div className="relative my-7">
+          <div className="absolute inset-0 flex items-center">
+            <div className="w-full border-t border-[#edf1ee]" />
+          </div>
+          <div className="relative flex justify-center text-xs">
+            <span className="bg-white px-3 text-[#87968f] font-semibold">
+              Đăng nhập nhanh cho Demo (1-Click)
+            </span>
+          </div>
+        </div>
+
+        {/* 3 Quick Login Buttons */}
+        <div className="space-y-2.5">
+          <button
+            type="button"
+            onClick={() => handleQuickLogin('admin@podscare.vn')}
+            disabled={loading}
+            className="w-full p-3 sm:p-3.5 rounded-[12px] border border-[#e5ece8] bg-[#fbfcfb] hover:bg-[#f1f6f3] hover:border-[#96c4b0] transition-all flex items-center justify-between text-left group disabled:opacity-50 cursor-pointer"
+          >
+            <div className="flex items-center gap-3.5 min-w-0 flex-1 mr-3">
+              <div className="w-9 h-9 rounded-full bg-[#176b58] text-white font-bold text-xs grid place-items-center shrink-0">
+                ML
+              </div>
+              <div className="min-w-0 flex-1">
+                <b className="block text-sm font-bold text-[#1c302b] group-hover:text-[#176b58] truncate">
+                  Admin (Minh Lê)
+                </b>
+                <span className="block text-xs text-[#7e8d85] truncate">
+                  admin@podscare.vn · pass: password123
+                </span>
+              </div>
+            </div>
+            <Badge variant="brand" className="whitespace-nowrap shrink-0">
+              Quản trị viên
+            </Badge>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => handleQuickLogin('cskh.lan@podscare.vn')}
+            disabled={loading}
+            className="w-full p-3 sm:p-3.5 rounded-[12px] border border-[#e5ece8] bg-[#fbfcfb] hover:bg-[#f1f6f3] hover:border-[#96c4b0] transition-all flex items-center justify-between text-left group disabled:opacity-50 cursor-pointer"
+          >
+            <div className="flex items-center gap-3.5 min-w-0 flex-1 mr-3">
+              <div className="w-9 h-9 rounded-full bg-[#3b82f6] text-white font-bold text-xs grid place-items-center shrink-0">
+                LP
+              </div>
+              <div className="min-w-0 flex-1">
+                <b className="block text-sm font-bold text-[#1c302b] group-hover:text-[#176b58] truncate">
+                  CSKH (Lan Phạm)
+                </b>
+                <span className="block text-xs text-[#7e8d85] truncate">
+                  cskh.lan@podscare.vn · pass: password123
+                </span>
+              </div>
+            </div>
+            <span className="inline-flex items-center text-xs font-semibold px-2.5 py-0.5 rounded-[10px] bg-[#eef4ff] text-[#2563eb] whitespace-nowrap shrink-0">
+              CSKH Tiếp nhận
+            </span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => handleQuickLogin('tuan.kt@podscare.vn')}
+            disabled={loading}
+            className="w-full p-3 sm:p-3.5 rounded-[12px] border border-[#e5ece8] bg-[#fbfcfb] hover:bg-[#f1f6f3] hover:border-[#96c4b0] transition-all flex items-center justify-between text-left group disabled:opacity-50 cursor-pointer"
+          >
+            <div className="flex items-center gap-3.5 min-w-0 flex-1 mr-3">
+              <div className="w-9 h-9 rounded-full bg-[#f59e0b] text-white font-bold text-xs grid place-items-center shrink-0">
+                TK
+              </div>
+              <div className="min-w-0 flex-1">
+                <b className="block text-sm font-bold text-[#1c302b] group-hover:text-[#176b58] truncate">
+                  Kỹ thuật (Tuấn K.)
+                </b>
+                <span className="block text-xs text-[#7e8d85] truncate">
+                  tuan.kt@podscare.vn · pass: password123
+                </span>
+              </div>
+            </div>
+            <span className="inline-flex items-center text-xs font-semibold px-2.5 py-0.5 rounded-[10px] bg-[#fef5e7] text-[#b45309] whitespace-nowrap shrink-0">
+              Kỹ thuật viên
+            </span>
+          </button>
+        </div>
 
         {/* Security Footer Note */}
         <p className="text-xs text-[#819089] text-center mt-7 mb-0 leading-relaxed">

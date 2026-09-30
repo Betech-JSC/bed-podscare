@@ -29,23 +29,25 @@ use Illuminate\Support\Facades\Route;
 Route::prefix('v1')->group(function () {
 
     // --- 1. PUBLIC ROUTES (Không cần xác thực) ---
-    Route::prefix('auth')->group(function () {
-        Route::post('/login', [AuthController::class, 'login'])->name('api.v1.auth.login');
+    Route::middleware('throttle:60,1')->group(function () {
+        Route::prefix('auth')->group(function () {
+            Route::post('/login', [AuthController::class, 'login'])->name('api.v1.auth.login');
+        });
+
+        // Public customer tracking portal
+        Route::get('/tracking/{code}', [TrackingController::class, 'track'])->name('api.v1.tracking.show');
+
+        // Public catalog & checklist template
+        Route::get('/devices/checklist-template', [DeviceController::class, 'checklistTemplate'])->name('api.v1.devices.template');
+        Route::get('/devices', [DeviceController::class, 'index'])->name('api.v1.devices.index');
+        Route::get('/devices/{id}', [DeviceController::class, 'show'])->name('api.v1.devices.show');
+
+        Route::get('/services/common-issues', [ServiceController::class, 'commonIssues'])->name('api.v1.services.common_issues');
+        Route::get('/services', [ServiceController::class, 'index'])->name('api.v1.services.index');
+        Route::get('/services/{id}', [ServiceController::class, 'show'])->name('api.v1.services.show');
+
+        Route::get('/warranties/lookup', [WarrantyController::class, 'lookup'])->name('api.v1.warranties.lookup');
     });
-
-    // Public customer tracking portal
-    Route::get('/tracking/{code}', [TrackingController::class, 'track'])->name('api.v1.tracking.show');
-
-    // Public catalog & checklist template
-    Route::get('/devices/checklist-template', [DeviceController::class, 'checklistTemplate'])->name('api.v1.devices.template');
-    Route::get('/devices', [DeviceController::class, 'index'])->name('api.v1.devices.index');
-    Route::get('/devices/{id}', [DeviceController::class, 'show'])->name('api.v1.devices.show');
-
-    Route::get('/services/common-issues', [ServiceController::class, 'commonIssues'])->name('api.v1.services.common_issues');
-    Route::get('/services', [ServiceController::class, 'index'])->name('api.v1.services.index');
-    Route::get('/services/{id}', [ServiceController::class, 'show'])->name('api.v1.services.show');
-
-    Route::get('/warranties/lookup', [WarrantyController::class, 'lookup'])->name('api.v1.warranties.lookup');
 
 
     // --- 2. PROTECTED ROUTES (Yêu cầu Bearer Token - Sanctum) ---
@@ -58,14 +60,19 @@ Route::prefix('v1')->group(function () {
         });
 
         // Users & Role Management
-        Route::get('/users', [UserController::class, 'index'])->name('api.v1.users.index');
-        Route::post('/users', [UserController::class, 'store'])->name('api.v1.users.store');
-        Route::put('/users/{id}', [UserController::class, 'update'])->name('api.v1.users.update');
-        Route::post('/users/{id}/toggle-status', [UserController::class, 'toggleStatus'])->name('api.v1.users.toggle_status');
+        Route::middleware('role:admin')->group(function () {
+            Route::get('/users', [UserController::class, 'index'])->name('api.v1.users.index');
+            Route::post('/users', [UserController::class, 'store'])->name('api.v1.users.store');
+            Route::put('/users/{id}', [UserController::class, 'update'])->name('api.v1.users.update');
+            Route::post('/users/{id}/toggle-status', [UserController::class, 'toggleStatus'])->name('api.v1.users.toggle_status');
+        });
 
         // Branches
         Route::get('/branches', [BranchController::class, 'index'])->name('api.v1.branches.index');
+        Route::post('/branches', [BranchController::class, 'store'])->name('api.v1.branches.store');
         Route::get('/branches/{id}', [BranchController::class, 'show'])->name('api.v1.branches.show');
+        Route::put('/branches/{id}', [BranchController::class, 'update'])->name('api.v1.branches.update');
+        Route::post('/branches/{id}/toggle-status', [BranchController::class, 'toggleStatus'])->name('api.v1.branches.toggle_status');
 
         // Customers
         Route::get('/customers', [CustomerController::class, 'index'])->name('api.v1.customers.index');
@@ -75,6 +82,7 @@ Route::prefix('v1')->group(function () {
 
         // Repair Orders & FSM Workflow
         Route::get('/orders', [OrderController::class, 'index'])->name('api.v1.orders.index');
+        Route::get('/repairs', [OrderController::class, 'index'])->name('api.v1.repairs.index');
         Route::post('/orders', [OrderController::class, 'store'])->name('api.v1.orders.store');
         Route::get('/orders/{id}', [OrderController::class, 'show'])->name('api.v1.orders.show');
         Route::put('/orders/{id}', [OrderController::class, 'update'])->name('api.v1.orders.update');
@@ -104,8 +112,6 @@ Route::prefix('v1')->group(function () {
         Route::post('/shipments/{id}/proofs', [ShipmentController::class, 'uploadProof'])->name('api.v1.shipments.proofs');
         Route::put('/shipments/{id}/status', [ShipmentController::class, 'updateStatus'])->name('api.v1.shipments.update_status');
 
-        // Partners
-        Route::apiResource('partners', PartnerController::class);
 
         // Warranties
         Route::get('/warranties', [WarrantyController::class, 'index'])->name('api.v1.warranties.index');

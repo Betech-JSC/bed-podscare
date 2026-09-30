@@ -329,11 +329,11 @@ class KpiController extends Controller
                                 + ($statusDistribution['waiting_pickup'] ?? 0),
         ];
 
-        // 7. Biểu đồ doanh thu chuỗi ngày gần nhất
+        // 7. Biểu đồ doanh thu chuỗi ngày gần nhất qua SQL Aggregation trực tiếp
         $startDate = Carbon::today()->subDays($daysCount - 1)->startOfDay();
         $endDate = Carbon::today()->endOfDay();
 
-        $chartCompletedOrders = (clone $baseQuery)
+        $dailyStats = (clone $baseQuery)
             ->where('status', 'completed')
             ->where(function ($q) use ($startDate, $endDate) {
                 $q->whereBetween('handed_over_at', [$startDate, $endDate])
@@ -342,7 +342,10 @@ class KpiController extends Controller
                          ->whereBetween('created_at', [$startDate, $endDate]);
                   });
             })
-            ->get(['id', 'total_price', 'handed_over_at', 'created_at']);
+            ->selectRaw("DATE(COALESCE(handed_over_at, created_at)) as day_date, COUNT(*) as order_count, SUM(total_price) as total_revenue")
+            ->groupBy('day_date')
+            ->get()
+            ->keyBy('day_date');
 
         $dayNames = [
             0 => 'CN',
@@ -361,16 +364,13 @@ class KpiController extends Controller
             $dayOfWeek = $date->dayOfWeek;
             $label = $dayNames[$dayOfWeek] ?? ('T' . ($dayOfWeek + 1));
 
-            $dayOrders = $chartCompletedOrders->filter(function ($order) use ($dateStr) {
-                $d = Carbon::parse($order->handed_over_at ?? $order->created_at)->toDateString();
-                return $d === $dateStr;
-            });
+            $stat = $dailyStats->get($dateStr);
 
             $revenueChart[] = [
                 'date'             => $dateStr,
                 'label'            => $label,
-                'revenue'          => (float) $dayOrders->sum('total_price'),
-                'completed_orders' => $dayOrders->count(),
+                'revenue'          => (float) ($stat?->total_revenue ?? 0),
+                'completed_orders' => (int) ($stat?->order_count ?? 0),
             ];
         }
 

@@ -41,6 +41,8 @@ export interface RepairOrder {
   statusType: OrderStatusType;
   price: number;
   tech: string;
+  technicianId?: number | null;
+  technician_id?: number | null;
   date: string;
   branch: string;
   branchId?: number | string;

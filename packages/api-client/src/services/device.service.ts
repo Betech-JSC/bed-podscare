@@ -16,8 +16,11 @@ export class DeviceService {
     return this.http.get(`/api/v1/devices/${id}`);
   }
 
-  async getChecklistTemplate(): Promise<any> {
-    return this.http.get('/api/v1/devices/checklist-template');
+  async getChecklistTemplate(
+    params?: { category?: string; device_model_id?: string | number } | string
+  ): Promise<any> {
+    const queryParams = typeof params === 'string' ? { category: params } : params;
+    return this.http.get('/api/v1/devices/checklist-template', { params: queryParams });
   }
 
   async getCategories(): Promise<string[]> {

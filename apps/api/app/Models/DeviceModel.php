@@ -12,6 +12,7 @@ class DeviceModel extends Model
 
     protected $fillable = [
         'name',
+        'category',
         'model_code',
         'release_year',
         'manufacturer',
@@ -27,6 +28,16 @@ class DeviceModel extends Model
             'has_anc' => 'boolean',
             'is_active' => 'boolean',
         ];
+    }
+
+    public function checklistTemplates(): HasMany
+    {
+        return $this->hasMany(ChecklistTemplate::class);
+    }
+
+    public function commonIssues(): HasMany
+    {
+        return $this->hasMany(CommonIssue::class);
     }
 
     public function repairServices(): HasMany

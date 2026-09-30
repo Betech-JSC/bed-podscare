@@ -64,9 +64,11 @@ class QuoteController extends Controller
         return DB::transaction(function () use ($request, $validated) {
             $order = RepairOrder::findOrFail($validated['repair_order_id']);
 
-            $year = date('y');
-            $randomNum = str_pad((string) random_int(100, 99999), 5, '0', STR_PAD_LEFT);
-            $quoteNumber = "PC{$year}-QT-{$randomNum}";
+            $date = date('Ym');
+            do {
+                $rand = str_pad((string) random_int(1, 9999), 4, '0', STR_PAD_LEFT);
+                $quoteNumber = "Q-{$date}-{$rand}";
+            } while (RepairQuote::where('quote_number', $quoteNumber)->exists());
 
             // Tính tổng tiền
             $totalAmount = 0;

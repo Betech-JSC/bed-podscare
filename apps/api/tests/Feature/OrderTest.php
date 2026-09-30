@@ -261,4 +261,62 @@ class OrderTest extends TestCase
                 && $event->actionUrl === "/repairs?id={$orderId}";
         });
     }
+
+    /**
+     * Test filter orders by numeric technician_id.
+     */
+    public function test_index_orders_filter_by_numeric_technician_id(): void
+    {
+        $user = $this->getAuthenticatedUser();
+        $order = $this->createTestOrder();
+        $order->technician_id = $user->id;
+        $order->save();
+
+        $response = $this->actingAs($user, 'sanctum')
+            ->getJson('/api/v1/orders?technician_id=' . $user->id);
+
+        $response->assertStatus(200)
+            ->assertJsonPath('success', true);
+
+        $orders = $response->json('data.data');
+        $this->assertNotEmpty($orders);
+        foreach ($orders as $o) {
+            $this->assertEquals($user->id, $o['technician_id']);
+        }
+
+        // Also test /repairs alias
+        $responseRepairs = $this->actingAs($user, 'sanctum')
+            ->getJson('/api/v1/repairs?technician_id=' . $user->id);
+        $responseRepairs->assertStatus(200)
+            ->assertJsonPath('success', true);
+    }
+
+    /**
+     * Test filter orders by technician_id=unassigned.
+     */
+    public function test_index_orders_filter_by_unassigned_technician_id(): void
+    {
+        $user = $this->getAuthenticatedUser();
+        $order = $this->createTestOrder();
+        $order->technician_id = null;
+        $order->save();
+
+        $response = $this->actingAs($user, 'sanctum')
+            ->getJson('/api/v1/orders?technician_id=unassigned');
+
+        $response->assertStatus(200)
+            ->assertJsonPath('success', true);
+
+        $orders = $response->json('data.data');
+        $this->assertNotEmpty($orders);
+        foreach ($orders as $o) {
+            $this->assertNull($o['technician_id']);
+        }
+
+        // Also test /repairs alias
+        $responseRepairs = $this->actingAs($user, 'sanctum')
+            ->getJson('/api/v1/repairs?technician_id=unassigned');
+        $responseRepairs->assertStatus(200)
+            ->assertJsonPath('success', true);
+    }
 }

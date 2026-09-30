@@ -72,7 +72,12 @@ export default function PrintReceiptPage() {
       const mappedPhotos = Array.isArray(o.intake_photos)
         ? o.intake_photos.map((p: any) => ({
             name: p.photo_type || 'Ảnh thiết bị',
-            url: p.file_path || p.url,
+            url: p.photo_url || p.file_path || p.url,
+          }))
+        : Array.isArray(o.photos)
+        ? o.photos.map((p: any) => ({
+            name: p.name || p.photo_type || 'Ảnh thiết bị',
+            url: p.photo_url || p.file_path || p.url,
           }))
         : [];
 
@@ -137,76 +142,76 @@ export default function PrintReceiptPage() {
   }
 
   const renderSingleReceipt = (copyTitle: string) => (
-    <article className="print-receipt bg-white text-[#111111] p-6 border border-[#e5ece8] rounded-[8px] mb-6 shadow-sm">
+    <article className="print-receipt bg-white text-[#111111] p-4 sm:p-6 border border-[#e5ece8] rounded-[8px] mb-4 sm:mb-6 shadow-sm print:shadow-none print:border-none print:rounded-none print:p-2 print:m-0 max-h-[132mm] overflow-hidden box-border">
       {/* Header */}
-      <header className="flex justify-between items-center border-b-[2px] border-[#176b51] pb-3 mb-3">
+      <header className="flex justify-between items-center border-b-[2px] border-[#176b51] pb-2 sm:pb-3 mb-2 sm:mb-3 print:pb-1 print:mb-1">
         <div>
-          <b className="text-[20pt] font-extrabold text-[#176b58] tracking-tight block leading-none font-heading">
+          <b className="text-[18pt] sm:text-[20pt] print:text-[13pt] font-extrabold text-[#176b58] tracking-tight block leading-none font-heading">
             PodsCare
           </b>
-          <small className="text-[8pt] tracking-[1px] text-[#555555] block mt-1 font-bold">
+          <small className="text-[7.5pt] sm:text-[8pt] print:text-[6.5pt] tracking-[1px] text-[#555555] block mt-0.5 font-bold">
             PHIẾU TIẾP NHẬN SỬA CHỮA THIẾT BỊ
           </small>
         </div>
-        <strong className="text-[9pt] border border-[#777777] px-2.5 py-1 rounded-[4px] uppercase font-bold text-[#1c302b]">
+        <strong className="text-[8pt] sm:text-[9pt] print:text-[7pt] border border-[#777777] px-2 py-0.5 rounded-[4px] uppercase font-bold text-[#1c302b]">
           {copyTitle}
         </strong>
       </header>
 
       {/* Order bar */}
-      <div className="flex items-center gap-3 bg-[#f2f5f2] p-2.5 rounded-[6px] mb-3 text-[9pt]">
+      <div className="flex items-center gap-2 sm:gap-3 bg-[#f2f5f2] p-1.5 sm:p-2 rounded-[6px] mb-2 print:mb-1 text-[8pt] sm:text-[9pt] print:text-[7pt]">
         <span>MÃ PHIẾU:</span>
-        <b className="text-[12pt] text-[#176b58] font-bold font-mono">{order.id}</b>
-        <span className="ml-auto text-[8pt] text-[#555555]">
+        <b className="text-[11pt] sm:text-[12pt] print:text-[9pt] text-[#176b58] font-bold font-mono">{order.id}</b>
+        <span className="ml-auto text-[7.5pt] sm:text-[8pt] print:text-[6.5pt] text-[#555555]">
           Ngày nhận: <b>{order.date}</b> · Chi nhánh: <b>{order.branch}</b>
         </span>
       </div>
 
       {/* 2 Columns: Customer & Device */}
-      <div className="grid grid-cols-2 gap-4 text-[8.5pt] mb-3 pb-3 border-b border-[#eeeeee]">
+      <div className="grid grid-cols-2 gap-3 text-[8pt] print:text-[7pt] mb-2 print:mb-1 pb-1.5 border-b border-[#eeeeee]">
         <div>
-          <h3 className="font-bold text-[9pt] text-[#176b58] uppercase mb-1">
+          <h3 className="font-bold text-[8.5pt] print:text-[7pt] text-[#176b58] uppercase mb-0.5">
             Thông tin khách hàng
           </h3>
-          <p className="my-0.5">
+          <p className="my-0.5 leading-tight">
             <b>Họ tên:</b> {order.name}
           </p>
-          <p className="my-0.5">
+          <p className="my-0.5 leading-tight">
             <b>Số điện thoại:</b> {order.phone}
           </p>
         </div>
         <div>
-          <h3 className="font-bold text-[9pt] text-[#176b58] uppercase mb-1">Thiết bị tiếp nhận</h3>
-          <p className="my-0.5">
+          <h3 className="font-bold text-[8.5pt] print:text-[7pt] text-[#176b58] uppercase mb-0.5">Thiết bị tiếp nhận</h3>
+          <p className="my-0.5 leading-tight">
             <b>Dòng máy:</b> {order.device}
           </p>
-          <p className="my-0.5">
+          <p className="my-0.5 leading-tight">
             <b>Serial / Model:</b> {order.serial || 'Chưa cập nhật'}
           </p>
-          <p className="my-0.5">
+          <p className="my-0.5 leading-tight">
             <b>Phụ kiện đi kèm:</b> {order.accessories || 'Không gửi kèm'}
           </p>
         </div>
       </div>
 
       {/* Issue */}
-      <div className="mb-3 text-[8.5pt]">
-        <h3 className="font-bold text-[9pt] text-[#176b58] uppercase mb-1">Lỗi khách báo</h3>
-        <p className="bg-[#f9fbf9] p-2 rounded border border-[#edf1ee] my-0.5">{order.issue}</p>
+      <div className="mb-2 print:mb-1 text-[8pt] print:text-[7pt]">
+        <h3 className="font-bold text-[8.5pt] print:text-[7pt] text-[#176b58] uppercase mb-0.5">Lỗi khách báo</h3>
+        <p className="bg-[#f9fbf9] p-1.5 rounded border border-[#edf1ee] my-0.5 leading-tight">{order.issue}</p>
       </div>
 
       {/* Test checklist at counter */}
       {order.checks && order.checks.length > 0 && (
-        <div className="mb-3 text-[8pt]">
-          <h3 className="font-bold text-[9pt] text-[#176b58] uppercase mb-1">
+        <div className="mb-2 print:mb-1 text-[7.5pt] print:text-[6.5pt]">
+          <h3 className="font-bold text-[8pt] print:text-[7pt] text-[#176b58] uppercase mb-0.5">
             Kết quả kiểm tra tính năng tại quầy
           </h3>
           <table className="w-full border-collapse border border-[#dddddd] text-left">
             <tbody>
-              {order.checks.map((c, i) => (
+              {order.checks.slice(0, 5).map((c, i) => (
                 <tr key={i} className="border-b border-[#dddddd] last:border-b-0">
-                  <td className="p-1 px-2 border-r border-[#dddddd] text-[#333333]">{c.label}</td>
-                  <td className="p-1 px-2 font-bold w-[35%]">
+                  <td className="p-0.5 px-1.5 border-r border-[#dddddd] text-[#333333]">{c.label}</td>
+                  <td className="p-0.5 px-1.5 font-bold w-[35%]">
                     <span
                       className={
                         c.status === 'Hoạt động'
@@ -223,8 +228,13 @@ export default function PrintReceiptPage() {
               ))}
             </tbody>
           </table>
+          {order.checks.length > 5 && (
+            <p className="text-[6.5pt] print:text-[6pt] text-[#777777] my-0.5">
+              (+{order.checks.length - 5} hạng mục kiểm tra khác đạt tiêu chuẩn)
+            </p>
+          )}
           {order.testNote && (
-            <p className="text-[7.5pt] text-[#555555] mt-1">
+            <p className="text-[7pt] print:text-[6.5pt] text-[#555555] mt-0.5">
               <b>Ghi chú test:</b> {order.testNote}
             </p>
           )}
@@ -232,19 +242,19 @@ export default function PrintReceiptPage() {
       )}
 
       {/* Appearance & Photos */}
-      <div className="mb-3 text-[8pt]">
-        <h3 className="font-bold text-[9pt] text-[#176b58] uppercase mb-1">
+      <div className="mb-2 print:mb-1 text-[7.5pt] print:text-[6.5pt]">
+        <h3 className="font-bold text-[8pt] print:text-[7pt] text-[#176b58] uppercase mb-0.5">
           Tình trạng ngoại hình
         </h3>
-        <p className="my-0.5">{order.appearance || 'Không ghi chú vết xước'}</p>
+        <p className="my-0.5 leading-tight">{order.appearance || 'Không ghi chú vết xước'}</p>
         {order.photos && order.photos.length > 0 && (
-          <div className="flex gap-2 mt-1.5 overflow-hidden">
-            {order.photos.map((p, idx) => (
+          <div className="flex gap-1.5 mt-1 overflow-hidden">
+            {order.photos.slice(0, 3).map((p, idx) => (
               <img
                 key={idx}
                 src={p.url}
                 alt="Ảnh ngoại hình"
-                className="w-16 h-14 object-cover border border-[#cccccc] rounded"
+                className="w-12 h-10 object-cover border border-[#cccccc] rounded max-h-[38px]"
               />
             ))}
           </div>
@@ -252,50 +262,50 @@ export default function PrintReceiptPage() {
       </div>
 
       {/* Price */}
-      <div className="flex justify-between items-center border border-[#aaaaaa] p-2.5 rounded mb-2 text-[9pt] bg-[#fbfdfb]">
+      <div className="flex justify-between items-center border border-[#aaaaaa] p-1.5 rounded mb-1.5 print:mb-1 text-[8pt] print:text-[7pt] bg-[#fbfdfb]">
         <span>
           Giá sửa chữa dự kiến{' '}
           {order.priceNote ? <small className="text-[#666666]">({order.priceNote})</small> : ''}
         </span>
-        <b className="text-[13pt] text-[#176b58] font-bold">{moneyFormatted(order.price)}</b>
+        <b className="text-[11pt] print:text-[9.5pt] text-[#176b58] font-bold">{moneyFormatted(order.price)}</b>
       </div>
 
       {/* Terms */}
-      <p className="text-[7pt] text-[#666666] leading-tight my-2">
+      <p className="text-[6.5pt] print:text-[5.5pt] text-[#666666] leading-tight my-1">
         * Chi phí trên là dự kiến tại thời điểm tiếp nhận. PodsCare sẽ chủ động liên hệ khách hàng để
         xác nhận trước khi can thiệp nếu có phát sinh linh kiện hoặc chi phí khác. Quý khách vui lòng
         giữ phiếu này để đối chiếu khi nhận lại máy.
       </p>
 
       {/* Signatures */}
-      <div className="grid grid-cols-2 text-center mt-4 pt-2 border-t border-[#eeeeee] min-h-[60px] text-[8pt]">
+      <div className="grid grid-cols-2 text-center mt-2 pt-1 border-t border-[#eeeeee] min-h-[38px] print:min-h-[32px] text-[7.5pt] print:text-[6.5pt]">
         <div>
           <b>KHÁCH HÀNG</b>
-          <small className="block text-[7pt] text-[#666666] mt-0.5">(Ký và ghi rõ họ tên)</small>
-          <span className="block mt-7 font-semibold">{order.name}</span>
+          <small className="block text-[6.5pt] print:text-[5.5pt] text-[#666666] mt-0.5">(Ký và ghi rõ họ tên)</small>
+          <span className="block mt-4 print:mt-3 font-semibold">{order.name}</span>
         </div>
         <div>
           <b>NHÂN VIÊN TIẾP NHẬN</b>
-          <small className="block text-[7pt] text-[#666666] mt-0.5">(Ký và ghi rõ họ tên)</small>
-          <span className="block mt-7 font-semibold">{order.createdBy || 'PodsCare'}</span>
+          <small className="block text-[6.5pt] print:text-[5.5pt] text-[#666666] mt-0.5">(Ký và ghi rõ họ tên)</small>
+          <span className="block mt-4 print:mt-3 font-semibold">{order.createdBy || 'PodsCare'}</span>
         </div>
       </div>
 
-      <footer className="mt-4 pt-1.5 border-t border-[#dddddd] text-center text-[7pt] text-[#777777]">
+      <footer className="mt-2 pt-1 border-t border-[#dddddd] text-center text-[6.5pt] print:text-[5.5pt] text-[#777777]">
         PodsCare Repair OS · Phiếu được lập thành 02 liên có giá trị ghi nhận như nhau · {order.id}
       </footer>
     </article>
   );
 
   return (
-    <div className="min-h-screen bg-[#f4f7f5] p-4 sm:p-8">
+    <div className="min-h-screen bg-[#f4f7f5] p-4 sm:p-8 print:p-0 print:bg-white print:min-h-0">
       {/* On-screen control bar (Hidden during print) */}
-      <div className="max-w-[820px] mx-auto mb-6 flex items-center justify-between bg-white p-3.5 rounded-[10px] border border-[#e5ece8] shadow-sm print:hidden">
+      <div className="max-w-[820px] mx-auto mb-6 flex items-center justify-between bg-white p-3.5 rounded-[10px] border border-[#e5ece8] shadow-sm print:hidden no-print">
         <Button variant="secondary" size="md" icon="arrow" onClick={() => router.back()}>
           Quay lại danh sách
         </Button>
         <div className="flex items-center gap-2">
-          <span className="text-xs text-[#758780]">Định dạng chuẩn 2 liên A4</span>
+          <span className="text-xs text-[#758780]">Phiếu tiếp nhận sửa chữa điện tử</span>
           <Button
             variant="primary"
             size="md"
@@ -308,11 +318,17 @@ export default function PrintReceiptPage() {
       </div>
 
       {/* Printable Sheet */}
-      <div id="printSheetWrapper" className="max-w-[820px] mx-auto">
+      <div id="printSheetWrapper" className="max-w-[820px] mx-auto print:max-w-none print:w-full">
         {renderSingleReceipt('LIÊN 1 · CỬA HÀNG GIỮ')}
-        <div className="my-6 border-b border-dashed border-[#888888] print:hidden" />
+        {/* Đường cắt giữa 2 liên 10mm */}
+        <div className="my-6 border-b border-dashed border-[#888888] print:my-0 print:h-[10mm] print:border-b-0 print:flex print:items-center print:justify-center">
+          <span className="hidden print:inline-block text-[7pt] text-[#888888] tracking-widest font-mono select-none">
+            ✂ - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - ✂
+          </span>
+        </div>
         {renderSingleReceipt('LIÊN 2 · KHÁCH HÀNG GIỮ')}
       </div>
     </div>
   );
 }
+

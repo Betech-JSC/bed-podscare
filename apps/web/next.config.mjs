@@ -13,7 +13,7 @@ const nextConfig = {
     return [
       {
         source: '/api-proxy/:path*',
-        destination: `${process.env.BACKEND_INTERNAL_URL || 'http://103.48.84.51:8088'}/api/:path*`,
+        destination: `${process.env.BACKEND_INTERNAL_URL || 'http://127.0.0.1:8000'}/api/:path*`,
       },
     ];
   },

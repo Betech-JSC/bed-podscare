@@ -7,6 +7,7 @@ use App\Models\Branch;
 use App\Models\Customer;
 use App\Models\DeviceModel;
 use App\Models\Partner;
+use App\Models\QcInspection;
 use App\Models\RepairOrder;
 use App\Models\User;
 use App\Models\Warranty;
@@ -185,12 +186,72 @@ class OrderTransitionTest extends TestCase
         $orderCodes2 = collect($responseFilterWaitingQc->json('data.data'))->pluck('order_code')->toArray();
         $this->assertContains($order->order_code, $orderCodes2);
 
-        // Transition from waiting_qc to ready_for_return
+        // Transition from waiting_qc to ready_for_return (requires QC Pass)
+        QcInspection::create([
+            'repair_order_id' => $order->id,
+            'inspector_id'    => $user->id,
+            'result'          => 'pass',
+            'notes'           => 'Đạt tiêu chuẩn xuất xưởng',
+        ]);
+
         $responseReturn = $this->actingAs($user, 'sanctum')->postJson("/api/v1/orders/{$order->id}/transition", [
             'status' => 'ready_for_return',
         ]);
         $responseReturn->assertStatus(200)
             ->assertJsonPath('data.status', 'ready_for_return');
+    }
+
+    /**
+     * Test 5b: Status alias normalization: quote_pending -> waiting_approval
+     */
+    public function test_quote_pending_alias_normalizes_to_waiting_approval(): void
+    {
+        $user = $this->getAuthenticatedUser();
+        $order = $this->createTestOrder('inspecting');
+
+        // Transition using status alias 'quote_pending'
+        $response = $this->actingAs($user, 'sanctum')->postJson("/api/v1/orders/{$order->id}/transition", [
+            'status' => 'quote_pending',
+        ]);
+
+        $response->assertStatus(200)
+            ->assertJsonPath('success', true)
+            ->assertJsonPath('data.status', 'waiting_approval');
+
+        $this->assertEquals('waiting_approval', $order->fresh()->status);
+
+        // Filter orders by quote_pending
+        $responseFilter = $this->actingAs($user, 'sanctum')->getJson('/api/v1/orders?status=quote_pending');
+        $responseFilter->assertStatus(200);
+        $orderCodes = collect($responseFilter->json('data.data'))->pluck('order_code')->toArray();
+        $this->assertContains($order->order_code, $orderCodes);
+    }
+
+    /**
+     * Test 5c: Status alias normalization: qc_inspecting -> waiting_qc
+     */
+    public function test_qc_inspecting_alias_normalizes_to_waiting_qc(): void
+    {
+        $user = $this->getAuthenticatedUser();
+        $order = $this->createTestOrder('in_repair');
+
+        // Transition using 'transition' payload with 'qc_inspecting'
+        $response = $this->actingAs($user, 'sanctum')->postJson("/api/v1/orders/{$order->id}/transition", [
+            'transition'  => 'qc_inspecting',
+            'repair_note' => 'Hoàn tất thay pin và loa',
+        ]);
+
+        $response->assertStatus(200)
+            ->assertJsonPath('success', true)
+            ->assertJsonPath('data.status', 'waiting_qc');
+
+        $this->assertEquals('waiting_qc', $order->fresh()->status);
+
+        // Filter orders by qc_inspecting
+        $responseFilter = $this->actingAs($user, 'sanctum')->getJson('/api/v1/orders?status=qc_inspecting');
+        $responseFilter->assertStatus(200);
+        $orderCodes = collect($responseFilter->json('data.data'))->pluck('order_code')->toArray();
+        $this->assertContains($order->order_code, $orderCodes);
     }
 
     /**

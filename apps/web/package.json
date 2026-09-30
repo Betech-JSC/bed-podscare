@@ -8,7 +8,7 @@
     "start": "next start",
     "lint": "next lint",
     "check-types": "tsc --noEmit",
-    "test": "node --experimental-strip-types --test test/notification-socket.test.mjs test/notification-e2e-workflow.test.mjs"
+    "test": "node --experimental-strip-types --test test/notification-socket.test.mjs test/notification-e2e-workflow.test.mjs test/data-and-branch-logic.test.mjs test/frontend-alignment-fixes.test.mjs test/hydration-and-resilience.test.mjs test/critical-flow-fixes.test.mjs"
   },
   "dependencies": {
     "@podscare/api-client": "workspace:*",

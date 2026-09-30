@@ -17,8 +17,11 @@ class DatabaseSeeder extends Seeder
             DeviceModelSeeder::class,
             RepairServiceSeeder::class,
             PartSeeder::class,
+            BranchPartSeeder::class,
             PartnerSeeder::class,
             CustomerAndOrderSeeder::class,
+            ChecklistTemplateSeeder::class,
+            CommonIssueSeeder::class,
         ]);
     }
 }

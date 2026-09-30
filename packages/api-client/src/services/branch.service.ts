@@ -1,5 +1,5 @@
 import { HttpClient, defaultHttpClient } from '../http-client';
-import type { Branch } from '@podscare/types';
+import type { ApiResponse, Branch } from '@podscare/types';
 
 export interface BranchDetail extends Branch {
   users?: Array<{
@@ -12,6 +12,14 @@ export interface BranchDetail extends Branch {
   }>;
 }
 
+export interface CreateBranchPayload {
+  code: string;
+  name: string;
+  address: string;
+  phone?: string;
+  is_active?: boolean;
+}
+
 export class BranchService {
   constructor(private http: HttpClient = defaultHttpClient) {}
 
@@ -21,6 +29,18 @@ export class BranchService {
 
   async getBranchById(id: string | number): Promise<{ success: boolean; data: BranchDetail; message?: string }> {
     return this.http.get(`/api/v1/branches/${id}`);
+  }
+
+  async createBranch(payload: CreateBranchPayload): Promise<ApiResponse<Branch>> {
+    return this.http.post('/api/v1/branches', payload);
+  }
+
+  async updateBranch(id: string | number, payload: Partial<CreateBranchPayload>): Promise<ApiResponse<Branch>> {
+    return this.http.put(`/api/v1/branches/${id}`, payload);
+  }
+
+  async toggleBranchStatus(id: string | number): Promise<ApiResponse<Branch>> {
+    return this.http.post(`/api/v1/branches/${id}/toggle-status`);
   }
 }
 

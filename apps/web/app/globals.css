@@ -50,42 +50,65 @@ h1, h2, h3, h4, h5, h6, b, strong, .font-heading {
 
 /* Print Stylesheet for A4 2-part Receipt */
 @media print {
+  @page {
+    size: A4 portrait;
+    margin: 8mm 6mm;
+  }
+
+  html,
   body {
     background: #ffffff !important;
     color: #111111 !important;
     font-family: Arial, sans-serif !important;
     margin: 0 !important;
     padding: 0 !important;
+    height: auto !important;
+    overflow: visible !important;
   }
 
-  /* Hide everything except the print sheet */
-  body > *:not(#printSheetWrapper) {
+  /* Ẩn các thành phần chung ngoài vùng in */
+  header:not(#printSheetWrapper header),
+  aside,
+  nav,
+  .no-print,
+  [data-no-print] {
     display: none !important;
+  }
+
+  /* Cô lập và hiển thị rõ ràng duy nhất vùng #printSheetWrapper */
+  body * {
+    visibility: hidden;
+  }
+
+  #printSheetWrapper,
+  #printSheetWrapper * {
+    visibility: visible;
   }
 
   #printSheetWrapper {
     display: block !important;
-    position: static !important;
+    position: absolute;
+    left: 0;
+    top: 0;
     width: 100% !important;
-  }
-
-  @page {
-    size: A4 portrait;
-    margin: 8mm;
+    margin: 0 !important;
+    padding: 0 !important;
   }
 
   .print-receipt {
-    min-height: 135mm;
-    padding: 6mm 8mm;
-    page-break-inside: avoid;
-    position: relative;
-    font-size: 9pt;
     box-sizing: border-box;
+    max-height: 132mm;
+    padding: 3mm 5mm !important;
+    page-break-inside: avoid;
+    break-inside: avoid;
+    overflow: hidden;
+    background: #ffffff !important;
+    color: #111111 !important;
   }
 
   .print-receipt:first-child {
-    border-bottom: 1px dashed #777777;
-    margin-bottom: 4mm;
-    padding-bottom: 8mm;
+    border-bottom: 1px dashed #777777 !important;
+    padding-bottom: 2mm !important;
   }
 }
+

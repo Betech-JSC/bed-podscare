@@ -21,54 +21,6 @@ interface FormattedWarranty {
   remainingDays: number;
 }
 
-const fallbackWarranties: FormattedWarranty[] = [
-  {
-    id: 1,
-    code: 'PC26-WR-101',
-    orderCode: 'PC26-00975',
-    customerName: 'Nguyễn Thanh Vy',
-    phone: '0902 361 995',
-    device: 'AirPods 2',
-    serial: 'MV7N2VN/A · SN 3JD6',
-    periodDays: 90,
-    startsAt: '23/09/2026',
-    expiresAt: '22/12/2026',
-    status: 'Còn hạn',
-    statusType: 'ready',
-    remainingDays: 83,
-  },
-  {
-    id: 2,
-    code: 'PC26-WR-100',
-    orderCode: 'PC26-00964',
-    customerName: 'Phạm Thu Hà',
-    phone: '0987 116 350',
-    device: 'AirPods 3',
-    serial: 'MME73VN/A · SN 2KC8',
-    periodDays: 90,
-    startsAt: '20/09/2026',
-    expiresAt: '19/12/2026',
-    status: 'Còn hạn',
-    statusType: 'ready',
-    remainingDays: 80,
-  },
-  {
-    id: 3,
-    code: 'PC26-WR-089',
-    orderCode: 'PC26-00840',
-    customerName: 'Lê Hoàng Nam',
-    phone: '0908 755 301',
-    device: 'AirPods Pro',
-    serial: 'MLWK3VN/A · SN 9PF1',
-    periodDays: 30,
-    startsAt: '01/08/2026',
-    expiresAt: '31/08/2026',
-    status: 'Hết hạn',
-    statusType: 'gray',
-    remainingDays: 0,
-  },
-];
-
 export default function WarrantyPage() {
   const { toast } = useToast();
   const [warranties, setWarranties] = useState<FormattedWarranty[]>([]);
@@ -84,9 +36,12 @@ export default function WarrantyPage() {
   const calculateRemainingDays = (expiresAtStr?: string): number => {
     if (!expiresAtStr) return 0;
     try {
-      const exp = new Date(expiresAtStr).getTime();
+      const exp = new Date(expiresAtStr);
+      // Đặt hạn chót vào cuối ngày để không bị tính là hết hạn sớm trong ngày
+      exp.setHours(23, 59, 59, 999);
+      const expTime = exp.getTime();
       const now = new Date().getTime();
-      const diff = Math.ceil((exp - now) / (1000 * 60 * 60 * 24));
+      const diff = Math.ceil((expTime - now) / (1000 * 60 * 60 * 24));
       return diff > 0 ? diff : 0;
     } catch {
       return 0;
@@ -111,22 +66,25 @@ export default function WarrantyPage() {
 
       if (Array.isArray(list) && list.length > 0) {
         const mapped: FormattedWarranty[] = list.map((w: any) => {
-          const remDays = calculateRemainingDays(w.expires_at);
+          const startDateRaw = w.start_date ?? w.starts_at;
+          const endDateRaw = w.end_date ?? w.expires_at;
+          const periodDays = Number(w.duration_days ?? w.warranty_period_days) || 90;
+          const remDays = calculateRemainingDays(endDateRaw);
           const st = mapStatus(w.status, remDays);
           return {
             id: w.id,
             code: w.warranty_code,
             orderCode: w.repair_order?.order_code || `PC26-${w.repair_order_id || ''}`,
-            customerName: w.customer?.name || 'Khách lẻ',
-            phone: w.customer?.phone || '',
-            device: w.device_model?.name || 'AirPods',
-            serial: w.serial_number || 'Chưa cập nhật',
-            periodDays: Number(w.warranty_period_days) || 90,
-            startsAt: w.starts_at
-              ? new Intl.DateTimeFormat('vi-VN').format(new Date(w.starts_at))
+            customerName: w.customer?.name || w.repair_order?.customer?.name || 'Khách lẻ',
+            phone: w.customer?.phone || w.repair_order?.customer?.phone || '',
+            device: w.device_model?.name || w.repair_order?.device_model?.name || 'AirPods',
+            serial: w.serial_number || w.repair_order?.serial_number || 'Chưa cập nhật',
+            periodDays,
+            startsAt: startDateRaw
+              ? new Intl.DateTimeFormat('vi-VN').format(new Date(startDateRaw))
               : 'Hôm nay',
-            expiresAt: w.expires_at
-              ? new Intl.DateTimeFormat('vi-VN').format(new Date(w.expires_at))
+            expiresAt: endDateRaw
+              ? new Intl.DateTimeFormat('vi-VN').format(new Date(endDateRaw))
               : '—',
             status: st.label,
             statusType: st.type,
@@ -135,11 +93,11 @@ export default function WarrantyPage() {
         });
         setWarranties(mapped);
       } else {
-        setWarranties(fallbackWarranties);
+        setWarranties([]);
       }
     } catch (err) {
       console.warn('Could not fetch warranties from API:', err);
-      setWarranties(fallbackWarranties);
+      setWarranties([]);
     } finally {
       setIsLoading(false);
     }
@@ -167,7 +125,18 @@ export default function WarrantyPage() {
       const data = res?.data;
 
       if (data) {
-        setLookupResult(data);
+        const endDateRaw = data.end_date ?? data.expires_at;
+        const remDays = calculateRemainingDays(endDateRaw);
+        const st = mapStatus(data.status, remDays);
+        setLookupResult({
+          ...data,
+          status: st.label,
+          remainingDays: remDays,
+          periodDays: Number(data.duration_days ?? data.warranty_period_days) || 90,
+          expires_at: endDateRaw
+            ? new Intl.DateTimeFormat('vi-VN').format(new Date(endDateRaw))
+            : (data.expires_at || '—'),
+        });
         toast('Đã tìm thấy thông tin sổ bảo hành điện tử', 'success');
       } else {
         toast('Không tìm thấy sổ bảo hành khớp với thông tin', 'info');
@@ -289,9 +258,18 @@ export default function WarrantyPage() {
             </div>
           ) : filtered.length === 0 ? (
             <EmptyState
-              title="Không tìm thấy sổ bảo hành"
-              description="Không có sổ bảo hành điện tử nào khớp với bộ lọc."
-              icon="search"
+              title={search ? 'Không tìm thấy sổ bảo hành' : 'Chưa có sổ bảo hành điện tử'}
+              description={
+                search
+                  ? 'Không có sổ bảo hành điện tử nào khớp với bộ lọc.'
+                  : 'Hiện tại hệ thống chưa ghi nhận thông tin bảo hành nào cho linh kiện hoặc đơn sửa.'
+              }
+              icon="shield"
+              actionLabel={search ? 'Xóa bộ lọc' : 'Làm mới'}
+              onAction={() => {
+                if (search) setSearch('');
+                else loadWarranties();
+              }}
             />
           ) : (
             <div className="overflow-x-auto -mx-4 sm:mx-0">
@@ -392,8 +370,20 @@ export default function WarrantyPage() {
                     </h3>
                   </div>
                   <StatusTag
-                    label={lookupResult.status === 'active' || lookupResult.status === 'Còn hạn' ? 'Còn hạn' : 'Hết hạn'}
-                    type={lookupResult.status === 'active' || lookupResult.status === 'Còn hạn' ? 'ready' : 'gray'}
+                    label={
+                      lookupResult.status === 'voided' || lookupResult.status === 'Đã hủy'
+                        ? 'Đã hủy'
+                        : lookupResult.status === 'expired' || lookupResult.status === 'Hết hạn' || (lookupResult.remainingDays !== undefined && lookupResult.remainingDays <= 0)
+                        ? 'Hết hạn'
+                        : 'Còn hạn'
+                    }
+                    type={
+                      lookupResult.status === 'voided' || lookupResult.status === 'Đã hủy'
+                        ? 'danger'
+                        : lookupResult.status === 'expired' || lookupResult.status === 'Hết hạn' || (lookupResult.remainingDays !== undefined && lookupResult.remainingDays <= 0)
+                        ? 'gray'
+                        : 'ready'
+                    }
                   />
                 </div>
 
@@ -414,13 +404,13 @@ export default function WarrantyPage() {
                   <div>
                     <span className="text-[#86968f] block">Thời hạn bảo hành:</span>
                     <strong className="text-[#1c302b]">
-                      {lookupResult.warranty_period_days || lookupResult.periodDays} ngày
+                      {lookupResult.duration_days ?? lookupResult.warranty_period_days ?? lookupResult.periodDays} ngày
                     </strong>
                   </div>
                   <div>
                     <span className="text-[#86968f] block">Hạn bảo hành đến:</span>
                     <strong className="text-[#176b58]">
-                      {lookupResult.expires_at || lookupResult.expiresAt}
+                      {lookupResult.expires_at || lookupResult.end_date || lookupResult.expiresAt}
                     </strong>
                   </div>
                 </div>

@@ -91,13 +91,13 @@ export default function DashboardPage() {
   // Tech Queue calculations
   const techActiveOrders = branchOrders.filter(
     (o) =>
-      o.tech === currentUser.name &&
+      Number(o.technicianId || o.technician_id) === Number(currentUser.id) &&
       !['Hoàn tất kỹ thuật', 'Chờ QC', 'Sẵn sàng trả', 'Hoàn tất'].includes(o.status)
   );
 
   const techAvailableOrders = branchOrders.filter(
     (o) =>
-      o.tech === 'Chưa phân công' &&
+      (!o.technicianId && !o.technician_id) &&
       ['Đã duyệt', 'Chờ kỹ thuật', 'Tiếp nhận mới'].includes(o.status)
   );
 
@@ -742,7 +742,7 @@ export default function DashboardPage() {
           value={String(
             branchOrders.filter(
               (o) =>
-                o.tech === currentUser.name &&
+                Number(o.technicianId || o.technician_id) === Number(currentUser.id) &&
                 ['Chờ QC', 'Sẵn sàng trả', 'Hoàn tất'].includes(o.status)
             ).length
           ).padStart(2, '0')}

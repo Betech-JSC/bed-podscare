@@ -20,8 +20,12 @@ class PaymentController extends Controller
     {
         $query = Payment::with(['repairOrder.customer', 'receivedByUser:id,name']);
 
-        if ($orderId = $request->input('repair_order_id')) {
-            $query->where('repair_order_id', $orderId);
+        if ($orderIdentifier = $request->input('repair_order_id') ?? $request->input('order_code')) {
+            if (is_numeric($orderIdentifier)) {
+                $query->where('repair_order_id', (int) $orderIdentifier);
+            } else {
+                $query->whereHas('repairOrder', fn ($q) => $q->where('order_code', (string) $orderIdentifier));
+            }
         }
 
         if ($method = $request->input('payment_method')) {
@@ -38,6 +42,18 @@ class PaymentController extends Controller
      */
     public function store(Request $request): JsonResponse
     {
+        $orderIdentifier = $request->input('repair_order_id') ?? $request->input('order_code');
+        if ($orderIdentifier !== null) {
+            if (is_numeric($orderIdentifier)) {
+                $foundOrder = RepairOrder::find((int) $orderIdentifier);
+            } else {
+                $foundOrder = RepairOrder::where('order_code', (string) $orderIdentifier)->first();
+            }
+            if ($foundOrder) {
+                $request->merge(['repair_order_id' => $foundOrder->id]);
+            }
+        }
+
         $validated = $request->validate([
             'repair_order_id' => 'required|exists:repair_orders,id',
             'amount'          => 'required|numeric|min:1',

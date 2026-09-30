@@ -40,4 +40,9 @@ class RepairService extends Model
     {
         return $this->hasMany(QuoteItem::class, 'service_id');
     }
+
+    public function commonIssues(): HasMany
+    {
+        return $this->hasMany(CommonIssue::class, 'suggested_service_id');
+    }
 }

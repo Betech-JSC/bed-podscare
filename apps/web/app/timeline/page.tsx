@@ -15,54 +15,6 @@ interface FormattedEvent {
   type: 'success' | 'progress' | 'warning' | 'info';
 }
 
-const fallbackEvents: FormattedEvent[] = [
-  {
-    id: 'fb-1',
-    time: '10:42 Hôm nay',
-    title: 'Cập nhật trạng thái sang Đang sửa',
-    sub: 'KTV Tuấn K. · AirPods Pro 2 · PC26-00981',
-    user: 'Tuấn K.',
-    action: 'status_transition',
-    type: 'progress',
-  },
-  {
-    id: 'fb-2',
-    time: '10:26 Hôm nay',
-    title: 'Khách duyệt báo giá 850.000 ₫',
-    sub: 'Khách hàng duyệt qua link tra cứu cá nhân · PC26-00980',
-    user: 'Khách hàng',
-    action: 'quote_approved',
-    type: 'success',
-  },
-  {
-    id: 'fb-3',
-    time: '10:04 Hôm nay',
-    title: 'QC thẩm định đạt 7 tiêu chí',
-    sub: 'KTV Duy T. · Sẵn sàng trả máy cho khách · PC26-00979',
-    user: 'Duy T.',
-    action: 'qc_passed',
-    type: 'success',
-  },
-  {
-    id: 'fb-4',
-    time: '09:18 Hôm nay',
-    title: 'Tiếp nhận thiết bị mới tại quầy',
-    sub: 'CSKH Lan Phạm · Chi nhánh Quận 1 · PC26-00978',
-    user: 'Lan Phạm',
-    action: 'order_created',
-    type: 'info',
-  },
-  {
-    id: 'fb-5',
-    time: 'Hôm qua, 16:30',
-    title: 'Hoàn tất bàn giao và bảo hành',
-    sub: 'Khách hàng Nguyễn Thanh Vy đã nhận máy · PC26-00975',
-    user: 'Minh Lê',
-    action: 'order_completed',
-    type: 'success',
-  },
-];
-
 export default function TimelinePage() {
   const { toast } = useToast();
   const [events, setEvents] = useState<FormattedEvent[]>([]);
@@ -123,12 +75,11 @@ export default function TimelinePage() {
         });
         setEvents(mapped);
       } else {
-        // Fallback to initial events if no logs created yet
-        setEvents(fallbackEvents);
+        setEvents([]);
       }
     } catch (err) {
       console.warn('Could not fetch audit logs from API:', err);
-      setEvents(fallbackEvents);
+      setEvents([]);
     } finally {
       setIsLoading(false);
     }
@@ -191,9 +142,18 @@ export default function TimelinePage() {
             </div>
           ) : filteredEvents.length === 0 ? (
             <EmptyState
-              title="Không tìm thấy sự kiện nào"
-              description="Không có nhật ký nào phù hợp với bộ lọc tìm kiếm hiện tại."
-              icon="search"
+              title={search ? 'Không tìm thấy sự kiện nào' : 'Chưa có sự kiện nào'}
+              description={
+                search
+                  ? 'Không có nhật ký nào phù hợp với bộ lọc tìm kiếm hiện tại.'
+                  : 'Hệ thống chưa ghi nhận dòng sự kiện hoặc nhật ký thao tác nào.'
+              }
+              icon="clock"
+              actionLabel={search ? 'Xóa bộ lọc' : 'Làm mới'}
+              onAction={() => {
+                if (search) setSearch('');
+                else loadAuditLogs();
+              }}
             />
           ) : (
             <div className="space-y-6 relative before:absolute before:left-[17px] before:top-2 before:bottom-2 before:w-[1px] before:bg-[#e6ece8]">

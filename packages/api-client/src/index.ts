@@ -14,6 +14,7 @@ export * from './services/quote.service';
 export * from './services/payment.service';
 export * from './services/user.service';
 export * from './services/partner.service';
+export * from './services/service.service';
 export * from './hooks/use-repairs';
 export * from './hooks/use-devices';
 export * from './hooks/use-qc';

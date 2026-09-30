@@ -21,7 +21,7 @@ import type {
   IntakeCheckItem,
   RepairOrder,
 } from '@podscare/types';
-import { repairService, deviceService } from '@podscare/api-client';
+import { repairService, deviceService, serviceService, type CommonIssueItem } from '@podscare/api-client';
 import { usePodsCare } from '../providers';
 import { realtimeEventBus } from '../utils/socketNotifications';
 
@@ -65,6 +65,10 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
   const [priceNote, setPriceNote] = useState('');
   const [consent, setConsent] = useState(true);
 
+  // Dynamic Common Issues & Checklist Templates
+  const [commonIssues, setCommonIssues] = useState<CommonIssueItem[]>([]);
+  const [checklistTemplate, setChecklistTemplate] = useState<string[]>([]);
+
   // Validation errors
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -91,12 +95,74 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
       .catch(() => {});
   }, []);
 
+  // Fetch dynamic common issues & checklist templates based on selectedCategory
+  useEffect(() => {
+    if (!isOpen) return;
+
+    serviceService
+      .getCommonIssues({ category: selectedCategory })
+      .then((res: any) => {
+        const raw = res?.data || res;
+        const list = Array.isArray(raw) ? raw : (raw?.data || []);
+        setCommonIssues(Array.isArray(list) ? list : []);
+      })
+      .catch(() => setCommonIssues([]));
+
+    deviceService
+      .getChecklistTemplate({ category: selectedCategory })
+      .then((res: any) => {
+        const raw = res?.data || res;
+        const list = Array.isArray(raw) ? raw : (raw?.data || []);
+        if (Array.isArray(list) && list.length > 0) {
+          const checks = list.map((item: any) => item.item_name || item.name || String(item));
+          setChecklistTemplate(checks);
+        } else {
+          setChecklistTemplate([]);
+        }
+      })
+      .catch(() => setChecklistTemplate([]));
+  }, [isOpen, selectedCategory]);
+
   const activeProfile =
     deviceProfiles.find((p) => p.name === selectedDevice) ||
     deviceProfiles.find((p) => p.category === selectedCategory) ||
     deviceProfiles[0];
 
   const availableModels = deviceProfiles.filter((p) => p.category === selectedCategory);
+
+  const effectiveChecks: string[] =
+    checklistTemplate.length > 0
+      ? checklistTemplate
+      : activeProfile?.checks || [
+          'Kết nối Bluetooth',
+          'Âm thanh tai trái',
+          'Âm thanh tai phải',
+          'Microphone',
+          'Pin & thời lượng sử dụng',
+          'Hộp sạc / nhận sạc',
+          'Chống ồn ANC',
+          'Xuyên âm',
+          'Cảm ứng / thao tác',
+        ];
+
+  const handleChipClick = (chip: CommonIssueItem) => {
+    const textToAdd = chip.issue_name;
+    setIssue((prev) => {
+      if (!prev.trim()) return textToAdd;
+      if (prev.includes(textToAdd)) return prev;
+      return `${prev}, ${textToAdd}`;
+    });
+    if (errors.issue) {
+      setErrors((prev) => {
+        const next = { ...prev };
+        delete next.issue;
+        return next;
+      });
+    }
+    if ((price === '' || price === 0) && chip.estimated_cost) {
+      setPrice(Number(chip.estimated_cost));
+    }
+  };
 
   const handleCategoryChange = (cat: string) => {
     setSelectedCategory(cat);
@@ -200,7 +266,7 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
 
     setIsSubmitting(true);
 
-    const checks: IntakeCheckItem[] = (activeProfile?.checks || []).map((label) => ({
+    const checks: IntakeCheckItem[] = effectiveChecks.map((label) => ({
       label,
       status: testAnswers[label] || 'Không kiểm tra',
     }));
@@ -365,11 +431,11 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
               <Button
                 variant="primary"
                 size="md"
-                icon="download"
+                icon="arrow"
                 disabled={isSubmitting}
                 onClick={() => handleSave(true)}
               >
-                {isSubmitting ? 'Đang lưu & Tạo liên in...' : 'Lưu & In 2 liên A4 ▤'}
+                {isSubmitting ? 'Đang lưu & Mở phiếu...' : 'Lưu & Xem phiếu ↗'}
               </Button>
             </div>
           )}
@@ -542,6 +608,42 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
                   error={errors.issue}
                   required
                 />
+
+                {/* Interactive Quick Issue Chips */}
+                {commonIssues.length > 0 && (
+                  <div className="mt-2.5">
+                    <div className="text-[11px] font-semibold text-[#6d7e75] mb-1.5 flex items-center gap-1.5">
+                      <span>⚡ Lỗi thường gặp ({selectedCategory}):</span>
+                      <span className="text-[10px] text-[#91a098] font-normal">
+                        (Bấm để chèn nhanh vào mô tả lỗi)
+                      </span>
+                    </div>
+                    <div className="flex flex-wrap gap-1.5">
+                      {commonIssues.map((chip, idx) => {
+                        const isSelected = issue.includes(chip.issue_name);
+                        return (
+                          <button
+                            key={chip.id || `chip-${idx}`}
+                            type="button"
+                            onClick={() => handleChipClick(chip)}
+                            className={`text-xs px-2.5 py-1 rounded-[16px] border transition-all text-left flex items-center gap-1.5 cursor-pointer ${
+                              isSelected
+                                ? 'bg-[#eaf4ef] border-[#176b58] text-[#176b58] font-semibold shadow-2xs'
+                                : 'bg-white border-[#dbe4df] text-[#42524a] hover:bg-[#f5f8f6] hover:border-[#b5cec0]'
+                            }`}
+                          >
+                            <span>{chip.issue_name}</span>
+                            {chip.estimated_cost ? (
+                              <span className="text-[10px] font-mono text-[#768a80]">
+                                ~{new Intl.NumberFormat('vi-VN').format(chip.estimated_cost)} ₫
+                              </span>
+                            ) : null}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
           </section>
@@ -558,7 +660,7 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
                 Test chức năng tại quầy
               </h3>
               <span className="text-xs text-[#176b58] bg-[#eaf4ef] px-2.5 py-0.5 rounded-[10px] font-semibold">
-                {activeProfile?.checks.length || 0} chức năng · {selectedCategory}
+                {effectiveChecks.length} chức năng · {selectedCategory}
               </span>
             </div>
             <p className="text-xs text-[#829189] mb-3">
@@ -566,7 +668,7 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
             </p>
 
             <div className="border border-[#e9eeeb] rounded-[8px] overflow-hidden bg-white mb-3">
-              {(activeProfile?.checks || []).map((item, idx) => (
+              {effectiveChecks.map((item, idx) => (
                 <DynamicTestRow
                   key={item}
                   name={`test-${idx}`}

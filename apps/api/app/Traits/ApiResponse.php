@@ -71,6 +71,18 @@ trait ApiResponse
     }
 
     /**
+     * Trả về phản hồi không có quyền truy cập (HTTP 403 Forbidden).
+     *
+     * @param string $message Thông báo lỗi
+     * @param mixed $errors Chi tiết lỗi
+     * @return JsonResponse
+     */
+    protected function forbidden(string $message = 'Forbidden', mixed $errors = null): JsonResponse
+    {
+        return $this->failure($message, 403, $errors);
+    }
+
+    /**
      * Trả về phản hồi không tìm thấy dữ liệu (HTTP 404 Not Found).
      *
      * @param string $message

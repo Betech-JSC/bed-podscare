@@ -3,6 +3,8 @@
 namespace App\Http\Controllers\Api\V1;
 
 use App\Http\Controllers\Controller;
+use App\Models\CommonIssue;
+use App\Models\DeviceModel;
 use App\Models\RepairService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -32,42 +34,28 @@ class ServiceController extends Controller
     }
 
     /**
-     * Danh sách các sự cố / lỗi thường gặp theo nhóm.
+     * Danh sách các sự cố / lỗi thường gặp theo nhóm thiết bị / danh mục.
      */
-    public function commonIssues(): JsonResponse
+    public function commonIssues(Request $request): JsonResponse
     {
-        $issues = [
-            [
-                'issue_name' => 'Pin chai, tụt pin nhanh dưới 1 tiếng',
-                'category'   => 'Pin',
-                'solution'   => 'Thay cell pin dung lượng cao chính hãng',
-                'estimated_time' => '30–45 phút',
-            ],
-            [
-                'issue_name' => 'Bật chống ồn ANC bị rè, rít gió chói tai',
-                'category'   => 'Driver',
-                'solution'   => 'Cân chỉnh micro ngoài, fix lỗi rít màng âm',
-                'estimated_time' => '60 phút',
-            ],
-            [
-                'issue_name' => 'Loa một bên nhỏ tiếng hoặc rè bass',
-                'category'   => 'Loa',
-                'solution'   => 'Vệ sinh lưới âm thanh hoặc thay driver titan',
-                'estimated_time' => '45 phút',
-            ],
-            [
-                'issue_name' => 'Hộp sạc không nhận sạc hoặc không sạc được cho tai',
-                'category'   => 'Hộp sạc',
-                'solution'   => 'Thay pin case sạc hoặc hàn cáp flex chân tiếp xúc',
-                'estimated_time' => '45–60 phút',
-            ],
-            [
-                'issue_name' => 'Bám bẩn lâu ngày, tắc màng âm thanh',
-                'category'   => 'Vệ sinh',
-                'solution'   => 'Vệ sinh chuyên sâu bằng dung dịch chuyên dụng và tia UV',
-                'estimated_time' => '20 phút',
-            ],
-        ];
+        $query = CommonIssue::active();
+
+        if ($modelId = $request->input('device_model_id')) {
+            $hasModelSpecific = CommonIssue::active()->where('device_model_id', $modelId)->exists();
+            if ($hasModelSpecific) {
+                $query->where('device_model_id', $modelId);
+            } else {
+                $model = DeviceModel::find($modelId);
+                $cat = $request->input('category') ?: ($model?->category ?? 'AirPods');
+                $query->where('category', $cat);
+            }
+        } elseif ($category = $request->input('category')) {
+            $query->where('category', $category);
+        } else {
+            $query->where('category', 'AirPods');
+        }
+
+        $issues = $query->orderBy('order_index', 'asc')->get();
 
         return $this->success($issues, 'Lấy danh mục lỗi thường gặp thành công.');
     }

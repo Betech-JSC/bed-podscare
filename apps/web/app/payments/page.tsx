@@ -1,9 +1,10 @@
 'use client';
 
 import React, { useState, useEffect, useCallback } from 'react';
-import { paymentService, type PaymentItem } from '@podscare/api-client';
+import { paymentService, repairService, type PaymentItem } from '@podscare/api-client';
 import { Button, StatusTag, FilterBar, EmptyState, Modal, useToast, StatCard, CurrencyInput } from '@podscare/ui';
 import { AppShell } from '../components/AppShell';
+import { usePodsCare } from '../providers';
 
 interface FormattedPayment {
   id: number | string;
@@ -20,80 +21,34 @@ interface FormattedPayment {
   transactionRef?: string;
 }
 
+interface PendingOrderOption {
+  id: number | string;
+  order_code: string;
+  customer_name: string;
+  device_name: string;
+  status: string;
+  price: number;
+}
+
 const VIETQR_BANK_ID = process.env.NEXT_PUBLIC_VIETQR_BANK_ID || 'MB';
 const VIETQR_ACCOUNT_NO = process.env.NEXT_PUBLIC_VIETQR_ACCOUNT_NO || '';
 const VIETQR_ACCOUNT_NAME = process.env.NEXT_PUBLIC_VIETQR_ACCOUNT_NAME || '';
 const VIETQR_TEMPLATE = process.env.NEXT_PUBLIC_VIETQR_TEMPLATE || 'compact2';
 const isVietQrConfigured = Boolean(VIETQR_BANK_ID && VIETQR_ACCOUNT_NO);
 
-const fallbackPayments: FormattedPayment[] = [
-  {
-    id: 1,
-    paymentCode: 'PC26-PY-1092',
-    orderCode: 'PC26-00981',
-    customerName: 'Nguyễn Minh Anh',
-    amount: 850000,
-    method: 'VietQR Chuyển khoản',
-    methodKey: 'bank_transfer',
-    status: 'Hoàn tất',
-    statusType: 'ready',
-    receivedBy: 'Tuấn K.',
-    date: '25/09/2026, 10:45',
-    transactionRef: 'SEPAY-992140',
-  },
-  {
-    id: 2,
-    paymentCode: 'PC26-PY-1091',
-    orderCode: 'PC26-00979',
-    customerName: 'Phạm Thu Hà',
-    amount: 650000,
-    method: 'Tiền mặt',
-    methodKey: 'cash',
-    status: 'Hoàn tất',
-    statusType: 'ready',
-    receivedBy: 'Lan Phạm',
-    date: '24/09/2026, 16:15',
-  },
-  {
-    id: 3,
-    paymentCode: 'PC26-PY-1090',
-    orderCode: 'PC26-00975',
-    customerName: 'Nguyễn Thanh Vy',
-    amount: 550000,
-    method: 'VietQR Chuyển khoản',
-    methodKey: 'bank_transfer',
-    status: 'Hoàn tất',
-    statusType: 'ready',
-    receivedBy: 'Lan Phạm',
-    date: '23/09/2026, 11:20',
-    transactionRef: 'SEPAY-981023',
-  },
-  {
-    id: 4,
-    paymentCode: 'PC26-PY-1089',
-    orderCode: 'PC26-00976',
-    customerName: 'Đỗ Gia Huy',
-    amount: 450000,
-    method: 'Thẻ POS',
-    methodKey: 'card_pos',
-    status: 'Hoàn tất',
-    statusType: 'ready',
-    receivedBy: 'Minh Lê',
-    date: '23/09/2026, 09:30',
-    transactionRef: 'POS-8812',
-  },
-];
-
 export default function PaymentsPage() {
   const { toast } = useToast();
+  const { invalidateOrders } = usePodsCare();
   const [payments, setPayments] = useState<FormattedPayment[]>([]);
+  const [pendingOrders, setPendingOrders] = useState<PendingOrderOption[]>([]);
+  const [selectedPendingCode, setSelectedPendingCode] = useState<string>('');
   const [isLoading, setIsLoading] = useState(true);
   const [search, setSearch] = useState('');
 
   // VietQR modal state
   const [qrModalOpen, setQrModalOpen] = useState(false);
-  const [qrOrderCode, setQrOrderCode] = useState('PC26-00982');
-  const [qrAmount, setQrAmount] = useState<number>(850000);
+  const [qrOrderCode, setQrOrderCode] = useState('PC26-00985');
+  const [qrAmount, setQrAmount] = useState<number>(1200000);
   const [qrMethod, setQrMethod] = useState<'bank_transfer' | 'cash'>('bank_transfer');
   const [isSubmitting, setIsSubmitting] = useState(false);
 
@@ -142,8 +97,8 @@ export default function PaymentsPage() {
             amount: Number(p.amount) || 0,
             method: mapMethodLabel(p.payment_method),
             methodKey: p.payment_method,
-            status: p.status === 'completed' ? 'Hoàn tất' : 'Chờ xử lý',
-            statusType: p.status === 'completed' ? 'ready' : 'wait',
+            status: (p.status === 'completed' || p.status === 'paid') ? 'Hoàn tất' : 'Chờ xử lý',
+            statusType: (p.status === 'completed' || p.status === 'paid') ? 'ready' : 'wait',
             receivedBy: p.received_by_user?.name || 'Hệ thống SePay',
             date: dateStr,
             transactionRef: p.transaction_ref || undefined,
@@ -151,19 +106,108 @@ export default function PaymentsPage() {
         });
         setPayments(mapped);
       } else {
-        setPayments(fallbackPayments);
+        setPayments([]);
       }
     } catch (err) {
       console.warn('Could not fetch payments from API:', err);
-      setPayments(fallbackPayments);
+      setPayments([]);
     } finally {
       setIsLoading(false);
     }
   }, []);
 
+  const loadPendingOrders = useCallback(async () => {
+    try {
+      const res = await repairService.getRepairs({ per_page: 50 });
+      const raw = res?.data;
+      const list = Array.isArray(raw) ? raw : (raw?.data || (Array.isArray(res) ? res : []));
+      if (Array.isArray(list) && list.length > 0) {
+        const eligible = list.filter((o: any) =>
+          ['ready_for_return', 'waiting_pickup', 'waiting_qc', 'in_repair', 'waiting_tech', 'waiting_approval', 'completed'].includes(o.status)
+        );
+        eligible.sort((a: any, b: any) => {
+          const priority = (s: string) => (s === 'ready_for_return' || s === 'waiting_pickup' ? 0 : 1);
+          return priority(a.status) - priority(b.status);
+        });
+        const mapped: PendingOrderOption[] = eligible.map((o: any) => ({
+          id: o.id,
+          order_code: o.order_code || `PC26-${o.id}`,
+          customer_name: o.customer?.name || 'Khách lẻ',
+          device_name: o.device_model?.name || 'Thiết bị',
+          status: o.status,
+          price: Number(o.total_price) || Number(o.estimated_price) || 0,
+        }));
+        setPendingOrders(mapped);
+      }
+    } catch (err) {
+      console.warn('Could not fetch pending orders for payments:', err);
+    }
+  }, []);
+
   useEffect(() => {
     loadPayments();
-  }, [loadPayments]);
+    loadPendingOrders();
+  }, [loadPayments, loadPendingOrders]);
+
+  const handleSelectPendingOrder = (orderCode: string) => {
+    setSelectedPendingCode(orderCode);
+    if (!orderCode) return;
+    const found = pendingOrders.find((o) => o.order_code === orderCode || String(o.id) === orderCode);
+    if (found) {
+      setQrOrderCode(found.order_code);
+      if (found.price > 0) {
+        setQrAmount(found.price);
+      }
+    }
+  };
+
+  const handleSimulatePayment = async () => {
+    if (!qrOrderCode || qrAmount <= 0) {
+      toast('Vui lòng chọn hoặc nhập mã đơn và số tiền hợp lệ', 'info');
+      return;
+    }
+
+    setIsSubmitting(true);
+    try {
+      const orderRef = qrOrderCode.trim();
+      const repairOrderId = /^\d+$/.test(orderRef) ? Number(orderRef) : orderRef;
+
+      // 1. Ghi nhận phiếu thu tiền mặt thanh toán hoàn tất
+      await paymentService.createPayment({
+        repair_order_id: repairOrderId,
+        amount: qrAmount,
+        payment_method: 'cash',
+        notes: `Thanh toán giả lập tại quầy cho đơn ${orderRef}`,
+      });
+
+      // 2. Chuyển đổi trạng thái đơn hàng sang completed trên State Machine
+      try {
+        await repairService.transition(repairOrderId, {
+          transition: 'completed',
+          repair_note: 'Hoàn tất bàn giao sau khi thanh toán giả lập tại quầy',
+        });
+      } catch (transErr: any) {
+        console.warn('Could not transition order to completed automatically:', transErr);
+      }
+
+      toast(`⚡ Đã giả lập thanh toán thành công cho đơn ${orderRef}!`, 'success');
+      setQrModalOpen(false);
+      await loadPayments();
+      await loadPendingOrders();
+      if (invalidateOrders) {
+        await invalidateOrders();
+      }
+    } catch (err: any) {
+      console.error('Could not simulate payment:', err);
+      const errMsg =
+        err?.response?.data?.message ||
+        err?.message ||
+        'Không thể giả lập thanh toán. Vui lòng kiểm tra lại kết nối.';
+      toast(`Lỗi giả lập thanh toán: ${errMsg}`, 'error');
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
 
   const handleCreatePayment = async () => {
     if (!qrOrderCode || qrAmount <= 0) {
@@ -173,18 +217,20 @@ export default function PaymentsPage() {
 
     setIsSubmitting(true);
     try {
-      // Find numeric order ID if possible, else 1
-      const numericId = Number(qrOrderCode.replace(/\D/g, '')) || 1;
+      // Task 3.1: Loại bỏ regex strip số, gửi trực tiếp order_code hoặc repair_order_id số
+      const orderRef = qrOrderCode.trim();
+      const repairOrderId = /^\d+$/.test(orderRef) ? Number(orderRef) : orderRef;
       await paymentService.createPayment({
-        repair_order_id: numericId,
+        repair_order_id: repairOrderId,
         amount: qrAmount,
         payment_method: qrMethod,
-        notes: `Thanh toán cho đơn ${qrOrderCode}`,
+        notes: `Thanh toán cho đơn ${orderRef}`,
       });
 
       toast('Tạo phiếu thu thành công', 'success');
       setQrModalOpen(false);
       loadPayments();
+      loadPendingOrders();
     } catch (err: any) {
       console.error('Could not create payment on API:', err);
       const errMsg =
@@ -263,26 +309,32 @@ export default function PaymentsPage() {
             value={moneyFormatted(totalAmount)}
             icon="payments"
             foot="Toàn bộ giao dịch"
-            trend="up"
+            periodLabel=""
+            trend="neutral"
           />
           <StatCard
             label="Chuyển khoản VietQR"
             value={`${transferCount} giao dịch`}
             icon="check"
             foot="Tự động qua SePay"
-            trend="up"
+            periodLabel=""
+            trend="neutral"
           />
           <StatCard
             label="Tiền mặt tại quầy"
             value={`${cashCount} phiếu thu`}
             icon="money"
             foot="Đã xác nhận thu ngân"
+            periodLabel=""
+            trend="neutral"
           />
           <StatCard
             label="Tổng phiếu thu"
             value={String(payments.length).padStart(2, '0')}
             icon="quotes"
             foot="Cập nhật theo thời gian thực"
+            periodLabel=""
+            trend="neutral"
           />
         </div>
 
@@ -303,9 +355,18 @@ export default function PaymentsPage() {
             </div>
           ) : filtered.length === 0 ? (
             <EmptyState
-              title="Không tìm thấy phiếu thu nào"
-              description="Không có bản ghi thanh toán nào khớp với từ khóa tìm kiếm."
-              icon="search"
+              title={search ? 'Không tìm thấy phiếu thu nào' : 'Chưa có phiếu thu nào'}
+              description={
+                search
+                  ? 'Không có bản ghi thanh toán nào khớp với từ khóa tìm kiếm.'
+                  : 'Hiện tại chưa có dữ liệu giao dịch hoặc phiếu thu nào được ghi nhận.'
+              }
+              icon="receipt"
+              actionLabel={search ? 'Xóa bộ lọc' : 'Làm mới'}
+              onAction={() => {
+                if (search) setSearch('');
+                else loadPayments();
+              }}
             />
           ) : (
             <div className="overflow-x-auto -mx-4 sm:mx-0">
@@ -359,22 +420,52 @@ export default function PaymentsPage() {
           title="Tạo mã thanh toán VietQR động"
           subtitle="Sinh mã QR thanh toán chuẩn VietQR tự động khớp đơn và đối soát qua SePay."
           footer={
-            <div className="flex justify-end gap-2.5 w-full">
-              <Button variant="secondary" size="md" onClick={() => setQrModalOpen(false)}>
-                Đóng
-              </Button>
+            <div className="flex flex-wrap items-center justify-between gap-2.5 w-full">
               <Button
-                variant="primary"
+                variant="secondary"
                 size="md"
-                disabled={isSubmitting}
-                onClick={handleCreatePayment}
+                disabled={isSubmitting || !qrOrderCode}
+                onClick={handleSimulatePayment}
+                title="Giả lập thanh toán tiền mặt và hoàn tất đơn hàng"
               >
-                {isSubmitting ? 'Đang ghi nhận...' : 'Xác nhận thu tiền'}
+                ⚡ Giả lập thanh toán thành công
               </Button>
+              <div className="flex gap-2">
+                <Button variant="secondary" size="md" onClick={() => setQrModalOpen(false)}>
+                  Đóng
+                </Button>
+                <Button
+                  variant="primary"
+                  size="md"
+                  disabled={isSubmitting}
+                  onClick={handleCreatePayment}
+                >
+                  {isSubmitting ? 'Đang ghi nhận...' : 'Xác nhận thu tiền'}
+                </Button>
+              </div>
             </div>
           }
         >
           <div className="space-y-4">
+            {/* Bộ chọn đơn chờ thanh toán từ hệ thống */}
+            <div>
+              <label className="text-xs font-bold text-[#516158] block mb-1">
+                Chọn đơn chờ thanh toán trong hệ thống
+              </label>
+              <select
+                value={selectedPendingCode}
+                onChange={(e) => handleSelectPendingOrder(e.target.value)}
+                className="w-full text-xs font-medium px-3 py-2 rounded-[8px] border border-[#d2dcd6] bg-white outline-none focus:border-[#176b58] text-[#1c302b]"
+              >
+                <option value="">-- Chọn đơn chờ thanh toán / thu tiền --</option>
+                {pendingOrders.map((o) => (
+                  <option key={o.id} value={o.order_code}>
+                    {o.order_code} · {o.customer_name} ({o.device_name}) - {moneyFormatted(o.price)} [{o.status}]
+                  </option>
+                ))}
+              </select>
+            </div>
+
             <div className="grid grid-cols-2 gap-3">
               <div>
                 <label className="text-xs font-bold text-[#516158] block mb-1">Mã đơn sửa chữa</label>

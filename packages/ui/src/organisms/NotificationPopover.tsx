@@ -41,6 +41,7 @@ export interface NotificationPopoverProps {
   onMarkAsRead?: (id: string | number) => void;
   isMuted?: boolean;
   onToggleMute?: () => void;
+  onTestSound?: () => void;
   className?: string;
 }
 
@@ -202,6 +203,7 @@ export const NotificationPopover: React.FC<NotificationPopoverProps> = ({
   onMarkAsRead,
   isMuted = false,
   onToggleMute,
+  onTestSound,
   className = '',
 }) => {
   const [activeTab, setActiveTab] = useState<TabType>('all');
@@ -348,8 +350,22 @@ export const NotificationPopover: React.FC<NotificationPopoverProps> = ({
           </div>
         </div>
 
-        {/* Right: Header Action Tools (Mute audio & Close) */}
+        {/* Right: Header Action Tools (Test sound, Mute audio & Close) */}
         <div className="flex items-center gap-1.5 shrink-0">
+          {/* Test Sound Button: Nút "Thử âm thanh" với icon loa để phát tiếng chuông tức thì */}
+          {onTestSound && (
+            <button
+              type="button"
+              onClick={onTestSound}
+              title="Thử âm thanh chuông thông báo"
+              aria-label="Thử âm thanh chuông thông báo"
+              className="h-7 px-2.5 rounded-full text-[11px] font-semibold flex items-center gap-1.5 transition-all border shadow-2xs cursor-pointer bg-[#fbfdfc] text-[#176b51] border-[#d8ebe1] hover:bg-[#eaf5ef] active:scale-95"
+            >
+              <Icon name="volume" size={12} />
+              <span className="whitespace-nowrap">Thử âm thanh</span>
+            </button>
+          )}
+
           {/* Mute/Unmute Audio Toggle: Pill button bo góc mềm mại, icon chuông gạch chéo tinh tế */}
           {onToggleMute && (
             <button

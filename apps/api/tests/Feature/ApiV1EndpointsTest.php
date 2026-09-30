@@ -21,8 +21,9 @@ class ApiV1EndpointsTest extends TestCase
 
         $response->assertStatus(200)
             ->assertJsonPath('success', true)
-            ->assertJsonPath('data.order.order_code', 'PC26-00981')
-            ->assertJsonPath('data.order.customer.phone', '0903482716');
+            ->assertJsonPath('data.order.order_code', 'PC26-00981');
+
+        $this->assertStringContainsString('****', $response->json('data.order.customer.phone'));
 
         $this->assertCount(6, $response->json('data.timeline'));
     }
