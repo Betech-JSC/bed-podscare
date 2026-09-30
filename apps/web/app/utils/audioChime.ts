@@ -99,9 +99,14 @@ export function playChimeTone(volume: number = 0.25): void {
     osc.start(now);
     osc.stop(now + duration + 0.02);
   } catch (err) {
-    console.warn('[AudioChime] Không thể phát âm thanh:', err);
+    if (typeof process !== 'undefined' && process.env?.NEXT_PUBLIC_SOCKET_DEBUG === 'true') {
+      console.debug('[AudioChime] Không thể phát âm thanh:', err);
+    }
   }
 }
+
+// Alias tương thích với các module gọi playNotificationChime
+export const playNotificationChime = playChimeTone;
 
 const CHIME_THROTTLE_MS = 800; // Throttle 800ms chống spam âm thanh
 const STORAGE_KEY = 'podscare_audio_muted';

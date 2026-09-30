@@ -2,8 +2,10 @@
 
 namespace App\Http\Controllers\Api\V1;
 
+use App\Events\OrderOperationalEvent;
 use App\Http\Controllers\Controller;
 use App\Models\AuditLog;
+use App\Models\Notification;
 use App\Models\QcChecklistResult;
 use App\Models\QcInspection;
 use App\Models\RepairOrder;
@@ -62,7 +64,7 @@ class QcController extends Controller
 
             $inspection = QcInspection::create([
                 'repair_order_id' => $order->id,
-                'inspector_id'    => $request->user()?->id ?? 1,
+                'inspector_id'    => $request->user()->id,
                 'result'          => $validated['result'],
                 'notes'           => $validated['notes'] ?? null,
                 'rework_reason'   => $validated['rework_reason'] ?? null,
@@ -80,21 +82,73 @@ class QcController extends Controller
             if ($validated['result'] === 'pass') {
                 $order->update([
                     'status'          => 'ready_for_return',
-                    'qc_inspector_id' => $request->user()?->id ?? 1,
+                    'qc_inspector_id' => $request->user()->id,
                     'qc_passed_at'    => Carbon::now(),
                     'qc_note'         => $validated['notes'] ?? 'Đạt 6/6 tiêu chuẩn kỹ thuật',
                 ]);
+
+                $notif = Notification::create([
+                    'branch_id'  => $order->branch_id,
+                    'order_id'   => $order->id,
+                    'type'       => 'qc_action',
+                    'title'      => 'Đạt chuẩn kiểm định QC',
+                    'message'    => "Đơn {$order->order_code} đã vượt qua 6/6 tiêu chuẩn QC và sẵn sàng giao trả.",
+                    'severity'   => 'success',
+                    'action_url' => "/repairs?id={$order->id}",
+                ]);
+
+                OrderOperationalEvent::dispatch(
+                    $notif->id,
+                    $order->id,
+                    $order->order_code,
+                    $notif->title,
+                    $notif->message,
+                    'success',
+                    now()->toIso8601String(),
+                    "/repairs?id={$order->id}",
+                    $order->branch_id,
+                    'cskh',
+                    null,
+                    'qc_action',
+                    'qc.passed'
+                );
             } else {
                 $order->update([
                     'status'          => 'rework_needed',
-                    'qc_inspector_id' => $request->user()?->id ?? 1,
+                    'qc_inspector_id' => $request->user()->id,
                     'qc_note'         => $validated['rework_reason'],
                 ]);
+
+                $notif = Notification::create([
+                    'branch_id'  => $order->branch_id,
+                    'order_id'   => $order->id,
+                    'type'       => 'qc_action',
+                    'title'      => 'QC không đạt chuẩn - Cần sửa lại',
+                    'message'    => "Đơn {$order->order_code} không đạt kiểm định QC: " . ($validated['rework_reason'] ?? 'Cần kiểm tra và sửa lại.'),
+                    'severity'   => 'danger',
+                    'action_url' => "/repairs?id={$order->id}",
+                ]);
+
+                OrderOperationalEvent::dispatch(
+                    $notif->id,
+                    $order->id,
+                    $order->order_code,
+                    $notif->title,
+                    $notif->message,
+                    'danger',
+                    now()->toIso8601String(),
+                    "/repairs?id={$order->id}",
+                    $order->branch_id,
+                    'technician',
+                    $order->technician_id,
+                    'qc_action',
+                    'qc.rework_needed'
+                );
             }
 
             AuditLog::create([
-                'user_id'        => $request->user()?->id,
-                'user_name'      => $request->user()?->name ?? 'QC Inspector',
+                'user_id'        => $request->user()->id,
+                'user_name'      => $request->user()->name,
                 'action'         => 'Kiểm định QC: ' . ($validated['result'] === 'pass' ? 'ĐẠT' : 'KHÔNG ĐẠT'),
                 'auditable_type' => 'QcInspection',
                 'auditable_id'   => $inspection->id,

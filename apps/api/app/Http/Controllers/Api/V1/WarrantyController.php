@@ -114,12 +114,12 @@ class WarrantyController extends Controller
                 'resolution_mode'     => $validated['resolution_mode'],
                 'notes'               => $validated['notes'] ?? null,
                 'status'              => 'received',
-                'received_by_user_id' => $request->user()?->id ?? 1,
+                'received_by_user_id' => $request->user()->id,
             ]);
 
             AuditLog::create([
-                'user_id'        => $request->user()?->id,
-                'user_name'      => $request->user()?->name ?? 'CSKH',
+                'user_id'        => $request->user()->id,
+                'user_name'      => $request->user()->name,
                 'action'         => 'Tiếp nhận bảo hành',
                 'auditable_type' => 'WarrantyClaim',
                 'auditable_id'   => $claim->id,

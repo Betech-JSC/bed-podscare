@@ -9,27 +9,57 @@ export interface StepItem {
 export interface StepperWidgetProps {
   steps: StepItem[];
   currentStepIndex: number; // 0-based
+  completedStepIndices?: number[];
+  onStepClick?: (stepIndex: number) => void;
   className?: string;
 }
 
 export const StepperWidget: React.FC<StepperWidgetProps> = ({
   steps,
   currentStepIndex,
+  completedStepIndices,
+  onStepClick,
   className = '',
 }) => {
   return (
     <div className={`flex items-center justify-between relative py-4 px-2 overflow-x-auto ${className}`}>
       {steps.map((step, index) => {
-        const isDone = index < currentStepIndex;
         const isActive = index === currentStepIndex;
+        const isDone = !isActive && (Boolean(completedStepIndices?.includes(index)) || index < currentStepIndex);
+        const isClickable = Boolean(
+          onStepClick && (isActive || isDone || completedStepIndices?.includes(index) || index <= currentStepIndex)
+        );
+
+        const isLineDone =
+          index < currentStepIndex ||
+          (Boolean(completedStepIndices?.includes(index)) &&
+            (Boolean(completedStepIndices?.includes(index + 1)) || index + 1 === currentStepIndex));
 
         return (
-          <div key={step.id} className="flex-1 text-center relative min-w-[80px]">
+          <div
+            key={step.id}
+            className={`flex-1 text-center relative min-w-[80px] ${
+              isClickable ? 'cursor-pointer select-none hover:opacity-90 transition-opacity' : ''
+            }`}
+            role={isClickable ? 'button' : undefined}
+            tabIndex={isClickable ? 0 : undefined}
+            onClick={() => {
+              if (isClickable && onStepClick) {
+                onStepClick(index);
+              }
+            }}
+            onKeyDown={(e) => {
+              if (isClickable && onStepClick && (e.key === 'Enter' || e.key === ' ')) {
+                e.preventDefault();
+                onStepClick(index);
+              }
+            }}
+          >
             {/* Connecting line */}
             {index < steps.length - 1 && (
               <div
                 className={`absolute top-[14px] left-[55%] right-[-45%] h-[2px] z-0 transition-colors ${
-                  isDone ? 'bg-[#4d9775]' : 'bg-[#e7eeea]'
+                  isLineDone ? 'bg-[#4d9775]' : 'bg-[#e7eeea]'
                 }`}
               />
             )}
@@ -37,10 +67,10 @@ export const StepperWidget: React.FC<StepperWidgetProps> = ({
             {/* Step Icon circle */}
             <div
               className={`w-7 h-7 rounded-full mx-auto mb-1.5 grid place-items-center text-xs font-bold relative z-10 transition-all ${
-                isDone
-                  ? 'bg-[#e0f0e6] text-[#287452]'
-                  : isActive
+                isActive
                   ? 'bg-[#176b58] text-white shadow-[0_0_0_4px_#e4f1e9]'
+                  : isDone
+                  ? 'bg-[#e0f0e6] text-[#287452]'
                   : 'bg-[#edf2ef] text-[#8e9a94]'
               }`}
             >

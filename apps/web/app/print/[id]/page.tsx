@@ -18,9 +18,16 @@ export default function PrintReceiptPage() {
     queryKey: ['repair-print', id],
     queryFn: async () => {
       if (!id) return null;
-      // First check if order is already present in global context
+      // Do not use existing from global state if missing checks or createdBy
       const existing = orders.find((o) => o.id === id);
-      if (existing) return existing;
+      if (
+        existing &&
+        Array.isArray(existing.checks) &&
+        existing.checks.length > 0 &&
+        existing.createdBy
+      ) {
+        return existing;
+      }
 
       // Otherwise fetch dynamically from API with dual-lookup (integer ID or order_code)
       const res = await repairService.getRepairById(id);
@@ -52,12 +59,14 @@ export default function PrintReceiptPage() {
         ? o.intake_checklists.map((c: any) => ({
             label: c.item_name,
             status:
-              c.status === 'passed' || c.status === 'good' || c.status === 'Hoạt động'
+              c.status === 'pass' || c.status === 'passed' || c.status === 'good' || c.status === 'Hoạt động'
                 ? ('Hoạt động' as const)
-                : c.status === 'failed' || c.status === 'Lỗi'
+                : c.status === 'fail' || c.status === 'failed' || c.status === 'Lỗi'
                 ? ('Lỗi' as const)
                 : ('Không kiểm tra' as const),
           }))
+        : Array.isArray(o.checks)
+        ? o.checks
         : [];
 
       const mappedPhotos = Array.isArray(o.intake_photos)
@@ -88,7 +97,7 @@ export default function PrintReceiptPage() {
         accessories: o.accessories || 'Không gửi kèm',
         checks: mappedChecks,
         photos: mappedPhotos,
-        createdBy: o.created_by_user?.name || 'PodsCare',
+        createdBy: o.created_by_user?.name || o.createdBy || 'PodsCare',
       };
       return mapped;
     },

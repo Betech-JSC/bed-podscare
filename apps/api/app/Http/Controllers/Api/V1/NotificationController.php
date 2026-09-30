@@ -23,9 +23,11 @@ class NotificationController extends Controller
             $query->where('user_id', $userId);
         }
 
-        // Lọc theo branch_id
+        // Lọc theo branch_id (bỏ qua nếu là 'all')
         if ($branchId = $request->input('branch_id', $request->input('branch'))) {
-            $query->where('branch_id', $branchId);
+            if ($branchId !== 'all') {
+                $query->where('branch_id', $branchId);
+            }
         }
 
         // Lọc theo trạng thái đã đọc is_read
@@ -44,7 +46,7 @@ class NotificationController extends Controller
         if ($userId) {
             $unreadQuery->where('user_id', $userId);
         }
-        if ($branchId) {
+        if ($branchId && $branchId !== 'all') {
             $unreadQuery->where('branch_id', $branchId);
         }
         $unreadCount = $unreadQuery->count();

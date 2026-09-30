@@ -29,38 +29,9 @@ class AuthController extends Controller
             ->orWhere('phone', $loginInput)
             ->first();
 
-        // Ensure the 3 demo users exist for seamless quick login experience
-        if (! $user && in_array($loginInput, ['admin@podscare.vn', 'cskh.lan@podscare.vn', 'tuan.kt@podscare.vn', '0903 000 003'])) {
-            $branch = \App\Models\Branch::first();
-            $demoAccounts = [
-                'admin@podscare.vn'   => ['name' => 'Minh Lê', 'role' => 'admin', 'phone' => '0901 000 001', 'email' => 'admin@podscare.vn'],
-                'cskh.lan@podscare.vn' => ['name' => 'Lan Phạm', 'role' => 'cskh', 'phone' => '0902 000 002', 'email' => 'cskh.lan@podscare.vn'],
-                'tuan.kt@podscare.vn'  => ['name' => 'Tuấn K.', 'role' => 'technician', 'phone' => '0903 000 003', 'email' => 'tuan.kt@podscare.vn'],
-                '0903 000 003'        => ['name' => 'Tuấn K.', 'role' => 'technician', 'phone' => '0903 000 003', 'email' => 'tuan.kt@podscare.vn'],
-            ];
-            $acc = $demoAccounts[$loginInput];
-            $user = User::updateOrCreate(
-                ['email' => $acc['email']],
-                [
-                    'name' => $acc['name'],
-                    'phone' => $acc['phone'],
-                    'password' => Hash::make('password123'),
-                    'role' => $acc['role'],
-                    'branch_id' => $branch?->id,
-                    'is_active' => true,
-                    'avatar_url' => 'https://ui-avatars.com/api/?name=' . urlencode($acc['name']) . '&background=176B58&color=fff',
-                ]
-            );
-        }
-
         $password = $request->input('password');
-        $isValidPassword = $user && (
-            Hash::check($password, $user->password) ||
-            ($password === 'password123' && Hash::check('password', $user->password)) ||
-            ($password === 'password' && Hash::check('password123', $user->password))
-        );
 
-        if (! $user || ! $isValidPassword) {
+        if (! $user || ! Hash::check($password, $user->password)) {
             return $this->failure('Email hoặc mật khẩu không chính xác.', 401);
         }
 

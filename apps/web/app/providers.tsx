@@ -83,8 +83,19 @@ export const Providers: React.FC<{ children: React.ReactNode }> = ({ children })
   );
 
   const [role, setRoleState] = useState<UserRole>('admin');
-  const [branch, setBranchState] = useState('PodsCare · Quận 1');
-  const [branchId, setBranchIdState] = useState<string | number>(1);
+  const [branch, setBranchState] = useState<string>(() => {
+    if (typeof window !== 'undefined') {
+      return localStorage.getItem('podscare_branch') || 'Tất cả chi nhánh';
+    }
+    return 'Tất cả chi nhánh';
+  });
+  const [branchId, setBranchIdState] = useState<string | number>(() => {
+    if (typeof window !== 'undefined') {
+      const saved = localStorage.getItem('podscare_branch_id');
+      if (saved) return saved === 'all' ? 'all' : Number(saved) || saved;
+    }
+    return 'all';
+  });
   const [branches, setBranches] = useState<BranchItem[]>([]);
   const [orders, setOrders] = useState<RepairOrder[]>([]);
   const [categories, setCategories] = useState<string[]>([
@@ -187,8 +198,6 @@ export const Providers: React.FC<{ children: React.ReactNode }> = ({ children })
       const savedToken = localStorage.getItem('podscare_token');
       const savedUserStr = localStorage.getItem('podscare_user');
       const savedRole = localStorage.getItem('podscare_role') as UserRole;
-      const savedBranch = localStorage.getItem('podscare_branch');
-      const savedBranchId = localStorage.getItem('podscare_branch_id');
       const cachedBranches = localStorage.getItem('podscare_branches');
       const cachedProfiles = localStorage.getItem('podscare_device_profiles');
 
@@ -212,13 +221,6 @@ export const Providers: React.FC<{ children: React.ReactNode }> = ({ children })
         } catch {
           // ignore
         }
-      }
-
-      if (savedBranch) {
-        setBranchState(savedBranch);
-      }
-      if (savedBranchId) {
-        setBranchIdState(savedBranchId === 'all' ? 'all' : Number(savedBranchId) || savedBranchId);
       }
 
       if (savedToken && savedUserStr) {
@@ -278,6 +280,20 @@ export const Providers: React.FC<{ children: React.ReactNode }> = ({ children })
             label: o.status || 'Tiếp nhận mới',
             type: 'wait',
           };
+          const mappedChecks = Array.isArray(o.intake_checklists)
+            ? o.intake_checklists.map((c: any) => ({
+                label: c.item_name,
+                status:
+                  c.status === 'pass' || c.status === 'passed' || c.status === 'good' || c.status === 'Hoạt động'
+                    ? ('Hoạt động' as const)
+                    : c.status === 'fail' || c.status === 'failed' || c.status === 'Lỗi'
+                    ? ('Lỗi' as const)
+                    : ('Không kiểm tra' as const),
+              }))
+            : Array.isArray(o.checks)
+            ? o.checks
+            : [];
+
           return {
             id: o.order_code || String(o.id),
             name: o.customer?.name || 'Khách lẻ',
@@ -307,6 +323,8 @@ export const Providers: React.FC<{ children: React.ReactNode }> = ({ children })
             completedAt: o.repair_completed_at,
             customerApprovedAt: o.customer_approved_at,
             createdAt: o.created_at,
+            checks: mappedChecks,
+            createdBy: o.created_by_user?.name || o.createdBy || 'PodsCare',
           };
         });
 

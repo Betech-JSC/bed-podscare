@@ -7,7 +7,7 @@ import {
   Button,
   StatusTag,
   Modal,
-  Input,
+  CurrencyInput,
   Select,
   Textarea,
   useToast,
@@ -316,12 +316,11 @@ export default function QuotesPage() {
         >
           <form onSubmit={handleSaveQuote} className="space-y-4">
             <div className="grid grid-cols-2 gap-3">
-              <Input
-                label="Chi phí sửa chữa (VNĐ) *"
-                type="number"
+              <CurrencyInput
+                label="Chi phí sửa chữa *"
                 value={quoteAmount}
-                onChange={(e) => setQuoteAmount(e.target.value ? Number(e.target.value) : '')}
-                placeholder="Nhập số tiền"
+                onChangeValue={(val, formatted) => setQuoteAmount(formatted ? val : '')}
+                placeholder="Ví dụ: 850.000"
                 required
               />
               <Select

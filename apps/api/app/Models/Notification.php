@@ -22,6 +22,15 @@ class Notification extends Model
         'read_at',
     ];
 
+    protected $appends = [
+        'action_url',
+    ];
+
+    public function getActionUrlAttribute(): string
+    {
+        return $this->order_id ? "/repairs?id={$this->order_id}" : '/repairs';
+    }
+
     /**
      * Get the attributes that should be cast.
      *

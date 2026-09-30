@@ -7,6 +7,7 @@ use App\Models\Branch;
 use App\Models\User;
 use Illuminate\Broadcasting\PrivateChannel;
 use Illuminate\Contracts\Broadcasting\ShouldBroadcast;
+use Illuminate\Contracts\Broadcasting\ShouldBroadcastNow;
 use Illuminate\Foundation\Testing\DatabaseTransactions;
 use Illuminate\Support\Facades\Event;
 use Tests\TestCase;
@@ -16,7 +17,7 @@ class OrderOperationalEventTest extends TestCase
     use DatabaseTransactions;
 
     /**
-     * Test that OrderOperationalEvent implements ShouldBroadcast.
+     * Test that OrderOperationalEvent implements ShouldBroadcastNow (and ShouldBroadcast).
      */
     public function test_event_implements_should_broadcast(): void
     {
@@ -30,6 +31,7 @@ class OrderOperationalEventTest extends TestCase
         );
 
         $this->assertInstanceOf(ShouldBroadcast::class, $event);
+        $this->assertInstanceOf(ShouldBroadcastNow::class, $event);
     }
 
     /**

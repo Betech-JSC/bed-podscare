@@ -158,3 +158,318 @@ export function computeTargetChannels(
 
   return channels;
 }
+
+/* ==========================================================================
+   REVERB / ECHO CONFIGURATION & WEBSOCKET CLIENT
+   ========================================================================== */
+
+/**
+ * Cấu hình kết nối Laravel Reverb / Echo linh hoạt cho môi trường Local Dev và VPS.
+ */
+export interface ReverbEchoConfig {
+  broadcaster: 'reverb' | 'pusher';
+  key: string;
+  wsHost: string;
+  wsPort: number;
+  wssPort: number;
+  forceTLS: boolean;
+  enabledTransports: ('ws' | 'wss')[];
+  authEndpoint: string;
+  scheme: 'http' | 'https';
+}
+
+/**
+ * Trích xuất cấu hình Reverb/Echo từ Environment Variables với fallback thông minh:
+ * - NEXT_PUBLIC_REVERB_HOST (mặc định theo hostname hiện tại hoặc 'localhost')
+ * - NEXT_PUBLIC_REVERB_PORT (mặc định 8080 nếu http, 443 nếu https)
+ * - NEXT_PUBLIC_REVERB_SCHEME ('http' | 'https', mặc định theo window.location.protocol hoặc 'http')
+ * - NEXT_PUBLIC_REVERB_APP_KEY (mặc định 'podscare_reverb_key')
+ */
+export function getReverbEchoConfig(): ReverbEchoConfig {
+  const isBrowser = typeof window !== 'undefined';
+  const protocol = isBrowser ? window.location?.protocol : 'http:';
+  const currentHostname = isBrowser ? window.location?.hostname || 'localhost' : 'localhost';
+
+  const schemeEnv = process.env.NEXT_PUBLIC_REVERB_SCHEME?.toLowerCase();
+  const scheme: 'http' | 'https' =
+    schemeEnv === 'https' || (!schemeEnv && protocol === 'https:') ? 'https' : 'http';
+
+  const host =
+    process.env.NEXT_PUBLIC_REVERB_HOST ||
+    process.env.NEXT_PUBLIC_WS_HOST ||
+    currentHostname;
+
+  const defaultPort = scheme === 'https' ? 443 : 8080;
+  const portStr = process.env.NEXT_PUBLIC_REVERB_PORT || process.env.NEXT_PUBLIC_WS_PORT;
+  const port = portStr ? parseInt(portStr, 10) : defaultPort;
+
+  const key =
+    process.env.NEXT_PUBLIC_REVERB_APP_KEY ||
+    process.env.NEXT_PUBLIC_REVERB_KEY ||
+    'podscare_reverb_key';
+
+  const apiBase =
+    process.env.NEXT_PUBLIC_API_URL ||
+    (isBrowser && window.location ? `${window.location.origin}/api/v1` : 'http://localhost:8000/api/v1');
+
+  const authEndpoint =
+    process.env.NEXT_PUBLIC_BROADCAST_AUTH_URL || `${apiBase}/broadcasting/auth`;
+
+  return {
+    broadcaster: 'reverb',
+    key,
+    wsHost: host,
+    wsPort: port,
+    wssPort: port,
+    forceTLS: scheme === 'https',
+    enabledTransports: scheme === 'https' ? ['wss'] : ['ws', 'wss'],
+    authEndpoint,
+    scheme,
+  };
+}
+
+/**
+ * Quản lý kết nối WebSocket native trực tiếp tới Laravel Reverb server.
+ * Tương thích 100% giao thức Pusher v7 được Reverb triển khai:
+ * - Tự động handshake `pusher:connection_established`
+ * - Gửi lệnh `pusher:subscribe` cho từng channel trong target channels
+ * - Phản hồi `pusher:ping` -> `pusher:pong` giữ kết nối alive (Heartbeat)
+ * - Tự động reconnect với exponential backoff khi mất kết nối mạng
+ * - Bắn các event nhận được vào RealtimeEventBus sau khi kiểm tra whitelist
+ */
+export class ReverbSocketClient {
+  private ws: any = null;
+  private config: ReverbEchoConfig;
+  private channels: Set<string> = new Set();
+  private reconnectTimer: any = null;
+  private pingInterval: any = null;
+  private isDestroyed: boolean = false;
+  private _isConnected: boolean = false;
+  private retryCount: number = 0;
+  private onConnectionChange?: (connected: boolean) => void;
+  private onEvent?: (eventName: string, payload: OperationalNotificationPayload) => void;
+
+  constructor(
+    config?: Partial<ReverbEchoConfig>,
+    options?: {
+      onConnectionChange?: (connected: boolean) => void;
+      onEvent?: (eventName: string, payload: OperationalNotificationPayload) => void;
+    }
+  ) {
+    this.config = { ...getReverbEchoConfig(), ...config };
+    this.onConnectionChange = options?.onConnectionChange;
+    this.onEvent = options?.onEvent;
+  }
+
+  public get isConnected(): boolean {
+    return this._isConnected;
+  }
+
+  public setChannels(newChannels: string[]) {
+    const prev = new Set(this.channels);
+    this.channels = new Set(newChannels);
+
+    if (this._isConnected && this.ws && this.ws.readyState === 1) {
+      newChannels.forEach((ch) => {
+        if (!prev.has(ch)) {
+          this.subscribeChannel(ch);
+        }
+      });
+      prev.forEach((ch) => {
+        if (!this.channels.has(ch)) {
+          this.unsubscribeChannel(ch);
+        }
+      });
+    }
+  }
+
+  public connect() {
+    if (typeof window === 'undefined') return;
+    const WebSocketClass =
+      (window as any).WebSocket || (typeof WebSocket !== 'undefined' ? WebSocket : null);
+    if (!WebSocketClass) return;
+
+    if (this.isDestroyed) return;
+    if (this.ws && (this.ws.readyState === 0 || this.ws.readyState === 1)) {
+      return;
+    }
+
+    const { scheme, wsHost, wsPort, key } = this.config;
+    const wsProtocol = scheme === 'https' ? 'wss' : 'ws';
+    const wsUrl = `${wsProtocol}://${wsHost}:${wsPort}/app/${key}?protocol=7&client=js&version=8.4.0-reverb&flash=false`;
+
+    try {
+      this.ws = new WebSocketClass(wsUrl);
+
+      this.ws.onopen = () => {
+        // Chờ pusher:connection_established trước khi đánh dấu connected
+      };
+
+      this.ws.onmessage = (event: any) => {
+        try {
+          const message = JSON.parse(event.data);
+          this.handleSocketMessage(message);
+        } catch {
+          // Bỏ qua tin nhắn không phải JSON
+        }
+      };
+
+      this.ws.onerror = (e: any) => {
+        // Silent error handler to suppress unhandled console noise
+        if (e && typeof e.stopPropagation === 'function') {
+          e.stopPropagation();
+        }
+        this.setConnected(false);
+      };
+
+      this.ws.onclose = () => {
+        this.setConnected(false);
+        this.cleanupHeartbeat();
+        if (!this.isDestroyed) {
+          this.scheduleReconnect();
+        }
+      };
+    } catch {
+      this.setConnected(false);
+      this.scheduleReconnect();
+    }
+  }
+
+  private handleSocketMessage(msg: { event: string; channel?: string; data?: any }) {
+    if (msg.event === 'pusher:connection_established') {
+      this.retryCount = 0;
+      this.setConnected(true);
+      this.startHeartbeat();
+      this.channels.forEach((ch) => this.subscribeChannel(ch));
+      return;
+    }
+
+    if (msg.event === 'pusher:ping') {
+      this.send({ event: 'pusher:pong', data: {} });
+      return;
+    }
+
+    if (msg.event === 'pusher_internal:subscription_succeeded') {
+      return;
+    }
+
+    if (msg.channel && msg.event && !msg.event.startsWith('pusher:')) {
+      let payloadData = msg.data;
+      if (typeof payloadData === 'string') {
+        try {
+          payloadData = JSON.parse(payloadData);
+        } catch {
+          // Giữ nguyên chuỗi
+        }
+      }
+
+      const normalizedPayload: OperationalNotificationPayload = {
+        id: payloadData?.id || `ws-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+        title: payloadData?.title || 'Thông báo vận hành',
+        message: payloadData?.message || '',
+        orderId: payloadData?.order_id || payloadData?.orderId,
+        orderCode: payloadData?.order_code || payloadData?.orderCode,
+        severity: payloadData?.severity || 'info',
+        timestamp: payloadData?.timestamp || payloadData?.created_at || new Date().toISOString(),
+        actionUrl: payloadData?.action_url || payloadData?.actionUrl,
+        type: payloadData?.type || 'order_status',
+        branchId: payloadData?.branch_id ?? payloadData?.branchId,
+        ...payloadData,
+      };
+
+      const eventName = msg.event;
+      if (isOperationalEventWhitelisted(eventName, normalizedPayload)) {
+        realtimeEventBus.emit(eventName, normalizedPayload);
+        this.onEvent?.(eventName, normalizedPayload);
+      }
+    }
+  }
+
+  private subscribeChannel(channel: string) {
+    this.send({
+      event: 'pusher:subscribe',
+      data: { channel },
+    });
+  }
+
+  private unsubscribeChannel(channel: string) {
+    this.send({
+      event: 'pusher:unsubscribe',
+      data: { channel },
+    });
+  }
+
+  private send(obj: any) {
+    if (this.ws && this.ws.readyState === 1) {
+      try {
+        this.ws.send(JSON.stringify(obj));
+      } catch {
+        // Bỏ qua lỗi gửi
+      }
+    }
+  }
+
+  private startHeartbeat() {
+    this.cleanupHeartbeat();
+    this.pingInterval = setInterval(() => {
+      this.send({ event: 'pusher:ping', data: {} });
+    }, 30000);
+  }
+
+  private cleanupHeartbeat() {
+    if (this.pingInterval) {
+      clearInterval(this.pingInterval);
+      this.pingInterval = null;
+    }
+  }
+
+  private scheduleReconnect(delayMs?: number) {
+    if (this.reconnectTimer) return;
+    this.retryCount++;
+
+    // Exponential backoff: 5s -> 15s -> 30s -> 60s
+    let delay = delayMs;
+    if (delay === undefined) {
+      if (this.retryCount === 1) {
+        delay = 5000;
+      } else if (this.retryCount === 2) {
+        delay = 15000;
+      } else if (this.retryCount === 3) {
+        delay = 30000;
+      } else {
+        delay = 60000;
+      }
+    }
+
+    this.reconnectTimer = setTimeout(() => {
+      this.reconnectTimer = null;
+      this.connect();
+    }, delay);
+  }
+
+  private setConnected(val: boolean) {
+    if (this._isConnected !== val) {
+      this._isConnected = val;
+      this.onConnectionChange?.(val);
+    }
+  }
+
+  public disconnect() {
+    this.isDestroyed = true;
+    this.cleanupHeartbeat();
+    if (this.reconnectTimer) {
+      clearTimeout(this.reconnectTimer);
+      this.reconnectTimer = null;
+    }
+    if (this.ws) {
+      try {
+        this.ws.onerror = () => {};
+        this.ws.onclose = () => {};
+        this.ws.close();
+      } catch {}
+      this.ws = null;
+    }
+    this.setConnected(false);
+  }
+}
+

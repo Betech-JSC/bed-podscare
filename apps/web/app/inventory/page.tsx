@@ -8,6 +8,7 @@ import {
   ErrorFallback,
   Modal,
   Input,
+  CurrencyInput,
   Textarea,
   useToast,
 } from '@podscare/ui';
@@ -558,12 +559,11 @@ export default function InventoryPage() {
 
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <Input
+              <CurrencyInput
                 label="Đơn giá (nếu có)"
-                type="number"
-                placeholder="250000"
-                value={txCost === '' ? '' : String(txCost)}
-                onChange={(e) => setTxCost(e.target.value === '' ? '' : Number(e.target.value))}
+                placeholder="Ví dụ: 250.000"
+                value={txCost}
+                onChangeValue={(val, formatted) => setTxCost(formatted ? val : '')}
               />
             </div>
             <div>

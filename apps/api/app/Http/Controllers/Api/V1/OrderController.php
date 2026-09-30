@@ -2,11 +2,13 @@
 
 namespace App\Http\Controllers\Api\V1;
 
+use App\Events\OrderOperationalEvent;
 use App\Http\Controllers\Controller;
 use App\Models\AuditLog;
 use App\Models\Customer;
 use App\Models\IntakeChecklist;
 use App\Models\IntakePhoto;
+use App\Models\Notification;
 use App\Models\RepairOrder;
 use App\Models\Warranty;
 use Illuminate\Http\JsonResponse;
@@ -110,7 +112,7 @@ class OrderController extends Controller
                 'status'                => 'inspecting',
                 'total_price'           => $validated['estimated_price'] ?? 0.00,
                 'warranty_terms_days'   => $validated['warranty_terms_days'] ?? 90,
-                'created_by_user_id'    => $request->user()?->id ?? 1,
+                'created_by_user_id'    => $request->user()->id,
             ]);
 
             // 4. Lưu checklists nếu có
@@ -127,14 +129,44 @@ class OrderController extends Controller
 
             // 5. Ghi Audit Log
             AuditLog::create([
-                'user_id'        => $request->user()?->id,
-                'user_name'      => $request->user()?->name ?? 'Hệ thống',
+                'user_id'        => $request->user()->id,
+                'user_name'      => $request->user()->name,
                 'action'         => 'Tiếp nhận đơn mới',
                 'auditable_type' => 'RepairOrder',
                 'auditable_id'   => $order->id,
                 'details'        => "Tiếp nhận đơn {$orderCode} tại chi nhánh",
                 'ip_address'     => $request->ip(),
             ]);
+
+            // 6. Tạo thông báo vận hành và phát sự kiện realtime tức thì
+            $order->loadMissing('branch');
+            $branchName = $order->branch?->name ?? 'chi nhánh';
+
+            $notification = Notification::create([
+                'branch_id'  => $order->branch_id,
+                'order_id'   => $order->id,
+                'type'       => 'order_created',
+                'title'      => 'Tiếp nhận đơn mới',
+                'message'    => "Đơn {$order->order_code} đã được tiếp nhận tại {$branchName}.",
+                'severity'   => 'info',
+                'action_url' => "/repairs?id={$order->id}",
+            ]);
+
+            OrderOperationalEvent::dispatch(
+                $notification->id,
+                $order->id,
+                $order->order_code,
+                'Tiếp nhận đơn mới',
+                "Đơn {$order->order_code} đã được tiếp nhận tại {$branchName}.",
+                'info',
+                now()->toIso8601String(),
+                "/repairs?id={$order->id}",
+                $order->branch_id,
+                null,
+                null,
+                'order_created',
+                'order.created'
+            );
 
             return $this->success(
                 $order->load(['customer', 'deviceModel', 'intakeChecklists']),
@@ -313,7 +345,7 @@ class OrderController extends Controller
                 case 'completed':
                     $updates['handed_over_at'] = $now;
                     $updates['delivered_at'] = $now;
-                    $updates['handed_over_by_user_id'] = $request->user()?->id;
+                    $updates['handed_over_by_user_id'] = $request->user()->id;
 
                     // Tự động kích hoạt sổ bảo hành điện tử
                     if ($order->warranty_terms_days > 0 && ! $order->warranties()->exists()) {
@@ -345,14 +377,149 @@ class OrderController extends Controller
 
             // Ghi Audit log
             AuditLog::create([
-                'user_id'        => $request->user()?->id,
-                'user_name'      => $request->user()?->name ?? 'Hệ thống',
+                'user_id'        => $request->user()->id,
+                'user_name'      => $request->user()->name,
                 'action'         => "Đổi trạng thái: {$currentStatus} -> {$newStatus}",
                 'auditable_type' => 'RepairOrder',
                 'auditable_id'   => $order->id,
                 'details'        => "Đơn {$order->order_code} chuyển sang {$newStatus}",
                 'ip_address'     => $request->ip(),
             ]);
+
+            // Tạo thông báo vận hành tương ứng với trạng thái mới và broadcast realtime
+            $notificationData = match ($newStatus) {
+                'waiting_approval' => [
+                    'title'      => 'Chờ khách duyệt báo giá',
+                    'message'    => "Đơn {$order->order_code} đã hoàn tất kiểm tra và đang chờ khách duyệt báo giá.",
+                    'severity'   => 'warning',
+                    'type'       => 'quote_action',
+                    'role'       => 'cskh',
+                    'event'      => 'quote.waiting_approval',
+                ],
+                'waiting_tech' => [
+                    'title'      => 'Đơn chờ kỹ thuật viên tiếp nhận',
+                    'message'    => "Đơn {$order->order_code} đã được duyệt và đang chờ kỹ thuật viên tiếp nhận.",
+                    'severity'   => 'info',
+                    'type'       => 'order_assigned',
+                    'role'       => 'technician',
+                    'event'      => 'order.waiting_tech',
+                ],
+                'assigned' => [
+                    'title'      => 'Kỹ thuật viên đã nhận đơn',
+                    'message'    => "Đơn {$order->order_code} đã được kỹ thuật viên tiếp nhận xử lý.",
+                    'severity'   => 'info',
+                    'type'       => 'order_assigned',
+                    'role'       => 'technician',
+                    'event'      => 'order.assigned',
+                ],
+                'in_repair' => [
+                    'title'      => 'Bắt đầu tiến trình sửa chữa',
+                    'message'    => "Đơn {$order->order_code} đang được kỹ thuật viên tiến hành sửa chữa.",
+                    'severity'   => 'info',
+                    'type'       => 'order_in_repair',
+                    'role'       => 'technician',
+                    'event'      => 'order.in_repair',
+                ],
+                'waiting_parts' => [
+                    'title'      => 'Đơn chờ linh kiện',
+                    'message'    => "Đơn {$order->order_code} tạm dừng để chờ linh kiện thay thế.",
+                    'severity'   => 'warning',
+                    'type'       => 'order_status',
+                    'role'       => null,
+                    'event'      => 'order.waiting_parts',
+                ],
+                'waiting_qc', 'qc_pending' => [
+                    'title'      => 'Đơn chờ kiểm định chất lượng (QC)',
+                    'message'    => "Đơn {$order->order_code} đã hoàn tất sửa chữa và chuyển sang bước kiểm định QC.",
+                    'severity'   => 'info',
+                    'type'       => 'qc_action',
+                    'role'       => 'qc',
+                    'event'      => 'qc.pending',
+                ],
+                'ready_for_return' => [
+                    'title'      => 'Đơn hàng sẵn sàng giao trả',
+                    'message'    => "Đơn {$order->order_code} đã hoàn tất kiểm định và sẵn sàng bàn giao cho khách.",
+                    'severity'   => 'success',
+                    'type'       => 'order_ready_delivery',
+                    'role'       => 'cskh',
+                    'event'      => 'order.ready_for_return',
+                ],
+                'waiting_pickup' => [
+                    'title'      => 'Khách chuẩn bị nhận máy',
+                    'message'    => "Đã thông báo khách hàng cho đơn {$order->order_code}, chờ khách tới nhận máy.",
+                    'severity'   => 'info',
+                    'type'       => 'order_status',
+                    'role'       => 'cskh',
+                    'event'      => 'order.waiting_pickup',
+                ],
+                'completed' => [
+                    'title'      => 'Đơn hàng hoàn tất bàn giao',
+                    'message'    => "Đơn {$order->order_code} đã bàn giao thành công cho khách hàng.",
+                    'severity'   => 'success',
+                    'type'       => 'order_completed',
+                    'role'       => null,
+                    'event'      => 'order.completed',
+                ],
+                'rejected' => [
+                    'title'      => 'Khách từ chối sửa chữa',
+                    'message'    => "Khách hàng từ chối sửa đơn {$order->order_code}" . (! empty($validated['decline_reason']) ? ": {$validated['decline_reason']}." : "."),
+                    'severity'   => 'danger',
+                    'type'       => 'quote_action',
+                    'role'       => 'cskh',
+                    'event'      => 'order.rejected',
+                ],
+                'rework_needed' => [
+                    'title'      => 'QC yêu cầu làm lại (Rework)',
+                    'message'    => "Đơn {$order->order_code} không đạt chuẩn QC: " . (! empty($validated['rework_reason']) ? $validated['rework_reason'] : "Cần kỹ thuật kiểm tra và làm lại."),
+                    'severity'   => 'danger',
+                    'type'       => 'qc_action',
+                    'role'       => 'technician',
+                    'event'      => 'qc.rework_needed',
+                ],
+                'cancelled' => [
+                    'title'      => 'Đơn sửa chữa đã hủy',
+                    'message'    => "Đơn {$order->order_code} đã bị hủy trên hệ thống.",
+                    'severity'   => 'danger',
+                    'type'       => 'order_cancelled',
+                    'role'       => null,
+                    'event'      => 'order.cancelled',
+                ],
+                default => [
+                    'title'      => "Cập nhật trạng thái đơn {$order->order_code}",
+                    'message'    => "Đơn {$order->order_code} chuyển sang trạng thái {$newStatus}.",
+                    'severity'   => 'info',
+                    'type'       => 'order_status',
+                    'role'       => null,
+                    'event'      => 'order.status_updated',
+                ],
+            };
+
+            $notif = Notification::create([
+                'branch_id'  => $order->branch_id,
+                'order_id'   => $order->id,
+                'user_id'    => ($newStatus === 'assigned' ? ($updates['technician_id'] ?? null) : null),
+                'type'       => $notificationData['type'],
+                'title'      => $notificationData['title'],
+                'message'    => $notificationData['message'],
+                'severity'   => $notificationData['severity'],
+                'action_url' => "/repairs?id={$order->id}",
+            ]);
+
+            OrderOperationalEvent::dispatch(
+                $notif->id,
+                $order->id,
+                $order->order_code,
+                $notificationData['title'],
+                $notificationData['message'],
+                $notificationData['severity'],
+                now()->toIso8601String(),
+                "/repairs?id={$order->id}",
+                $order->branch_id,
+                $notificationData['role'],
+                $notif->user_id,
+                $notificationData['type'],
+                $notificationData['event']
+            );
 
             return $this->success($order->fresh(), "Chuyển trạng thái đơn sang '{$newStatus}' thành công.");
         });
@@ -409,7 +576,7 @@ class OrderController extends Controller
             'repair_order_id'     => $order->id,
             'photo_url'           => $validated['photo_url'],
             'caption'             => $validated['caption'] ?? 'Ảnh hiện trạng tiếp nhận',
-            'uploaded_by_user_id' => $request->user()?->id ?? 1,
+            'uploaded_by_user_id' => $request->user()->id,
         ]);
 
         return $this->success($photo, 'Tải ảnh hiện trạng tiếp nhận thành công.', 201);

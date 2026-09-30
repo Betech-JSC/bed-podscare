@@ -119,15 +119,15 @@ class InventoryController extends Controller
                 'unit_cost'          => $validated['unit_cost'] ?? $part->cost_price,
                 'supplier_name'      => $validated['supplier_name'] ?? null,
                 'notes'              => $validated['notes'] ?? null,
-                'created_by_user_id' => $request->user()?->id ?? 1,
+                'created_by_user_id' => $request->user()->id,
             ]);
 
             // Cập nhật số lượng tồn kho
             $part->increment('stock_quantity', $qty);
 
             AuditLog::create([
-                'user_id'        => $request->user()?->id,
-                'user_name'      => $request->user()?->name ?? 'Thủ kho',
+                'user_id'        => $request->user()->id,
+                'user_name'      => $request->user()->name,
                 'action'         => 'Giao dịch kho: ' . $validated['transaction_type'],
                 'auditable_type' => 'InventoryTransaction',
                 'auditable_id'   => $tx->id,

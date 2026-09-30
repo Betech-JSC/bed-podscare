@@ -61,13 +61,13 @@ class PaymentController extends Controller
                 'transaction_ref'     => $validated['transaction_ref'] ?? null,
                 'status'              => 'paid',
                 'paid_at'             => Carbon::now(),
-                'received_by_user_id' => $request->user()?->id ?? 1,
+                'received_by_user_id' => $request->user()->id,
                 'notes'               => $validated['notes'] ?? null,
             ]);
 
             AuditLog::create([
-                'user_id'        => $request->user()?->id,
-                'user_name'      => $request->user()?->name ?? 'Thu ngân',
+                'user_id'        => $request->user()->id,
+                'user_name'      => $request->user()->name,
                 'action'         => 'Thu tiền',
                 'auditable_type' => 'Payment',
                 'auditable_id'   => $payment->id,

@@ -33,6 +33,8 @@ class NotificationControllerTest extends TestCase
             'role' => 'admin',
             'branch_id' => $this->branch->id,
         ]);
+
+        Notification::query()->delete();
     }
 
     /**
@@ -218,5 +220,61 @@ class NotificationControllerTest extends TestCase
             ->assertJsonPath('data.updated_count', 4);
 
         $this->assertEquals(0, Notification::where('is_read', false)->count());
+    }
+
+    /**
+     * Test order transition automatically generates Notification and updates unread count.
+     */
+    public function test_order_transition_creates_notification_and_updates_unread_count(): void
+    {
+        $customer = \App\Models\Customer::first() ?? \App\Models\Customer::create([
+            'name' => 'Khách Test Transition',
+            'phone' => '0908889999',
+        ]);
+        $deviceModel = \App\Models\DeviceModel::first();
+
+        $order = RepairOrder::create([
+            'order_code' => 'PC26-TEST99',
+            'branch_id' => $this->branch->id,
+            'customer_id' => $customer->id,
+            'device_model_id' => $deviceModel->id,
+            'issue_description' => 'Test lỗi loa',
+            'status' => 'inspecting',
+            'total_price' => 250000,
+            'created_by_user_id' => $this->user->id,
+        ]);
+
+        // Ban đầu chưa có notification cho đơn này
+        $this->assertDatabaseMissing('notifications', [
+            'order_id' => $order->id,
+            'type' => 'quote_action',
+        ]);
+
+        // Thực hiện transition sang waiting_approval
+        $transitionResponse = $this->actingAs($this->user, 'sanctum')
+            ->postJson("/api/v1/orders/{$order->id}/transition", [
+                'status' => 'waiting_approval',
+            ]);
+
+        $transitionResponse->assertStatus(200);
+
+        // Kiểm tra Notification đã được tạo tự động trong DB
+        $this->assertDatabaseHas('notifications', [
+            'order_id' => $order->id,
+            'type' => 'quote_action',
+            'branch_id' => $this->branch->id,
+            'is_read' => false,
+        ]);
+
+        // Kiểm tra API notifications lấy được thông báo mới này kèm unread_count
+        $notifResponse = $this->actingAs($this->user, 'sanctum')
+            ->getJson("/api/v1/notifications?branch_id={$this->branch->id}");
+
+        $notifResponse->assertStatus(200)
+            ->assertJsonPath('success', true);
+
+        $data = $notifResponse->json('data.data');
+        $this->assertTrue(collect($data)->contains('order_id', $order->id));
+        $this->assertGreaterThanOrEqual(1, $notifResponse->json('data.unread_count'));
     }
 }

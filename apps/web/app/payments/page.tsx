@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect, useCallback } from 'react';
 import { paymentService, type PaymentItem } from '@podscare/api-client';
-import { Button, StatusTag, FilterBar, EmptyState, Modal, useToast, StatCard } from '@podscare/ui';
+import { Button, StatusTag, FilterBar, EmptyState, Modal, useToast, StatCard, CurrencyInput } from '@podscare/ui';
 import { AppShell } from '../components/AppShell';
 
 interface FormattedPayment {
@@ -19,6 +19,12 @@ interface FormattedPayment {
   date: string;
   transactionRef?: string;
 }
+
+const VIETQR_BANK_ID = process.env.NEXT_PUBLIC_VIETQR_BANK_ID || 'MB';
+const VIETQR_ACCOUNT_NO = process.env.NEXT_PUBLIC_VIETQR_ACCOUNT_NO || '';
+const VIETQR_ACCOUNT_NAME = process.env.NEXT_PUBLIC_VIETQR_ACCOUNT_NAME || '';
+const VIETQR_TEMPLATE = process.env.NEXT_PUBLIC_VIETQR_TEMPLATE || 'compact2';
+const isVietQrConfigured = Boolean(VIETQR_BANK_ID && VIETQR_ACCOUNT_NO);
 
 const fallbackPayments: FormattedPayment[] = [
   {
@@ -173,33 +179,19 @@ export default function PaymentsPage() {
         repair_order_id: numericId,
         amount: qrAmount,
         payment_method: qrMethod,
-        transaction_ref: qrMethod === 'bank_transfer' ? `SEPAY-${Date.now().toString().slice(-6)}` : undefined,
         notes: `Thanh toán cho đơn ${qrOrderCode}`,
       });
 
       toast('Tạo phiếu thu thành công', 'success');
       setQrModalOpen(false);
       loadPayments();
-    } catch (err) {
-      console.warn('Could not create payment on API:', err);
-      // Fallback local update
-      const newPay: FormattedPayment = {
-        id: Date.now(),
-        paymentCode: `PC26-PY-${Math.floor(1000 + Math.random() * 9000)}`,
-        orderCode: qrOrderCode,
-        customerName: 'Khách hàng',
-        amount: qrAmount,
-        method: mapMethodLabel(qrMethod),
-        methodKey: qrMethod,
-        status: 'Hoàn tất',
-        statusType: 'ready',
-        receivedBy: 'Thu ngân',
-        date: 'Vừa xong',
-        transactionRef: qrMethod === 'bank_transfer' ? `SEPAY-${Date.now().toString().slice(-6)}` : undefined,
-      };
-      setPayments((prev) => [newPay, ...prev]);
-      toast('Đã ghi nhận phiếu thu thành công', 'success');
-      setQrModalOpen(false);
+    } catch (err: any) {
+      console.error('Could not create payment on API:', err);
+      const errMsg =
+        err?.response?.data?.message ||
+        err?.message ||
+        'Không thể tạo phiếu thu trên hệ thống. Vui lòng kiểm tra lại kết nối.';
+      toast(`Lỗi tạo phiếu thu: ${errMsg}`, 'error');
     } finally {
       setIsSubmitting(false);
     }
@@ -219,10 +211,12 @@ export default function PaymentsPage() {
     );
   });
 
-  // VietQR link generation (MB Bank sandbox / test standard)
-  const vietQrUrl = `https://img.vietqr.io/image/MB-0348271600-compact2.png?amount=${qrAmount}&addInfo=${encodeURIComponent(
-    qrOrderCode
-  )}&accountName=PODSCARE%20VIETNAM`;
+  // Dynamic VietQR link generation from environment configuration
+  const vietQrUrl = isVietQrConfigured
+    ? `https://img.vietqr.io/image/${VIETQR_BANK_ID}-${VIETQR_ACCOUNT_NO}-${VIETQR_TEMPLATE}.png?amount=${qrAmount}&addInfo=${encodeURIComponent(
+        qrOrderCode
+      )}&accountName=${encodeURIComponent(VIETQR_ACCOUNT_NAME)}`
+    : '';
 
   return (
     <AppShell crumbName="Thanh toán">
@@ -392,13 +386,11 @@ export default function PaymentsPage() {
                 />
               </div>
               <div>
-                <label className="text-xs font-bold text-[#516158] block mb-1">Số tiền thanh toán (₫)</label>
-                <input
-                  type="number"
-                  step="10000"
+                <CurrencyInput
+                  label="Số tiền thanh toán"
                   value={qrAmount}
-                  onChange={(e) => setQrAmount(Number(e.target.value))}
-                  className="w-full text-xs font-bold px-3 py-2 rounded-[8px] border border-[#d2dcd6] bg-white outline-none focus:border-[#176b58]"
+                  onChangeValue={(val) => setQrAmount(val)}
+                  placeholder="850.000"
                 />
               </div>
             </div>
@@ -426,39 +418,52 @@ export default function PaymentsPage() {
             </div>
 
             {qrMethod === 'bank_transfer' && (
-              <div className="p-4 bg-[#f8faf9] border border-[#e2ece6] rounded-[10px] flex flex-col sm:flex-row items-center gap-5">
-                <div className="bg-white p-2 rounded-lg border border-[#dae5df] shadow-xs flex-none">
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img
-                    src={vietQrUrl}
-                    alt="Mã QR thanh toán VietQR"
-                    className="w-[160px] h-[160px] object-contain rounded"
-                  />
+              !isVietQrConfigured ? (
+                <div className="p-4 bg-[#fff8eb] border border-[#fde68a] rounded-[10px] text-xs text-[#92400e] space-y-1">
+                  <div className="font-bold flex items-center gap-1.5 text-sm text-[#b45309]">
+                    ⚠️ Chưa cấu hình thông tin ngân hàng VietQR
+                  </div>
+                  <p>
+                    Vui lòng khai báo các biến môi trường <code>NEXT_PUBLIC_VIETQR_BANK_ID</code>,{' '}
+                    <code>NEXT_PUBLIC_VIETQR_ACCOUNT_NO</code> và <code>NEXT_PUBLIC_VIETQR_ACCOUNT_NAME</code>{' '}
+                    trong file cấu hình để tạo mã VietQR tự động.
+                  </p>
                 </div>
-                <div className="space-y-1.5 text-xs text-[#3a4b43] min-w-0">
-                  <div className="text-xs font-bold text-[#176b58] uppercase">
-                    Quét mã QR bằng App Ngân hàng
+              ) : (
+                <div className="p-4 bg-[#f8faf9] border border-[#e2ece6] rounded-[10px] flex flex-col sm:flex-row items-center gap-5">
+                  <div className="bg-white p-2 rounded-lg border border-[#dae5df] shadow-xs flex-none">
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img
+                      src={vietQrUrl}
+                      alt="Mã QR thanh toán VietQR"
+                      className="w-[160px] h-[160px] object-contain rounded"
+                    />
                   </div>
-                  <div>
-                    Ngân hàng: <b>MBBank (Quân Đội)</b>
-                  </div>
-                  <div>
-                    Số tài khoản: <b className="font-mono text-sm text-[#1c302b]">0348271600</b>
-                  </div>
-                  <div>
-                    Chủ tài khoản: <b>PODSCARE VIETNAM</b>
-                  </div>
-                  <div>
-                    Số tiền: <b className="text-sm text-[#176b58]">{moneyFormatted(qrAmount)}</b>
-                  </div>
-                  <div>
-                    Nội dung CK: <b className="font-mono bg-[#eaf4ef] text-[#176b58] px-1.5 py-0.5 rounded">{qrOrderCode}</b>
-                  </div>
-                  <div className="text-xs text-[#7e8d85] pt-1">
-                    ⚡ SePay Webhook tự động nhận diện và cập nhật phiếu thu trong 3-5 giây.
+                  <div className="space-y-1.5 text-xs text-[#3a4b43] min-w-0">
+                    <div className="text-xs font-bold text-[#176b58] uppercase">
+                      Quét mã QR bằng App Ngân hàng
+                    </div>
+                    <div>
+                      Ngân hàng: <b>{VIETQR_BANK_ID}</b>
+                    </div>
+                    <div>
+                      Số tài khoản: <b className="font-mono text-sm text-[#1c302b]">{VIETQR_ACCOUNT_NO}</b>
+                    </div>
+                    <div>
+                      Chủ tài khoản: <b>{VIETQR_ACCOUNT_NAME || 'PODSCARE VIETNAM'}</b>
+                    </div>
+                    <div>
+                      Số tiền: <b className="text-sm text-[#176b58]">{moneyFormatted(qrAmount)}</b>
+                    </div>
+                    <div>
+                      Nội dung CK: <b className="font-mono bg-[#eaf4ef] text-[#176b58] px-1.5 py-0.5 rounded">{qrOrderCode}</b>
+                    </div>
+                    <div className="text-xs text-[#7e8d85] pt-1">
+                      ⚡ SePay Webhook tự động nhận diện và cập nhật phiếu thu trong 3-5 giây.
+                    </div>
                   </div>
                 </div>
-              </div>
+              )
             )}
           </div>
         </Modal>

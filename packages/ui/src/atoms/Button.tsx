@@ -2,7 +2,7 @@ import React from 'react';
 import { Icon } from './Icons';
 
 export interface ButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElement> {
-  variant?: 'primary' | 'secondary' | 'ghost' | 'danger';
+  variant?: 'primary' | 'secondary' | 'ghost' | 'danger' | 'outline';
   size?: 'sm' | 'md' | 'lg';
   icon?: string | React.ReactNode;
   iconPosition?: 'left' | 'right';
@@ -34,6 +34,8 @@ export const Button: React.FC<ButtonProps> = ({
     primary:
       'bg-[#176b58] text-white hover:bg-[#125945] border border-[#176b58] shadow-[0_3px_8px_rgba(23,107,88,0.11)]',
     secondary:
+      'bg-white text-[#465b52] border border-[#dfe8e3] hover:border-[#b7ccc0] hover:bg-[#fafcfb]',
+    outline:
       'bg-white text-[#465b52] border border-[#dfe8e3] hover:border-[#b7ccc0] hover:bg-[#fafcfb]',
     ghost:
       'bg-transparent text-[#708078] hover:bg-[#f1f4f2] border-0',

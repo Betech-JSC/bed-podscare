@@ -65,7 +65,7 @@ class ShipmentController extends Controller
             'scheduled_at'       => $validated['scheduled_at'] ?? null,
             'status'             => 'pending',
             'notes'              => $validated['notes'] ?? null,
-            'created_by_user_id' => $request->user()?->id ?? 1,
+            'created_by_user_id' => $request->user()->id,
         ]);
 
         return $this->success($shipment->load(['repairOrder', 'partner']), 'Tạo phiếu giao nhận thành công.', 201);
@@ -138,8 +138,8 @@ class ShipmentController extends Controller
             ]);
 
             AuditLog::create([
-                'user_id'        => $request->user()?->id,
-                'user_name'      => $request->user()?->name ?? 'Giao nhận',
+                'user_id'        => $request->user()->id,
+                'user_name'      => $request->user()->name,
                 'action'         => "Cập nhật vận đơn: {$newStatus}",
                 'auditable_type' => 'Shipment',
                 'auditable_id'   => $shipment->id,

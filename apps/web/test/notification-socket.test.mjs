@@ -5,6 +5,8 @@ import {
   realtimeEventBus,
   computeTargetChannels,
   ALLOWED_EVENT_PREFIXES,
+  ALLOWED_NOTIFICATION_TYPES,
+  getReverbEchoConfig,
 } from '../app/utils/socketNotifications.ts';
 
 test('Task 4.1: Whitelist strictly accepts operational events', () => {
@@ -198,3 +200,80 @@ test('Task 4.2 & 4.3: Operational notification state lifecycle (prepend, unread 
   assert.strictEqual(notifications.filter((n) => !n.isRead).length, 0);
   assert.strictEqual(notifications.every((n) => n.isRead), true);
 });
+
+test('Task 1 & 2: order_created is in ALLOWED_NOTIFICATION_TYPES whitelist and dispatches via RealtimeEventBus', () => {
+  // 1. Whitelist verification
+  assert.ok(ALLOWED_NOTIFICATION_TYPES.includes('order_created'), 'order_created must be in whitelist');
+  assert.strictEqual(
+    isOperationalEventWhitelisted('order.created', { type: 'order_created' }),
+    true
+  );
+  assert.strictEqual(
+    isOperationalEventWhitelisted(undefined, { type: 'order_created' }),
+    true
+  );
+
+  // 2. RealtimeEventBus dispatch verification
+  let captured = null;
+  const unsubscribe = realtimeEventBus.subscribe(({ eventName, payload }) => {
+    if (payload.type === 'order_created') {
+      captured = { eventName, payload };
+    }
+  });
+
+  const payload = {
+    id: 'notif-PC26-12345-test',
+    type: 'order_created',
+    title: 'Tiếp nhận đơn mới',
+    message: 'Đơn PC26-12345 (Nguyễn Văn B) đã được tiếp nhận thành công.',
+    orderCode: 'PC26-12345',
+    orderId: 'PC26-12345',
+    severity: 'info',
+    timestamp: new Date().toISOString(),
+  };
+
+  const emitted = realtimeEventBus.emit('order.created', payload);
+  assert.strictEqual(emitted, true);
+  assert.ok(captured);
+  assert.strictEqual(captured.payload.orderCode, 'PC26-12345');
+  assert.strictEqual(captured.payload.title, 'Tiếp nhận đơn mới');
+  assert.strictEqual(captured.payload.type, 'order_created');
+
+  unsubscribe();
+});
+
+test('Task 2: getReverbEchoConfig provides flexible connection defaults and parses env variables', () => {
+  // Default fallback check
+  const defaultConfig = getReverbEchoConfig();
+  assert.strictEqual(defaultConfig.broadcaster, 'reverb');
+  assert.ok(defaultConfig.wsHost);
+  assert.ok(defaultConfig.wsPort > 0);
+  assert.ok(defaultConfig.key);
+  assert.ok(defaultConfig.authEndpoint);
+
+  // Test custom env overrides
+  const originalHost = process.env.NEXT_PUBLIC_REVERB_HOST;
+  const originalPort = process.env.NEXT_PUBLIC_REVERB_PORT;
+  const originalScheme = process.env.NEXT_PUBLIC_REVERB_SCHEME;
+
+  process.env.NEXT_PUBLIC_REVERB_HOST = 'api.podscare.vn';
+  process.env.NEXT_PUBLIC_REVERB_PORT = '443';
+  process.env.NEXT_PUBLIC_REVERB_SCHEME = 'https';
+
+  const customConfig = getReverbEchoConfig();
+  assert.strictEqual(customConfig.wsHost, 'api.podscare.vn');
+  assert.strictEqual(customConfig.wsPort, 443);
+  assert.strictEqual(customConfig.wssPort, 443);
+  assert.strictEqual(customConfig.scheme, 'https');
+  assert.strictEqual(customConfig.forceTLS, true);
+  assert.deepStrictEqual(customConfig.enabledTransports, ['wss']);
+
+  // Restore env
+  if (originalHost !== undefined) process.env.NEXT_PUBLIC_REVERB_HOST = originalHost;
+  else delete process.env.NEXT_PUBLIC_REVERB_HOST;
+  if (originalPort !== undefined) process.env.NEXT_PUBLIC_REVERB_PORT = originalPort;
+  else delete process.env.NEXT_PUBLIC_REVERB_PORT;
+  if (originalScheme !== undefined) process.env.NEXT_PUBLIC_REVERB_SCHEME = originalScheme;
+  else delete process.env.NEXT_PUBLIC_REVERB_SCHEME;
+});
+

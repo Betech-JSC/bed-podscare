@@ -2,8 +2,10 @@
 
 namespace App\Http\Controllers\Api\V1;
 
+use App\Events\OrderOperationalEvent;
 use App\Http\Controllers\Controller;
 use App\Models\AuditLog;
+use App\Models\Notification;
 use App\Models\QuoteItem;
 use App\Models\RepairOrder;
 use App\Models\RepairQuote;
@@ -79,7 +81,7 @@ class QuoteController extends Controller
                 'warranty_terms_days' => $validated['warranty_terms_days'] ?? 90,
                 'note'                => $validated['note'],
                 'status'              => 'pending',
-                'sent_by_user_id'     => $request->user()?->id ?? 1,
+                'sent_by_user_id'     => $request->user()->id,
                 'sent_at'             => Carbon::now(),
             ]);
 
@@ -100,6 +102,33 @@ class QuoteController extends Controller
                 'total_price' => $totalAmount,
                 'status'      => 'waiting_approval',
             ]);
+
+            // Tạo thông báo vận hành khi lập báo giá
+            $notif = Notification::create([
+                'branch_id'  => $order->branch_id,
+                'order_id'   => $order->id,
+                'type'       => 'quote_action',
+                'title'      => 'Đã tạo báo giá mới',
+                'message'    => "Báo giá {$quoteNumber} cho đơn {$order->order_code} trị giá " . number_format($totalAmount) . " ₫ đã được tạo và chờ duyệt.",
+                'severity'   => 'info',
+                'action_url' => "/repairs?id={$order->id}",
+            ]);
+
+            OrderOperationalEvent::dispatch(
+                $notif->id,
+                $order->id,
+                $order->order_code,
+                $notif->title,
+                $notif->message,
+                'info',
+                now()->toIso8601String(),
+                "/repairs?id={$order->id}",
+                $order->branch_id,
+                'cskh',
+                null,
+                'quote_action',
+                'quote.created'
+            );
 
             return $this->success($quote->load('items'), 'Tạo báo giá thành công.', 201);
         });
@@ -131,13 +160,40 @@ class QuoteController extends Controller
                 ]);
 
                 AuditLog::create([
-                    'user_id'        => $request->user()?->id,
-                    'user_name'      => $request->user()?->name ?? 'Khách hàng',
+                    'user_id'        => $request->user()->id,
+                    'user_name'      => $request->user()->name,
                     'action'         => 'Duyệt báo giá',
                     'auditable_type' => 'RepairQuote',
                     'auditable_id'   => $quote->id,
                     'details'        => "Khách đã duyệt báo giá {$quote->quote_number} trị giá " . number_format($quote->total_amount) . " ₫",
                 ]);
+
+                // Tạo thông báo vận hành khi duyệt báo giá
+                $notif = Notification::create([
+                    'branch_id'  => $order->branch_id,
+                    'order_id'   => $order->id,
+                    'type'       => 'quote_action',
+                    'title'      => 'Khách hàng duyệt báo giá',
+                    'message'    => "Báo giá {$quote->quote_number} của đơn {$order->order_code} (" . number_format($quote->total_amount) . " ₫) đã được phê duyệt.",
+                    'severity'   => 'success',
+                    'action_url' => "/repairs?id={$order->id}",
+                ]);
+
+                OrderOperationalEvent::dispatch(
+                    $notif->id,
+                    $order->id,
+                    $order->order_code,
+                    $notif->title,
+                    $notif->message,
+                    'success',
+                    now()->toIso8601String(),
+                    "/repairs?id={$order->id}",
+                    $order->branch_id,
+                    'technician',
+                    null,
+                    'quote_action',
+                    'quote.approved'
+                );
             }
 
             return $this->success($quote, 'Đã phê duyệt báo giá.');
@@ -175,13 +231,40 @@ class QuoteController extends Controller
                 ]);
 
                 AuditLog::create([
-                    'user_id'        => $request->user()?->id,
-                    'user_name'      => $request->user()?->name ?? 'Khách hàng',
+                    'user_id'        => $request->user()->id,
+                    'user_name'      => $request->user()->name,
                     'action'         => 'Từ chối báo giá',
                     'auditable_type' => 'RepairQuote',
                     'auditable_id'   => $quote->id,
                     'details'        => "Khách từ chối báo giá {$quote->quote_number}. Lý do: {$validated['reason']}",
                 ]);
+
+                // Tạo thông báo vận hành khi từ chối báo giá
+                $notif = Notification::create([
+                    'branch_id'  => $order->branch_id,
+                    'order_id'   => $order->id,
+                    'type'       => 'quote_action',
+                    'title'      => 'Khách hàng từ chối báo giá',
+                    'message'    => "Khách từ chối báo giá {$quote->quote_number} của đơn {$order->order_code}. Lý do: {$validated['reason']}",
+                    'severity'   => 'danger',
+                    'action_url' => "/repairs?id={$order->id}",
+                ]);
+
+                OrderOperationalEvent::dispatch(
+                    $notif->id,
+                    $order->id,
+                    $order->order_code,
+                    $notif->title,
+                    $notif->message,
+                    'danger',
+                    now()->toIso8601String(),
+                    "/repairs?id={$order->id}",
+                    $order->branch_id,
+                    'cskh',
+                    null,
+                    'quote_action',
+                    'quote.rejected'
+                );
             }
 
             return $this->success($quote, 'Đã ghi nhận từ chối báo giá.');

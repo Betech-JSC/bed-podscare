@@ -2,15 +2,20 @@
 
 namespace Tests\Feature;
 
+use App\Events\OrderOperationalEvent;
 use App\Models\Branch;
 use App\Models\Customer;
 use App\Models\DeviceModel;
+use App\Models\Notification;
 use App\Models\RepairOrder;
 use App\Models\User;
+use Illuminate\Foundation\Testing\DatabaseTransactions;
+use Illuminate\Support\Facades\Event;
 use Tests\TestCase;
 
 class OrderTest extends TestCase
 {
+    use DatabaseTransactions;
     private function getAuthenticatedUser(): User
     {
         $user = User::where('email', 'admin@podscare.vn')->first();
@@ -184,5 +189,76 @@ class OrderTest extends TestCase
             'repair_order_id' => $order->id,
             'photo_url'       => 'https://images.unsplash.com/photo-test-airpods.jpg',
         ]);
+    }
+
+    /**
+     * Test 8: POST /api/v1/orders tạo đơn mới, đồng thời lưu notification và dispatch OrderOperationalEvent.
+     */
+    public function test_store_order_creates_notification_and_dispatches_operational_event(): void
+    {
+        Event::fake([OrderOperationalEvent::class]);
+
+        $user = $this->getAuthenticatedUser();
+        $branch = Branch::first();
+        $device = DeviceModel::first();
+
+        $payload = [
+            'branch_id'            => $branch->id,
+            'customer_phone'       => '0987654321',
+            'customer_name'        => 'Nguyễn Văn Test',
+            'device_model_id'      => $device->id,
+            'serial_number'        => 'TEST-SR-12345',
+            'intake_battery_level' => '85%',
+            'accessories'          => 'Hộp sạc, cáp Lightning',
+            'issue_description'    => 'AirPods bị rè loa trái và chai pin',
+            'appearance_notes'     => 'Hộp sạc xước nhẹ',
+            'estimated_price'      => 450000,
+            'warranty_terms_days'  => 90,
+            'checklists'           => [
+                [
+                    'item_name' => 'Kiểm tra âm thanh tai trái',
+                    'status'    => 'fail',
+                    'note'      => 'Bị rè',
+                ],
+            ],
+        ];
+
+        $response = $this->actingAs($user, 'sanctum')->postJson('/api/v1/orders', $payload);
+
+        $response->assertStatus(201)
+            ->assertJsonPath('success', true);
+
+        $orderId = $response->json('data.id');
+        $orderCode = $response->json('data.order_code');
+
+        $this->assertNotNull($orderId);
+        $this->assertNotNull($orderCode);
+
+        // 1. Kiểm tra bản ghi Notification trong database
+        $this->assertDatabaseHas('notifications', [
+            'order_id'  => $orderId,
+            'branch_id' => $branch->id,
+            'type'      => 'order_created',
+            'title'     => 'Tiếp nhận đơn mới',
+            'severity'  => 'info',
+            'is_read'   => false,
+        ]);
+
+        $notification = Notification::where('order_id', $orderId)->first();
+        $this->assertNotNull($notification);
+        $this->assertStringContainsString($orderCode, $notification->message);
+        $this->assertStringContainsString($branch->name, $notification->message);
+
+        // 2. Kiểm tra Event OrderOperationalEvent được dispatch với đầy đủ thông tin
+        Event::assertDispatched(OrderOperationalEvent::class, function (OrderOperationalEvent $event) use ($orderId, $orderCode, $branch, $notification) {
+            return $event->orderId === $orderId
+                && $event->orderCode === $orderCode
+                && $event->branchId === $branch->id
+                && $event->type === 'order_created'
+                && $event->title === 'Tiếp nhận đơn mới'
+                && $event->severity === 'info'
+                && (int) $event->id === (int) $notification->id
+                && $event->actionUrl === "/repairs?id={$orderId}";
+        });
     }
 }
