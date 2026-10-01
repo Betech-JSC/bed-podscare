@@ -23,6 +23,7 @@ class DatabaseSeeder extends Seeder
             ChecklistTemplateSeeder::class,
             CommonIssueSeeder::class,
             RebrandToFixoSeeder::class,
+            MigrateExistingDataToMasterTenantSeeder::class,
         ]);
     }
 }

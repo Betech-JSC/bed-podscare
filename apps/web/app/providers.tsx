@@ -5,6 +5,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { ToastProvider } from '@podscare/ui';
 import type { UserRole, UserProfile, RepairOrder, DeviceProfile } from '@podscare/types';
 import { repairService, branchService, deviceService } from '@podscare/api-client';
+
 import { NotificationProvider } from './providers/NotificationProvider';
 
 export * from './providers/NotificationProvider';
@@ -285,8 +286,11 @@ export const Providers: React.FC<{ children: React.ReactNode }> = ({ children })
         setIsAuthenticated(false);
       }
 
-      // Bảo vệ hydration: Nếu role !== 'admin', luôn luôn ép buộc branchId = user.branch_id và branch = user.branch
-      if (effectiveRole !== 'admin') {
+      // Bảo vệ hydration: Nếu role !== 'admin' và !== 'super_admin', luôn luôn ép buộc branchId = user.branch_id và branch = user.branch
+      if (effectiveRole === 'super_admin') {
+        setBranchState('Nền tảng FIXO');
+        setBranchIdState('all');
+      } else if (effectiveRole !== 'admin') {
         const enforcedBranch = parsedUser?.branch || 'FIXO · Quận 1';
         const enforcedBranchId = parsedUser?.branch_id ?? 1;
         setBranchState(enforcedBranch);
@@ -507,16 +511,23 @@ export const Providers: React.FC<{ children: React.ReactNode }> = ({ children })
   const login = (data: { token: string; user: any }) => {
     const rawRole = (data.user.role || 'admin') as string;
     const normRole = (rawRole === 'technician' ? 'tech' : rawRole) as UserRole;
+    const isSuperAdmin = normRole === 'super_admin';
     const isAdmin = normRole === 'admin';
-    const userBranchName = data.user.branch?.name || data.user.branch || 'FIXO · Quận 1';
-    const userBranchId = data.user.branch_id || data.user.branch?.id || 1;
+    const userBranchName = isSuperAdmin
+      ? 'Nền tảng FIXO'
+      : data.user.branch?.name || data.user.branch || 'FIXO · Quận 1';
+    const userBranchId = isSuperAdmin
+      ? null
+      : data.user.branch_id || data.user.branch?.id || 1;
 
     const profile: UserProfile = {
       id: data.user.id,
       name: data.user.name,
       role: normRole,
       roleLabel:
-        normRole === 'admin'
+        normRole === 'super_admin'
+          ? 'Quản trị Nền tảng'
+          : normRole === 'admin'
           ? 'Quản trị viên'
           : normRole === 'cskh'
           ? 'CSKH Tiếp nhận'
@@ -527,7 +538,7 @@ export const Providers: React.FC<{ children: React.ReactNode }> = ({ children })
           : 'Nhân viên kho',
       branch: userBranchName,
       branch_id: userBranchId,
-      initials: (data.user.name || 'ML')
+      initials: (data.user.name || 'SA')
         .split(' ')
         .map((w: string) => w[0])
         .join('')
@@ -536,6 +547,8 @@ export const Providers: React.FC<{ children: React.ReactNode }> = ({ children })
       email: data.user.email,
       phone: data.user.phone,
       avatar_url: data.user.avatar_url,
+      tenant_id: data.user.tenant_id ?? (data.user.tenant?.id || null),
+      tenant: data.user.tenant || null,
     };
 
     localStorage.setItem('podscare_token', data.token);
@@ -547,7 +560,10 @@ export const Providers: React.FC<{ children: React.ReactNode }> = ({ children })
     setRoleState(normRole);
     setIsAuthenticated(true);
 
-    if (isAdmin) {
+    if (isSuperAdmin) {
+      setBranchState('Nền tảng FIXO');
+      setBranchIdState('all');
+    } else if (isAdmin) {
       setBranchState('Tất cả chi nhánh');
       setBranchIdState('all');
       try {
@@ -559,14 +575,14 @@ export const Providers: React.FC<{ children: React.ReactNode }> = ({ children })
       fetchOrders('all');
     } else {
       setBranchState(userBranchName);
-      setBranchIdState(userBranchId);
+      setBranchIdState(userBranchId ?? 1);
       try {
         localStorage.setItem('podscare_branch', userBranchName);
-        localStorage.setItem('podscare_branch_id', String(userBranchId));
+        localStorage.setItem('podscare_branch_id', String(userBranchId ?? 1));
       } catch {
         // ignore
       }
-      fetchOrders(userBranchId);
+      fetchOrders(userBranchId ?? 1);
     }
   };
 
@@ -580,11 +596,20 @@ export const Providers: React.FC<{ children: React.ReactNode }> = ({ children })
   };
 
   const currentUser: UserProfile = userProfile || {
-    id: role === 'admin' ? '1' : role === 'cskh' ? '2' : '3',
-    name: role === 'admin' ? 'Minh Lê' : role === 'cskh' ? 'Lan Phạm' : 'Tuấn K.',
+    id: role === 'super_admin' ? '0' : role === 'admin' ? '1' : role === 'cskh' ? '2' : '3',
+    name:
+      role === 'super_admin'
+        ? 'Tiến Huy / Nhật Bảo'
+        : role === 'admin'
+        ? 'Minh Lê'
+        : role === 'cskh'
+        ? 'Lan Phạm'
+        : 'Tuấn K.',
     role,
     roleLabel:
-      role === 'admin'
+      role === 'super_admin'
+        ? 'Quản trị Nền tảng'
+        : role === 'admin'
         ? 'Quản trị viên'
         : role === 'cskh'
         ? 'CSKH Tiếp nhận'
@@ -593,9 +618,20 @@ export const Providers: React.FC<{ children: React.ReactNode }> = ({ children })
         : role === 'qc'
         ? 'Kiểm định QC'
         : 'Nhân viên kho',
-    branch: 'FIXO · Quận 1',
-    branch_id: 1,
-    initials: role === 'admin' ? 'ML' : role === 'cskh' ? 'LP' : 'TK',
+    branch: role === 'super_admin' ? 'Nền tảng FIXO' : 'FIXO · Quận 1',
+    branch_id: role === 'super_admin' ? null : 1,
+    initials: role === 'super_admin' ? 'SA' : role === 'admin' ? 'ML' : role === 'cskh' ? 'LP' : 'TK',
+    tenant_id: role === 'super_admin' ? null : 1,
+    tenant:
+      role === 'super_admin'
+        ? null
+        : {
+            id: 1,
+            code: 'fixo-master',
+            name: 'FIXO Master',
+            status: 'active',
+            plan: 'enterprise',
+          },
   };
 
   const addOrder = (order: RepairOrder) => {

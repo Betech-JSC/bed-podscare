@@ -1,4 +1,13 @@
-export type UserRole = 'admin' | 'cskh' | 'tech' | 'technician' | 'qc' | 'inventory' | 'warehouse';
+export type UserRole = 'admin' | 'cskh' | 'tech' | 'technician' | 'qc' | 'inventory' | 'warehouse' | 'super_admin';
+
+export interface TenantInfo {
+  id: number;
+  code: string;
+  name: string;
+  status: string;
+  plan: string;
+  expires_at?: string | null;
+}
 
 export interface UserProfile {
   id: string | number;
@@ -12,4 +21,7 @@ export interface UserProfile {
   phone?: string;
   avatar_url?: string | null;
   is_active?: boolean;
+  tenant_id?: number | null;
+  tenant?: TenantInfo | null;
 }
+

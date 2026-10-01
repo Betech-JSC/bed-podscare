@@ -90,8 +90,10 @@ export const AppSidebar: React.FC<AppSidebarProps> = ({
 
   // Normalize role
   const rawRole = (user?.role || 'admin') as string;
-  const normalizedRole: 'admin' | 'cskh' | 'tech' | 'qc' | 'inventory' =
-    rawRole === 'technician' || rawRole === 'tech'
+  const normalizedRole: 'admin' | 'cskh' | 'tech' | 'qc' | 'inventory' | 'super_admin' =
+    rawRole === 'super_admin'
+      ? 'super_admin'
+      : rawRole === 'technician' || rawRole === 'tech'
       ? 'tech'
       : rawRole === 'cskh'
       ? 'cskh'
@@ -101,8 +103,10 @@ export const AppSidebar: React.FC<AppSidebarProps> = ({
       ? 'inventory'
       : 'admin';
 
+
   // Role menu item permissions matrix
-  const rolePermissions: Record<'admin' | 'cskh' | 'tech' | 'qc' | 'inventory', string[]> = {
+  const rolePermissions: Record<'admin' | 'cskh' | 'tech' | 'qc' | 'inventory' | 'super_admin', string[]> = {
+    super_admin: [],
     admin: [
       'dashboard',
       'repairs',
@@ -183,6 +187,86 @@ export const AppSidebar: React.FC<AppSidebarProps> = ({
     { id: 'kpi', label: 'Hiệu suất KPI', icon: 'kpi' },
     { id: 'audit', label: 'Nhật ký hoạt động', icon: 'audit' },
   ];
+
+  // Super Admin Platform Navigation
+  const platformOperationsNav: NavItemDef[] = [
+    { id: 'platform-stores', label: 'Danh sách Gian hàng', icon: 'spark', href: '/platform/stores' },
+    { id: 'platform-approvals', label: 'Duyệt đăng ký', icon: 'spark', href: '/platform/approvals' },
+    { id: 'platform-plans', label: 'Gói cước & Bản quyền', icon: 'payments', href: '/platform/plans' },
+  ];
+
+  const platformMonitoringNav: NavItemDef[] = [
+    { id: 'platform-dashboard', label: 'Tổng quan Toàn sàn', icon: 'dashboard', href: '/platform' },
+    { id: 'platform-billing', label: 'Doanh thu SaaS', icon: 'payments', href: '/platform/billing' },
+    { id: 'platform-quotas', label: 'Hạn mức & Quotas', icon: 'spark', href: '/platform/quotas' },
+  ];
+
+  const platformSystemNav: NavItemDef[] = [
+    { id: 'platform-health', label: 'Sức khỏe Máy chủ', icon: 'spark', href: '/platform/health' },
+    { id: 'platform-integrations', label: 'Cấu hình Tích hợp', icon: 'spark', href: '/platform/integrations' },
+  ];
+
+  const renderPlatformNavGroup = (caption: string, items: NavItemDef[], spaced = false) => {
+    return (
+      <div className="mb-2">
+        <div
+          className={`px-3 pb-2 text-xs font-bold text-[#86968f] tracking-[1.1px] uppercase ${
+            spaced ? 'pt-4' : 'pt-1'
+          }`}
+        >
+          {caption}
+        </div>
+        <div className="space-y-1">
+          {items.map((item) => {
+            const cleanPath = currentPath.replace(/^\//, '');
+            const itemPath = item.href ? item.href.replace(/^\//, '') : item.id;
+            const isActive =
+              cleanPath === itemPath ||
+              currentPath === item.href ||
+              currentPath === item.id ||
+              (item.id === 'platform-dashboard' && (cleanPath === 'platform' || cleanPath === 'platform/dashboard'));
+            return (
+              <button
+                key={item.id}
+                type="button"
+                onClick={() => {
+                  try {
+                    if (navRef.current) {
+                      sessionStorage.setItem('podscare_sidebar_scroll', String(navRef.current.scrollTop));
+                    }
+                  } catch {
+                    // ignore
+                  }
+                  onNavigate(item.href || item.id);
+                  onClose?.();
+                }}
+                className={`w-full h-10 rounded-[8px] flex items-center gap-3 px-3 text-sm font-medium transition-colors text-left ${
+                  isActive
+                    ? 'bg-[#eaf4ef] text-[#176b58] font-bold shadow-xs'
+                    : 'text-[#596962] hover:bg-[#f5f8f6] hover:text-[#1c302b]'
+                }`}
+              >
+                <span className="w-5 grid place-items-center text-center flex-none">
+                  <Icon name={item.icon} size={18} />
+                </span>
+                <span className="truncate flex-1">{item.label}</span>
+                {item.badge !== undefined && (
+                  <em
+                    className={`not-italic ml-auto text-xs px-2 py-0.5 rounded-[10px] font-semibold flex-none ${
+                      isActive ? 'bg-[#d8ece1] text-[#176b58]' : 'bg-[#eef2ef] text-[#6b7b74]'
+                    }`}
+                  >
+                    {item.badge}
+                  </em>
+                )}
+              </button>
+            );
+          })}
+        </div>
+      </div>
+    );
+  };
+
 
   const renderNavGroup = (caption: string, items: NavItemDef[], spaced = false) => {
     // Filter items based on current role permissions
@@ -296,8 +380,30 @@ export const AppSidebar: React.FC<AppSidebarProps> = ({
           )}
         </div>
 
-        {/* Branch Selector Dropdown / Static Read-only Badge */}
-        {normalizedRole === 'admin' ? (
+        {/* Branch Selector Dropdown / Platform Core Header / Static Read-only Badge */}
+        {normalizedRole === 'super_admin' ? (
+          <div className="relative mb-3 z-30">
+            <div className="w-full flex items-center justify-between p-2.5 bg-[#f7f9f7] border border-[#edf1ee] rounded-[10px]">
+              <div className="flex items-center gap-2.5 min-w-0">
+                <div className="w-8 h-8 rounded-[8px] bg-[#176b58] text-white grid place-items-center flex-none font-bold text-xs tracking-wider">
+                  PL
+                </div>
+                <div className="min-w-0 flex-1">
+                  <strong className="block text-xs font-black tracking-[0.5px] text-[#1c302b] uppercase truncate">
+                    FIXO PLATFORM CORE
+                  </strong>
+                  <span className="block text-[11px] text-[#718279] font-medium truncate">
+                    Quản trị Nền tảng
+                  </span>
+                </div>
+              </div>
+              <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-[#eaf4ef] border border-[#d0e5d9] flex-none">
+                <span className="w-1.5 h-1.5 rounded-full bg-[#10b981]" />
+                <span className="text-[10px] font-bold text-[#176b58] uppercase tracking-wider">Live</span>
+              </div>
+            </div>
+          </div>
+        ) : normalizedRole === 'admin' ? (
           <div ref={branchDropdownRef} className="relative mb-3 z-30">
             <button
               type="button"
@@ -441,10 +547,21 @@ export const AppSidebar: React.FC<AppSidebarProps> = ({
           }}
           className="flex-1 overflow-y-auto pr-1 space-y-1 relative z-10"
         >
-          {renderNavGroup('WORKSPACE', workspaceNav)}
-          {renderNavGroup('VẬN HÀNH', operationsNav, true)}
-          {renderNavGroup('HỆ THỐNG', systemNav, true)}
+          {normalizedRole === 'super_admin' ? (
+            <>
+              {renderPlatformNavGroup('ĐIỀU HÀNH NỀN TẢNG', platformOperationsNav)}
+              {renderPlatformNavGroup('GIÁM SÁT TOÀN SÀN', platformMonitoringNav, true)}
+              {renderPlatformNavGroup('KỸ THUẬT HỆ THỐNG', platformSystemNav, true)}
+            </>
+          ) : (
+            <>
+              {renderNavGroup('WORKSPACE', workspaceNav)}
+              {renderNavGroup('VẬN HÀNH', operationsNav, true)}
+              {renderNavGroup('HỆ THỐNG', systemNav, true)}
+            </>
+          )}
         </nav>
+
 
         {/* Sidebar Bottom: Help & Profile */}
         <div className="pt-2 border-t border-[#f0f3f1] mt-auto flex-none">

@@ -60,22 +60,36 @@ export const AppShell: React.FC<AppShellProps> = ({ children, crumbName = 'Tổn
     };
   }, [notificationOpen]);
 
-  // Auth Guard: redirect to login if not authenticated
+  // Auth & Role Guard: redirect if unauthenticated or accessing unauthorized portal
   useEffect(() => {
-    if (!isLoadingAuth && !isAuthenticated) {
-      router.replace('/login');
+    if (!isLoadingAuth) {
+      if (!isAuthenticated) {
+        router.replace('/login');
+      } else {
+        const isPlatformRoute = pathname.startsWith('/platform');
+        if (currentUser?.role === 'super_admin' && !isPlatformRoute) {
+          router.replace('/platform');
+        } else if (currentUser?.role !== 'super_admin' && isPlatformRoute) {
+          router.replace('/dashboard');
+        }
+      }
     }
-  }, [isLoadingAuth, isAuthenticated, router]);
+  }, [isLoadingAuth, isAuthenticated, currentUser?.role, pathname, router]);
 
   const currentNav =
-    pathname === '/dashboard' || pathname.startsWith('/dashboard') || pathname === '/'
+    pathname === '/dashboard' || pathname === '/'
       ? 'dashboard'
-      : pathname.replace(/^\//, '');
+      : pathname;
 
   const handleNavigate = (page: string) => {
-    const target = page === 'dashboard' ? '/dashboard' : `/${page}`;
+    const target = page.startsWith('/')
+      ? page
+      : page === 'dashboard'
+      ? '/dashboard'
+      : `/${page}`;
     router.push(target, { scroll: false });
   };
+
 
   const handleNotificationClick = (item: NotificationItem) => {
     setNotificationOpen(false);

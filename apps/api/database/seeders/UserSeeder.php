@@ -75,6 +75,16 @@ class UserSeeder extends Seeder
                 'avatar_url' => 'https://ui-avatars.com/api/?name=Viet+Tran&background=EC4899&color=fff',
                 'is_active' => true,
             ],
+            [
+                'name' => 'FIXO Platform Admin',
+                'email' => 'superadmin@fixo.com.vn',
+                'phone' => '0900000000',
+                'password' => Hash::make('password'),
+                'role' => 'super_admin',
+                'branch_id' => null,
+                'avatar_url' => 'https://ui-avatars.com/api/?name=FIXO+Admin&background=176B58&color=fff',
+                'is_active' => true,
+            ],
         ];
 
         foreach ($users as $user) {

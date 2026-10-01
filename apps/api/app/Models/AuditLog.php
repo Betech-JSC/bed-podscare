@@ -12,6 +12,7 @@ class AuditLog extends Model
     use HasFactory;
 
     protected $fillable = [
+        'tenant_id',
         'user_id',
         'user_name',
         'action',
@@ -64,6 +65,11 @@ class AuditLog extends Model
                 $this->attributes['auditable_id'] = $value['branch_id'];
             }
         }
+    }
+
+    public function tenant(): BelongsTo
+    {
+        return $this->belongsTo(Tenant::class);
     }
 
     public function user(): BelongsTo

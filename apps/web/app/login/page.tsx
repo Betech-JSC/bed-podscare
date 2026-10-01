@@ -18,9 +18,24 @@ interface StaffCard {
   initials: string;
   avatarBg: string;
   targetRoute: string;
+  storeCode: string;
 }
 
 const STAFF_CARDS: StaffCard[] = [
+  {
+    name: 'Tiến Huy / Nhật Bảo',
+    roleTitle: 'Quản trị Nền tảng (Super Admin)',
+    roleBadge: 'FIXO PLATFORM',
+    badgeStyle: 'bg-[#eaf4ef] text-[#176b58] border border-[#cde2d6]',
+    branchLabel: 'Nền tảng FIXO',
+    branchCode: 'CORE',
+    duty: 'Toàn quyền điều hành toàn sàn, phê duyệt gian hàng & cấu hình hệ thống',
+    email: 'superadmin@fixo.com.vn',
+    initials: 'SA',
+    avatarBg: '#176b58',
+    targetRoute: '/platform',
+    storeCode: 'fixo-platform',
+  },
   {
     name: 'Minh Lê',
     roleTitle: 'Quản trị viên',
@@ -33,6 +48,7 @@ const STAFF_CARDS: StaffCard[] = [
     initials: 'ML',
     avatarBg: '#176b58',
     targetRoute: '/dashboard',
+    storeCode: 'fixo-master',
   },
   {
     name: 'Lan Phạm',
@@ -46,6 +62,7 @@ const STAFF_CARDS: StaffCard[] = [
     initials: 'LP',
     avatarBg: '#2563eb',
     targetRoute: '/dashboard',
+    storeCode: 'fixo-master',
   },
   {
     name: 'Tuấn K.',
@@ -59,6 +76,7 @@ const STAFF_CARDS: StaffCard[] = [
     initials: 'TK',
     avatarBg: '#d97706',
     targetRoute: '/tech',
+    storeCode: 'fixo-master',
   },
   {
     name: 'Duy T.',
@@ -72,6 +90,7 @@ const STAFF_CARDS: StaffCard[] = [
     initials: 'DT',
     avatarBg: '#ea580c',
     targetRoute: '/tech',
+    storeCode: 'fixo-master',
   },
   {
     name: 'Hải N.',
@@ -85,6 +104,7 @@ const STAFF_CARDS: StaffCard[] = [
     initials: 'HN',
     avatarBg: '#7c3aed',
     targetRoute: '/qc',
+    storeCode: 'fixo-master',
   },
   {
     name: 'Việt Trần',
@@ -98,6 +118,7 @@ const STAFF_CARDS: StaffCard[] = [
     initials: 'VT',
     avatarBg: '#db2777',
     targetRoute: '/inventory',
+    storeCode: 'fixo-master',
   },
 ];
 
@@ -106,21 +127,50 @@ export default function LoginPage() {
   const { toast } = useToast();
   const { isAuthenticated, login } = usePodsCare();
 
+  const [storeCode, setStoreCode] = useState('fixo-master');
   const [emailOrPhone, setEmailOrPhone] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
 
-  // If already authenticated, redirect to dashboard
+  // Tự động khôi phục mã gian hàng từ localStorage
+  useEffect(() => {
+    try {
+      const savedCode = localStorage.getItem('fixo_store_code');
+      if (savedCode && savedCode.trim()) {
+        setStoreCode(savedCode.trim());
+      }
+    } catch {
+      // ignore
+    }
+  }, []);
+
+  const handleStoreCodeChange = (newCode: string) => {
+    setStoreCode(newCode);
+    try {
+      localStorage.setItem('fixo_store_code', newCode);
+    } catch {
+      // ignore
+    }
+  };
+
+  // If already authenticated, redirect to appropriate portal
   useEffect(() => {
     if (isAuthenticated) {
       router.replace('/dashboard');
     }
   }, [isAuthenticated, router]);
 
-  const executeLogin = async (loginEmail: string, loginPass: string, targetPath?: string) => {
+  const executeLogin = async (
+    loginEmail: string,
+    loginPass: string,
+    loginStoreCode?: string,
+    targetPath?: string
+  ) => {
     setLoading(true);
     setErrorMessage('');
+
+    const effectiveStoreCode = (loginStoreCode !== undefined ? loginStoreCode : storeCode).trim();
 
     try {
       const res = await fetch('/api/v1/auth/login', {
@@ -130,7 +180,9 @@ export default function LoginPage() {
           Accept: 'application/json',
         },
         body: JSON.stringify({
-          email: loginEmail,
+          store_code: effectiveStoreCode,
+          login: loginEmail.trim(),
+          email: loginEmail.trim(),
           password: loginPass,
         }),
       });
@@ -142,12 +194,24 @@ export default function LoginPage() {
           token: json.data.token,
           user: json.data.user,
         });
+
+        // Ghi nhớ mã gian hàng đăng nhập thành công
+        if (effectiveStoreCode) {
+          try {
+            localStorage.setItem('fixo_store_code', effectiveStoreCode);
+          } catch {
+            // ignore
+          }
+        }
+
         toast(`Đăng nhập thành công! Xin chào ${json.data.user.name}.`, 'success');
 
         let destination = targetPath;
         if (!destination) {
           const userRole = json.data.user.role;
-          if (userRole === 'technician' || userRole === 'tech') {
+          if (userRole === 'super_admin') {
+            destination = '/platform';
+          } else if (userRole === 'technician' || userRole === 'tech') {
             destination = '/tech';
           } else if (userRole === 'qc') {
             destination = '/qc';
@@ -181,6 +245,10 @@ export default function LoginPage() {
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     unlockAudio();
+    if (!storeCode.trim()) {
+      setErrorMessage('Vui lòng nhập Mã gian hàng.');
+      return;
+    }
     if (!emailOrPhone.trim()) {
       setErrorMessage('Vui lòng nhập Email hoặc Số điện thoại.');
       return;
@@ -189,14 +257,21 @@ export default function LoginPage() {
       setErrorMessage('Vui lòng nhập Mật khẩu.');
       return;
     }
-    executeLogin(emailOrPhone, password);
+    executeLogin(emailOrPhone, password, storeCode);
   };
 
   const handleQuickLogin = (card: StaffCard) => {
     unlockAudio();
+    const effectiveCardStore = card.storeCode || 'fixo-master';
+    setStoreCode(effectiveCardStore);
+    try {
+      localStorage.setItem('fixo_store_code', effectiveCardStore);
+    } catch {
+      // ignore
+    }
     setEmailOrPhone(card.email);
     setPassword('password');
-    executeLogin(card.email, 'password', card.targetRoute);
+    executeLogin(card.email, 'password', effectiveCardStore, card.targetRoute);
   };
 
   return (
@@ -245,6 +320,21 @@ export default function LoginPage() {
 
         {/* Login Form */}
         <form onSubmit={handleSubmit} className="space-y-4">
+          <div>
+            <label className="block text-xs font-semibold text-[#52635a] mb-1.5 flex items-center justify-between">
+              <span>Mã gian hàng (Store Code)</span>
+              <span className="text-[11px] text-[#819089] font-normal">Mặc định: fixo-master</span>
+            </label>
+            <Input
+              type="text"
+              value={storeCode}
+              onChange={(e) => handleStoreCodeChange(e.target.value)}
+              placeholder="fixo-master, anhhuyrepair, fixo-platform..."
+              icon={<Icon name="building" size={16} />}
+              required
+            />
+          </div>
+
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
               <label className="block text-xs font-semibold text-[#52635a] mb-1.5">
@@ -284,7 +374,19 @@ export default function LoginPage() {
           >
             Đăng nhập vào ca làm việc →
           </Button>
+
+          <div className="text-center pt-2">
+            <span className="text-xs text-[#6e7d75]">Chưa có gian hàng trên FIXO? </span>
+            <button
+              type="button"
+              onClick={() => router.push('/register')}
+              className="text-xs font-bold text-[#176b58] hover:underline cursor-pointer"
+            >
+              Đăng ký mở tiệm ngay →
+            </button>
+          </div>
         </form>
+
 
         {/* Quick Login Divider */}
         <div className="relative my-7">

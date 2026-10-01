@@ -15,6 +15,8 @@ use App\Http\Controllers\Api\V1\QcController;
 use App\Http\Controllers\Api\V1\QuoteController;
 use App\Http\Controllers\Api\V1\ServiceController;
 use App\Http\Controllers\Api\V1\ShipmentController;
+use App\Http\Controllers\Api\V1\SuperAdminController;
+use App\Http\Controllers\Api\V1\TenantRegistrationController;
 use App\Http\Controllers\Api\V1\TrackingController;
 use App\Http\Controllers\Api\V1\UserController;
 use App\Http\Controllers\Api\V1\WarrantyController;
@@ -33,6 +35,9 @@ Route::prefix('v1')->group(function () {
         Route::prefix('auth')->group(function () {
             Route::post('/login', [AuthController::class, 'login'])->name('api.v1.auth.login');
         });
+
+        // Tenant public registration
+        Route::post('/tenants/register', [TenantRegistrationController::class, 'register'])->name('api.v1.tenants.register');
 
         // Public customer tracking portal
         Route::get('/tracking/{code}', [TrackingController::class, 'track'])->name('api.v1.tracking.show');
@@ -152,5 +157,14 @@ Route::prefix('v1')->group(function () {
         // Staff KPI & Performance
         Route::get('/kpi/dashboard', [KpiController::class, 'dashboard'])->name('api.v1.kpi.dashboard');
         Route::get('/kpi/staff', [KpiController::class, 'staff'])->name('api.v1.kpi.staff');
+
+        // Platform Super Admin Portal
+        Route::middleware('super_admin')->prefix('platform')->group(function () {
+            Route::get('/dashboard-stats', [SuperAdminController::class, 'dashboardStats'])->name('api.v1.platform.dashboard_stats');
+            Route::get('/stores', [SuperAdminController::class, 'stores'])->name('api.v1.platform.stores.index');
+            Route::post('/stores/{id}/approve', [SuperAdminController::class, 'approveStore'])->name('api.v1.platform.stores.approve');
+            Route::post('/stores/{id}/suspend', [SuperAdminController::class, 'suspendStore'])->name('api.v1.platform.stores.suspend');
+            Route::post('/stores/{id}/activate', [SuperAdminController::class, 'activateStore'])->name('api.v1.platform.stores.activate');
+        });
     });
 });

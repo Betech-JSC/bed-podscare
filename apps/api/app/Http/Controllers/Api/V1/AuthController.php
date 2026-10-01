@@ -3,16 +3,17 @@
 namespace App\Http\Controllers\Api\V1;
 
 use App\Http\Controllers\Controller;
+use App\Models\Scopes\TenantScope;
+use App\Models\Tenant;
 use App\Models\User;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
-use Illuminate\Validation\ValidationException;
 
 class AuthController extends Controller
 {
     /**
-     * Đăng nhập người dùng & cấp Sanctum API token.
+     * Đăng nhập người dùng & cấp Sanctum API token theo ngữ cảnh Tenant hoặc Super Admin.
      */
     public function login(Request $request): JsonResponse
     {
@@ -25,8 +26,10 @@ class AuthController extends Controller
             return $this->failure('Vui lòng nhập Email hoặc Số điện thoại.', 422);
         }
 
+        $storeCode = trim((string) ($request->input('store_code') ?? $request->input('tenant_code') ?? ''));
+
         $normalizedEmail = match ($loginInput) {
-            'tuan.kt@podscare.vn' => 'ktv.tuan@podscare.vn',
+            'tuan.kt@podscare.vn' => 'ktv.tuan@fixo.com.vn',
             'tuan.kt@fixo.com.vn' => 'ktv.tuan@fixo.com.vn',
             default => $loginInput,
         };
@@ -39,13 +42,93 @@ class AuthController extends Controller
             $alternateEmail = str_replace('@fixo.com.vn', '@podscare.vn', $normalizedEmail);
         }
 
-        $user = User::where('email', $loginInput)
-            ->orWhere('email', $normalizedEmail)
-            ->when($alternateEmail, fn ($q) => $q->orWhere('email', $alternateEmail))
-            ->orWhere('phone', $loginInput)
-            ->first();
-
         $password = $request->input('password');
+
+        // 1. Kiểm tra tài khoản Super Admin (nền tảng)
+        // Super admin có thể đăng nhập với store_code rỗng, fixo-platform, hoặc nhận diện trực tiếp qua email/phone
+        $isSuperAdminCandidate = empty($storeCode)
+            || $storeCode === 'fixo-platform'
+            || $loginInput === 'superadmin@fixo.com.vn'
+            || $loginInput === '0900000000';
+
+        if ($isSuperAdminCandidate) {
+            $superAdmin = User::withoutGlobalScope(TenantScope::class)
+                ->where('role', 'super_admin')
+                ->where(function ($q) use ($loginInput, $normalizedEmail, $alternateEmail) {
+                    $q->where('email', $loginInput)
+                        ->orWhere('email', $normalizedEmail)
+                        ->when($alternateEmail, fn ($sq) => $sq->orWhere('email', $alternateEmail))
+                        ->orWhere('phone', $loginInput);
+                })
+                ->first();
+
+            if ($superAdmin) {
+                if (! Hash::check($password, $superAdmin->password) && ! ($password === 'password123' && Hash::check('password', $superAdmin->password))) {
+                    return $this->failure('Email hoặc mật khẩu không chính xác.', 401);
+                }
+
+                if (! $superAdmin->is_active) {
+                    return $this->failure('Tài khoản đã bị tạm khóa.', 403);
+                }
+
+                $token = $superAdmin->createToken('platform_token', ['platform:super_admin'])->plainTextToken;
+
+                return $this->success([
+                    'token'      => $token,
+                    'token_type' => 'Bearer',
+                    'user'       => [
+                        'id'         => $superAdmin->id,
+                        'name'       => $superAdmin->name,
+                        'email'      => $superAdmin->email,
+                        'phone'      => $superAdmin->phone,
+                        'role'       => $superAdmin->role,
+                        'tenant_id'  => null,
+                        'tenant'     => null,
+                        'avatar_url' => $superAdmin->avatar_url,
+                        'branch_id'  => null,
+                        'branch'     => null,
+                    ],
+                ], 'Đăng nhập thành công.');
+            }
+        }
+
+        // 2. Xác định mã gian hàng (mặc định fixo-master nếu không truyền)
+        $effectiveStoreCode = ! empty($storeCode) ? $storeCode : 'fixo-master';
+        $tenant = Tenant::where('code', $effectiveStoreCode)->first();
+
+        // Nếu store_code được chỉ định rõ ràng mà không tìm thấy
+        if (! $tenant && ! empty($storeCode)) {
+            return $this->failure('Gian hàng không tồn tại.', 404);
+        }
+
+        // Kiểm tra trạng thái của tenant
+        if ($tenant) {
+            if ($tenant->status === 'pending') {
+                return $this->failure('Gian hàng đang chờ Super Admin phê duyệt.', 403);
+            }
+            if ($tenant->status === 'suspended') {
+                return $this->failure('Gian hàng đã bị tạm khóa. Vui lòng liên hệ hỗ trợ.', 403);
+            }
+        }
+
+        // 3. Tìm user thuộc tenant
+        $userQuery = User::withoutGlobalScope(TenantScope::class);
+        if ($tenant) {
+            $userQuery->where(function ($q) use ($tenant, $storeCode) {
+                $q->where('tenant_id', $tenant->id);
+                // Nếu không truyền store_code (fallback fixo-master), cho phép tìm user có tenant_id null để tương thích ngược
+                if (empty($storeCode)) {
+                    $q->orWhereNull('tenant_id');
+                }
+            });
+        }
+
+        $user = $userQuery->where(function ($q) use ($loginInput, $normalizedEmail, $alternateEmail) {
+            $q->where('email', $loginInput)
+                ->orWhere('email', $normalizedEmail)
+                ->when($alternateEmail, fn ($sq) => $sq->orWhere('email', $alternateEmail))
+                ->orWhere('phone', $loginInput);
+        })->first();
 
         if (! $user || (! Hash::check($password, $user->password) && ! ($password === 'password123' && Hash::check('password', $user->password)))) {
             return $this->failure('Email hoặc mật khẩu không chính xác.', 401);
@@ -55,17 +138,32 @@ class AuthController extends Controller
             return $this->failure('Tài khoản đã bị tạm khóa.', 403);
         }
 
-        $token = $user->createToken('auth_token')->plainTextToken;
+        $tokenContext = $tenant ? "tenant:{$tenant->id}" : 'tenant:default';
+        $token = $user->createToken('auth_token', [$tokenContext])->plainTextToken;
+
+        $resolvedTenant = $user->tenant ?? $tenant;
+        $tenantData = null;
+        if ($resolvedTenant) {
+            $tenantData = [
+                'id'     => $resolvedTenant->id,
+                'code'   => $resolvedTenant->code,
+                'name'   => $resolvedTenant->name,
+                'status' => $resolvedTenant->status,
+                'plan'   => $resolvedTenant->plan,
+            ];
+        }
 
         return $this->success([
-            'token' => $token,
+            'token'      => $token,
             'token_type' => 'Bearer',
-            'user'  => [
+            'user'       => [
                 'id'         => $user->id,
                 'name'       => $user->name,
                 'email'      => $user->email,
                 'phone'      => $user->phone,
                 'role'       => $user->role,
+                'tenant_id'  => $user->tenant_id ?? $tenant?->id,
+                'tenant'     => $tenantData,
                 'avatar_url' => $user->avatar_url,
                 'branch_id'  => $user->branch_id,
                 'branch'     => $user->branch?->only(['id', 'code', 'name']),
@@ -88,8 +186,27 @@ class AuthController extends Controller
      */
     public function me(Request $request): JsonResponse
     {
-        $user = $request->user()->load('branch');
+        $user = $request->user()->load(['branch', 'tenant']);
 
-        return $this->success($user, 'Lấy thông tin người dùng thành công.');
+        $userData = [
+            'id'         => $user->id,
+            'name'       => $user->name,
+            'email'      => $user->email,
+            'phone'      => $user->phone,
+            'role'       => $user->role,
+            'tenant_id'  => $user->tenant_id,
+            'tenant'     => $user->tenant ? [
+                'id'     => $user->tenant->id,
+                'code'   => $user->tenant->code,
+                'name'   => $user->tenant->name,
+                'status' => $user->tenant->status,
+                'plan'   => $user->tenant->plan,
+            ] : null,
+            'avatar_url' => $user->avatar_url,
+            'branch_id'  => $user->branch_id,
+            'branch'     => $user->branch?->only(['id', 'code', 'name']),
+        ];
+
+        return $this->success($userData, 'Lấy thông tin người dùng thành công.');
     }
 }
