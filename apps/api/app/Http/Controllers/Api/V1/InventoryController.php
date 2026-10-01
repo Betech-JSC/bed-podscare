@@ -71,8 +71,13 @@ class InventoryController extends Controller
             $query->where('transaction_type', $type);
         }
 
-        if ($branchId = $request->input('branch_id')) {
-            $query->where('branch_id', $branchId);
+        $user = $request->user();
+        if ($user && $user->role !== 'admin') {
+            $query->where('branch_id', $user->branch_id);
+        } elseif ($branchId = $request->input('branch_id')) {
+            if ($branchId !== 'all') {
+                $query->where('branch_id', $branchId);
+            }
         }
 
         $transactions = $query->latest('id')->paginate($request->input('per_page', 20));
@@ -85,9 +90,16 @@ class InventoryController extends Controller
      */
     public function createTransaction(Request $request): JsonResponse
     {
+        $user = $request->user();
+        if ($user && $user->role !== 'admin') {
+            if ($request->has('branch_id') && (int) $request->input('branch_id') !== (int) $user->branch_id) {
+                abort(403, 'Bạn không có quyền tạo giao dịch kho cho chi nhánh khác.');
+            }
+        }
+
         $validated = $request->validate([
             'part_id'          => 'required|exists:parts,id',
-            'branch_id'        => 'required|exists:branches,id',
+            'branch_id'        => ($user && $user->role !== 'admin' && $user->branch_id) ? 'nullable|exists:branches,id' : 'required|exists:branches,id',
             'repair_order_id'  => 'nullable|exists:repair_orders,id',
             'transaction_type' => 'required|in:import,export_repair,export_damage,adjust_inventory',
             'quantity'         => 'required|integer',
@@ -95,6 +107,10 @@ class InventoryController extends Controller
             'supplier_name'    => 'nullable|string|max:255',
             'notes'            => 'nullable|string',
         ]);
+
+        if ($user && $user->role !== 'admin') {
+            $validated['branch_id'] = $user->branch_id;
+        }
 
         return DB::transaction(function () use ($request, $validated) {
             $part = Part::where('id', $validated['part_id'])->lockForUpdate()->firstOrFail();

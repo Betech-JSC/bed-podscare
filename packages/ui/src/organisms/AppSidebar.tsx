@@ -295,60 +295,57 @@ export const AppSidebar: React.FC<AppSidebarProps> = ({
           )}
         </div>
 
-        {/* Branch Selector Dropdown */}
-        <div ref={branchDropdownRef} className="relative mb-3 z-30">
-          <button
-            type="button"
-            onClick={() => setBranchDropdownOpen(!branchDropdownOpen)}
-            className={`w-full flex items-center gap-2.5 p-2.5 bg-[#f7f9f7] hover:bg-[#edf4f0] border rounded-[10px] transition-all text-left ${
-              branchDropdownOpen
-                ? 'border-[#75a994] ring-2 ring-[#176b58]/15 bg-[#edf4f0]'
-                : 'border-[#edf1ee]'
-            }`}
-          >
-            <div className="w-8 h-8 rounded-[8px] bg-[#e4eee8] text-[#176b58] grid place-items-center flex-none">
-              <Icon name="spark" size={16} />
-            </div>
-            <div className="min-w-0 flex-1">
-              <small className="block text-xs tracking-[0.5px] text-[#7f8f87] font-bold uppercase">
-                CHI NHÁNH ĐANG XEM
-              </small>
-              <strong className="block text-sm text-[#1c302b] truncate font-semibold">
-                {branchName}
-              </strong>
-            </div>
-            <span
-              className={`text-[#7d8983] text-xs transition-transform duration-200 ${
-                branchDropdownOpen ? 'rotate-180 text-[#176b58]' : ''
+        {/* Branch Selector Dropdown / Static Read-only Badge */}
+        {normalizedRole === 'admin' ? (
+          <div ref={branchDropdownRef} className="relative mb-3 z-30">
+            <button
+              type="button"
+              onClick={() => setBranchDropdownOpen(!branchDropdownOpen)}
+              className={`w-full flex items-center gap-2.5 p-2.5 bg-[#f7f9f7] hover:bg-[#edf4f0] border rounded-[10px] transition-all text-left ${
+                branchDropdownOpen
+                  ? 'border-[#75a994] ring-2 ring-[#176b58]/15 bg-[#edf4f0]'
+                  : 'border-[#edf1ee]'
               }`}
             >
-              ⌄
-            </span>
-          </button>
+              <div className="w-8 h-8 rounded-[8px] bg-[#e4eee8] text-[#176b58] grid place-items-center flex-none">
+                <Icon name="spark" size={16} />
+              </div>
+              <div className="min-w-0 flex-1">
+                <small className="block text-xs tracking-[0.5px] text-[#7f8f87] font-bold uppercase">
+                  CHI NHÁNH ĐANG XEM
+                </small>
+                <strong className="block text-sm text-[#1c302b] truncate font-semibold">
+                  {branchName}
+                </strong>
+              </div>
+              <span
+                className={`text-[#7d8983] text-xs transition-transform duration-200 ${
+                  branchDropdownOpen ? 'rotate-180 text-[#176b58]' : ''
+                }`}
+              >
+                ⌄
+              </span>
+            </button>
 
-          {branchDropdownOpen && (
-            <>
-              <div
-                className="fixed inset-0 z-40"
-                onClick={() => setBranchDropdownOpen(false)}
-              />
-              <div className="absolute left-0 right-0 top-full mt-1 bg-white border border-[#dce5e0] rounded-[10px] shadow-2xl py-1 z-50 divide-y divide-[#f2f5f3]">
-                <div className="px-3 py-1.5 text-xs font-bold text-[#86958e] uppercase tracking-wider">
-                  CHỌN CHI NHÁNH / KHO
-                </div>
-                <div className="py-1 max-h-[220px] overflow-y-auto">
-                  {(
-                    branches || [
-                      ...(normalizedRole === 'admin'
-                        ? [{ id: 'all', name: 'Tất cả chi nhánh', code: 'ALL' }]
-                        : []),
-                      { id: 1, name: 'PodsCare · Quận 1', code: 'Q1' },
-                      { id: 2, name: 'PodsCare · Quận 3', code: 'Q3' },
-                      { id: 3, name: 'PodsCare · TP. Thủ Đức', code: 'THUDUC' },
-                    ]
-                  )
-                    .filter((b) => (normalizedRole === 'admin' ? true : b.id !== 'all'))
-                    .map((b) => {
+            {branchDropdownOpen && (
+              <>
+                <div
+                  className="fixed inset-0 z-40"
+                  onClick={() => setBranchDropdownOpen(false)}
+                />
+                <div className="absolute left-0 right-0 top-full mt-1 bg-white border border-[#dce5e0] rounded-[10px] shadow-2xl py-1 z-50 divide-y divide-[#f2f5f3]">
+                  <div className="px-3 py-1.5 text-xs font-bold text-[#86958e] uppercase tracking-wider">
+                    CHỌN CHI NHÁNH / KHO
+                  </div>
+                  <div className="py-1 max-h-[220px] overflow-y-auto">
+                    {(
+                      branches || [
+                        { id: 'all', name: 'Tất cả chi nhánh', code: 'ALL' },
+                        { id: 1, name: 'PodsCare · Quận 1', code: 'Q1' },
+                        { id: 2, name: 'PodsCare · Quận 3', code: 'Q3' },
+                        { id: 3, name: 'PodsCare · TP. Thủ Đức', code: 'THUDUC' },
+                      ]
+                    ).map((b) => {
                       const isSelected = selectedBranchId
                         ? String(selectedBranchId) === String(b.id)
                         : branchName === b.name;
@@ -388,8 +385,7 @@ export const AppSidebar: React.FC<AppSidebarProps> = ({
                         </button>
                       );
                     })}
-                </div>
-                {normalizedRole === 'admin' && (
+                  </div>
                   <div className="p-1.5 border-t border-[#f0f3f1] bg-[#fafbfa]">
                     <button
                       type="button"
@@ -404,11 +400,32 @@ export const AppSidebar: React.FC<AppSidebarProps> = ({
                       <span>Thêm chi nhánh mới</span>
                     </button>
                   </div>
-                )}
+                </div>
+              </>
+            )}
+          </div>
+        ) : (
+          <div className="relative mb-3 z-30">
+            <div
+              className="w-full flex items-center gap-2.5 p-2.5 bg-[#f7f9f7] border border-[#edf1ee] rounded-[10px] cursor-default select-none pointer-events-none text-left"
+            >
+              <div className="w-8 h-8 rounded-[8px] bg-[#e4eee8] text-[#176b58] grid place-items-center flex-none">
+                <Icon name="building" size={16} />
               </div>
-            </>
-          )}
-        </div>
+              <div className="min-w-0 flex-1">
+                <small className="block text-xs tracking-[0.5px] text-[#7f8f87] font-bold uppercase">
+                  CHI NHÁNH CỦA BẠN
+                </small>
+                <strong className="block text-sm text-[#1c302b] truncate font-semibold">
+                  {branchName}
+                </strong>
+              </div>
+              <div className="text-[#8e9f97] flex-none px-1" title="Chi nhánh cố định">
+                <Icon name="lock" size={14} />
+              </div>
+            </div>
+          </div>
+        )}
 
 
         {/* Scrollable Navigation */}

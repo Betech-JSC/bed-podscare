@@ -79,6 +79,7 @@ export default function UsersPage() {
     branch_id: '' as string | number,
   });
   const [formErrors, setFormErrors] = useState<Record<string, string>>({});
+  const [editErrors, setEditErrors] = useState<Record<string, string>>({});
   const [submitting, setSubmitting] = useState(false);
 
   // Nạp danh sách tài khoản từ userService API
@@ -137,6 +138,15 @@ export default function UsersPage() {
     if (!formData.password || formData.password.length < 6) {
       errs.password = 'Mật khẩu phải từ 6 ký tự trở lên.';
     }
+    const isNonAdmin = ['cskh', 'technician', 'tech', 'qc', 'inventory', 'warehouse'].includes(
+      formData.role
+    );
+    if (
+      isNonAdmin &&
+      (!formData.branch_id || formData.branch_id === '' || formData.branch_id === 0)
+    ) {
+      errs.branch_id = 'Chi nhánh công tác là bắt buộc đối với nhân sự chi nhánh.';
+    }
     setFormErrors(errs);
     return Object.keys(errs).length === 0;
   };
@@ -147,7 +157,7 @@ export default function UsersPage() {
     if (!validateForm()) return;
 
     setSubmitting(true);
-    const chosenBranchId = Number(formData.branch_id) || Number(branchOptions[0]?.value) || 1;
+    const chosenBranchId = formData.branch_id ? Number(formData.branch_id) : undefined;
     try {
       await userService.createUser({
         name: formData.name,
@@ -166,7 +176,7 @@ export default function UsersPage() {
         password: '',
         phone: '',
         role: 'cskh',
-        branch_id: branchOptions[0]?.value ? Number(branchOptions[0].value) : 1,
+        branch_id: '',
       });
       setFormErrors({});
       fetchUsers();
@@ -201,12 +211,23 @@ export default function UsersPage() {
     e.preventDefault();
     if (!selectedUser) return;
 
+    const isNonAdmin = ['cskh', 'technician', 'tech', 'qc', 'inventory', 'warehouse'].includes(
+      selectedUser.role
+    );
+    if (isNonAdmin && (!selectedUser.branch_id || Number(selectedUser.branch_id) === 0)) {
+      setEditErrors({ branch_id: 'Chi nhánh công tác là bắt buộc đối với nhân sự chi nhánh.' });
+      toast('Chi nhánh công tác là bắt buộc đối với nhân sự chi nhánh.', 'error');
+      return;
+    }
+
     setSubmitting(true);
     try {
       const chosenBranchId =
-        selectedUser.branch_id !== undefined && selectedUser.branch_id !== null
+        selectedUser.branch_id !== undefined &&
+        selectedUser.branch_id !== null &&
+        Number(selectedUser.branch_id) > 0
           ? Number(selectedUser.branch_id)
-          : Number(branchOptions[0]?.value) || 1;
+          : undefined;
 
       await userService.updateUser(selectedUser.id, {
         name: selectedUser.name,
@@ -218,6 +239,7 @@ export default function UsersPage() {
       toast(`Đã cập nhật thông tin nhân viên ${selectedUser.name}!`, 'success');
       setEditModalOpen(false);
       setSelectedUser(null);
+      setEditErrors({});
       fetchUsers();
     } catch (err: any) {
       toast(err?.response?.data?.message || err?.message || 'Không thể cập nhật tài khoản.', 'error');
@@ -614,12 +636,30 @@ export default function UsersPage() {
               </div>
               <div>
                 <Select
-                  label="Chi nhánh công tác"
-                  value={String(formData.branch_id || branchOptions[0]?.value || '1')}
-                  onChange={(e) =>
-                    setFormData({ ...formData, branch_id: Number(e.target.value) || e.target.value })
-                  }
-                  options={branchOptions}
+                  label={`Chi nhánh công tác ${
+                    ['cskh', 'technician', 'tech', 'qc', 'inventory', 'warehouse'].includes(formData.role)
+                      ? '*'
+                      : '(tùy chọn)'
+                  }`}
+                  value={String(formData.branch_id || '')}
+                  onChange={(e) => {
+                    setFormData({
+                      ...formData,
+                      branch_id: e.target.value ? Number(e.target.value) : '',
+                    });
+                    if (formErrors.branch_id) {
+                      setFormErrors((prev) => {
+                        const next = { ...prev };
+                        delete next.branch_id;
+                        return next;
+                      });
+                    }
+                  }}
+                  error={formErrors.branch_id}
+                  options={[
+                    { value: '', label: '-- Chọn chi nhánh công tác --' },
+                    ...branchOptions,
+                  ]}
                 />
               </div>
             </div>
@@ -769,18 +809,34 @@ export default function UsersPage() {
                 </div>
                 <div>
                   <Select
-                    label="Chi nhánh công tác"
-                    value={String(selectedUser.branch_id || branchOptions[0]?.value || '1')}
+                    label={`Chi nhánh công tác ${
+                      ['cskh', 'technician', 'tech', 'qc', 'inventory', 'warehouse'].includes(selectedUser.role)
+                        ? '*'
+                        : '(tùy chọn)'
+                    }`}
+                    value={String(selectedUser.branch_id || '')}
                     onChange={(e) => {
-                      const newBranchId = Number(e.target.value);
-                      const newBranchName = branchOptions.find((b) => b.value === e.target.value)?.label;
+                      const val = e.target.value;
+                      const newBranchId = val ? Number(val) : null;
+                      const newBranchName = branchOptions.find((b) => b.value === val)?.label;
                       setSelectedUser({
                         ...selectedUser,
                         branch_id: newBranchId,
                         branch_name: newBranchName,
                       });
+                      if (editErrors.branch_id) {
+                        setEditErrors((prev) => {
+                          const next = { ...prev };
+                          delete next.branch_id;
+                          return next;
+                        });
+                      }
                     }}
-                    options={branchOptions}
+                    error={editErrors.branch_id}
+                    options={[
+                      { value: '', label: '-- Chọn chi nhánh công tác --' },
+                      ...branchOptions,
+                    ]}
                   />
                 </div>
               </div>

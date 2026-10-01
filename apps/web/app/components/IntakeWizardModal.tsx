@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import {
   Modal,
@@ -31,6 +31,25 @@ export interface IntakeWizardModalProps {
   onSuccess?: (order: RepairOrder, shouldPrint: boolean) => void;
 }
 
+const DEFAULT_COMMON_ISSUES: Record<string, CommonIssueItem[]> = {
+  AirPods: [
+    { id: 1, category: 'AirPods', issue_name: 'Pin chai, tụt pin nhanh dưới 1 tiếng', estimated_cost: 250000 },
+    { id: 2, category: 'AirPods', issue_name: 'Bật chống ồn ANC bị rè, rít gió chói tai', estimated_cost: 350000 },
+    { id: 3, category: 'AirPods', issue_name: 'Loa một bên nhỏ tiếng hoặc rè bass', estimated_cost: 200000 },
+    { id: 4, category: 'AirPods', issue_name: 'Hộp sạc không nhận sạc hoặc không sạc được cho tai', estimated_cost: 300000 },
+    { id: 5, category: 'AirPods', issue_name: 'Bám bẩn lâu ngày, tắc màng âm thanh', estimated_cost: 100000 },
+  ],
+  'Apple Watch': [
+    { id: 11, category: 'Apple Watch', issue_name: 'Pin phù, sụt nhanh hoặc đẩy bung màn hình', estimated_cost: 350000 },
+    { id: 12, category: 'Apple Watch', issue_name: 'Cảm ứng liệt hoặc loạn sau va đập', estimated_cost: 450000 },
+    { id: 13, category: 'Apple Watch', issue_name: 'Không nhận sạc không dây', estimated_cost: 300000 },
+  ],
+  'Apple Pencil': [
+    { id: 21, category: 'Apple Pencil', issue_name: 'Pin kiệt không nhận sạc từ iPad', estimated_cost: 250000 },
+    { id: 22, category: 'Apple Pencil', issue_name: 'Ngòi mòn, đứt nét hoặc mất cảm ứng lực', estimated_cost: 150000 },
+  ],
+};
+
 export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
   isOpen,
   onClose,
@@ -41,10 +60,19 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
   const { categories, deviceProfiles, addOrder, currentUser, branch, branchId, branches } =
     usePodsCare();
 
+  const contentTopRef = useRef<HTMLDivElement>(null);
+
   // Step State
   const [currentStepIndex, setCurrentStepIndex] = useState(0);
   const [maxReachedStepIndex, setMaxReachedStepIndex] = useState(0);
   const [completedSteps, setCompletedSteps] = useState<Set<number>>(new Set());
+
+  // Auto scroll to top of step when step changes
+  useEffect(() => {
+    if (isOpen) {
+      contentTopRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+  }, [currentStepIndex, isOpen]);
 
   // Form State
   const [name, setName] = useState('');
@@ -117,9 +145,13 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
       .then((res: any) => {
         const raw = res?.data || res;
         const list = Array.isArray(raw) ? raw : (raw?.data || []);
-        setCommonIssues(Array.isArray(list) ? list : []);
+        if (Array.isArray(list) && list.length > 0) {
+          setCommonIssues(list);
+        } else {
+          setCommonIssues(DEFAULT_COMMON_ISSUES[selectedCategory] || []);
+        }
       })
-      .catch(() => setCommonIssues([]));
+      .catch(() => setCommonIssues(DEFAULT_COMMON_ISSUES[selectedCategory] || []));
 
     deviceService
       .getChecklistTemplate({ category: selectedCategory })
@@ -284,12 +316,18 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
       status: testAnswers[label] || 'Không kiểm tra',
     }));
 
+    const userBranchId = (currentUser as any)?.branch_id || (currentUser as any)?.branchId;
+    const branchIdNum =
+      currentUser?.role !== 'admin'
+        ? Number(userBranchId || branchId || 1)
+        : Number(selectedBranchId) > 0
+        ? Number(selectedBranchId)
+        : 1;
+
     const branchObj =
-      branches.find((b) => String(b.id) === String(selectedBranchId)) ||
+      branches.find((b) => String(b.id) === String(branchIdNum)) ||
       branches.find((b) => b.name === branch) ||
       branches[1] || { id: 1, name: 'PodsCare · Quận 1' };
-
-    const branchIdNum = Number(branchObj.id) > 0 ? Number(branchObj.id) : 1;
 
     // Resolve device_model_id
     const matchedDevice = deviceList.find(
@@ -405,58 +443,7 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
       eyebrow="CSKH · TIẾP NHẬN THIẾT BỊ"
       title="Phiếu tiếp nhận sửa chữa (Intake Wizard)"
       subtitle="Thu thập thông tin 5 bước: Khách hàng, Thiết bị, Test tại quầy, Ngoại hình và Giá dự kiến."
-      footer={
-        <div className="flex items-center justify-between w-full">
-          {currentStepIndex === 0 ? (
-            <Button variant="ghost" size="md" onClick={onClose} disabled={isSubmitting}>
-              Hủy bỏ
-            </Button>
-          ) : (
-            <Button
-              variant="outline"
-              size="md"
-              onClick={handleBack}
-              disabled={isSubmitting}
-            >
-              ← Quay lại
-            </Button>
-          )}
-
-          {currentStepIndex < 4 ? (
-            <Button
-              variant="primary"
-              size="md"
-              onClick={handleNext}
-              disabled={isSubmitting}
-            >
-              Tiếp tục →
-            </Button>
-          ) : (
-            <div className="flex items-center gap-2">
-              <Button
-                variant="secondary"
-                size="md"
-                disabled={isSubmitting}
-                onClick={() => handleSave(false)}
-              >
-                {isSubmitting ? 'Đang lưu...' : 'Lưu phiếu'}
-              </Button>
-              <Button
-                variant="primary"
-                size="md"
-                icon="arrow"
-                disabled={isSubmitting}
-                onClick={() => handleSave(true)}
-              >
-                {isSubmitting ? 'Đang lưu & Mở phiếu...' : 'Lưu & Xem phiếu ↗'}
-              </Button>
-            </div>
-          )}
-        </div>
-      }
-    >
-      <div className="space-y-6">
-        {/* Step Indicator */}
+      headerExtra={
         <StepperWidget
           steps={[
             { id: 1, label: 'Khách hàng' },
@@ -469,6 +456,69 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
           completedStepIndices={Array.from(completedSteps)}
           onStepClick={handleStepClick}
         />
+      }
+      footer={
+        <div className="flex items-center justify-between gap-2.5 sm:gap-3 w-full">
+          {currentStepIndex === 0 ? (
+            <Button
+              variant="ghost"
+              size="md"
+              onClick={onClose}
+              disabled={isSubmitting}
+              className="min-h-[44px] h-11 sm:h-9 px-3 sm:px-4 text-xs sm:text-sm font-medium touch-manipulation cursor-pointer"
+            >
+              Hủy bỏ
+            </Button>
+          ) : (
+            <Button
+              variant="outline"
+              size="md"
+              onClick={handleBack}
+              disabled={isSubmitting}
+              className="min-h-[44px] h-11 sm:h-9 px-3 sm:px-4 text-xs sm:text-sm font-semibold touch-manipulation cursor-pointer"
+            >
+              ← Quay lại
+            </Button>
+          )}
+
+          {currentStepIndex < 4 ? (
+            <Button
+              variant="primary"
+              size="md"
+              onClick={handleNext}
+              disabled={isSubmitting}
+              className="min-h-[44px] h-11 sm:h-9 flex-1 sm:flex-initial px-5 sm:px-6 text-sm sm:text-base font-bold shadow-md active:scale-[0.98] transition-transform justify-center touch-manipulation cursor-pointer"
+            >
+              Tiếp tục →
+            </Button>
+          ) : (
+            <div className="flex items-center gap-2 flex-1 sm:flex-initial justify-end">
+              <Button
+                variant="secondary"
+                size="md"
+                disabled={isSubmitting}
+                onClick={() => handleSave(false)}
+                className="min-h-[44px] h-11 sm:h-9 px-3 sm:px-4 text-xs sm:text-sm font-medium touch-manipulation cursor-pointer"
+              >
+                {isSubmitting ? 'Đang lưu...' : 'Lưu'}
+              </Button>
+              <Button
+                variant="primary"
+                size="md"
+                icon="arrow"
+                disabled={isSubmitting}
+                onClick={() => handleSave(true)}
+                className="min-h-[44px] h-11 sm:h-9 flex-1 sm:flex-initial px-3 sm:px-5 text-xs sm:text-sm font-bold shadow-md active:scale-[0.98] transition-transform justify-center touch-manipulation cursor-pointer"
+              >
+                {isSubmitting ? 'Đang lưu & Mở...' : 'Lưu & Xem phiếu ↗'}
+              </Button>
+            </div>
+          )}
+        </div>
+      }
+    >
+      <div className="space-y-4 sm:space-y-6">
+        <div ref={contentTopRef} className="h-0" />
 
         {/* 01. Customer Info & Intake Branch */}
         {currentStepIndex === 0 && (
@@ -516,13 +566,13 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
                 required
               />
               <div className="sm:col-span-2">
-                <Select
-                  label="Chi nhánh tiếp nhận thiết bị *"
-                  value={String(selectedBranchId)}
-                  onChange={(e) => {
-                    if (currentUser?.role !== 'admin') return;
-                    setSelectedBranchId(e.target.value);
-                    if (errors.branch) {
+                {currentUser?.role === 'admin' ? (
+                  <Select
+                    label="Chi nhánh tiếp nhận thiết bị *"
+                    value={String(selectedBranchId)}
+                    onChange={(e) => {
+                      setSelectedBranchId(e.target.value);
+                      if (errors.branch) {
                       setErrors((prev) => {
                         const next = { ...prev };
                         delete next.branch;
@@ -531,7 +581,6 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
                     }
                   }}
                   error={errors.branch}
-                  disabled={currentUser?.role !== 'admin'}
                   options={((branches && branches.filter((b) => b.id !== 'all').length > 0)
                     ? branches.filter((b) => b.id !== 'all')
                     : [
@@ -544,14 +593,37 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
                     label: `${b.name} (${b.code}) — ${b.address || ''}`,
                   }))}
                 />
-                {currentUser?.role !== 'admin' && (
-                  <div className="mt-1.5 flex items-center gap-1.5 text-xs font-semibold text-[#176b58] bg-[#eaf4ef] px-3 py-1.5 rounded-[6px] border border-[#d2e8dd]">
-                    <span>🔒 Chi nhánh tiếp nhận: {
-                      branches.find((b) => String(b.id) === String(selectedBranchId))?.name ||
-                      (String(selectedBranchId) === '2' ? 'PodsCare · Quận 3' : String(selectedBranchId) === '3' ? 'PodsCare · TP. Thủ Đức' : 'PodsCare · Quận 1')
-                    } — Gán tự động theo ca tiếp nhận</span>
+              ) : (
+                <div>
+                  <label className="block text-xs font-bold text-[#556960] mb-1.5">
+                    Chi nhánh tiếp nhận thiết bị
+                  </label>
+                  <div className="flex items-center justify-between p-3 rounded-[8px] bg-[#f7f9f7] border border-[#d6dfda] cursor-default select-none">
+                    <div className="flex items-center gap-2.5">
+                      <span className="w-8 h-8 rounded-[8px] bg-[#e4eee8] text-[#176b58] grid place-items-center flex-none font-bold text-sm">
+                        📍
+                      </span>
+                      <div>
+                        <strong className="block text-sm text-[#1c302b] font-semibold">
+                          {branches.find(
+                            (b) =>
+                              String(b.id) ===
+                              String((currentUser as any)?.branch_id || selectedBranchId)
+                          )?.name ||
+                            currentUser.branch ||
+                            'PodsCare · Quận 1'}
+                        </strong>
+                        <small className="text-xs text-[#7e8e86]">
+                          Gán cố định theo ca làm việc của tài khoản ({currentUser.name})
+                        </small>
+                      </div>
+                    </div>
+                    <span className="text-xs font-semibold text-[#176b58] bg-[#eaf4ef] px-2.5 py-1 rounded-[6px] border border-[#d2e8dd] flex items-center gap-1">
+                      🔒 Cố định
+                    </span>
                   </div>
-                )}
+                </div>
+              )}
               </div>
             </div>
           </section>
@@ -654,7 +726,7 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
                             key={chip.id || `chip-${idx}`}
                             type="button"
                             onClick={() => handleChipClick(chip)}
-                            className={`text-xs px-2.5 py-1 rounded-[16px] border transition-all text-left flex items-center gap-1.5 cursor-pointer ${
+                            className={`text-xs px-2.5 py-1.5 rounded-[16px] border transition-all text-left flex items-center gap-1.5 cursor-pointer touch-manipulation active:scale-[0.98] ${
                               isSelected
                                 ? 'bg-[#eaf4ef] border-[#176b58] text-[#176b58] font-semibold shadow-2xs'
                                 : 'bg-white border-[#dbe4df] text-[#42524a] hover:bg-[#f5f8f6] hover:border-[#b5cec0]'

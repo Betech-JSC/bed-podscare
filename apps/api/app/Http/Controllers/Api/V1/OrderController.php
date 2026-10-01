@@ -46,11 +46,11 @@ class OrderController extends Controller
 
         $user = $request->user();
         if ($user && $user->role !== 'admin') {
-            if ($user->branch_id) {
-                $query->where('branch_id', $user->branch_id);
-            }
+            $query->where('branch_id', $user->branch_id);
         } elseif ($branchId = $request->input('branch_id')) {
-            $query->where('branch_id', $branchId);
+            if ($branchId !== 'all') {
+                $query->where('branch_id', $branchId);
+            }
         }
 
         if ($techId = $request->input('technician_id')) {
@@ -226,9 +226,19 @@ class OrderController extends Controller
     }
 
     /**
+     * Kiểm tra phân quyền chi nhánh tập trung.
+     */
+    protected function authorizeOrderBranch(RepairOrder $order, $user): void
+    {
+        if ($user && $user->role !== 'admin' && (int) $order->branch_id !== (int) $user->branch_id) {
+            abort(403, 'Bạn không có quyền truy cập đơn hàng thuộc chi nhánh khác.');
+        }
+    }
+
+    /**
      * Chi tiết đơn sửa chữa toàn diện.
      */
-    public function show(int|string $id): JsonResponse
+    public function show(Request $request, int|string $id): JsonResponse
     {
         $order = $this->resolveOrder($id, [
             'customer',
@@ -251,6 +261,8 @@ class OrderController extends Controller
             return $this->empty('Không tìm thấy đơn sửa chữa.');
         }
 
+        $this->authorizeOrderBranch($order, $request->user());
+
         return $this->success($order, 'Lấy chi tiết đơn sửa chữa thành công.');
     }
 
@@ -264,6 +276,8 @@ class OrderController extends Controller
         if (! $order) {
             return $this->empty('Không tìm thấy đơn sửa chữa.');
         }
+
+        $this->authorizeOrderBranch($order, $request->user());
 
         $validated = $request->validate([
             'technician_id'         => 'nullable|exists:users,id',
@@ -290,6 +304,8 @@ class OrderController extends Controller
         if (! $order) {
             return $this->empty('Không tìm thấy đơn sửa chữa.');
         }
+
+        $this->authorizeOrderBranch($order, $request->user());
 
         $validated = $request->validate([
             'status'              => 'required_without:transition|nullable|string',
@@ -327,15 +343,39 @@ class OrderController extends Controller
     }
 
     /**
-     * Lấy danh sách các trạng thái tiếp theo được phép chuyển kèm nhãn tiếng Việt cho đơn hàng.
+     * Phân công kỹ thuật viên cho đơn sửa chữa.
      */
-    public function allowedTransitions(int|string $id): JsonResponse
+    public function assignTechnician(Request $request, int|string $id): JsonResponse
     {
         $order = $this->resolveOrder($id);
 
         if (! $order) {
             return $this->empty('Không tìm thấy đơn sửa chữa.');
         }
+
+        $this->authorizeOrderBranch($order, $request->user());
+
+        $validated = $request->validate([
+            'technician_id' => 'required|exists:users,id',
+        ]);
+
+        $order->update(['technician_id' => $validated['technician_id']]);
+
+        return $this->success($order, 'Phân công kỹ thuật viên thành công.');
+    }
+
+    /**
+     * Lấy danh sách các trạng thái tiếp theo được phép chuyển kèm nhãn tiếng Việt cho đơn hàng.
+     */
+    public function allowedTransitions(Request $request, int|string $id): JsonResponse
+    {
+        $order = $this->resolveOrder($id);
+
+        if (! $order) {
+            return $this->empty('Không tìm thấy đơn sửa chữa.');
+        }
+
+        $this->authorizeOrderBranch($order, $request->user());
 
         $allowed = $this->workflowService->getNextAllowedStatusesWithLabels($order->status);
 
@@ -374,6 +414,8 @@ class OrderController extends Controller
             return $this->empty('Không tìm thấy đơn sửa chữa.');
         }
 
+        $this->authorizeOrderBranch($order, $request->user());
+
         $validated = $request->validate([
             'items'             => 'required|array',
             'items.*.item_name' => 'required|string',
@@ -404,6 +446,8 @@ class OrderController extends Controller
         if (! $order) {
             return $this->empty('Không tìm thấy đơn sửa chữa.');
         }
+
+        $this->authorizeOrderBranch($order, $request->user());
 
         $validated = $request->validate([
             'file'      => 'nullable|file|mimes:jpeg,png,jpg,webp|max:10240',

@@ -53,8 +53,10 @@ class UserController extends Controller
             'email'     => 'required|email|max:255|unique:users,email',
             'password'  => 'required|string|min:6',
             'phone'     => 'nullable|string|max:20',
-            'branch_id' => 'nullable|exists:branches,id',
+            'branch_id' => 'required_if:role,cskh,technician,tech,qc,inventory,warehouse|nullable|exists:branches,id',
             'role'      => ['required', 'string', Rule::in(['admin', 'cskh', 'technician', 'tech', 'qc', 'inventory', 'warehouse'])],
+        ], [
+            'branch_id.required_if' => 'Chi nhánh công tác là bắt buộc đối với nhân sự chi nhánh.',
         ]);
 
         $role = $validated['role'] === 'tech' ? 'technician' : $validated['role'];
@@ -90,14 +92,20 @@ class UserController extends Controller
             return $this->empty('Không tìm thấy tài khoản người dùng.');
         }
 
+        if (! $request->has('role')) {
+            $request->merge(['role' => $user->role]);
+        }
+
         $validated = $request->validate([
             'name'      => 'sometimes|required|string|max:255',
             'email'     => ['sometimes', 'required', 'email', 'max:255', Rule::unique('users', 'email')->ignore($user->id)],
             'password'  => 'nullable|string|min:6',
             'phone'     => 'nullable|string|max:20',
-            'branch_id' => 'nullable|exists:branches,id',
+            'branch_id' => 'sometimes|required_if:role,cskh,technician,tech,qc,inventory,warehouse|nullable|exists:branches,id',
             'role'      => ['sometimes', 'required', 'string', Rule::in(['admin', 'cskh', 'technician', 'tech', 'qc', 'inventory', 'warehouse'])],
             'is_active' => 'sometimes|boolean',
+        ], [
+            'branch_id.required_if' => 'Chi nhánh công tác là bắt buộc đối với nhân sự chi nhánh.',
         ]);
 
         if (isset($validated['role']) && $validated['role'] === 'tech') {

@@ -9,10 +9,12 @@ export interface ModalProps {
   eyebrow?: string;
   title: string;
   subtitle?: string;
+  headerExtra?: React.ReactNode;
   children: React.ReactNode;
   footer?: React.ReactNode;
   maxWidth?: 'sm' | 'md' | 'lg' | 'xl' | '2xl' | 'full';
   className?: string;
+  fullHeightOnMobile?: boolean;
 }
 
 // Module-level tracking for active modals to handle nested/multiple modals safely
@@ -32,10 +34,12 @@ export const Modal: React.FC<ModalProps> = ({
   eyebrow,
   title,
   subtitle,
+  headerExtra,
   children,
   footer,
   maxWidth = 'md',
   className = '',
+  fullHeightOnMobile = true,
 }) => {
   const [mounted, setMounted] = useState(false);
   const onCloseRef = useRef(onClose);
@@ -131,54 +135,74 @@ export const Modal: React.FC<ModalProps> = ({
     lg: 'max-w-[840px]',
     xl: 'max-w-[980px]',
     '2xl': 'max-w-[1180px]',
-    full: 'max-w-full m-4',
+    full: 'max-w-full sm:m-4',
   }[maxWidth];
 
   const modalContent = (
     <div
       ref={overlayRef}
-      className="fixed inset-0 z-50 bg-[#17251f]/60 backdrop-blur-sm grid place-items-center p-3 sm:p-5 overflow-y-auto overscroll-contain animate-in fade-in duration-150"
+      className="fixed inset-0 z-50 bg-[#17251f]/60 backdrop-blur-sm flex flex-col justify-end sm:justify-center items-center p-0 sm:p-4 md:p-6 overflow-hidden overscroll-contain animate-in fade-in duration-150"
       style={{ overscrollBehavior: 'contain' }}
       onClick={(e) => {
         if (e.target === e.currentTarget) onClose();
       }}
     >
       <div
-        className={`w-full ${maxWidthClass} max-h-[92vh] flex flex-col bg-white rounded-[12px] shadow-[0_24px_90px_rgba(18,37,27,0.18)] border border-[#e5ece8] overflow-hidden my-auto animate-in zoom-in-95 duration-150 ${className}`}
+        className={`w-full ${maxWidthClass} ${
+          fullHeightOnMobile ? 'h-[100dvh]' : 'h-auto max-h-[92dvh]'
+        } sm:h-auto max-h-[100dvh] sm:max-h-[90vh] flex flex-col bg-white rounded-none ${
+          fullHeightOnMobile ? '' : 'rounded-t-2xl'
+        } sm:rounded-2xl shadow-[0_24px_90px_rgba(18,37,27,0.18)] border-0 sm:border border-[#e5ece8] overflow-hidden my-0 sm:my-auto animate-in ${
+          fullHeightOnMobile ? 'slide-in-from-bottom-2' : 'slide-in-from-bottom-full'
+        } sm:zoom-in-95 duration-150 ${className}`}
         onClick={(e) => e.stopPropagation()}
       >
-        {/* Head */}
-        <div className="flex items-start justify-between p-5 sm:p-6 border-b border-[#e5ece8] flex-none">
-          <div>
-            {eyebrow && (
-              <div className="text-xs font-bold text-[#819089] uppercase tracking-[1.05px] mb-1">
-                {eyebrow}
-              </div>
-            )}
-            <h2 className="font-heading font-bold text-lg sm:text-xl text-[#1c302b] m-0">{title}</h2>
-            {subtitle && <p className="text-sm text-[#7d8c85] mt-1 mb-0">{subtitle}</p>}
+        {/* Head - Sticky / Flex-shrink-0 */}
+        <div className="flex-none bg-white border-b border-[#e5ece8] px-4 py-3 sm:p-6 z-20 pt-[max(0.75rem,env(safe-area-inset-top))] sm:pt-6">
+          <div className="flex items-start justify-between gap-3">
+            <div className="min-w-0 flex-1">
+              {eyebrow && (
+                <div className="text-[10px] sm:text-xs font-bold text-[#819089] uppercase tracking-[1.05px] mb-0.5 sm:mb-1 truncate">
+                  {eyebrow}
+                </div>
+              )}
+              <h2 className="font-heading font-bold text-base sm:text-xl text-[#1c302b] m-0 leading-tight">
+                {title}
+              </h2>
+              {subtitle && (
+                <p className="text-xs sm:text-sm text-[#7d8c85] mt-1 mb-0 line-clamp-2 sm:line-clamp-none">
+                  {subtitle}
+                </p>
+              )}
+            </div>
+            <button
+              type="button"
+              onClick={onClose}
+              aria-label="Đóng modal"
+              className="w-9 h-9 sm:w-8 sm:h-8 rounded-[8px] text-[#708078] hover:bg-[#f1f4f2] hover:text-[#1c302b] active:bg-[#e2e8e5] grid place-items-center text-2xl sm:text-xl leading-none transition-colors flex-none touch-manipulation cursor-pointer"
+            >
+              ×
+            </button>
           </div>
-          <button
-            type="button"
-            onClick={onClose}
-            aria-label="Đóng modal"
-            className="w-8 h-8 rounded-[8px] text-[#708078] hover:bg-[#f1f4f2] hover:text-[#1c302b] grid place-items-center text-xl leading-none transition-colors"
-          >
-            ×
-          </button>
+
+          {headerExtra && (
+            <div className="mt-2.5 sm:mt-3 pt-2.5 sm:pt-3 border-t border-[#edf2ef]">
+              {headerExtra}
+            </div>
+          )}
         </div>
 
-        {/* Body */}
+        {/* Body - Independent smooth scroll */}
         <div
-          className="p-5 sm:p-6 overflow-y-auto overscroll-contain flex-1 [scrollbar-width:thin] [scrollbar-color:#d6e0db_transparent]"
-          style={{ overscrollBehavior: 'contain' }}
+          className="p-4 sm:p-6 pb-28 sm:pb-6 overflow-y-auto overscroll-contain flex-1 [scrollbar-width:thin] [scrollbar-color:#d6e0db_transparent]"
+          style={{ overscrollBehavior: 'contain', WebkitOverflowScrolling: 'touch' }}
         >
           {children}
         </div>
 
-        {/* Foot */}
+        {/* Foot - Sticky Bottom with iOS Safe Area support */}
         {footer && (
-          <div className="flex items-center justify-end gap-2.5 p-4 sm:px-6 sm:py-4 border-t border-[#e5ece8] bg-[#fafbfa] flex-none">
+          <div className="flex-none sticky bottom-0 z-20 bg-white/95 backdrop-blur-md border-t border-slate-200/80 shadow-[0_-4px_16px_rgba(0,0,0,0.06)] px-4 py-3 sm:px-6 sm:py-4 pb-[max(0.75rem,env(safe-area-inset-bottom))]">
             {footer}
           </div>
         )}

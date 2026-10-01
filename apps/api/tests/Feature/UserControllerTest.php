@@ -54,7 +54,7 @@ class UserControllerTest extends TestCase
         $headers = $this->getAdminToken();
         $uniqueEmail = 'staff_' . uniqid() . '@podscare.vn';
 
-        // 1. Validation failure
+        // 1. Validation failure (missing name, email, role)
         $badResponse = $this->postJson('/api/v1/users', [
             'name' => '',
             'email' => 'not-an-email',
@@ -62,19 +62,37 @@ class UserControllerTest extends TestCase
         ], $headers);
         $badResponse->assertStatus(422);
 
-        // 2. Successful creation
-        $createResponse = $this->postJson('/api/v1/users', [
+        // 1b. Validation failure: branch staff without branch_id
+        $missingBranchResponse = $this->postJson('/api/v1/users', [
             'name'     => 'Nhân viên Test',
             'email'    => $uniqueEmail,
             'password' => 'password123',
             'phone'    => '0912 345 678',
             'role'     => 'cskh',
         ], $headers);
+        $missingBranchResponse->assertStatus(422)
+            ->assertJsonValidationErrors(['branch_id']);
+
+        // 2. Successful creation with branch_id
+        $branch = Branch::firstOrCreate(
+            ['code' => 'BR_TEST_USR'],
+            ['name' => 'Chi nhánh Test User', 'address' => '123 Test St', 'phone' => '0901234567', 'is_active' => true]
+        );
+
+        $createResponse = $this->postJson('/api/v1/users', [
+            'name'      => 'Nhân viên Test',
+            'email'     => $uniqueEmail,
+            'password'  => 'password123',
+            'phone'     => '0912 345 678',
+            'branch_id' => $branch->id,
+            'role'      => 'cskh',
+        ], $headers);
 
         $createResponse->assertStatus(201)
             ->assertJsonPath('success', true)
             ->assertJsonPath('data.email', $uniqueEmail)
-            ->assertJsonPath('data.role', 'cskh');
+            ->assertJsonPath('data.role', 'cskh')
+            ->assertJsonPath('data.branch_id', $branch->id);
 
         $createdId = $createResponse->json('data.id');
 

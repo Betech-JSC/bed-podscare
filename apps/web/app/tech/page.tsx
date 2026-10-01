@@ -236,28 +236,36 @@ export default function TechnicianQueuePage() {
               Xin chào {techName} · Nhận máy mới từ quầy CSKH {branchId === 'all' ? 'toàn chuỗi' : branch}, ghi nhận linh kiện và chuyển duyệt QC.
             </p>
           </div>
-          <div className="flex items-center gap-2">
-            <span className="text-xs text-[#7c8b84] font-medium hidden sm:inline">Chi nhánh trực:</span>
-            <select
-              value={String(branchId || '1')}
-              onChange={(e) => {
-                const b = branches.find((item) => String(item.id) === e.target.value);
-                if (b) setBranch(b.name, b.id);
-              }}
-              className="h-9 border border-[#d6dfda] rounded-[8px] px-2.5 text-xs text-[#1c302b] bg-[#f9fbf9] font-medium outline-none focus:border-[#75a994] cursor-pointer"
-            >
-              {role === 'admin' && (
+          {role === 'admin' ? (
+            <div className="flex items-center gap-2">
+              <span className="text-xs text-[#7c8b84] font-medium hidden sm:inline">Chi nhánh trực:</span>
+              <select
+                value={String(branchId || 'all')}
+                onChange={(e) => {
+                  const b = branches.find((item) => String(item.id) === e.target.value);
+                  if (b) setBranch(b.name, b.id);
+                }}
+                className="h-9 border border-[#d6dfda] rounded-[8px] px-2.5 text-xs text-[#1c302b] bg-[#f9fbf9] font-medium outline-none focus:border-[#75a994] cursor-pointer"
+              >
                 <option value="all">🏢 Tất cả chi nhánh</option>
-              )}
-              {branches
-                .filter((b) => b.id !== 'all')
-                .map((b) => (
-                  <option key={b.id} value={String(b.id)}>
-                    📍 {b.name} ({b.code})
-                  </option>
-                ))}
-            </select>
-          </div>
+                {branches
+                  .filter((b) => b.id !== 'all')
+                  .map((b) => (
+                    <option key={b.id} value={String(b.id)}>
+                      📍 {b.name} ({b.code})
+                    </option>
+                  ))}
+              </select>
+            </div>
+          ) : (
+            <div className="flex items-center gap-2">
+              <div className="h-9 border border-[#d6dfda] rounded-[8px] px-3 text-xs text-[#176b58] bg-[#eaf4ef] font-semibold flex items-center gap-1.5 cursor-default select-none pointer-events-none">
+                <span>
+                  Chi nhánh trực: {branch.startsWith('PodsCare') ? branch : `PodsCare · ${branch}`}
+                </span>
+              </div>
+            </div>
+          )}
         </div>
 
         {/* Stats Strip */}

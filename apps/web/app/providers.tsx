@@ -234,13 +234,7 @@ export const Providers: React.FC<{ children: React.ReactNode }> = ({ children })
     setIsMounted(true);
     try {
       const savedBranch = localStorage.getItem('podscare_branch');
-      if (savedBranch) {
-        setBranchState(savedBranch);
-      }
       const savedBranchId = localStorage.getItem('podscare_branch_id');
-      if (savedBranchId) {
-        setBranchIdState(savedBranchId === 'all' ? 'all' : Number(savedBranchId) || savedBranchId);
-      }
 
       const savedToken = localStorage.getItem('podscare_token');
       const savedUserStr = localStorage.getItem('podscare_user');
@@ -270,15 +264,50 @@ export const Providers: React.FC<{ children: React.ReactNode }> = ({ children })
         }
       }
 
+      let parsedUser: UserProfile | null = null;
+      let effectiveRole: UserRole = savedRole || 'admin';
+
       if (savedToken && savedUserStr) {
-        const parsedUser = JSON.parse(savedUserStr);
-        setToken(savedToken);
-        setUserProfile(parsedUser);
-        setRoleState(parsedUser.role || savedRole || 'admin');
-        setIsAuthenticated(true);
+        try {
+          parsedUser = JSON.parse(savedUserStr);
+          if (parsedUser?.role) {
+            effectiveRole = parsedUser.role;
+          }
+          setToken(savedToken);
+          setUserProfile(parsedUser);
+          setRoleState(effectiveRole);
+          setIsAuthenticated(true);
+        } catch {
+          // ignore
+        }
       } else {
         setToken(null);
         setIsAuthenticated(false);
+      }
+
+      // Bảo vệ hydration: Nếu role !== 'admin', luôn luôn ép buộc branchId = user.branch_id và branch = user.branch
+      if (effectiveRole !== 'admin') {
+        const enforcedBranch = parsedUser?.branch || 'PodsCare · Quận 1';
+        const enforcedBranchId = parsedUser?.branch_id ?? 1;
+        setBranchState(enforcedBranch);
+        setBranchIdState(enforcedBranchId);
+        try {
+          localStorage.setItem('podscare_branch', enforcedBranch);
+          localStorage.setItem('podscare_branch_id', String(enforcedBranchId));
+        } catch {
+          // ignore
+        }
+      } else {
+        if (savedBranch) {
+          setBranchState(savedBranch);
+        } else {
+          setBranchState('Tất cả chi nhánh');
+        }
+        if (savedBranchId) {
+          setBranchIdState(savedBranchId === 'all' ? 'all' : Number(savedBranchId) || savedBranchId);
+        } else {
+          setBranchIdState('all');
+        }
       }
     } catch {
       setToken(null);
@@ -423,6 +452,10 @@ export const Providers: React.FC<{ children: React.ReactNode }> = ({ children })
   }, [queryClient, fetchOrders, branchId]);
 
   const setBranch = (newBranchName: string, newBranchId?: string | number) => {
+    // Non-Admin không được phép thay đổi chi nhánh (Strict Branch Isolation)
+    if (role !== 'admin') {
+      return;
+    }
     setBranchState(newBranchName);
     let resolvedId = newBranchId;
     if (resolvedId === undefined || resolvedId === null) {
@@ -456,13 +489,27 @@ export const Providers: React.FC<{ children: React.ReactNode }> = ({ children })
       setUserProfile(updatedProfile);
       localStorage.setItem('podscare_user', JSON.stringify(updatedProfile));
     }
+    if (newRole !== 'admin') {
+      const enforcedBranch = userProfile?.branch || 'PodsCare · Quận 1';
+      const enforcedBranchId = userProfile?.branch_id ?? 1;
+      setBranchState(enforcedBranch);
+      setBranchIdState(enforcedBranchId);
+      try {
+        localStorage.setItem('podscare_branch', enforcedBranch);
+        localStorage.setItem('podscare_branch_id', String(enforcedBranchId));
+      } catch {
+        // ignore
+      }
+      fetchOrders(enforcedBranchId);
+    }
   };
 
   const login = (data: { token: string; user: any }) => {
     const rawRole = (data.user.role || 'admin') as string;
     const normRole = (rawRole === 'technician' ? 'tech' : rawRole) as UserRole;
-    const branchName = data.user.branch?.name || data.user.branch || 'Quận 1';
-    const branchIdVal = data.user.branch_id || data.user.branch?.id || null;
+    const isAdmin = normRole === 'admin';
+    const userBranchName = data.user.branch?.name || data.user.branch || 'PodsCare · Quận 1';
+    const userBranchId = data.user.branch_id || data.user.branch?.id || 1;
 
     const profile: UserProfile = {
       id: data.user.id,
@@ -478,8 +525,8 @@ export const Providers: React.FC<{ children: React.ReactNode }> = ({ children })
           : normRole === 'qc'
           ? 'Kiểm định QC'
           : 'Nhân viên kho',
-      branch: branchName,
-      branch_id: branchIdVal,
+      branch: userBranchName,
+      branch_id: userBranchId,
       initials: (data.user.name || 'ML')
         .split(' ')
         .map((w: string) => w[0])
@@ -500,8 +547,26 @@ export const Providers: React.FC<{ children: React.ReactNode }> = ({ children })
     setRoleState(normRole);
     setIsAuthenticated(true);
 
-    if (branchName) {
-      setBranch(branchName, branchIdVal || undefined);
+    if (isAdmin) {
+      setBranchState('Tất cả chi nhánh');
+      setBranchIdState('all');
+      try {
+        localStorage.setItem('podscare_branch', 'Tất cả chi nhánh');
+        localStorage.setItem('podscare_branch_id', 'all');
+      } catch {
+        // ignore
+      }
+      fetchOrders('all');
+    } else {
+      setBranchState(userBranchName);
+      setBranchIdState(userBranchId);
+      try {
+        localStorage.setItem('podscare_branch', userBranchName);
+        localStorage.setItem('podscare_branch_id', String(userBranchId));
+      } catch {
+        // ignore
+      }
+      fetchOrders(userBranchId);
     }
   };
 

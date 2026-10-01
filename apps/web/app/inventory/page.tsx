@@ -35,7 +35,7 @@ export interface BranchInventoryItem {
 
 export default function InventoryPage() {
   const { toast } = useToast();
-  const { branch, branchId, setBranch, branches, role } = usePodsCare();
+  const { branch, branchId, setBranch, branches, role, currentUser } = usePodsCare();
 
   const [search, setSearch] = useState('');
   const [selectedWarehouse, setSelectedWarehouse] = useState<string>(
@@ -55,14 +55,18 @@ export default function InventoryPage() {
   const [txNotes, setTxNotes] = useState<string>('');
   const [isSubmittingTx, setIsSubmittingTx] = useState(false);
 
-  // Sync warehouse filter when context branchId changes
+  // Sync warehouse filter when context branchId changes or for non-admin
   React.useEffect(() => {
-    if (branchId !== undefined && branchId !== null) {
+    if (role !== 'admin') {
+      const userBranchId = (currentUser as any)?.branch_id || branchId || 1;
+      setSelectedWarehouse(String(userBranchId));
+    } else if (branchId !== undefined && branchId !== null) {
       setSelectedWarehouse(String(branchId));
     }
-  }, [branchId]);
+  }, [branchId, role, currentUser]);
 
   const handleWarehouseFilterChange = (val: string) => {
+    if (role !== 'admin') return;
     setSelectedWarehouse(val);
     const found = branches.find((b) => String(b.id) === val);
     if (found) {
@@ -178,7 +182,11 @@ export default function InventoryPage() {
 
     setIsSubmittingTx(true);
     try {
-      const activeBranchId = selectedWarehouse === 'all' ? 1 : selectedWarehouse;
+      const activeBranchId =
+        role === 'admin'
+          ? (selectedWarehouse === 'all' ? 1 : Number(selectedWarehouse) || 1)
+          : Number((currentUser as any)?.branch_id || branchId || 1);
+
       await inventoryService.createTransaction({
         part_id: txPartId,
         branch_id: activeBranchId,
@@ -333,22 +341,26 @@ export default function InventoryPage() {
               {/* Warehouse Selector Filter */}
               <div className="flex items-center gap-1.5">
                 <span className="text-xs text-[#7c8b84] font-medium hidden sm:inline">Kho:</span>
-                <select
-                  value={selectedWarehouse}
-                  onChange={(e) => handleWarehouseFilterChange(e.target.value)}
-                  className="h-9 border border-[#d6dfda] rounded-[8px] px-2.5 text-xs text-[#1c302b] bg-[#f9fbf9] font-medium outline-none focus:border-[#75a994] cursor-pointer"
-                >
-                  {role === 'admin' && (
+                {role === 'admin' ? (
+                  <select
+                    value={selectedWarehouse}
+                    onChange={(e) => handleWarehouseFilterChange(e.target.value)}
+                    className="h-9 border border-[#d6dfda] rounded-[8px] px-2.5 text-xs text-[#1c302b] bg-[#f9fbf9] font-medium outline-none focus:border-[#75a994] cursor-pointer"
+                  >
                     <option value="all">🏢 Tất cả chi nhánh / kho</option>
-                  )}
-                  {branches
-                    .filter((b) => b.id !== 'all')
-                    .map((b) => (
-                      <option key={b.id} value={String(b.id)}>
-                        📍 {b.name} ({b.code})
-                      </option>
-                    ))}
-                </select>
+                    {branches
+                      .filter((b) => b.id !== 'all')
+                      .map((b) => (
+                        <option key={b.id} value={String(b.id)}>
+                          📍 {b.name} ({b.code})
+                        </option>
+                      ))}
+                  </select>
+                ) : (
+                  <div className="h-9 border border-[#d6dfda] rounded-[8px] px-2.5 text-xs text-[#176b58] bg-[#eaf4ef] font-semibold flex items-center gap-1.5 cursor-default select-none pointer-events-none">
+                    <span>📍 {branch}</span>
+                  </div>
+                )}
               </div>
 
               {/* Shelf Location Filter */}
@@ -510,6 +522,20 @@ export default function InventoryPage() {
         }
       >
         <form onSubmit={handleCreateTransaction} className="space-y-4 text-sm">
+          <div>
+            <label className="block text-xs font-bold text-[#556960] mb-1">
+              Kho chi nhánh thực hiện giao dịch
+            </label>
+            <div className="h-10 border border-[#d6dfda] rounded-[8px] px-3 bg-[#f7f9f7] text-xs font-semibold text-[#176b58] flex items-center justify-between">
+              <span>📍 {
+                branches.find((b) => String(b.id) === (role === 'admin' ? String(selectedWarehouse === 'all' ? 1 : selectedWarehouse) : String((currentUser as any)?.branch_id || branchId || 1)))?.name || branch
+              }</span>
+              <span className="text-[11px] text-[#788880] font-normal">
+                {role === 'admin' ? '(Theo bộ lọc đang chọn)' : '🔒 Gán tự động theo kho của bạn'}
+              </span>
+            </div>
+          </div>
+
           <div>
             <label className="block text-xs font-bold text-[#556960] mb-1">
               Chọn linh kiện <span className="text-[#bc5b52]">*</span>

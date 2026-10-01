@@ -24,7 +24,11 @@ class KpiController extends Controller
      */
     public function staff(Request $request): JsonResponse
     {
+        $user = $request->user();
         $branchId = $request->input('branch_id');
+        if ($user && $user->role !== 'admin') {
+            $branchId = $user->branch_id;
+        }
         $techId = $request->input('technician_id');
         $fromDate = $request->input('from_date', $request->input('date_from'));
         $toDate = $request->input('to_date', $request->input('date_to'));
@@ -236,7 +240,11 @@ class KpiController extends Controller
      */
     public function dashboard(Request $request): JsonResponse
     {
+        $user = $request->user();
         $branchId = $request->input('branch_id');
+        if ($user && $user->role !== 'admin') {
+            $branchId = $user->branch_id;
+        }
         $periodInput = $request->input('period', '14_days');
 
         $daysCount = match ($periodInput) {

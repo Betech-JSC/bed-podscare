@@ -86,12 +86,21 @@ Route::prefix('v1')->group(function () {
         Route::get('/orders', [OrderController::class, 'index'])->name('api.v1.orders.index');
         Route::get('/repairs', [OrderController::class, 'index'])->name('api.v1.repairs.index');
         Route::post('/orders', [OrderController::class, 'store'])->name('api.v1.orders.store');
+        Route::post('/repairs', [OrderController::class, 'store'])->name('api.v1.repairs.store');
         Route::get('/orders/{id}', [OrderController::class, 'show'])->name('api.v1.orders.show');
+        Route::get('/repairs/{id}', [OrderController::class, 'show'])->name('api.v1.repairs.show');
         Route::put('/orders/{id}', [OrderController::class, 'update'])->name('api.v1.orders.update');
+        Route::put('/repairs/{id}', [OrderController::class, 'update'])->name('api.v1.repairs.update');
         Route::post('/orders/{id}/transition', [OrderController::class, 'transition'])->name('api.v1.orders.transition');
+        Route::post('/repairs/{id}/transition', [OrderController::class, 'transition'])->name('api.v1.repairs.transition');
+        Route::post('/orders/{id}/assign-technician', [OrderController::class, 'assignTechnician'])->name('api.v1.orders.assign_technician');
+        Route::post('/repairs/{id}/assign-technician', [OrderController::class, 'assignTechnician'])->name('api.v1.repairs.assign_technician');
         Route::get('/orders/{id}/allowed-transitions', [OrderController::class, 'allowedTransitions'])->name('api.v1.orders.allowed_transitions');
+        Route::get('/repairs/{id}/allowed-transitions', [OrderController::class, 'allowedTransitions'])->name('api.v1.repairs.allowed_transitions');
         Route::post('/orders/{id}/checklists', [OrderController::class, 'storeChecklist'])->name('api.v1.orders.checklists');
+        Route::post('/repairs/{id}/checklists', [OrderController::class, 'storeChecklist'])->name('api.v1.repairs.checklists');
         Route::post('/orders/{id}/photos', [OrderController::class, 'uploadPhoto'])->name('api.v1.orders.photos');
+        Route::post('/repairs/{id}/photos', [OrderController::class, 'uploadPhoto'])->name('api.v1.repairs.photos');
 
         // Quotes
         Route::get('/quotes', [QuoteController::class, 'index'])->name('api.v1.quotes.index');

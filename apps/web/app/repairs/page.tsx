@@ -257,25 +257,29 @@ export default function RepairsPage() {
             selectPlaceholder="Tất cả trạng thái"
             actions={
               <div className="flex items-center gap-2">
-                <select
-                  value={String(branchId || '1')}
-                  onChange={(e) => {
-                    const b = branches.find((item) => String(item.id) === e.target.value);
-                    if (b) setBranch(b.name, b.id);
-                  }}
-                  className="h-9 border border-[#d6dfda] rounded-[8px] px-2.5 text-xs text-[#1c302b] bg-[#f9fbf9] font-medium outline-none focus:border-[#75a994] cursor-pointer"
-                >
-                  {role === 'admin' && (
+                {role === 'admin' ? (
+                  <select
+                    value={String(branchId || 'all')}
+                    onChange={(e) => {
+                      const b = branches.find((item) => String(item.id) === e.target.value);
+                      if (b) setBranch(b.name, b.id);
+                    }}
+                    className="h-9 border border-[#d6dfda] rounded-[8px] px-2.5 text-xs text-[#1c302b] bg-[#f9fbf9] font-medium outline-none focus:border-[#75a994] cursor-pointer"
+                  >
                     <option value="all">🏢 Tất cả chi nhánh</option>
-                  )}
-                  {branches
-                    .filter((b) => b.id !== 'all')
-                    .map((b) => (
-                      <option key={b.id} value={String(b.id)}>
-                        📍 {b.name} ({b.code})
-                      </option>
-                    ))}
-                </select>
+                    {branches
+                      .filter((b) => b.id !== 'all')
+                      .map((b) => (
+                        <option key={b.id} value={String(b.id)}>
+                          📍 {b.name} ({b.code})
+                        </option>
+                      ))}
+                  </select>
+                ) : (
+                  <div className="h-9 border border-[#d6dfda] rounded-[8px] px-2.5 text-xs text-[#176b58] bg-[#eaf4ef] font-semibold flex items-center gap-1.5 cursor-default select-none pointer-events-none">
+                    <span>📍 {branch}</span>
+                  </div>
+                )}
                 <Button
                   variant="secondary"
                   size="sm"
@@ -299,13 +303,21 @@ export default function RepairsPage() {
               title={`Không tìm thấy đơn sửa chữa nào tại ${
                 branchId === 'all' ? 'toàn bộ chi nhánh' : branch
               }`}
-              description="Thử thay đổi bộ lọc tìm kiếm hoặc chuyển sang chi nhánh khác để kiểm tra."
-              actionLabel={branchId === 'all' ? 'Tạo phiếu tiếp nhận mới' : 'Xem tất cả chi nhánh'}
+              description={
+                role === 'admin'
+                  ? 'Thử thay đổi bộ lọc tìm kiếm hoặc chuyển sang chi nhánh khác để kiểm tra.'
+                  : 'Không có đơn sửa chữa nào trong danh mục hoặc tìm kiếm hiện tại.'
+              }
+              actionLabel={
+                role === 'admin' && branchId !== 'all'
+                  ? 'Xem tất cả chi nhánh'
+                  : 'Tạo phiếu tiếp nhận mới'
+              }
               onAction={() => {
-                if (branchId === 'all') {
-                  setIntakeModalOpen(true);
-                } else {
+                if (role === 'admin' && branchId !== 'all') {
                   setBranch('Tất cả chi nhánh', 'all');
+                } else {
+                  setIntakeModalOpen(true);
                 }
               }}
             />

@@ -82,7 +82,7 @@ export const DynamicTestRow: React.FC<DynamicTestRowProps> = ({
               disabled={disabled}
               onClick={(e) => handleSelect(e, opt.status)}
               aria-pressed={isSelected}
-              className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-[6px] text-xs font-semibold border transition-all select-none cursor-pointer focus:outline-none focus:ring-1 focus:ring-[#176b51]/30 active:scale-[0.98] ${
+              className={`inline-flex items-center gap-1.5 px-2.5 py-1.5 sm:py-1 rounded-[6px] text-xs font-semibold border transition-all select-none cursor-pointer focus:outline-none focus:ring-1 focus:ring-[#176b51]/30 active:scale-[0.98] touch-manipulation ${
                 disabled ? 'opacity-60 cursor-not-allowed' : ''
               } ${isSelected ? opt.activeBtnClass : opt.inactiveBtnClass}`}
             >
