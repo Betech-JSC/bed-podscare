@@ -215,12 +215,13 @@ export default function LoginPage() {
 
         {/* Brand Header */}
         <div className="flex flex-col items-center text-center mb-8">
-          <div className="w-12 h-12 rounded-[14px] bg-[#196d52] flex items-center justify-center gap-0.5 shadow-md mb-3">
-            <span className="h-4 w-1.5 bg-[#c8eadb] rounded-full transform -rotate-[25deg]" />
-            <span className="h-6 w-1.5 bg-[#c8eadb] rounded-full transform -rotate-[25deg]" />
-          </div>
+          <img
+            src="/logo.png"
+            alt="FixQ Logo"
+            className="w-14 h-14 rounded-[12px] object-cover shadow-md mb-3"
+          />
           <h1 className="font-heading font-extrabold text-[26px] tracking-[-1px] text-[#1c302b] m-0">
-            podscare
+            FixQ
           </h1>
           <p className="text-xs tracking-[1.3px] text-[#819089] font-bold mt-1 uppercase">
             REPAIR OPERATING SYSTEM

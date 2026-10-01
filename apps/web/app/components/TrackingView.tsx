@@ -132,13 +132,14 @@ export const TrackingView: React.FC<{ initialId?: string }> = ({ initialId = '' 
         {/* Brand Bar */}
         <div className="flex items-center justify-between pb-4 border-b border-[#e5ece8]">
           <div className="flex items-center gap-2.5">
-            <div className="w-9 h-9 rounded-[11px] bg-[#196d52] flex items-center justify-center gap-0.5">
-              <span className="h-3 w-1 bg-[#c8eadb] rounded-full transform -rotate-[25deg]" />
-              <span className="h-5 w-1 bg-[#c8eadb] rounded-full transform -rotate-[25deg]" />
-            </div>
+            <img
+              src="/logo.png"
+              alt="FixQ Logo"
+              className="w-9 h-9 rounded-[10px] object-cover shadow-sm flex-none"
+            />
             <div>
               <b className="font-heading font-extrabold text-xl tracking-tight text-[#1c302b]">
-                PodsCare Tra cứu
+                FixQ Tra cứu
               </b>
               <small className="block text-xs tracking-[1.1px] text-[#7f8f87] font-bold">
                 CUSTOMER TRACKING PORTAL

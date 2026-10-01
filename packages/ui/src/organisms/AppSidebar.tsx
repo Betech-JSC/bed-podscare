@@ -271,13 +271,14 @@ export const AppSidebar: React.FC<AppSidebarProps> = ({
         {/* Brand */}
         <div className="flex items-center justify-between px-2 pb-4 border-b border-[#f0f3f1] mb-3">
           <div className="flex items-center gap-2.5">
-            <div className="w-8 h-8 rounded-[10px] bg-[#196d52] flex items-center justify-center gap-0.5 shadow-sm">
-              <span className="h-2.5 w-1 bg-[#c8eadb] rounded-full transform -rotate-[25deg]" />
-              <span className="h-4 w-1 bg-[#c8eadb] rounded-full transform -rotate-[25deg]" />
-            </div>
+            <img
+              src="/logo.png"
+              alt="FixQ Logo"
+              className="w-8 h-8 rounded-[8px] object-cover shadow-sm flex-none"
+            />
             <div>
               <b className="font-heading font-extrabold text-[20px] tracking-[-1px] text-[#1c302b] block leading-none">
-                podscare
+                FixQ
               </b>
               <small className="block text-xs tracking-[1.2px] text-[#819089] font-bold mt-1 uppercase">
                 REPAIR OPERATING SYSTEM

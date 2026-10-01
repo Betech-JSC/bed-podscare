@@ -37,13 +37,14 @@ export default function LandingPage() {
             onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}
             className="flex items-center gap-3 cursor-pointer select-none"
           >
-            <div className="w-10 h-10 rounded-[11px] bg-[#196d52] flex items-center justify-center gap-0.5 shadow-sm">
-              <span className="h-3.5 w-1.5 bg-[#c8eadb] rounded-full transform -rotate-[25deg]" />
-              <span className="h-5 w-1.5 bg-[#c8eadb] rounded-full transform -rotate-[25deg]" />
-            </div>
+            <img
+              src="/logo.png"
+              alt="FixQ Logo"
+              className="w-10 h-10 rounded-[10px] object-cover shadow-sm flex-none"
+            />
             <div>
               <span className="font-heading font-extrabold text-[22px] tracking-[-1px] text-[#1c302b] block leading-none">
-                podscare
+                FixQ
               </span>
               <span className="block text-[9px] tracking-[1.3px] text-[#819089] font-bold mt-1 uppercase">
                 REPAIR OPERATING SYSTEM
@@ -767,11 +768,12 @@ export default function LandingPage() {
             {/* Col 1: Brand Info */}
             <div className="md:col-span-4">
               <div className="flex items-center gap-2.5 mb-4">
-                <div className="w-8 h-8 rounded-[9px] bg-[#196d52] flex items-center justify-center gap-0.5">
-                  <span className="h-3 w-1 bg-[#c8eadb] rounded-full transform -rotate-[25deg]" />
-                  <span className="h-4.5 w-1 bg-[#c8eadb] rounded-full transform -rotate-[25deg]" />
-                </div>
-                <span className="font-heading font-extrabold text-[20px] text-white">podscare</span>
+                <img
+                  src="/logo.png"
+                  alt="FixQ Logo"
+                  className="w-8 h-8 rounded-[8px] object-cover shadow-xs flex-none"
+                />
+                <span className="font-heading font-extrabold text-[20px] text-white">FixQ</span>
               </div>
               <p className="text-xs text-[#8c9f96] leading-relaxed mb-4 max-w-[320px]">
                 Hệ điều hành sửa chữa thiết bị âm thanh & Apple chuyên nghiệp.

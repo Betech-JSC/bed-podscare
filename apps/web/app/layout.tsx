@@ -18,11 +18,17 @@ const manrope = Manrope({
 });
 
 export const metadata: Metadata = {
-  title: 'PodsCare · Repair OS',
+  title: 'FixQ · Repair OS',
   description: 'Hệ điều hành quản lý quy trình sửa chữa thiết bị di động & âm thanh',
   icons: {
-    icon: '/icon.svg',
-    apple: '/icon.svg',
+    icon: [
+      { url: '/icon.png', type: 'image/png' },
+      { url: '/favicon.ico', sizes: 'any' },
+    ],
+    apple: [
+      { url: '/apple-icon.png', type: 'image/png' },
+    ],
+    shortcut: '/favicon.ico',
   },
 };
 

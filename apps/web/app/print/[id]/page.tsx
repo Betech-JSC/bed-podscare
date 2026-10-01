@@ -150,13 +150,20 @@ export default function PrintReceiptPage() {
     <article className="print-receipt bg-white text-[#111111] p-4 sm:p-6 border border-[#e5ece8] rounded-[8px] mb-4 sm:mb-6 shadow-sm print:shadow-none print:border-none print:rounded-none print:p-2 print:m-0 max-h-[132mm] overflow-hidden box-border">
       {/* Header */}
       <header className="flex justify-between items-center border-b-[2px] border-[#176b51] pb-2 sm:pb-3 mb-2 sm:mb-3 print:pb-1 print:mb-1">
-        <div>
-          <b className="text-[18pt] sm:text-[20pt] print:text-[13pt] font-extrabold text-[#176b58] tracking-tight block leading-none font-heading">
-            PodsCare
-          </b>
-          <small className="text-[7.5pt] sm:text-[8pt] print:text-[6.5pt] tracking-[1px] text-[#555555] block mt-0.5 font-bold">
-            PHIẾU TIẾP NHẬN SỬA CHỮA THIẾT BỊ
-          </small>
+        <div className="flex items-center gap-2.5">
+          <img
+            src="/logo.png"
+            alt="FixQ Logo"
+            className="w-10 h-10 print:w-8 print:h-8 rounded-[6px] object-cover flex-none"
+          />
+          <div>
+            <b className="text-[18pt] sm:text-[20pt] print:text-[13pt] font-extrabold text-[#176b58] tracking-tight block leading-none font-heading">
+              FixQ · PodsCare
+            </b>
+            <small className="text-[7.5pt] sm:text-[8pt] print:text-[6.5pt] tracking-[1px] text-[#555555] block mt-0.5 font-bold">
+              PHIẾU TIẾP NHẬN SỬA CHỮA THIẾT BỊ
+            </small>
+          </div>
         </div>
         <strong className="text-[8pt] sm:text-[9pt] print:text-[7pt] border border-[#777777] px-2 py-0.5 rounded-[4px] uppercase font-bold text-[#1c302b]">
           {copyTitle}
