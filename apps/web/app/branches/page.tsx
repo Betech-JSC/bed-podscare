@@ -90,7 +90,7 @@ export default function BranchesPage() {
           {
             id: 1,
             code: 'Q1',
-            name: 'PodsCare · Quận 1',
+            name: 'FIXO · Quận 1',
             address: '142 Nguyễn Thị Minh Khai, Phường Bến Thành, Quận 1, TP.HCM',
             phone: '028 7300 1234',
             is_active: true,
@@ -100,7 +100,7 @@ export default function BranchesPage() {
           {
             id: 2,
             code: 'Q3',
-            name: 'PodsCare · Quận 3',
+            name: 'FIXO · Quận 3',
             address: '285 Cách Mạng Tháng Tám, Phường 12, Quận 3, TP.HCM',
             phone: '028 7300 5678',
             is_active: true,
@@ -110,7 +110,7 @@ export default function BranchesPage() {
           {
             id: 3,
             code: 'THUDUC',
-            name: 'PodsCare · TP. Thủ Đức',
+            name: 'FIXO · TP. Thủ Đức',
             address: '56 Võ Văn Ngân, Phường Bình Thọ, TP. Thủ Đức, TP.HCM',
             phone: '028 7300 9012',
             is_active: true,
@@ -126,7 +126,7 @@ export default function BranchesPage() {
         {
           id: 1,
           code: 'Q1',
-          name: 'PodsCare · Quận 1',
+          name: 'FIXO · Quận 1',
           address: '142 Nguyễn Thị Minh Khai, Phường Bến Thành, Quận 1, TP.HCM',
           phone: '028 7300 1234',
           is_active: true,
@@ -136,7 +136,7 @@ export default function BranchesPage() {
         {
           id: 2,
           code: 'Q3',
-          name: 'PodsCare · Quận 3',
+          name: 'FIXO · Quận 3',
           address: '285 Cách Mạng Tháng Tám, Phường 12, Quận 3, TP.HCM',
           phone: '028 7300 5678',
           is_active: true,
@@ -146,7 +146,7 @@ export default function BranchesPage() {
         {
           id: 3,
           code: 'THUDUC',
-          name: 'PodsCare · TP. Thủ Đức',
+          name: 'FIXO · TP. Thủ Đức',
           address: '56 Võ Văn Ngân, Phường Bình Thọ, TP. Thủ Đức, TP.HCM',
           phone: '028 7300 9012',
           is_active: true,
@@ -384,7 +384,7 @@ export default function BranchesPage() {
               Quản lý Chi nhánh
             </h1>
             <p className="text-sm text-[#7e8d85] mt-1 mb-0">
-              Thiết lập các trạm tiếp nhận, phòng lab kỹ thuật và điều phối hoạt động toàn hệ thống PodsCare.
+              Thiết lập các trạm tiếp nhận, phòng lab kỹ thuật và điều phối hoạt động toàn hệ thống FIXO.
             </p>
           </div>
 
@@ -617,7 +617,7 @@ export default function BranchesPage() {
         <Modal
           isOpen={createModalOpen}
           onClose={() => setCreateModalOpen(false)}
-          eyebrow="MẠNG LƯỚI PODSCARE"
+          eyebrow="MẠNG LƯỚI FIXO"
           title="Thêm chi nhánh mới"
           subtitle="Đăng ký thêm trạm tiếp nhận hoặc phòng lab kỹ thuật mới vào hệ thống"
           maxWidth="md"
@@ -674,7 +674,7 @@ export default function BranchesPage() {
                 label="Tên chi nhánh *"
                 value={createForm.name}
                 onChange={(e) => setCreateForm({ ...createForm, name: e.target.value })}
-                placeholder="Ví dụ: PodsCare · Bình Thạnh"
+                placeholder="Ví dụ: FIXO · Bình Thạnh"
                 error={createErrors.name}
                 required
               />

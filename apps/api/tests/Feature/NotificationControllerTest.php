@@ -28,11 +28,14 @@ class NotificationControllerTest extends TestCase
             'is_active' => true,
         ]);
 
-        $this->user = User::where('email', 'admin@podscare.vn')->first() ?? User::factory()->create([
-            'email' => 'admin@podscare.vn',
-            'role' => 'admin',
-            'branch_id' => $this->branch->id,
-        ]);
+        $this->user = User::where('email', 'admin@fixo.com.vn')->first()
+            ?? User::where('email', 'admin@podscare.vn')->first()
+            ?? User::where('role', 'admin')->first()
+            ?? User::factory()->create([
+                'email' => 'admin@fixo.com.vn',
+                'role' => 'admin',
+                'branch_id' => $this->branch->id,
+            ]);
 
         Notification::query()->delete();
     }
@@ -103,7 +106,7 @@ class NotificationControllerTest extends TestCase
     public function test_can_filter_notifications_by_user(): void
     {
         $otherUser = User::factory()->create([
-            'email' => 'other_' . uniqid() . '@podscare.vn',
+            'email' => 'other_' . uniqid() . '@fixo.com.vn',
             'role' => 'technician',
             'branch_id' => $this->branch->id,
         ]);
@@ -234,7 +237,7 @@ class NotificationControllerTest extends TestCase
         $deviceModel = \App\Models\DeviceModel::first();
 
         $order = RepairOrder::create([
-            'order_code' => 'PC26-TEST99',
+            'order_code' => 'FX26-TEST99',
             'branch_id' => $this->branch->id,
             'customer_id' => $customer->id,
             'device_model_id' => $deviceModel->id,

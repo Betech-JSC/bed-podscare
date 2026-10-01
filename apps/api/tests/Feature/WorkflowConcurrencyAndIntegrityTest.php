@@ -21,10 +21,11 @@ class WorkflowConcurrencyAndIntegrityTest extends TestCase
 {
     private function getAuthenticatedUser(): User
     {
-        $user = User::where('email', 'admin@podscare.vn')->first();
-        if (! $user) {
-            $user = User::first();
-        }
+        $user = User::where('email', 'admin@fixo.com.vn')->first()
+            ?? User::where('email', 'admin@podscare.vn')->first()
+            ?? User::where('role', 'admin')->first()
+            ?? User::first();
+
         $this->assertNotNull($user, 'Authenticated user must exist');
         return $user;
     }
@@ -305,7 +306,7 @@ class WorkflowConcurrencyAndIntegrityTest extends TestCase
         // Cập nhật delivered kèm proof_photo_url qua PUT
         $response = $this->actingAs($user, 'sanctum')->putJson("/api/v1/shipments/{$shipment->id}/status", [
             'status'          => 'delivered',
-            'proof_photo_url' => 'https://storage.podscare.vn/proofs/delivery_photo.jpg',
+            'proof_photo_url' => 'https://storage.fixo.com.vn/proofs/delivery_photo.jpg',
             'proof_caption'   => 'Khách ký biên bản nhận máy',
         ]);
 

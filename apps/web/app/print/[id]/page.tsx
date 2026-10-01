@@ -97,12 +97,12 @@ export default function PrintReceiptPage() {
         date: o.created_at
           ? new Intl.DateTimeFormat('vi-VN').format(new Date(o.created_at))
           : 'Hôm nay',
-        branch: o.branch?.name || 'Chi nhánh PodsCare',
+        branch: o.branch?.name || 'Chi nhánh FIXO',
         appearance: o.appearance_notes || 'Không ghi chú',
         accessories: o.accessories || 'Không gửi kèm',
         checks: mappedChecks,
         photos: mappedPhotos,
-        createdBy: o.created_by_user?.name || o.createdBy || 'PodsCare',
+        createdBy: o.created_by_user?.name || o.createdBy || 'FIXO',
       };
       return mapped;
     },
@@ -158,7 +158,7 @@ export default function PrintReceiptPage() {
           />
           <div>
             <b className="text-[18pt] sm:text-[20pt] print:text-[13pt] font-extrabold text-[#176b58] tracking-tight block leading-none font-heading">
-              FIXO · PodsCare
+              FIXO REPAIR OS
             </b>
             <small className="text-[7.5pt] sm:text-[8pt] print:text-[6.5pt] tracking-[1px] text-[#555555] block mt-0.5 font-bold">
               PHIẾU TIẾP NHẬN SỬA CHỮA THIẾT BỊ
@@ -307,7 +307,7 @@ export default function PrintReceiptPage() {
 
       {/* Terms */}
       <p className="text-[6.5pt] print:text-[5.5pt] text-[#666666] leading-tight my-1">
-        * Chi phí trên là dự kiến tại thời điểm tiếp nhận. PodsCare sẽ chủ động liên hệ khách hàng để
+        * Chi phí trên là dự kiến tại thời điểm tiếp nhận. FIXO sẽ chủ động liên hệ khách hàng để
         xác nhận trước khi can thiệp nếu có phát sinh linh kiện hoặc chi phí khác. Quý khách vui lòng
         giữ phiếu này để đối chiếu khi nhận lại máy.
       </p>
@@ -322,12 +322,12 @@ export default function PrintReceiptPage() {
         <div>
           <b>NHÂN VIÊN TIẾP NHẬN</b>
           <small className="block text-[6.5pt] print:text-[5.5pt] text-[#666666] mt-0.5">(Ký và ghi rõ họ tên)</small>
-          <span className="block mt-4 print:mt-3 font-semibold">{order.createdBy || 'PodsCare'}</span>
+          <span className="block mt-4 print:mt-3 font-semibold">{order.createdBy || 'FIXO'}</span>
         </div>
       </div>
 
       <footer className="mt-2 pt-1 border-t border-[#dddddd] text-center text-[6.5pt] print:text-[5.5pt] text-[#777777]">
-        PodsCare Repair OS · Phiếu được lập thành 02 liên có giá trị ghi nhận như nhau · {order.id}
+        FIXO Repair OS · Phiếu được lập thành 02 liên có giá trị ghi nhận như nhau · {order.id}
       </footer>
     </article>
   );

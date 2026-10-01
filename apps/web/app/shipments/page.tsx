@@ -65,7 +65,7 @@ export default function ShipmentsPage() {
             orderCode: s.repair_order?.order_code || `PC26-${s.repair_order_id || '00000'}`,
             customerName: s.repair_order?.customer?.name || 'Khách lẻ',
             method: s.delivery_method === 'store_pickup' ? 'Giao tại cửa hàng' : 'Giao tận nơi',
-            carrier: s.carrier_name || s.partner?.name || 'PodsCare Express',
+            carrier: s.carrier_name || s.partner?.name || 'FIXO Express',
             trackingCode: s.tracking_code || undefined,
             status: statusInfo.label,
             statusType: statusInfo.type,

@@ -90,7 +90,7 @@ export const AppShell: React.FC<AppShellProps> = ({ children, crumbName = 'Tổn
       <div className="min-h-screen bg-[#f4f7f5] flex items-center justify-center">
         <div className="flex flex-col items-center gap-3">
           <div className="w-10 h-10 rounded-full border-3 border-[#176b58]/20 border-t-[#176b58] animate-spin" />
-          <span className="text-sm font-semibold text-[#516158]">Đang khởi tạo PodsCare OS...</span>
+          <span className="text-sm font-semibold text-[#516158]">Đang khởi tạo FIXO Repair OS...</span>
         </div>
       </div>
     );

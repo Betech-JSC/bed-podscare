@@ -119,9 +119,9 @@ export default function RepairsPage() {
         date: o.created_at
           ? new Intl.DateTimeFormat('vi-VN').format(new Date(o.created_at))
           : 'Hôm nay',
-        branch: o.branch?.name || 'Chi nhánh PodsCare',
+        branch: o.branch?.name || 'Chi nhánh FIXO',
         branchId: o.branch_id || o.branch?.id || 1,
-        branchName: o.branch?.name || 'Chi nhánh PodsCare',
+        branchName: o.branch?.name || 'Chi nhánh FIXO',
         accessories: o.accessories,
         appearance: o.appearance_notes,
         repairNote: o.repair_note,

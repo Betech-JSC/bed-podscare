@@ -22,7 +22,7 @@ export default function NotFound() {
         </h1>
 
         <p className="font-sans text-sm text-[#758780] mt-2 mb-6 leading-relaxed max-w-[380px]">
-          Đường dẫn bạn vừa truy cập không tồn tại hoặc đã được di chuyển trên hệ điều hành PodsCare Repair OS.
+          Đường dẫn bạn vừa truy cập không tồn tại hoặc đã được di chuyển trên hệ điều hành FIXO Repair OS.
         </p>
 
         {/* Action Button to Dashboard */}

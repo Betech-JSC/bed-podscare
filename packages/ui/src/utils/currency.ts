@@ -1,6 +1,6 @@
 /**
  * Utility functions for Vietnamese Dong (VNĐ) currency formatting and parsing.
- * PodsCare Repair OS Standard: Dot '.' as thousands separator, optional '₫' suffix.
+ * FIXO Repair OS Standard: Dot '.' as thousands separator, optional '₫' suffix.
  */
 
 export interface FormatVNDOptions {

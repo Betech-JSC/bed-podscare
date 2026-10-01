@@ -22,6 +22,7 @@ class DatabaseSeeder extends Seeder
             CustomerAndOrderSeeder::class,
             ChecklistTemplateSeeder::class,
             CommonIssueSeeder::class,
+            RebrandToFixoSeeder::class,
         ]);
     }
 }

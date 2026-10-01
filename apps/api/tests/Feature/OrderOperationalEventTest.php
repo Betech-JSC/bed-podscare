@@ -24,9 +24,9 @@ class OrderOperationalEventTest extends TestCase
         $event = new OrderOperationalEvent(
             id: 1,
             orderId: 10,
-            orderCode: 'PC26-00981',
+            orderCode: 'FX26-00981',
             title: 'Đơn hàng mới',
-            message: 'Đơn hàng PC26-00981 đã được tạo thành công.',
+            message: 'Đơn hàng FX26-00981 đã được tạo thành công.',
             severity: 'info',
         );
 
@@ -43,7 +43,7 @@ class OrderOperationalEventTest extends TestCase
         $event = new OrderOperationalEvent(
             id: 'evt-123',
             orderId: 42,
-            orderCode: 'PC26-00982',
+            orderCode: 'FX26-00982',
             title: 'Cảnh báo vượt SLA',
             message: 'Đơn sửa chữa đã quá hạn xử lý 120 phút.',
             severity: 'danger',
@@ -59,7 +59,7 @@ class OrderOperationalEventTest extends TestCase
         $this->assertEquals([
             'id' => 'evt-123',
             'orderId' => '42',
-            'orderCode' => 'PC26-00982',
+            'orderCode' => 'FX26-00982',
             'title' => 'Cảnh báo vượt SLA',
             'message' => 'Đơn sửa chữa đã quá hạn xử lý 120 phút.',
             'severity' => 'danger',
@@ -80,7 +80,7 @@ class OrderOperationalEventTest extends TestCase
         $eventBranchRole = new OrderOperationalEvent(
             id: 1,
             orderId: 10,
-            orderCode: 'PC26-00981',
+            orderCode: 'FX26-00981',
             title: 'Chờ QC kiểm định',
             message: 'Kỹ thuật viên đã hoàn thành sửa chữa, chuyển sang QC.',
             severity: 'warning',
@@ -99,7 +99,7 @@ class OrderOperationalEventTest extends TestCase
         $eventUser = new OrderOperationalEvent(
             id: 2,
             orderId: 11,
-            orderCode: 'PC26-00983',
+            orderCode: 'FX26-00983',
             title: 'Chỉ định đơn sửa',
             message: 'Bạn được phân công sửa đơn hàng mới.',
             severity: 'info',
@@ -114,7 +114,7 @@ class OrderOperationalEventTest extends TestCase
         $eventAll = new OrderOperationalEvent(
             id: 3,
             orderId: 12,
-            orderCode: 'PC26-00984',
+            orderCode: 'FX26-00984',
             title: 'Thông báo chung',
             message: 'Cập nhật hệ thống chung.',
             severity: 'info'
@@ -135,7 +135,7 @@ class OrderOperationalEventTest extends TestCase
         OrderOperationalEvent::dispatch(
             99,
             50,
-            'PC26-00999',
+            'FX26-00999',
             'Hoàn tất bàn giao',
             'Đơn hàng đã được khách nhận tại quầy.',
             'success',
@@ -145,7 +145,7 @@ class OrderOperationalEventTest extends TestCase
         );
 
         Event::assertDispatched(OrderOperationalEvent::class, function ($event) {
-            return $event->orderCode === 'PC26-00999'
+            return $event->orderCode === 'FX26-00999'
                 && $event->severity === 'success'
                 && $event->branchId === 1;
         });

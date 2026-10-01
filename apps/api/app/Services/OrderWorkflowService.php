@@ -166,7 +166,7 @@ class OrderWorkflowService extends BaseWorkflowService
                     $year = date('y');
                     $randomCode = str_pad((string) random_int(100, 9999), 4, '0', STR_PAD_LEFT);
                     Warranty::create([
-                        'warranty_code'   => "PC{$year}-WR-{$randomCode}",
+                        'warranty_code'   => "FX{$year}-WR-{$randomCode}",
                         'repair_order_id' => $model->id,
                         'customer_id'     => $model->customer_id,
                         'device_model_id' => $model->device_model_id,

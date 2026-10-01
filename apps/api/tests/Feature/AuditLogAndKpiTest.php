@@ -47,11 +47,13 @@ class AuditLogAndKpiTest extends TestCase
     private function getAuthUser(): User
     {
         $branch = $this->getBranch();
-        $user = User::where('email', 'admin@podscare.vn')->first();
+        $user = User::where('email', 'admin@fixo.com.vn')->first()
+            ?? User::where('email', 'admin@podscare.vn')->first()
+            ?? User::where('role', 'admin')->first();
         if (! $user) {
-            $user = User::create([
+            $user = User::forceCreate([
                 'name'       => 'Minh Lê',
-                'email'      => 'admin@podscare.vn',
+                'email'      => 'admin@fixo.com.vn',
                 'role'       => 'admin',
                 'password'   => bcrypt('password'),
                 'branch_id'  => $branch->id,
@@ -250,7 +252,7 @@ class AuditLogAndKpiTest extends TestCase
         // Tạo kỹ thuật viên kiểm thử
         $tech = User::create([
             'name'       => 'Test KTV ' . uniqid(),
-            'email'      => 'test_ktv_' . uniqid() . '@podscare.vn',
+            'email'      => 'test_ktv_' . uniqid() . '@fixo.com.vn',
             'role'       => 'technician',
             'password'   => bcrypt('password'),
             'branch_id'  => $branch->id,

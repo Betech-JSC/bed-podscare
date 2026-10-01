@@ -14,10 +14,10 @@ class KpiTest extends TestCase
 {
     private function getAuthenticatedUser(): User
     {
-        $user = User::where('email', 'admin@podscare.vn')->first();
-        if (! $user) {
-            $user = User::first();
-        }
+        $user = User::where('email', 'admin@fixo.com.vn')->first()
+            ?? User::where('email', 'admin@podscare.vn')->first()
+            ?? User::where('role', 'admin')->first()
+            ?? User::first();
         $this->assertNotNull($user, 'Authenticated user must exist');
         return $user;
     }

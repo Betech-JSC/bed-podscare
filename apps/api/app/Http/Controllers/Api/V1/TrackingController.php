@@ -19,6 +19,10 @@ class TrackingController extends Controller
     {
         $phone = $request->input('phone');
 
+        $altCode = str_starts_with($code, 'PC')
+            ? 'FX' . substr($code, 2)
+            : (str_starts_with($code, 'FX') ? 'PC' . substr($code, 2) : null);
+
         $order = RepairOrder::with([
             'customer:id,name,phone',
             'deviceModel:id,name,model_code,image_url',
@@ -29,7 +33,12 @@ class TrackingController extends Controller
             'quotes.items:id,quote_id,description,quantity,unit_price,amount',
             'shipments:id,repair_order_id,delivery_method,carrier_name,tracking_code,delivery_address,status,scheduled_at',
             'warranties:id,repair_order_id,warranty_code,coverage_item,start_date,duration_days,end_date,status',
-        ])->where('order_code', $code)->first();
+        ])->where(function ($q) use ($code, $altCode) {
+            $q->where('order_code', $code);
+            if ($altCode) {
+                $q->orWhere('order_code', $altCode);
+            }
+        })->first();
 
         if (! $order) {
             return $this->failure(

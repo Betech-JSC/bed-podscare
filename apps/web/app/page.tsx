@@ -671,7 +671,7 @@ export default function LandingPage() {
               </div>
 
               <h3 className="font-heading font-bold text-[20px] text-[#17231f] mb-3">
-                PodsCare · Chi nhánh Quận 1
+                FIXO · Chi nhánh Quận 1
               </h3>
 
               <div className="space-y-3 mb-6">
@@ -722,7 +722,7 @@ export default function LandingPage() {
               </div>
 
               <h3 className="font-heading font-bold text-[20px] text-[#17231f] mb-3">
-                PodsCare · Chi nhánh Quận 3
+                FIXO · Chi nhánh Quận 3
               </h3>
 
               <div className="space-y-3 mb-6">
@@ -818,7 +818,7 @@ export default function LandingPage() {
                   DÀNH CHO NHÂN SỰ NỘI BỘ
                 </span>
                 <p className="text-xs text-[#8c9f96] mb-3">
-                  Cổng đăng nhập hệ điều hành PodsCare dành cho Kỹ thuật viên, Quản trị viên và CSKH tiếp nhận.
+                  Cổng đăng nhập hệ điều hành FIXO dành cho Kỹ thuật viên, Quản trị viên và CSKH tiếp nhận.
                 </p>
                 <button
                   type="button"
@@ -833,7 +833,7 @@ export default function LandingPage() {
 
           {/* Bottom Copyright */}
           <div className="pt-6 flex flex-col sm:flex-row items-center justify-between gap-3 text-xs text-[#6e8077]">
-            <p className="m-0">© 2024 PodsCare Repair OS. Tất cả quyền được bảo lưu.</p>
+            <p className="m-0">© 2024 FIXO Repair OS. Tất cả quyền được bảo lưu.</p>
             <p className="m-0">Tiêu chuẩn kỹ thuật phòng lab kiểm định thiết bị âm thanh & Apple.</p>
           </div>
         </div>

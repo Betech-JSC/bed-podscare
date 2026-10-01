@@ -261,7 +261,7 @@ export default function TechnicianQueuePage() {
             <div className="flex items-center gap-2">
               <div className="h-9 border border-[#d6dfda] rounded-[8px] px-3 text-xs text-[#176b58] bg-[#eaf4ef] font-semibold flex items-center gap-1.5 cursor-default select-none pointer-events-none">
                 <span>
-                  Chi nhánh trực: {branch.startsWith('PodsCare') ? branch : `PodsCare · ${branch}`}
+                  Chi nhánh trực: {branch.startsWith('FIXO') ? branch : `FIXO · ${branch}`}
                 </span>
               </div>
             </div>

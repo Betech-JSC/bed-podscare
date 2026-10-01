@@ -51,7 +51,7 @@ export const AppSidebar: React.FC<AppSidebarProps> = ({
   onLogout,
   isOpen = false,
   onClose,
-  branchName = 'PodsCare · Quận 1',
+  branchName = 'FIXO · Quận 1',
   selectedBranchId,
   branches,
   onBranchChange,
@@ -342,9 +342,9 @@ export const AppSidebar: React.FC<AppSidebarProps> = ({
                     {(
                       branches || [
                         { id: 'all', name: 'Tất cả chi nhánh', code: 'ALL' },
-                        { id: 1, name: 'PodsCare · Quận 1', code: 'Q1' },
-                        { id: 2, name: 'PodsCare · Quận 3', code: 'Q3' },
-                        { id: 3, name: 'PodsCare · TP. Thủ Đức', code: 'THUDUC' },
+                        { id: 1, name: 'FIXO · Quận 1', code: 'Q1' },
+                        { id: 2, name: 'FIXO · Quận 3', code: 'Q3' },
+                        { id: 3, name: 'FIXO · TP. Thủ Đức', code: 'THUDUC' },
                       ]
                     ).map((b) => {
                       const isSelected = selectedBranchId
@@ -452,11 +452,11 @@ export const AppSidebar: React.FC<AppSidebarProps> = ({
             <div className="text-[#bd8738] text-base mb-1">✳</div>
             <strong className="text-sm font-bold text-[#1c302b] block">Cần trợ giúp?</strong>
             <p className="text-xs text-[#798880] leading-normal my-1">
-              Xem tài liệu và quy trình chuẩn PodsCare OS.
+              Xem tài liệu và quy trình chuẩn FIXO Repair OS.
             </p>
             <button
               type="button"
-              onClick={() => alert('Trung tâm trợ giúp: Hotline 1900 xxxx hoặc podscare.vn/support')}
+              onClick={() => alert('Trung tâm trợ giúp: Hotline 1900 xxxx hoặc fixo.com.vn/support')}
               className="text-[#176b58] font-bold text-xs flex items-center gap-1 hover:underline"
             >
               Mở trung tâm <span>↗</span>

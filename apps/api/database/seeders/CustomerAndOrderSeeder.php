@@ -27,11 +27,11 @@ class CustomerAndOrderSeeder extends Seeder
         $branchQ3 = Branch::where('code', 'Q3')->first();
         $branchQ3Id = $branchQ3?->id ?? 2;
 
-        $admin = User::where('role', 'admin')->first() ?? User::where('email', 'admin@podscare.vn')->first();
-        $cskh = User::where('email', 'cskh.lan@podscare.vn')->first() ?? User::where('role', 'cskh')->first();
-        $ktvTuan = User::where('email', 'ktv.tuan@podscare.vn')->first() ?? User::where('role', 'technician')->first();
-        $ktvDuy = User::where('email', 'ktv.duy@podscare.vn')->first();
-        $qc = User::where('email', 'qc.inspector@podscare.vn')->first() ?? User::where('role', 'qc')->first();
+        $admin = User::where('email', 'admin@fixo.com.vn')->first() ?? User::where('email', 'admin@podscare.vn')->first() ?? User::where('role', 'admin')->first();
+        $cskh = User::where('email', 'cskh.lan@fixo.com.vn')->first() ?? User::where('email', 'cskh.lan@podscare.vn')->first() ?? User::where('role', 'cskh')->first();
+        $ktvTuan = User::where('email', 'ktv.tuan@fixo.com.vn')->first() ?? User::where('email', 'ktv.tuan@podscare.vn')->first() ?? User::where('role', 'technician')->first();
+        $ktvDuy = User::where('email', 'ktv.duy@fixo.com.vn')->first() ?? User::where('email', 'ktv.duy@podscare.vn')->first();
+        $qc = User::where('email', 'qc.inspector@fixo.com.vn')->first() ?? User::where('email', 'qc.inspector@podscare.vn')->first() ?? User::where('role', 'qc')->first();
 
         $pro2 = DeviceModel::where('model_code', 'MTJV3VN/A')->first();
         $ap3 = DeviceModel::where('model_code', 'MME73VN/A')->first();
@@ -173,11 +173,11 @@ class CustomerAndOrderSeeder extends Seeder
         };
 
         // =========================================================================
-        // ĐƠN 1: PC26-00981 - in_repair (Chi nhánh Q1, KTV Tuấn)
+        // ĐƠN 1: FX26-00981 - in_repair (Chi nhánh Q1, KTV Tuấn)
         // =========================================================================
         if ($branchQ1 && $pro2 && $cskh && $ktvTuan) {
             $order1 = RepairOrder::updateOrCreate(
-                ['order_code' => 'PC26-00981'],
+                ['order_code' => 'FX26-00981'],
                 [
                     'branch_id' => $branchQ1->id,
                     'customer_id' => $c1->id,
@@ -210,13 +210,13 @@ class CustomerAndOrderSeeder extends Seeder
                 ['repair_order_id' => $order1->id, 'caption' => 'Hiện trạng tiếp nhận tại quầy'],
                 [
                     'photo_url' => 'https://images.unsplash.com/photo-1600294037681-c80b4cb5b434?w=800&auto=format&fit=crop',
-                    'file_path' => 'intake/2026/09/PC26-00981-front.jpg',
+                    'file_path' => 'intake/2026/09/FX26-00981-front.jpg',
                     'uploaded_by_user_id' => $cskh->id,
                 ]
             );
 
             $quote1 = RepairQuote::updateOrCreate(
-                ['quote_number' => 'PC26-QT-00981'],
+                ['quote_number' => 'FX26-QT-00981'],
                 [
                     'repair_order_id' => $order1->id,
                     'total_amount' => 450000.00,
@@ -242,11 +242,11 @@ class CustomerAndOrderSeeder extends Seeder
         }
 
         // =========================================================================
-        // ĐƠN 2: PC26-00982 - waiting_approval (Chi nhánh Q1, kèm RepairQuote pending)
+        // ĐƠN 2: FX26-00982 - waiting_approval (Chi nhánh Q1, kèm RepairQuote pending)
         // =========================================================================
         if ($branchQ1 && $cskh) {
             $order2 = RepairOrder::updateOrCreate(
-                ['order_code' => 'PC26-00982'],
+                ['order_code' => 'FX26-00982'],
                 [
                     'branch_id' => $branchQ1->id,
                     'customer_id' => $c2->id,
@@ -274,13 +274,13 @@ class CustomerAndOrderSeeder extends Seeder
                 ['repair_order_id' => $order2->id, 'caption' => 'Hiện trạng tiếp nhận AirPods 3'],
                 [
                     'photo_url' => 'https://images.unsplash.com/photo-1572569511254-d8f925fe2cbb?w=800&auto=format&fit=crop',
-                    'file_path' => 'intake/2026/09/PC26-00982-front.jpg',
+                    'file_path' => 'intake/2026/09/FX26-00982-front.jpg',
                     'uploaded_by_user_id' => $cskh->id,
                 ]
             );
 
             $quote2 = RepairQuote::updateOrCreate(
-                ['quote_number' => 'PC26-QT-00982'],
+                ['quote_number' => 'FX26-QT-00982'],
                 [
                     'repair_order_id' => $order2->id,
                     'total_amount' => 350000.00,
@@ -306,11 +306,11 @@ class CustomerAndOrderSeeder extends Seeder
         }
 
         // =========================================================================
-        // ĐƠN 3: PC26-00983 - waiting_tech (Chi nhánh Q1, chưa phân công KTV - technician_id null)
+        // ĐƠN 3: FX26-00983 - waiting_tech (Chi nhánh Q1, chưa phân công KTV - technician_id null)
         // =========================================================================
         if ($branchQ1 && $cskh) {
             $order3 = RepairOrder::updateOrCreate(
-                ['order_code' => 'PC26-00983'],
+                ['order_code' => 'FX26-00983'],
                 [
                     'branch_id' => $branchQ1->id,
                     'customer_id' => $c3->id,
@@ -340,13 +340,13 @@ class CustomerAndOrderSeeder extends Seeder
                 ['repair_order_id' => $order3->id, 'caption' => 'Hiện trạng tiếp nhận AirPods Pro'],
                 [
                     'photo_url' => 'https://images.unsplash.com/photo-1588423771073-b8903fbb85b5?w=800&auto=format&fit=crop',
-                    'file_path' => 'intake/2026/09/PC26-00983-front.jpg',
+                    'file_path' => 'intake/2026/09/FX26-00983-front.jpg',
                     'uploaded_by_user_id' => $cskh->id,
                 ]
             );
 
             $quote3 = RepairQuote::updateOrCreate(
-                ['quote_number' => 'PC26-QT-00983'],
+                ['quote_number' => 'FX26-QT-00983'],
                 [
                     'repair_order_id' => $order3->id,
                     'total_amount' => 600000.00,
@@ -372,11 +372,11 @@ class CustomerAndOrderSeeder extends Seeder
         }
 
         // =========================================================================
-        // ĐƠN 4: PC26-00984 - waiting_qc (Chi nhánh Q1, KTV Tuấn vừa sửa xong)
+        // ĐƠN 4: FX26-00984 - waiting_qc (Chi nhánh Q1, KTV Tuấn vừa sửa xong)
         // =========================================================================
         if ($branchQ1 && $pro2 && $cskh && $ktvTuan) {
             $order4 = RepairOrder::updateOrCreate(
-                ['order_code' => 'PC26-00984'],
+                ['order_code' => 'FX26-00984'],
                 [
                     'branch_id' => $branchQ1->id,
                     'customer_id' => $c4->id,
@@ -411,13 +411,13 @@ class CustomerAndOrderSeeder extends Seeder
                 ['repair_order_id' => $order4->id, 'caption' => 'Hiện trạng tiếp nhận AirPods Pro 2'],
                 [
                     'photo_url' => 'https://images.unsplash.com/photo-1600294037681-c80b4cb5b434?w=800&auto=format&fit=crop',
-                    'file_path' => 'intake/2026/09/PC26-00984-front.jpg',
+                    'file_path' => 'intake/2026/09/FX26-00984-front.jpg',
                     'uploaded_by_user_id' => $cskh->id,
                 ]
             );
 
             $quote4 = RepairQuote::updateOrCreate(
-                ['quote_number' => 'PC26-QT-00984'],
+                ['quote_number' => 'FX26-QT-00984'],
                 [
                     'repair_order_id' => $order4->id,
                     'total_amount' => 550000.00,
@@ -443,11 +443,11 @@ class CustomerAndOrderSeeder extends Seeder
         }
 
         // =========================================================================
-        // ĐƠN 5: PC26-00985 - ready_for_return (Chi nhánh Q1, đã có QcInspection pass, chờ thu tiền / trả máy)
+        // ĐƠN 5: FX26-00985 - ready_for_return (Chi nhánh Q1, đã có QcInspection pass, chờ thu tiền / trả máy)
         // =========================================================================
         if ($branchQ1 && $cskh && $ktvTuan) {
             $order5 = RepairOrder::updateOrCreate(
-                ['order_code' => 'PC26-00985'],
+                ['order_code' => 'FX26-00985'],
                 [
                     'branch_id' => $branchQ1->id,
                     'customer_id' => $c5->id,
@@ -483,13 +483,13 @@ class CustomerAndOrderSeeder extends Seeder
                 ['repair_order_id' => $order5->id, 'caption' => 'Hiện trạng tiếp nhận AirPods Max'],
                 [
                     'photo_url' => 'https://images.unsplash.com/photo-1546435770-a3e426bf472b?w=800&auto=format&fit=crop',
-                    'file_path' => 'intake/2026/09/PC26-00985-front.jpg',
+                    'file_path' => 'intake/2026/09/FX26-00985-front.jpg',
                     'uploaded_by_user_id' => $cskh->id,
                 ]
             );
 
             $quote5 = RepairQuote::updateOrCreate(
-                ['quote_number' => 'PC26-QT-00985'],
+                ['quote_number' => 'FX26-QT-00985'],
                 [
                     'repair_order_id' => $order5->id,
                     'total_amount' => 1200000.00,
@@ -525,11 +525,11 @@ class CustomerAndOrderSeeder extends Seeder
         }
 
         // =========================================================================
-        // ĐƠN 6: PC26-00986 - completed (Chi nhánh Q1, đã có Payment và Warranty kích hoạt)
+        // ĐƠN 6: FX26-00986 - completed (Chi nhánh Q1, đã có Payment và Warranty kích hoạt)
         // =========================================================================
         if ($branchQ1 && $cskh && $ktvTuan) {
             $order6 = RepairOrder::updateOrCreate(
-                ['order_code' => 'PC26-00986'],
+                ['order_code' => 'FX26-00986'],
                 [
                     'branch_id' => $branchQ1->id,
                     'customer_id' => $c6->id,
@@ -566,13 +566,13 @@ class CustomerAndOrderSeeder extends Seeder
                 ['repair_order_id' => $order6->id, 'caption' => 'Hiện trạng tiếp nhận AirPods 2'],
                 [
                     'photo_url' => 'https://images.unsplash.com/photo-1572569511254-d8f925fe2cbb?w=800&auto=format&fit=crop',
-                    'file_path' => 'intake/2026/09/PC26-00986-front.jpg',
+                    'file_path' => 'intake/2026/09/FX26-00986-front.jpg',
                     'uploaded_by_user_id' => $cskh->id,
                 ]
             );
 
             $quote6 = RepairQuote::updateOrCreate(
-                ['quote_number' => 'PC26-QT-00986'],
+                ['quote_number' => 'FX26-QT-00986'],
                 [
                     'repair_order_id' => $order6->id,
                     'total_amount' => 250000.00,
@@ -607,7 +607,7 @@ class CustomerAndOrderSeeder extends Seeder
 
             // Đã có Payment
             Payment::updateOrCreate(
-                ['payment_code' => 'PAY-PC26-00986'],
+                ['payment_code' => 'PAY-FX26-00986'],
                 [
                     'repair_order_id' => $order6->id,
                     'amount' => 250000.00,
@@ -621,7 +621,7 @@ class CustomerAndOrderSeeder extends Seeder
 
             // Đã có Warranty kích hoạt
             Warranty::updateOrCreate(
-                ['warranty_code' => 'PC26-WR-00986'],
+                ['warranty_code' => 'FX26-WR-00986'],
                 [
                     'repair_order_id' => $order6->id,
                     'customer_id' => $c6->id,
@@ -636,11 +636,11 @@ class CustomerAndOrderSeeder extends Seeder
         }
 
         // =========================================================================
-        // ĐƠN 7: PC26-00987 - in_repair (Chi nhánh Q3, gán branch_id = 2 và KTV Duy)
+        // ĐƠN 7: FX26-00987 - in_repair (Chi nhánh Q3, gán branch_id = 2 và KTV Duy)
         // =========================================================================
         if ($pro2) {
             $order7 = RepairOrder::updateOrCreate(
-                ['order_code' => 'PC26-00987'],
+                ['order_code' => 'FX26-00987'],
                 [
                     'branch_id' => $branchQ3Id,
                     'customer_id' => $c7->id,
@@ -655,7 +655,7 @@ class CustomerAndOrderSeeder extends Seeder
                     'price_note' => 'Sửa cụm mic chống ồn ANC & Cân chỉnh tần số âm thanh',
                     'warranty_terms_days' => 90,
                     'created_by_user_id' => $admin->id,
-                    'technician_id' => $ktvDuy?->id, // KTV Duy tại Q3 (ktv.duy@podscare.vn)
+                    'technician_id' => $ktvDuy?->id, // KTV Duy tại Q3 (ktv.duy@fixo.com.vn)
                     'qc_inspector_id' => $qc?->id,
                     'customer_approved_at' => Carbon::now()->subHours(5),
                     'tech_accepted_at' => Carbon::now()->subHours(3),
@@ -673,13 +673,13 @@ class CustomerAndOrderSeeder extends Seeder
                 ['repair_order_id' => $order7->id, 'caption' => 'Hiện trạng tiếp nhận tại Chi nhánh Q3'],
                 [
                     'photo_url' => 'https://images.unsplash.com/photo-1600294037681-c80b4cb5b434?w=800&auto=format&fit=crop',
-                    'file_path' => 'intake/2026/09/PC26-00987-front.jpg',
+                    'file_path' => 'intake/2026/09/FX26-00987-front.jpg',
                     'uploaded_by_user_id' => $admin->id,
                 ]
             );
 
             $quote7 = RepairQuote::updateOrCreate(
-                ['quote_number' => 'PC26-QT-00987'],
+                ['quote_number' => 'FX26-QT-00987'],
                 [
                     'repair_order_id' => $order7->id,
                     'total_amount' => 480000.00,

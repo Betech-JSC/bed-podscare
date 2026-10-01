@@ -37,9 +37,9 @@ export interface UserItem {
 }
 
 const FALLBACK_BRANCHES = [
-  { id: 1, name: 'PodsCare · Quận 1', code: 'Q1' },
-  { id: 2, name: 'PodsCare · Quận 3', code: 'Q3' },
-  { id: 3, name: 'PodsCare · TP. Thủ Đức', code: 'THUDUC' },
+  { id: 1, name: 'FIXO · Quận 1', code: 'Q1' },
+  { id: 2, name: 'FIXO · Quận 3', code: 'Q3' },
+  { id: 3, name: 'FIXO · TP. Thủ Đức', code: 'THUDUC' },
 ];
 
 export default function UsersPage() {
@@ -319,7 +319,7 @@ export default function UsersPage() {
               Tài khoản & Phân quyền
             </h1>
             <p className="text-sm text-[#7e8d85] mt-1 mb-0">
-              Quản lý danh sách nhân viên, cấp tài khoản và thiết lập quyền truy cập PodsCare OS.
+              Quản lý danh sách nhân viên, cấp tài khoản và thiết lập quyền truy cập FIXO OS.
             </p>
           </div>
 
@@ -564,7 +564,7 @@ export default function UsersPage() {
           onClose={() => setCreateModalOpen(false)}
           eyebrow="PHÂN QUYỀN HỆ THỐNG"
           title="Cấp tài khoản nhân viên mới"
-          subtitle="Tạo tài khoản truy cập và chỉ định vai trò trong quy trình vận hành PodsCare"
+          subtitle="Tạo tài khoản truy cập và chỉ định vai trò trong quy trình vận hành FIXO"
           maxWidth="md"
           footer={
             <div className="flex justify-end gap-2.5 w-full">
@@ -606,7 +606,7 @@ export default function UsersPage() {
                   type="email"
                   value={formData.email}
                   onChange={(e) => setFormData({ ...formData, email: e.target.value })}
-                  placeholder="an.nguyen@podscare.vn"
+                  placeholder="an.nguyen@fixo.com.vn"
                   error={formErrors.email}
                   required
                 />

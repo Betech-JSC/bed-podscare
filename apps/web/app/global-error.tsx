@@ -11,7 +11,7 @@ interface GlobalErrorProps {
 export default function GlobalError({ error, reset }: GlobalErrorProps) {
   useEffect(() => {
     // Ghi log lỗi cấp layout gốc (root layout error)
-    console.error('PodsCare Global Root Error:', error);
+    console.error('FIXO Global Root Error:', error);
   }, [error]);
 
   const handleReload = () => {
@@ -32,7 +32,7 @@ export default function GlobalError({ error, reset }: GlobalErrorProps) {
           </div>
 
           <span className="text-[10px] font-bold uppercase tracking-[1.05px] text-[#758780] mb-1">
-            PodsCare Repair OS · Hệ Thống Cốt Lõi
+            FIXO Repair OS · Hệ Thống Cốt Lõi
           </span>
 
           <h1 className="font-heading font-extrabold text-2xl text-[#1c302b] tracking-tight">

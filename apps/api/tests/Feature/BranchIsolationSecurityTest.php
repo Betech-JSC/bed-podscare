@@ -52,7 +52,7 @@ class BranchIsolationSecurityTest extends TestCase
         // 2. Tạo tài khoản Admin và Nhân sự của các chi nhánh
         $this->adminUser = User::forceCreate([
             'name'      => 'Admin Toàn Chuỗi ' . uniqid(),
-            'email'     => 'admin_' . uniqid() . '@podscare.vn',
+            'email'     => 'admin_' . uniqid() . '@fixo.com.vn',
             'password'  => Hash::make('password123'),
             'role'      => 'admin',
             'branch_id' => null,
@@ -61,7 +61,7 @@ class BranchIsolationSecurityTest extends TestCase
 
         $this->cskhUserBranch1 = User::forceCreate([
             'name'      => 'CSKH Hà Nội ' . uniqid(),
-            'email'     => 'cskh_hn_' . uniqid() . '@podscare.vn',
+            'email'     => 'cskh_hn_' . uniqid() . '@fixo.com.vn',
             'password'  => Hash::make('password123'),
             'role'      => 'cskh',
             'branch_id' => $this->branch1->id,
@@ -70,7 +70,7 @@ class BranchIsolationSecurityTest extends TestCase
 
         $this->techUserBranch1 = User::forceCreate([
             'name'      => 'KTV Hà Nội ' . uniqid(),
-            'email'     => 'tech_hn_' . uniqid() . '@podscare.vn',
+            'email'     => 'tech_hn_' . uniqid() . '@fixo.com.vn',
             'password'  => Hash::make('password123'),
             'role'      => 'technician',
             'branch_id' => $this->branch1->id,
@@ -79,7 +79,7 @@ class BranchIsolationSecurityTest extends TestCase
 
         $this->techUserBranch2 = User::forceCreate([
             'name'      => 'KTV Sài Gòn ' . uniqid(),
-            'email'     => 'tech_hcm_' . uniqid() . '@podscare.vn',
+            'email'     => 'tech_hcm_' . uniqid() . '@fixo.com.vn',
             'password'  => Hash::make('password123'),
             'role'      => 'technician',
             'branch_id' => $this->branch2->id,
@@ -341,7 +341,7 @@ class BranchIsolationSecurityTest extends TestCase
         $cskhRes = $this->actingAs($this->adminUser, 'sanctum')
             ->postJson('/api/v1/users', [
                 'name'     => 'CSKH Thiếu Branch',
-                'email'    => 'missing_branch_cskh_' . uniqid() . '@podscare.vn',
+                'email'    => 'missing_branch_cskh_' . uniqid() . '@fixo.com.vn',
                 'password' => 'password123',
                 'role'     => 'cskh',
             ]);
@@ -353,7 +353,7 @@ class BranchIsolationSecurityTest extends TestCase
         $techRes = $this->actingAs($this->adminUser, 'sanctum')
             ->postJson('/api/v1/users', [
                 'name'     => 'KTV Thiếu Branch',
-                'email'    => 'missing_branch_tech_' . uniqid() . '@podscare.vn',
+                'email'    => 'missing_branch_tech_' . uniqid() . '@fixo.com.vn',
                 'password' => 'password123',
                 'role'     => 'technician',
             ]);
@@ -364,7 +364,7 @@ class BranchIsolationSecurityTest extends TestCase
         $qcRes = $this->actingAs($this->adminUser, 'sanctum')
             ->postJson('/api/v1/users', [
                 'name'     => 'QC Thiếu Branch',
-                'email'    => 'missing_branch_qc_' . uniqid() . '@podscare.vn',
+                'email'    => 'missing_branch_qc_' . uniqid() . '@fixo.com.vn',
                 'password' => 'password123',
                 'role'     => 'qc',
             ]);
@@ -375,7 +375,7 @@ class BranchIsolationSecurityTest extends TestCase
         $invRes = $this->actingAs($this->adminUser, 'sanctum')
             ->postJson('/api/v1/users', [
                 'name'     => 'Kho Thiếu Branch',
-                'email'    => 'missing_branch_inv_' . uniqid() . '@podscare.vn',
+                'email'    => 'missing_branch_inv_' . uniqid() . '@fixo.com.vn',
                 'password' => 'password123',
                 'role'     => 'inventory',
             ]);
@@ -386,7 +386,7 @@ class BranchIsolationSecurityTest extends TestCase
         $adminRes = $this->actingAs($this->adminUser, 'sanctum')
             ->postJson('/api/v1/users', [
                 'name'     => 'Admin Mới Không Cần Branch',
-                'email'    => 'new_admin_' . uniqid() . '@podscare.vn',
+                'email'    => 'new_admin_' . uniqid() . '@fixo.com.vn',
                 'password' => 'password123',
                 'role'     => 'admin',
             ]);
@@ -398,7 +398,7 @@ class BranchIsolationSecurityTest extends TestCase
         $validTechRes = $this->actingAs($this->adminUser, 'sanctum')
             ->postJson('/api/v1/users', [
                 'name'      => 'KTV Hợp Lệ Có Branch',
-                'email'     => 'valid_tech_' . uniqid() . '@podscare.vn',
+                'email'     => 'valid_tech_' . uniqid() . '@fixo.com.vn',
                 'password'  => 'password123',
                 'branch_id' => $this->branch1->id,
                 'role'      => 'technician',

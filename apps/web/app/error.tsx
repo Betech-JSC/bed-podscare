@@ -12,7 +12,7 @@ interface ErrorProps {
 export default function ErrorPage({ error, reset }: ErrorProps) {
   useEffect(() => {
     // Ghi log lỗi runtime để phục vụ truy vết và giám sát hệ thống
-    console.error('PodsCare Route Runtime Error:', error);
+    console.error('FIXO Route Runtime Error:', error);
   }, [error]);
 
   return (
@@ -24,7 +24,7 @@ export default function ErrorPage({ error, reset }: ErrorProps) {
         </div>
 
         <span className="text-[10px] font-bold uppercase tracking-[1.05px] text-[#758780] mb-1">
-          PodsCare Repair OS · Lỗi Phân Tuyến
+          FIXO Repair OS · Lỗi Phân Tuyến
         </span>
 
         <h1 className="font-heading font-bold text-xl sm:text-2xl text-[#1c302b] tracking-tight">

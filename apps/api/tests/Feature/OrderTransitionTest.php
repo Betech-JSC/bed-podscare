@@ -22,15 +22,11 @@ class OrderTransitionTest extends TestCase
 
     private function getAuthenticatedUser(): User
     {
-        $user = User::where('email', 'admin@podscare.vn')->first();
-        if (! $user) {
-            $user = User::first() ?? User::create([
-                'name'     => 'Admin PodsCare',
-                'email'    => 'admin@podscare.vn',
-                'role'     => 'admin',
-                'password' => bcrypt('password'),
-            ]);
-        }
+        $user = User::where('email', 'admin@fixo.com.vn')->first()
+            ?? User::where('email', 'admin@podscare.vn')->first()
+            ?? User::where('role', 'admin')->first()
+            ?? User::first();
+
         $this->assertNotNull($user, 'Authenticated user must exist');
         return $user;
     }
@@ -60,7 +56,7 @@ class OrderTransitionTest extends TestCase
         $randomNum = str_pad((string) random_int(1000, 99999), 5, '0', STR_PAD_LEFT);
 
         return RepairOrder::create([
-            'order_code'          => "PC{$year}-T{$randomNum}",
+            'order_code'          => "FX{$year}-T{$randomNum}",
             'branch_id'           => $branch->id,
             'customer_id'         => $customer->id,
             'device_model_id'     => $device->id,

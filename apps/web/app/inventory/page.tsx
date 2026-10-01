@@ -98,7 +98,7 @@ export default function InventoryPage() {
     const list = Array.isArray(raw) ? raw : [];
     const activeBranch = branches.find((b) => String(b.id) === selectedWarehouse) || {
       id: Number(selectedWarehouse) || 1,
-      name: branch || 'PodsCare · Quận 1',
+      name: branch || 'FIXO · Quận 1',
       code: 'Q1',
     };
 

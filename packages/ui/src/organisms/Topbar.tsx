@@ -46,7 +46,7 @@ export const Topbar: React.FC<TopbarProps> = ({
           </button>
         )}
         <div className="flex items-center gap-2 text-xs md:text-sm text-[#7e8e86]">
-          <span>PodsCare OS</span>
+          <span>FIXO OS</span>
           <i className="not-italic text-[#c2cbc6]">/</i>
           <b className="text-[#20332d] font-semibold">{crumbName}</b>
         </div>

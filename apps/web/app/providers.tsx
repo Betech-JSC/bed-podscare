@@ -73,11 +73,11 @@ export const DEFAULT_MASTER_BRANCHES: BranchItem[] = [
     id: 'all',
     name: 'Tất cả chi nhánh',
     code: 'ALL',
-    address: 'Toàn hệ thống PodsCare',
+    address: 'Toàn hệ thống FIXO',
   },
   {
     id: 1,
-    name: 'PodsCare · Quận 1',
+    name: 'FIXO · Quận 1',
     code: 'Q1',
     address: '142 Nguyễn Thị Minh Khai, Phường Bến Thành, Quận 1, TP.HCM',
     phone: '028 7300 1234',
@@ -85,7 +85,7 @@ export const DEFAULT_MASTER_BRANCHES: BranchItem[] = [
   },
   {
     id: 2,
-    name: 'PodsCare · Quận 3',
+    name: 'FIXO · Quận 3',
     code: 'Q3',
     address: '285 Cách Mạng Tháng Tám, Phường 12, Quận 3, TP.HCM',
     phone: '028 7300 5678',
@@ -93,7 +93,7 @@ export const DEFAULT_MASTER_BRANCHES: BranchItem[] = [
   },
   {
     id: 3,
-    name: 'PodsCare · TP. Thủ Đức',
+    name: 'FIXO · TP. Thủ Đức',
     code: 'THUDUC',
     address: '56 Võ Văn Ngân, Phường Bình Thọ, TP. Thủ Đức, TP.HCM',
     phone: '028 7300 9012',
@@ -148,7 +148,7 @@ export const Providers: React.FC<{ children: React.ReactNode }> = ({ children })
           id: 'all',
           name: 'Tất cả chi nhánh',
           code: 'ALL',
-          address: 'Toàn hệ thống PodsCare',
+          address: 'Toàn hệ thống FIXO',
         };
         const mapped: BranchItem[] = [
           allBranch,
@@ -287,7 +287,7 @@ export const Providers: React.FC<{ children: React.ReactNode }> = ({ children })
 
       // Bảo vệ hydration: Nếu role !== 'admin', luôn luôn ép buộc branchId = user.branch_id và branch = user.branch
       if (effectiveRole !== 'admin') {
-        const enforcedBranch = parsedUser?.branch || 'PodsCare · Quận 1';
+        const enforcedBranch = parsedUser?.branch || 'FIXO · Quận 1';
         const enforcedBranchId = parsedUser?.branch_id ?? 1;
         setBranchState(enforcedBranch);
         setBranchIdState(enforcedBranchId);
@@ -402,9 +402,9 @@ export const Providers: React.FC<{ children: React.ReactNode }> = ({ children })
             date: o.created_at
               ? new Intl.DateTimeFormat('vi-VN').format(new Date(o.created_at))
               : 'Hôm nay',
-            branch: o.branch?.name || 'Chi nhánh PodsCare',
+            branch: o.branch?.name || 'Chi nhánh FIXO',
             branchId: o.branch_id || o.branch?.id || 1,
-            branchName: o.branch?.name || 'Chi nhánh PodsCare',
+            branchName: o.branch?.name || 'Chi nhánh FIXO',
             accessories: o.accessories,
             appearance: o.appearance_notes,
             repairNote: o.repair_note,
@@ -418,7 +418,7 @@ export const Providers: React.FC<{ children: React.ReactNode }> = ({ children })
             createdAt: o.created_at,
             checks: mappedChecks,
             photos: mappedPhotos,
-            createdBy: o.created_by_user?.name || o.createdBy || 'PodsCare',
+            createdBy: o.created_by_user?.name || o.createdBy || 'FIXO',
           };
         });
 
@@ -490,7 +490,7 @@ export const Providers: React.FC<{ children: React.ReactNode }> = ({ children })
       localStorage.setItem('podscare_user', JSON.stringify(updatedProfile));
     }
     if (newRole !== 'admin') {
-      const enforcedBranch = userProfile?.branch || 'PodsCare · Quận 1';
+      const enforcedBranch = userProfile?.branch || 'FIXO · Quận 1';
       const enforcedBranchId = userProfile?.branch_id ?? 1;
       setBranchState(enforcedBranch);
       setBranchIdState(enforcedBranchId);
@@ -508,7 +508,7 @@ export const Providers: React.FC<{ children: React.ReactNode }> = ({ children })
     const rawRole = (data.user.role || 'admin') as string;
     const normRole = (rawRole === 'technician' ? 'tech' : rawRole) as UserRole;
     const isAdmin = normRole === 'admin';
-    const userBranchName = data.user.branch?.name || data.user.branch || 'PodsCare · Quận 1';
+    const userBranchName = data.user.branch?.name || data.user.branch || 'FIXO · Quận 1';
     const userBranchId = data.user.branch_id || data.user.branch?.id || 1;
 
     const profile: UserProfile = {
@@ -593,7 +593,7 @@ export const Providers: React.FC<{ children: React.ReactNode }> = ({ children })
         : role === 'qc'
         ? 'Kiểm định QC'
         : 'Nhân viên kho',
-    branch: 'PodsCare · Quận 1',
+    branch: 'FIXO · Quận 1',
     branch_id: 1,
     initials: role === 'admin' ? 'ML' : role === 'cskh' ? 'LP' : 'TK',
   };

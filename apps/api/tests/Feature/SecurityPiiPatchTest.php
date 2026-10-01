@@ -41,7 +41,7 @@ class SecurityPiiPatchTest extends TestCase
     {
         return User::where('role', 'admin')->first() ?? User::create([
             'name'      => 'Admin User',
-            'email'     => 'admin_test_' . uniqid() . '@podscare.vn',
+            'email'     => 'admin_test_' . uniqid() . '@fixo.com.vn',
             'password'  => Hash::make('password123'),
             'role'      => 'admin',
             'is_active' => true,
@@ -68,7 +68,7 @@ class SecurityPiiPatchTest extends TestCase
         $uniqueSuffix = uniqid();
         $user = User::create([
             'name'     => "Kỹ thuật viên {$uniqueSuffix}",
-            'email'    => "ktv_{$uniqueSuffix}@podscare.vn",
+            'email'    => "ktv_{$uniqueSuffix}@fixo.com.vn",
             'password' => Hash::make('secret123456'),
         ]);
 

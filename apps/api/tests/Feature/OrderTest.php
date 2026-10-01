@@ -18,10 +18,10 @@ class OrderTest extends TestCase
     use DatabaseTransactions;
     private function getAuthenticatedUser(): User
     {
-        $user = User::where('email', 'admin@podscare.vn')->first();
-        if (! $user) {
-            $user = User::first();
-        }
+        $user = User::where('email', 'admin@fixo.com.vn')->first()
+            ?? User::where('email', 'admin@podscare.vn')->first()
+            ?? User::where('role', 'admin')->first()
+            ?? User::first();
         $this->assertNotNull($user, 'Authenticated user must exist');
         return $user;
     }
@@ -51,7 +51,7 @@ class OrderTest extends TestCase
         $randomNum = str_pad((string) random_int(1000, 99999), 5, '0', STR_PAD_LEFT);
 
         return RepairOrder::create([
-            'order_code'          => "PC{$year}-T{$randomNum}",
+            'order_code'          => "FX{$year}-T{$randomNum}",
             'branch_id'           => $branch->id,
             'customer_id'         => $customer->id,
             'device_model_id'     => $device->id,
@@ -103,7 +103,7 @@ class OrderTest extends TestCase
     {
         $user = $this->getAuthenticatedUser();
 
-        $response = $this->actingAs($user, 'sanctum')->getJson('/api/v1/orders/PC99-NONEXIST');
+        $response = $this->actingAs($user, 'sanctum')->getJson('/api/v1/orders/FX99-NONEXIST');
 
         $response->assertStatus(404)
             ->assertJsonPath('success', false)

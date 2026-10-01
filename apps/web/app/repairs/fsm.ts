@@ -91,7 +91,7 @@ export function getStatusCodeLabel(codeOrLabel?: string | null): string {
 }
 
 /**
- * Ma trận hành động chuyển trạng thái nhanh FSM_QUICK_ACTIONS theo quy trình chuẩn PodsCare:
+ * Ma trận hành động chuyển trạng thái nhanh FSM_QUICK_ACTIONS theo quy trình chuẩn FIXO:
  * - inspecting: ['Chờ khách duyệt', 'Chờ kỹ thuật', 'Đã hủy']
  * - waiting_approval: ['Chờ kỹ thuật', 'Khách từ chối', 'Đã hủy']
  * - waiting_tech: ['Đang sửa']

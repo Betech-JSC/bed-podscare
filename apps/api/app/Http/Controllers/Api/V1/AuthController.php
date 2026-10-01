@@ -27,11 +27,21 @@ class AuthController extends Controller
 
         $normalizedEmail = match ($loginInput) {
             'tuan.kt@podscare.vn' => 'ktv.tuan@podscare.vn',
+            'tuan.kt@fixo.com.vn' => 'ktv.tuan@fixo.com.vn',
             default => $loginInput,
         };
 
+        // Hỗ trợ đăng nhập chéo giữa @podscare.vn và @fixo.com.vn trong quá trình chuyển đổi
+        $alternateEmail = null;
+        if (str_contains($normalizedEmail, '@podscare.vn')) {
+            $alternateEmail = str_replace('@podscare.vn', '@fixo.com.vn', $normalizedEmail);
+        } elseif (str_contains($normalizedEmail, '@fixo.com.vn')) {
+            $alternateEmail = str_replace('@fixo.com.vn', '@podscare.vn', $normalizedEmail);
+        }
+
         $user = User::where('email', $loginInput)
             ->orWhere('email', $normalizedEmail)
+            ->when($alternateEmail, fn ($q) => $q->orWhere('email', $alternateEmail))
             ->orWhere('phone', $loginInput)
             ->first();
 

@@ -17,7 +17,7 @@ class UserSeeder extends Seeder
         $users = [
             [
                 'name' => 'Minh Lê',
-                'email' => 'admin@podscare.vn',
+                'email' => 'admin@fixo.com.vn',
                 'phone' => '0901 000 001',
                 'password' => Hash::make('password'),
                 'role' => 'admin',
@@ -27,7 +27,7 @@ class UserSeeder extends Seeder
             ],
             [
                 'name' => 'Lan Phạm',
-                'email' => 'cskh.lan@podscare.vn',
+                'email' => 'cskh.lan@fixo.com.vn',
                 'phone' => '0902 000 002',
                 'password' => Hash::make('password'),
                 'role' => 'cskh',
@@ -37,7 +37,7 @@ class UserSeeder extends Seeder
             ],
             [
                 'name' => 'Tuấn K.',
-                'email' => 'ktv.tuan@podscare.vn',
+                'email' => 'ktv.tuan@fixo.com.vn',
                 'phone' => '0903 000 003',
                 'password' => Hash::make('password'),
                 'role' => 'technician',
@@ -47,7 +47,7 @@ class UserSeeder extends Seeder
             ],
             [
                 'name' => 'Duy T.',
-                'email' => 'ktv.duy@podscare.vn',
+                'email' => 'ktv.duy@fixo.com.vn',
                 'phone' => '0903 000 004',
                 'password' => Hash::make('password'),
                 'role' => 'technician',
@@ -57,7 +57,7 @@ class UserSeeder extends Seeder
             ],
             [
                 'name' => 'Hải N.',
-                'email' => 'qc.inspector@podscare.vn',
+                'email' => 'qc.inspector@fixo.com.vn',
                 'phone' => '0904 000 005',
                 'password' => Hash::make('password'),
                 'role' => 'qc',
@@ -67,7 +67,7 @@ class UserSeeder extends Seeder
             ],
             [
                 'name' => 'Việt Trần',
-                'email' => 'kho.viet@podscare.vn',
+                'email' => 'kho.viet@fixo.com.vn',
                 'phone' => '0905 000 006',
                 'password' => Hash::make('password'),
                 'role' => 'inventory',
@@ -79,7 +79,13 @@ class UserSeeder extends Seeder
 
         foreach ($users as $user) {
             User::unguarded(function () use ($user) {
-                User::updateOrCreate(['email' => $user['email']], $user);
+                $oldEmail = str_replace('@fixo.com.vn', '@podscare.vn', $user['email']);
+                $existing = User::where('email', $user['email'])->orWhere('email', $oldEmail)->first();
+                if ($existing) {
+                    $existing->update($user);
+                } else {
+                    User::create($user);
+                }
             });
         }
     }

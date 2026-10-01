@@ -121,12 +121,12 @@ class OrderController extends Controller
                 $customerId = $customer->id;
             }
 
-            // 2. Tự động sinh mã đơn PC26-xxxxx (đảm bảo duy nhất)
+            // 2. Tự động sinh mã đơn FX26-xxxxx (đảm bảo duy nhất)
             $year = date('y');
             $attempts = 0;
             do {
                 $randomNum = str_pad((string) random_int(1, 99999), 5, '0', STR_PAD_LEFT);
-                $orderCode = "PC{$year}-{$randomNum}";
+                $orderCode = "FX{$year}-{$randomNum}";
                 $attempts++;
             } while (RepairOrder::where('order_code', $orderCode)->exists() && $attempts < 20);
 
@@ -222,7 +222,17 @@ class OrderController extends Controller
             }
         }
 
-        return $query->where('order_code', (string) $id)->first();
+        $code = (string) $id;
+        $altCode = str_starts_with($code, 'PC')
+            ? 'FX' . substr($code, 2)
+            : (str_starts_with($code, 'FX') ? 'PC' . substr($code, 2) : null);
+
+        return $query->where(function ($q) use ($code, $altCode) {
+            $q->where('order_code', $code);
+            if ($altCode) {
+                $q->orWhere('order_code', $altCode);
+            }
+        })->first();
     }
 
     /**

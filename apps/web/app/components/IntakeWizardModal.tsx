@@ -327,7 +327,7 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
     const branchObj =
       branches.find((b) => String(b.id) === String(branchIdNum)) ||
       branches.find((b) => b.name === branch) ||
-      branches[1] || { id: 1, name: 'PodsCare · Quận 1' };
+      branches[1] || { id: 1, name: 'FIXO · Quận 1' };
 
     // Resolve device_model_id
     const matchedDevice = deviceList.find(
@@ -584,9 +584,9 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
                   options={((branches && branches.filter((b) => b.id !== 'all').length > 0)
                     ? branches.filter((b) => b.id !== 'all')
                     : [
-                        { id: 1, name: 'PodsCare · Quận 1', code: 'Q1', address: '142 Nguyễn Thị Minh Khai, Phường Bến Thành, Quận 1, TP.HCM' },
-                        { id: 2, name: 'PodsCare · Quận 3', code: 'Q3', address: '285 Cách Mạng Tháng Tám, Phường 12, Quận 3, TP.HCM' },
-                        { id: 3, name: 'PodsCare · TP. Thủ Đức', code: 'THUDUC', address: '56 Võ Văn Ngân, Phường Bình Thọ, TP. Thủ Đức, TP.HCM' },
+                        { id: 1, name: 'FIXO · Quận 1', code: 'Q1', address: '142 Nguyễn Thị Minh Khai, Phường Bến Thành, Quận 1, TP.HCM' },
+                        { id: 2, name: 'FIXO · Quận 3', code: 'Q3', address: '285 Cách Mạng Tháng Tám, Phường 12, Quận 3, TP.HCM' },
+                        { id: 3, name: 'FIXO · TP. Thủ Đức', code: 'THUDUC', address: '56 Võ Văn Ngân, Phường Bình Thọ, TP. Thủ Đức, TP.HCM' },
                       ]
                   ).map((b) => ({
                     value: String(b.id),
@@ -611,7 +611,7 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
                               String((currentUser as any)?.branch_id || selectedBranchId)
                           )?.name ||
                             currentUser.branch ||
-                            'PodsCare · Quận 1'}
+                            'FIXO · Quận 1'}
                         </strong>
                         <small className="text-xs text-[#7e8e86]">
                           Gán cố định theo ca làm việc của tài khoản ({currentUser.name})
@@ -857,7 +857,7 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
                 }}
                 label={
                   <span className="text-xs text-[#4c5c54] leading-relaxed">
-                    Khách hàng xác nhận đã nghe tư vấn sơ bộ, đồng ý để PodsCare tiếp nhận thiết bị và chấp thuận các điều khoản biên nhận sửa chữa.
+                    Khách hàng xác nhận đã nghe tư vấn sơ bộ, đồng ý để FIXO tiếp nhận thiết bị và chấp thuận các điều khoản biên nhận sửa chữa.
                   </span>
                 }
               />

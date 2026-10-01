@@ -67,7 +67,7 @@ class PaymentController extends Controller
 
             $year = date('y');
             $randomNum = str_pad((string) random_int(100, 99999), 4, '0', STR_PAD_LEFT);
-            $paymentCode = "PC{$year}-PY-{$randomNum}";
+            $paymentCode = "FX{$year}-PY-{$randomNum}";
 
             $payment = Payment::create([
                 'payment_code'        => $paymentCode,

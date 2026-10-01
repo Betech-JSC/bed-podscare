@@ -268,13 +268,13 @@ export default function DashboardPage() {
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <div className="text-xs font-bold text-[#819089] uppercase tracking-[1.05px] mb-1">
-            PODSCARE · TỔNG QUAN
+            FIXO · TỔNG QUAN
           </div>
           <h1 className="font-heading font-bold text-2xl md:text-3xl text-[#1c302b] m-0">
             Chào buổi sáng, {currentUser.name} 👋
           </h1>
           <p className="text-sm text-[#7e8d85] mt-1 mb-0">
-            Đây là tình hình vận hành PodsCare hôm nay tại {branch || currentUser.branch}.
+            Đây là tình hình vận hành FIXO hôm nay tại {branch || currentUser.branch}.
           </p>
         </div>
         <div className="flex items-center gap-2.5">

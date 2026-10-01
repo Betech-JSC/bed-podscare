@@ -12,16 +12,21 @@ class UserControllerTest extends TestCase
 {
     private function getAdminToken(): array
     {
-        $admin = User::firstOrCreate(
-            ['email' => 'admin@podscare.vn'],
-            [
+        $admin = User::where('email', 'admin@fixo.com.vn')->first()
+            ?? User::where('email', 'admin@podscare.vn')->first()
+            ?? User::where('role', 'admin')->first();
+
+        if (! $admin) {
+            $admin = new User([
                 'name'      => 'Minh Lê',
+                'email'     => 'admin@fixo.com.vn',
                 'password'  => Hash::make('password123'),
-                'role'      => 'admin',
                 'phone'     => '0901 000 001',
                 'is_active' => true,
-            ]
-        );
+            ]);
+            $admin->role = 'admin';
+            $admin->save();
+        }
 
         $token = $admin->createToken('test_token')->plainTextToken;
 
@@ -52,7 +57,7 @@ class UserControllerTest extends TestCase
     public function test_create_user_with_validation(): void
     {
         $headers = $this->getAdminToken();
-        $uniqueEmail = 'staff_' . uniqid() . '@podscare.vn';
+        $uniqueEmail = 'staff_' . uniqid() . '@fixo.com.vn';
 
         // 1. Validation failure (missing name, email, role)
         $badResponse = $this->postJson('/api/v1/users', [
@@ -123,11 +128,21 @@ class UserControllerTest extends TestCase
     {
         // Test quick login with demo technician credentials
         $response = $this->postJson('/api/v1/auth/login', [
-            'email'    => 'tuan.kt@podscare.vn',
+            'email'    => 'tuan.kt@fixo.com.vn',
             'password' => 'password123',
         ]);
 
         $response->assertStatus(200)
+            ->assertJsonPath('success', true)
+            ->assertJsonPath('data.user.role', 'technician');
+
+        // Test backward compatibility alias
+        $responseAlias = $this->postJson('/api/v1/auth/login', [
+            'email'    => 'tuan.kt@podscare.vn',
+            'password' => 'password123',
+        ]);
+
+        $responseAlias->assertStatus(200)
             ->assertJsonPath('success', true)
             ->assertJsonPath('data.user.role', 'technician');
     }

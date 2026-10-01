@@ -15,11 +15,11 @@ class BranchManagementTest extends TestCase
 
     private function getAdminUser(): User
     {
-        $user = User::where('email', 'admin_test@podscare.vn')->first();
+        $user = User::where('email', 'admin_test@fixo.com.vn')->first();
         if (! $user) {
             $user = User::forceCreate([
                 'name'      => 'Quản Trị Viên Test',
-                'email'     => 'admin_test@podscare.vn',
+                'email'     => 'admin_test@fixo.com.vn',
                 'password'  => Hash::make('password123'),
                 'role'      => 'admin',
                 'phone'     => '0901000999',
@@ -35,11 +35,11 @@ class BranchManagementTest extends TestCase
 
     private function getStaffUser(string $role = 'cskh'): User
     {
-        $user = User::where('email', "staff_{$role}_test@podscare.vn")->first();
+        $user = User::where('email', "staff_{$role}_test@fixo.com.vn")->first();
         if (! $user) {
             $user = User::forceCreate([
                 'name'      => "Nhân Viên {$role} Test",
-                'email'     => "staff_{$role}_test@podscare.vn",
+                'email'     => "staff_{$role}_test@fixo.com.vn",
                 'password'  => Hash::make('password123'),
                 'role'      => $role,
                 'phone'     => '0901000888',

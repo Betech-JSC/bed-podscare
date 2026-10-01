@@ -26,10 +26,10 @@ const STAFF_CARDS: StaffCard[] = [
     roleTitle: 'Quản trị viên',
     roleBadge: 'Quản trị toàn chuỗi',
     badgeStyle: 'bg-[#eaf4ef] text-[#176b58] border border-[#cde2d6]',
-    branchLabel: 'PodsCare · Quận 1',
+    branchLabel: 'FIXO · Quận 1',
     branchCode: 'Q1',
     duty: 'Toàn quyền điều hành, phân quyền & cấu hình hệ thống',
-    email: 'admin@podscare.vn',
+    email: 'admin@fixo.com.vn',
     initials: 'ML',
     avatarBg: '#176b58',
     targetRoute: '/dashboard',
@@ -39,10 +39,10 @@ const STAFF_CARDS: StaffCard[] = [
     roleTitle: 'CSKH Tiếp nhận',
     roleBadge: 'Tiếp nhận & Báo giá',
     badgeStyle: 'bg-[#eff6ff] text-[#1d4ed8] border border-[#bfdbfe]',
-    branchLabel: 'PodsCare · Quận 1',
+    branchLabel: 'FIXO · Quận 1',
     branchCode: 'Q1',
     duty: 'Tiếp nhận máy tại quầy, test checklist & lập báo giá',
-    email: 'cskh.lan@podscare.vn',
+    email: 'cskh.lan@fixo.com.vn',
     initials: 'LP',
     avatarBg: '#2563eb',
     targetRoute: '/dashboard',
@@ -52,10 +52,10 @@ const STAFF_CARDS: StaffCard[] = [
     roleTitle: 'Kỹ thuật viên',
     roleBadge: 'Sửa chữa & Linh kiện',
     badgeStyle: 'bg-[#fffbeb] text-[#b45309] border border-[#fde68a]',
-    branchLabel: 'PodsCare · Quận 1',
+    branchLabel: 'FIXO · Quận 1',
     branchCode: 'Q1',
     duty: 'Chẩn đoán mạch, bóc tách linh kiện & sửa chữa phần cứng',
-    email: 'ktv.tuan@podscare.vn',
+    email: 'ktv.tuan@fixo.com.vn',
     initials: 'TK',
     avatarBg: '#d97706',
     targetRoute: '/tech',
@@ -65,10 +65,10 @@ const STAFF_CARDS: StaffCard[] = [
     roleTitle: 'Kỹ thuật viên',
     roleBadge: 'Cách ly chi nhánh Q3',
     badgeStyle: 'bg-[#fff7ed] text-[#c2410c] border border-[#fed7aa]',
-    branchLabel: 'PodsCare · Quận 3',
+    branchLabel: 'FIXO · Quận 3',
     branchCode: 'Q3',
     duty: 'Trạm kỹ thuật sửa chữa độc lập cách ly chi nhánh Quận 3',
-    email: 'ktv.duy@podscare.vn',
+    email: 'ktv.duy@fixo.com.vn',
     initials: 'DT',
     avatarBg: '#ea580c',
     targetRoute: '/tech',
@@ -78,10 +78,10 @@ const STAFF_CARDS: StaffCard[] = [
     roleTitle: 'QC Inspector',
     roleBadge: 'Kiểm định & Rework',
     badgeStyle: 'bg-[#faf5ff] text-[#6b21a8] border border-[#e9d5ff]',
-    branchLabel: 'PodsCare · Quận 1',
+    branchLabel: 'FIXO · Quận 1',
     branchCode: 'Q1',
     duty: 'Kiểm tra chất lượng âm thanh, ANC, sạc & duyệt xuất xưởng',
-    email: 'qc.inspector@podscare.vn',
+    email: 'qc.inspector@fixo.com.vn',
     initials: 'HN',
     avatarBg: '#7c3aed',
     targetRoute: '/qc',
@@ -91,10 +91,10 @@ const STAFF_CARDS: StaffCard[] = [
     roleTitle: 'Quản lý kho',
     roleBadge: 'Tồn kho & Phiếu xuất/nhập',
     badgeStyle: 'bg-[#fdf2f8] text-[#be185d] border border-[#fbcfe8]',
-    branchLabel: 'PodsCare · Quận 1',
+    branchLabel: 'FIXO · Quận 1',
     branchCode: 'Q1',
     duty: 'Quản trị kho linh kiện, kiểm kê & điều phối phiếu xuất nhập',
-    email: 'kho.viet@podscare.vn',
+    email: 'kho.viet@fixo.com.vn',
     initials: 'VT',
     avatarBg: '#db2777',
     targetRoute: '/inventory',
@@ -254,7 +254,7 @@ export default function LoginPage() {
                 type="text"
                 value={emailOrPhone}
                 onChange={(e) => setEmailOrPhone(e.target.value)}
-                placeholder="admin@podscare.vn hoặc 0901..."
+                placeholder="admin@fixo.com.vn hoặc 0901..."
                 icon={<Icon name="customers" size={16} />}
                 required
               />
@@ -346,7 +346,7 @@ export default function LoginPage() {
 
         {/* Security Footer Note */}
         <p className="text-xs text-[#819089] text-center mt-7 mb-0 leading-relaxed">
-          <span className="inline-block whitespace-nowrap">PodsCare Repair Operating System</span>
+          <span className="inline-block whitespace-nowrap">FIXO Repair Operating System</span>
           <span className="mx-1.5 text-[#b2c2ba]">·</span>
           <span className="inline-block whitespace-nowrap">Bảo mật tài khoản với Sanctum Bearer Token</span>
         </p>

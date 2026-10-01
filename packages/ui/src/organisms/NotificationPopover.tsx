@@ -82,7 +82,7 @@ interface EventVisual {
 }
 
 /**
- * Phân loại trực quan icon và màu sắc theo nghiệp vụ PodsCare Design System
+ * Phân loại trực quan icon và màu sắc theo nghiệp vụ FIXO Design System
  */
 function getNotificationVisual(item: NotificationItem): EventVisual {
   const title = (item.title || '').toLowerCase();
@@ -575,7 +575,7 @@ export const NotificationPopover: React.FC<NotificationPopoverProps> = ({
             <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-[#176b51] opacity-75" />
             <span className="relative inline-flex rounded-full h-2 w-2 bg-[#176b51]" />
           </span>
-          <span className="font-medium text-[#1c302b]">PodsCare Realtime Dispatch</span>
+          <span className="font-medium text-[#1c302b]">FIXO Realtime Dispatch</span>
         </div>
         <span className="text-[10px] text-[#81908a]">Vòng đời đơn hàng & SLA</span>
       </div>

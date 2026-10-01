@@ -78,7 +78,7 @@ export const TrackingView: React.FC<{ initialId?: string }> = ({ initialId = '' 
           date: o.created_at
             ? new Intl.DateTimeFormat('vi-VN').format(new Date(o.created_at))
             : 'Hôm nay',
-          branch: o.branch?.name || 'Chi nhánh PodsCare',
+          branch: o.branch?.name || 'Chi nhánh FIXO',
         };
         setSearchedOrder(mappedOrder);
       } else {

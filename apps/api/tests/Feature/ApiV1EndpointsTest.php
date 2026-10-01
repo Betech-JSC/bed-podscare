@@ -17,11 +17,11 @@ class ApiV1EndpointsTest extends TestCase
      */
     public function test_public_tracking_endpoint_returns_order_and_timeline(): void
     {
-        $response = $this->getJson('/api/v1/tracking/PC26-00981');
+        $response = $this->getJson('/api/v1/tracking/FX26-00981');
 
         $response->assertStatus(200)
             ->assertJsonPath('success', true)
-            ->assertJsonPath('data.order.order_code', 'PC26-00981');
+            ->assertJsonPath('data.order.order_code', 'FX26-00981');
 
         $this->assertStringContainsString('****', $response->json('data.order.customer.phone'));
 
@@ -87,7 +87,7 @@ class ApiV1EndpointsTest extends TestCase
     {
         // 1. Invalid credentials
         $responseFail = $this->postJson('/api/v1/auth/login', [
-            'email'    => 'admin@podscare.vn',
+            'email'    => 'admin@fixo.com.vn',
             'password' => 'wrong_password',
         ]);
         $responseFail->assertStatus(401)
@@ -95,7 +95,7 @@ class ApiV1EndpointsTest extends TestCase
 
         // 2. Valid credentials
         $responseSuccess = $this->postJson('/api/v1/auth/login', [
-            'email'    => 'admin@podscare.vn',
+            'email'    => 'admin@fixo.com.vn',
             'password' => 'password',
         ]);
         $responseSuccess->assertStatus(200)
@@ -123,7 +123,9 @@ class ApiV1EndpointsTest extends TestCase
      */
     public function test_authenticated_user_can_access_orders_and_crud(): void
     {
-        $user = User::where('email', 'admin@podscare.vn')->first();
+        $user = User::where('email', 'admin@fixo.com.vn')->first()
+            ?? User::where('email', 'admin@podscare.vn')->first()
+            ?? User::where('role', 'admin')->first();
         $this->assertNotNull($user);
 
         $branch = Branch::first();
@@ -174,7 +176,9 @@ class ApiV1EndpointsTest extends TestCase
      */
     public function test_inventory_shipments_warranties_and_payments_endpoints(): void
     {
-        $user = User::where('email', 'admin@podscare.vn')->first();
+        $user = User::where('email', 'admin@fixo.com.vn')->first()
+            ?? User::where('email', 'admin@podscare.vn')->first()
+            ?? User::where('role', 'admin')->first();
 
         $this->actingAs($user, 'sanctum')->getJson('/api/v1/inventory/parts')
             ->assertStatus(200)

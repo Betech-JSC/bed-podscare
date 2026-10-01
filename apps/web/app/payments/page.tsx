@@ -541,7 +541,7 @@ export default function PaymentsPage() {
                       Số tài khoản: <b className="font-mono text-sm text-[#1c302b]">{VIETQR_ACCOUNT_NO}</b>
                     </div>
                     <div>
-                      Chủ tài khoản: <b>{VIETQR_ACCOUNT_NAME || 'PODSCARE VIETNAM'}</b>
+                      Chủ tài khoản: <b>{VIETQR_ACCOUNT_NAME || 'FIXO VIETNAM'}</b>
                     </div>
                     <div>
                       Số tiền: <b className="text-sm text-[#176b58]">{moneyFormatted(qrAmount)}</b>

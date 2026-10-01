@@ -29,7 +29,7 @@ class CriticalFlawsRemediationTest extends TestCase
         if (! $admin) {
             $admin = User::forceCreate([
                 'name'      => 'Admin User',
-                'email'     => 'admin_remediation_' . uniqid() . '@podscare.vn',
+                'email'     => 'admin_remediation_' . uniqid() . '@fixo.com.vn',
                 'password'  => Hash::make('password123'),
                 'role'      => 'admin',
                 'is_active' => true,
@@ -53,7 +53,7 @@ class CriticalFlawsRemediationTest extends TestCase
     {
         return User::forceCreate([
             'name'      => "Nhân viên {$role} {$branch->code}",
-            'email'     => "staff_{$role}_" . uniqid() . '@podscare.vn',
+            'email'     => "staff_{$role}_" . uniqid() . '@fixo.com.vn',
             'password'  => Hash::make('password123'),
             'role'      => $role,
             'branch_id' => $branch->id,
@@ -87,7 +87,7 @@ class CriticalFlawsRemediationTest extends TestCase
     {
         $user = User::create([
             'name'     => 'Attacker User',
-            'email'    => 'attacker_' . uniqid() . '@podscare.vn',
+            'email'    => 'attacker_' . uniqid() . '@fixo.com.vn',
             'password' => Hash::make('password123'),
             'role'     => 'admin', // Cố tình leo quyền
         ]);
@@ -129,7 +129,7 @@ class CriticalFlawsRemediationTest extends TestCase
 
         // Tạo đơn cho chi nhánh 1
         $order1 = RepairOrder::create([
-            'order_code'         => 'PC26-' . rand(10000, 99999),
+            'order_code'         => 'FX26-' . rand(10000, 99999),
             'branch_id'          => $branch1->id,
             'customer_id'        => $customer->id,
             'device_model_id'    => $device->id,
@@ -140,7 +140,7 @@ class CriticalFlawsRemediationTest extends TestCase
 
         // Tạo đơn cho chi nhánh 2
         $order2 = RepairOrder::create([
-            'order_code'         => 'PC26-' . rand(10000, 99999),
+            'order_code'         => 'FX26-' . rand(10000, 99999),
             'branch_id'          => $branch2->id,
             'customer_id'        => $customer->id,
             'device_model_id'    => $device->id,
@@ -209,7 +209,7 @@ class CriticalFlawsRemediationTest extends TestCase
         $device = $this->getDeviceModel();
         $customer = $this->getCustomer();
 
-        $orderCode = 'PC26-' . rand(10000, 99999);
+        $orderCode = 'FX26-' . rand(10000, 99999);
         $order = RepairOrder::create([
             'order_code'         => $orderCode,
             'branch_id'          => $branch->id,
@@ -242,7 +242,7 @@ class CriticalFlawsRemediationTest extends TestCase
         $customer = $this->getCustomer();
 
         $order = RepairOrder::create([
-            'order_code'         => 'PC26-' . rand(10000, 99999),
+            'order_code'         => 'FX26-' . rand(10000, 99999),
             'branch_id'          => $branch->id,
             'customer_id'        => $customer->id,
             'device_model_id'    => $device->id,
@@ -318,7 +318,7 @@ class CriticalFlawsRemediationTest extends TestCase
         $customer = $this->getCustomer();
 
         $order = RepairOrder::create([
-            'order_code'         => 'PC26-' . rand(10000, 99999),
+            'order_code'         => 'FX26-' . rand(10000, 99999),
             'branch_id'          => $branch->id,
             'customer_id'        => $customer->id,
             'device_model_id'    => $device->id,
@@ -361,7 +361,7 @@ class CriticalFlawsRemediationTest extends TestCase
         $customer = $this->getCustomer();
 
         $order = RepairOrder::create([
-            'order_code'         => 'PC26-' . rand(10000, 99999),
+            'order_code'         => 'FX26-' . rand(10000, 99999),
             'branch_id'          => $branch->id,
             'customer_id'        => $customer->id,
             'device_model_id'    => $device->id,
@@ -390,7 +390,7 @@ class CriticalFlawsRemediationTest extends TestCase
         $customer = $this->getCustomer();
 
         $order = RepairOrder::create([
-            'order_code'         => 'PC26-' . rand(10000, 99999),
+            'order_code'         => 'FX26-' . rand(10000, 99999),
             'branch_id'          => $branch->id,
             'customer_id'        => $customer->id,
             'device_model_id'    => $device->id,
