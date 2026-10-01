@@ -200,10 +200,17 @@ export function getReverbEchoConfig(): ReverbEchoConfig {
       ? 'https'
       : 'http';
 
-  const host =
+  let host =
     process.env.NEXT_PUBLIC_REVERB_HOST ||
-    process.env.NEXT_PUBLIC_WS_HOST ||
-    currentHostname;
+    process.env.NEXT_PUBLIC_WS_HOST;
+
+  if (!host) {
+    if (isBrowser && (currentHostname === 'fixo.com.vn' || currentHostname.endsWith('.fixo.com.vn'))) {
+      host = 'api.fixo.com.vn';
+    } else {
+      host = currentHostname;
+    }
+  }
 
   const defaultPort = scheme === 'https' ? 443 : 8080;
   const portStr = process.env.NEXT_PUBLIC_REVERB_PORT || process.env.NEXT_PUBLIC_WS_PORT;
@@ -313,7 +320,11 @@ export class ReverbSocketClient {
       return;
     }
 
-    const wsUrl = `${wsProtocol}://${wsHost}:${wsPort}/app/${key}?protocol=7&client=js&version=8.4.0-reverb&flash=false`;
+    const portSuffix =
+      (wsProtocol === 'wss' && wsPort === 443) || (wsProtocol === 'ws' && wsPort === 80)
+        ? ''
+        : `:${wsPort}`;
+    const wsUrl = `${wsProtocol}://${wsHost}${portSuffix}/app/${key}?protocol=7&client=js&version=8.4.0-reverb&flash=false`;
 
     try {
       this.ws = new WebSocketClass(wsUrl);

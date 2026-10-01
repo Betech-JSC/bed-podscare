@@ -134,12 +134,12 @@ export const TrackingView: React.FC<{ initialId?: string }> = ({ initialId = '' 
           <div className="flex items-center gap-2.5">
             <img
               src="/logo.png"
-              alt="FixQ Logo"
+              alt="FIXO Logo"
               className="w-9 h-9 rounded-[10px] object-cover shadow-sm flex-none"
             />
             <div>
               <b className="font-heading font-extrabold text-xl tracking-tight text-[#1c302b]">
-                FixQ Tra cứu
+                FIXO Tra cứu
               </b>
               <small className="block text-xs tracking-[1.1px] text-[#7f8f87] font-bold">
                 CUSTOMER TRACKING PORTAL

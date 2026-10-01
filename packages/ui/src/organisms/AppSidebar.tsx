@@ -273,12 +273,12 @@ export const AppSidebar: React.FC<AppSidebarProps> = ({
           <div className="flex items-center gap-2.5">
             <img
               src="/logo.png"
-              alt="FixQ Logo"
+              alt="FIXO Logo"
               className="w-8 h-8 rounded-[8px] object-cover shadow-sm flex-none"
             />
             <div>
               <b className="font-heading font-extrabold text-[20px] tracking-[-1px] text-[#1c302b] block leading-none">
-                FixQ
+                FIXO
               </b>
               <small className="block text-xs tracking-[1.2px] text-[#819089] font-bold mt-1 uppercase">
                 REPAIR OPERATING SYSTEM

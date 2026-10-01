@@ -18,7 +18,7 @@ const manrope = Manrope({
 });
 
 export const metadata: Metadata = {
-  title: 'FixQ · Repair OS',
+  title: 'FIXO · Repair OS',
   description: 'Hệ điều hành quản lý quy trình sửa chữa thiết bị di động & âm thanh',
   icons: {
     icon: [

@@ -153,12 +153,12 @@ export default function PrintReceiptPage() {
         <div className="flex items-center gap-2.5">
           <img
             src="/logo.png"
-            alt="FixQ Logo"
+            alt="FIXO Logo"
             className="w-10 h-10 print:w-8 print:h-8 rounded-[6px] object-cover flex-none"
           />
           <div>
             <b className="text-[18pt] sm:text-[20pt] print:text-[13pt] font-extrabold text-[#176b58] tracking-tight block leading-none font-heading">
-              FixQ · PodsCare
+              FIXO · PodsCare
             </b>
             <small className="text-[7.5pt] sm:text-[8pt] print:text-[6.5pt] tracking-[1px] text-[#555555] block mt-0.5 font-bold">
               PHIẾU TIẾP NHẬN SỬA CHỮA THIẾT BỊ

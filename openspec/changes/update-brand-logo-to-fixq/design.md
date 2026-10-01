@@ -1,16 +1,16 @@
-# Design: Brand Logo Standardization to FixQ
+# Design: Brand Logo Standardization to FIXO
 
 ## Context
 
 Hệ thống PodsCare Repair OS hiện đang sử dụng logo placeholder bằng CSS thuần (hình chữ nhật xanh `#196d52` chứa 2 vạch bo tròn nghiêng `-rotate-[25deg]`) tại nhiều vị trí: `AppSidebar.tsx`, `login/page.tsx`, `page.tsx` (Header & Footer). Ngoài ra, `apps/web/app/layout.tsx` khai báo `icon: '/icon.svg'` nhưng file này không tồn tại trong thư mục tĩnh, dẫn đến lỗi 404 cho favicon trên tab trình duyệt.
 
-Người dùng đã cung cấp file ảnh Logo FixQ chính thức (`media_1790840341004.png`) với thiết kế chất lượng cao (1024x1024, RGBA) mang màu sắc chủ đạo xanh thẫm và xanh ngọc biểu tượng chữ FixQ cách điệu cờ-lê.
+Người dùng đã cung cấp file ảnh Logo FIXO chính thức (`media_1790840341004.png`) với thiết kế chất lượng cao (1024x1024, RGBA) mang màu sắc chủ đạo xanh thẫm và xanh ngọc biểu tượng chữ FIXO cách điệu cờ-lê.
 
 ## Goals / Non-Goals
 
 **Goals:**
 - Tạo bộ tài nguyên logo hoàn chỉnh trong `apps/web/public/` và `apps/web/app/`:
-  - `logo.png`, `brand/fixq-logo.png`
+  - `logo.png`, `brand/fixo-logo.png`
   - `icon.png`, `apple-icon.png`, `favicon.ico`
 - Cấu hình Next.js App Router metadata để tab trình duyệt và bookmark hiển thị icon chính xác.
 - Thay thế triệt để các khối CSS box cũ bằng thẻ `<img>` sử dụng ảnh logo thật tại:
@@ -28,7 +28,7 @@ Người dùng đã cung cấp file ảnh Logo FixQ chính thức (`media_179084
 
 ### 1. Chuẩn hóa đường dẫn tài nguyên tĩnh & Next.js 14 Conventions
 - **Quyết định**:
-  - Lưu file gốc chất lượng cao vào `apps/web/public/logo.png` và `apps/web/public/brand/fixq-logo.png`.
+  - Lưu file gốc chất lượng cao vào `apps/web/public/logo.png` và `apps/web/public/brand/fixo-logo.png`.
   - Đặt file `apps/web/app/icon.png` và `apps/web/app/apple-icon.png` theo quy ước Next.js 14 App Router (tự động inject các thẻ `<link rel="icon">` và `<link rel="apple-touch-icon">` chuẩn SEO và PWA).
   - Cập nhật `metadata.icons` trong `apps/web/app/layout.tsx` với icon: `/icon.png`, apple: `/apple-icon.png`, shortcut: `/favicon.ico`.
 - **Lý do**: Đảm bảo tương thích tối đa với mọi trình duyệt, tab title, bookmark và mobile homescreen.
@@ -44,7 +44,7 @@ Người dùng đã cung cấp file ảnh Logo FixQ chính thức (`media_179084
   - Header: `w-10 h-10 rounded-[10px] object-cover shadow-sm`.
   - Footer: `w-8 h-8 rounded-[8px] object-cover shadow-xs`.
 - **Print Receipt (`apps/web/app/print/[id]/page.tsx`)**:
-  - Header phiếu in: Thêm `<img src="/logo.png" alt="FixQ" className="w-10 h-10 print:w-8 print:h-8 rounded-[6px] object-cover mr-2.5 flex-none" />` trong container tiêu đề flex.
+  - Header phiếu in: Thêm `<img src="/logo.png" alt="FIXO" className="w-10 h-10 print:w-8 print:h-8 rounded-[6px] object-cover mr-2.5 flex-none" />` trong container tiêu đề flex.
 
 ## Risks / Trade-offs
 

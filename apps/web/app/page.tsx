@@ -39,12 +39,12 @@ export default function LandingPage() {
           >
             <img
               src="/logo.png"
-              alt="FixQ Logo"
+              alt="FIXO Logo"
               className="w-10 h-10 rounded-[10px] object-cover shadow-sm flex-none"
             />
             <div>
               <span className="font-heading font-extrabold text-[22px] tracking-[-1px] text-[#1c302b] block leading-none">
-                FixQ
+                FIXO
               </span>
               <span className="block text-[9px] tracking-[1.3px] text-[#819089] font-bold mt-1 uppercase">
                 REPAIR OPERATING SYSTEM
@@ -770,10 +770,10 @@ export default function LandingPage() {
               <div className="flex items-center gap-2.5 mb-4">
                 <img
                   src="/logo.png"
-                  alt="FixQ Logo"
+                  alt="FIXO Logo"
                   className="w-8 h-8 rounded-[8px] object-cover shadow-xs flex-none"
                 />
-                <span className="font-heading font-extrabold text-[20px] text-white">FixQ</span>
+                <span className="font-heading font-extrabold text-[20px] text-white">FIXO</span>
               </div>
               <p className="text-xs text-[#8c9f96] leading-relaxed mb-4 max-w-[320px]">
                 Hệ điều hành sửa chữa thiết bị âm thanh & Apple chuyên nghiệp.

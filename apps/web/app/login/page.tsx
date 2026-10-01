@@ -217,11 +217,11 @@ export default function LoginPage() {
         <div className="flex flex-col items-center text-center mb-8">
           <img
             src="/logo.png"
-            alt="FixQ Logo"
+            alt="FIXO Logo"
             className="w-14 h-14 rounded-[12px] object-cover shadow-md mb-3"
           />
           <h1 className="font-heading font-extrabold text-[26px] tracking-[-1px] text-[#1c302b] m-0">
-            FixQ
+            FIXO
           </h1>
           <p className="text-xs tracking-[1.3px] text-[#819089] font-bold mt-1 uppercase">
             REPAIR OPERATING SYSTEM

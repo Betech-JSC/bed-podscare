@@ -27,6 +27,7 @@ pnpm-debug.log*
 # OS Files
 .DS_Store
 *.pem
+scratch_*
 
 # Cache & Build
 .next-dev/
