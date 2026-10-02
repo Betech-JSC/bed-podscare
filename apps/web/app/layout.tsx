@@ -1,10 +1,10 @@
 import type { Metadata, Viewport } from 'next';
-import { Inter } from 'next/font/google';
+import localFont from 'next/font/local';
 import './globals.css';
 import { Providers } from './providers';
 
-const inter = Inter({
-  subsets: ['latin', 'vietnamese'],
+const inter = localFont({
+  src: '../public/fonts/Inter-Variable.woff2',
   display: 'swap',
   variable: '--font-inter',
 });
@@ -37,15 +37,6 @@ export default function RootLayout({
 }) {
   return (
     <html lang="vi" className={inter.variable}>
-      <head>
-        <link rel="preconnect" href="https://fonts.googleapis.com" />
-        <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
-        {/* eslint-disable-next-line @next/next/no-page-custom-font */}
-        <link
-          href="https://fonts.googleapis.com/css2?family=Inter:ital,opsz,wght@0,14..32,100..900;1,14..32,100..900&display=swap"
-          rel="stylesheet"
-        />
-      </head>
       <body
         className={`${inter.className} font-sans bg-[#f4f7f5] text-[#1c302b] min-h-screen`}
         style={{ fontFamily: "'Inter', var(--font-inter), -apple-system, BlinkMacSystemFont, sans-serif" }}
