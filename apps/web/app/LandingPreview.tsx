@@ -1,13 +1,12 @@
 'use client';
 
-import React from 'react';
+import React, { useState } from 'react';
 import Link from 'next/link';
+import { VideoModal } from './components/landing/VideoModal';
 import './landing-preview.css';
 
 export function LandingPreview() {
-  const showVideo = () => {
-    alert("Video giới thiệu FIXO sẽ được tích hợp tại đây.");
-  };
+  const [isVideoOpen, setIsVideoOpen] = useState(false);
 
   return (
     <>
@@ -81,7 +80,7 @@ export function LandingPreview() {
             Dùng thử miễn phí 14 ngày →
           </Link>
 
-          <button className="btn video-btn" onClick={showVideo}>
+          <button className="btn video-btn" onClick={() => setIsVideoOpen(true)}>
             ▶ Xem video giới thiệu
           </button>
 
@@ -819,6 +818,7 @@ export function LandingPreview() {
     </div>
 
   </footer>
+      <VideoModal isOpen={isVideoOpen} onClose={() => setIsVideoOpen(false)} />
     </>
   );
 }
