@@ -428,6 +428,8 @@ class OrderTransitionTest extends TestCase
         $this->assertEquals('Chờ linh kiện', $repairNext['waiting_parts']);
         $this->assertArrayHasKey('waiting_qc', $repairNext);
         $this->assertEquals('Chờ QC', $repairNext['waiting_qc']);
+        $this->assertArrayHasKey('ready_for_return', $repairNext);
+        $this->assertEquals('Sẵn sàng trả', $repairNext['ready_for_return']);
     }
 
     /**
@@ -467,7 +469,7 @@ class OrderTransitionTest extends TestCase
             ->assertJsonPath('success', false)
             ->assertJsonPath(
                 'message',
-                "Không thể chuyển trạng thái từ 'Đang sửa' sang 'Hoàn tất'. Các trạng thái hợp lệ tiếp theo: Chờ linh kiện, Chờ QC."
+                "Không thể chuyển trạng thái từ 'Đang sửa' sang 'Hoàn tất'. Các trạng thái hợp lệ tiếp theo: Chờ linh kiện, Chờ QC, Sẵn sàng trả."
             );
 
         // Case B: Đang kiểm tra (inspecting) không thể nhảy sang Hoàn tất (completed)
@@ -534,4 +536,74 @@ class OrderTransitionTest extends TestCase
         $this->assertEquals('Sẵn sàng trả', $allowedStatuses['ready_for_return']);
         $this->assertArrayNotHasKey('completed', $allowedStatuses);
     }
+
+    /**
+     * Test 14 (OpenSpec ktv-grab-dispatch Task 1.1): Chuyển trực tiếp từ waiting_tech sang in_repair và tự động gán technician_id.
+     */
+    public function test_direct_transition_from_waiting_tech_to_in_repair_with_technician_assignment(): void
+    {
+        $user = $this->getAuthenticatedUser();
+        $order = $this->createTestOrder('waiting_tech');
+
+        $response = $this->actingAs($user, 'sanctum')->postJson("/api/v1/orders/{$order->id}/transition", [
+            'status'        => 'in_repair',
+            'technician_id' => $user->id,
+        ]);
+
+        $response->assertStatus(200)
+            ->assertJsonPath('success', true)
+            ->assertJsonPath('data.status', 'in_repair')
+            ->assertJsonPath('data.technician_id', $user->id);
+
+        $fresh = $order->fresh();
+        $this->assertEquals('in_repair', $fresh->status);
+        $this->assertEquals($user->id, $fresh->technician_id);
+        $this->assertNotNull($fresh->repair_started_at);
+        $this->assertNotNull($fresh->tech_accepted_at);
+    }
+
+    /**
+     * Test 15 (OpenSpec ktv-grab-dispatch Task 1.2 & 1.3): Chuyển trực tiếp từ in_repair sang ready_for_return tự động tạo QC pass và dispatch event cho CSKH.
+     */
+    public function test_direct_transition_from_in_repair_to_ready_for_return_bypasses_qc_block_and_dispatches_event(): void
+    {
+        \Illuminate\Support\Facades\Event::fake([\App\Events\OrderOperationalEvent::class]);
+
+        $user = $this->getAuthenticatedUser();
+        $order = $this->createTestOrder('in_repair');
+
+        // Chuyển thẳng in_repair -> ready_for_return mà chưa có QC Inspection thủ công
+        $response = $this->actingAs($user, 'sanctum')->postJson("/api/v1/orders/{$order->id}/transition", [
+            'status'      => 'ready_for_return',
+            'repair_note' => 'Đã thay thế linh kiện và kiểm tra âm thanh hoàn tất',
+            'parts_used'  => 'Pin AirPods Pro 2, Loa tai trái',
+        ]);
+
+        $response->assertStatus(200)
+            ->assertJsonPath('success', true)
+            ->assertJsonPath('data.status', 'ready_for_return');
+
+        $fresh = $order->fresh();
+        $this->assertEquals('ready_for_return', $fresh->status);
+        $this->assertNotNull($fresh->repair_completed_at);
+        $this->assertNotNull($fresh->qc_passed_at);
+        $this->assertEquals('Đã thay thế linh kiện và kiểm tra âm thanh hoàn tất', $fresh->repair_note);
+        $this->assertEquals('Pin AirPods Pro 2, Loa tai trái', $fresh->parts_used_summary);
+
+        // Đảm bảo bản ghi QcInspection ngầm được tạo tự động với kết quả pass
+        $this->assertDatabaseHas('qc_inspections', [
+            'repair_order_id' => $order->id,
+            'result'          => 'pass',
+            'notes'           => 'Đã thay thế linh kiện và kiểm tra âm thanh hoàn tất',
+        ]);
+
+        // Đảm bảo event được dispatch tới đúng role cskh của chi nhánh
+        \Illuminate\Support\Facades\Event::assertDispatched(\App\Events\OrderOperationalEvent::class, function (\App\Events\OrderOperationalEvent $event) use ($order) {
+            return (int) $event->orderId === (int) $order->id
+                && $event->targetRole === 'cskh'
+                && $event->eventName === 'order.ready_for_return'
+                && $event->severity === 'success';
+        });
+    }
 }
+

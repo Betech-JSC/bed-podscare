@@ -19,7 +19,7 @@ export interface NavItemDef {
 }
 
 export const mainNavItems: NavItemDef[] = [
-  { id: 'tech', label: 'Kỹ thuật viên', icon: 'wrench', href: '/tech' },
+  { id: 'tech', label: 'Không gian Kỹ thuật', icon: 'wrench', href: '/tech' },
 ];
 
 export interface AppSidebarProps {
@@ -137,12 +137,7 @@ export const AppSidebar: React.FC<AppSidebarProps> = ({
       'warranty',
     ],
     tech: [
-      'dashboard',
-      'repairs',
-      'devices',
-      'timeline',
       'tech',
-      'qc',
     ],
     qc: [
       'dashboard',
@@ -172,7 +167,7 @@ export const AppSidebar: React.FC<AppSidebarProps> = ({
   ];
 
   const operationsNav: NavItemDef[] = [
-    { id: 'tech', label: 'Kỹ thuật viên', icon: 'wrench', href: '/tech' },
+    { id: 'tech', label: 'Không gian Kỹ thuật', icon: 'wrench', href: '/tech' },
     { id: 'qc', label: 'Kiểm định QC', icon: 'qc', badge: qcCount },
     { id: 'inventory', label: 'Kho linh kiện', icon: 'inventory' },
     { id: 'shipments', label: 'Giao nhận', icon: 'shipments' },

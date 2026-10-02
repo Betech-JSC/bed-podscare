@@ -39,9 +39,6 @@ export interface NotificationPopoverProps {
   onNotificationClick?: (item: NotificationItem) => void;
   onMarkAllAsRead?: () => void;
   onMarkAsRead?: (id: string | number) => void;
-  isMuted?: boolean;
-  onToggleMute?: () => void;
-  onTestSound?: () => void;
   className?: string;
 }
 
@@ -201,9 +198,6 @@ export const NotificationPopover: React.FC<NotificationPopoverProps> = ({
   onNotificationClick,
   onMarkAllAsRead,
   onMarkAsRead,
-  isMuted = false,
-  onToggleMute,
-  onTestSound,
   className = '',
 }) => {
   const [activeTab, setActiveTab] = useState<TabType>('all');
@@ -350,40 +344,8 @@ export const NotificationPopover: React.FC<NotificationPopoverProps> = ({
           </div>
         </div>
 
-        {/* Right: Header Action Tools (Test sound, Mute audio & Close) */}
+        {/* Right: Close button */}
         <div className="flex items-center gap-1.5 shrink-0">
-          {/* Test Sound Button: Nút "Thử âm thanh" với icon loa để phát tiếng chuông tức thì */}
-          {onTestSound && (
-            <button
-              type="button"
-              onClick={onTestSound}
-              title="Thử âm thanh chuông thông báo"
-              aria-label="Thử âm thanh chuông thông báo"
-              className="h-7 px-2.5 rounded-full text-[11px] font-semibold flex items-center gap-1.5 transition-all border shadow-2xs cursor-pointer bg-[#fbfdfc] text-[#176b51] border-[#d8ebe1] hover:bg-[#eaf5ef] active:scale-95"
-            >
-              <Icon name="volume" size={12} />
-              <span className="whitespace-nowrap">Thử âm thanh</span>
-            </button>
-          )}
-
-          {/* Mute/Unmute Audio Toggle: Pill button bo góc mềm mại, icon chuông gạch chéo tinh tế */}
-          {onToggleMute && (
-            <button
-              type="button"
-              onClick={onToggleMute}
-              title={isMuted ? 'Bật âm thanh thông báo' : 'Tắt âm thanh thông báo'}
-              aria-label={isMuted ? 'Bật âm thanh thông báo' : 'Tắt âm thanh thông báo'}
-              className={`h-7 px-2.5 rounded-full text-[11px] font-semibold flex items-center gap-1.5 transition-all border shadow-2xs cursor-pointer ${
-                isMuted
-                  ? 'bg-[#fcf3f2] text-[#bc5b52] border-[#f5dbd7] hover:bg-[#fae7e4]'
-                  : 'bg-[#f0f7f4] text-[#176b51] border-[#d4eae0] hover:bg-[#e4f2eb]'
-              }`}
-            >
-              <Icon name={isMuted ? 'bellOff' : 'bell'} size={12} />
-              <span className="whitespace-nowrap">{isMuted ? 'Tắt chuông' : 'Bật chuông'}</span>
-            </button>
-          )}
-
           {/* Close Popover (X) cân đối */}
           <button
             type="button"

@@ -165,11 +165,39 @@ FSM_QUICK_ACTIONS['Chờ khách nhận'] = FSM_QUICK_ACTIONS.waiting_pickup;
 FSM_QUICK_ACTIONS['Hoàn tất'] = FSM_QUICK_ACTIONS.completed;
 FSM_QUICK_ACTIONS['Đã hủy'] = FSM_QUICK_ACTIONS.cancelled;
 
+export const TECHNICAL_STAGE_STATUSES = [
+  'waiting_tech',
+  'assigned',
+  'in_repair',
+  'waiting_parts',
+  'rework_needed',
+];
+
 /**
- * Trả về danh sách hành động hợp lệ cho trạng thái chỉ định.
+ * Kiểm tra xem một trạng thái có thuộc giai đoạn kỹ thuật nội bộ hay không.
  */
-export function getQuickActionsForStatus(status?: string | null): QuickTransitionAction[] {
+export function isTechnicalStageStatus(status?: string | null): boolean {
+  if (!status) return false;
+  const normalized = normalizeStatusCode(status);
+  return TECHNICAL_STAGE_STATUSES.includes(normalized);
+}
+
+/**
+ * Trả về danh sách hành động hợp lệ cho trạng thái chỉ định kèm FSM UI Guard theo vai trò người dùng.
+ * - Nếu vai trò là `cskh`: Ẩn toàn bộ nút thao tác kỹ thuật nội bộ khi đơn đang ở các trạng thái:
+ *   waiting_tech, assigned, in_repair, waiting_parts, rework_needed.
+ */
+export function getQuickActionsForStatus(
+  status?: string | null,
+  userRole?: string | null
+): QuickTransitionAction[] {
   if (!status) return [];
   const normalized = normalizeStatusCode(status);
+
+  // FSM UI Guard: CSKH không thể can thiệp vào các trạng thái sửa chữa kỹ thuật của KTV
+  if (userRole === 'cskh' && TECHNICAL_STAGE_STATUSES.includes(normalized)) {
+    return [];
+  }
+
   return FSM_QUICK_ACTIONS[normalized] || FSM_QUICK_ACTIONS[status] || [];
 }

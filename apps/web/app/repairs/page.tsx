@@ -22,7 +22,9 @@ import { useQuery } from '@tanstack/react-query';
 import {
   normalizeStatusCode,
   getQuickActionsForStatus,
+  isTechnicalStageStatus,
 } from './fsm';
+import { useSilentPrint, PrintButtonDropdown } from '../components/print';
 
 export default function RepairsPage() {
   const router = useRouter();
@@ -35,6 +37,7 @@ export default function RepairsPage() {
   const [selectedOrder, setSelectedOrder] = useState<RepairOrder | null>(null);
   const [intakeModalOpen, setIntakeModalOpen] = useState(false);
   const [isTransitioning, setIsTransitioning] = useState(false);
+  const { printReceipt, isPrinting: isSilentPrinting } = useSilentPrint();
 
   // Map label to backend status code
   const statusToBackendMap: Record<string, string> = {
@@ -403,14 +406,29 @@ export default function RepairsPage() {
           title={`${selectedOrder.device} · ${selectedOrder.name}`}
           subtitle={`Số điện thoại: ${selectedOrder.phone} · Ngày tiếp nhận: ${selectedOrder.date}`}
           footer={
-            <div className="flex items-center justify-between w-full">
-              <Button
-                variant="secondary"
-                icon="arrow"
-                onClick={() => router.push(`/print/${selectedOrder.id}`)}
-              >
-                Xem phiếu tiếp nhận ↗
-              </Button>
+            <div className="flex flex-wrap items-center justify-between gap-2.5 w-full">
+              <div className="flex items-center gap-2">
+                <PrintButtonDropdown
+                  order={selectedOrder}
+                  isPrinting={isSilentPrinting}
+                  onPrint={(ord, fmt) => {
+                    toast(`Đang gửi lệnh in phiếu ${ord.id} (${fmt.toUpperCase()})...`, 'info');
+                    printReceipt(ord, fmt);
+                  }}
+                  variant="secondary"
+                  size="md"
+                  buttonText="In phiếu tiếp nhận"
+                />
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => router.push(`/print/${selectedOrder.id}`)}
+                  className="text-xs text-[#6e7f77] hover:text-[#176b58]"
+                  title="Mở xem phiếu in trên tab riêng"
+                >
+                  Xem mẫu in ↗
+                </Button>
+              </div>
               <div className="flex gap-2">
                 <Button variant="ghost" onClick={() => setSelectedOrder(null)}>
                   Đóng
@@ -448,15 +466,28 @@ export default function RepairsPage() {
             {(() => {
               const currentStatusCode = normalizeStatusCode(selectedOrder.status);
               const isWaitingQc = currentStatusCode === 'waiting_qc';
-              const actions = getQuickActionsForStatus(currentStatusCode);
+              const actions = getQuickActionsForStatus(currentStatusCode, role);
+              const inTechPhase = isTechnicalStageStatus(currentStatusCode);
 
               return (
                 <div className="space-y-2.5 pt-1 pb-3 border-b border-[#f0f3f1]">
+                  {/* Status Banner cho CSKH khi đơn ở giai đoạn kỹ thuật */}
+                  {role === 'cskh' && inTechPhase && (
+                    <div className="flex items-center gap-2.5 p-3 rounded-[8px] bg-[#eaf4ef] border border-[#d0e5d9] text-xs text-[#176b58]">
+                      <span className="w-2 h-2 rounded-full bg-[#176b58] animate-pulse flex-none" />
+                      <span>
+                        <strong>Tiến độ:</strong> Thiết bị đang trong quá trình xử lý kỹ thuật bởi KTV. CSKH không can thiệp trạng thái ở bước này.
+                      </span>
+                    </div>
+                  )}
+
                   <div className="flex flex-wrap items-center gap-2">
                     <span className="text-xs text-[#75857d] font-bold">Chuyển trạng thái nhanh:</span>
                     {actions.length === 0 ? (
                       <span className="text-xs text-[#86968f] italic">
-                        {currentStatusCode === 'completed'
+                        {role === 'cskh' && inTechPhase
+                          ? 'Đang được KTV xử lý trong phòng kỹ thuật'
+                          : currentStatusCode === 'completed'
                           ? 'Đơn hàng đã hoàn tất vòng đời'
                           : currentStatusCode === 'cancelled'
                           ? 'Đơn hàng đã hủy'

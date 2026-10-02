@@ -98,6 +98,7 @@ class OrderController extends Controller
             'appearance_notes'      => 'nullable|string',
             'estimated_price'       => 'nullable|numeric|min:0',
             'warranty_terms_days'   => 'nullable|integer|min:0',
+            'status'                => 'nullable|string',
             'checklists'            => 'nullable|array',
             'checklists.*.item_name'=> 'required_with:checklists|string',
             'checklists.*.status'   => 'required_with:checklists|in:pass,fail,not_tested',
@@ -130,7 +131,9 @@ class OrderController extends Controller
                 $attempts++;
             } while (RepairOrder::where('order_code', $orderCode)->exists() && $attempts < 20);
 
-            // 3. Tạo RepairOrder
+            // 3. Tạo RepairOrder: mặc định trạng thái waiting_tech để KTV nhận đơn tức thì
+            $initialStatus = $validated['status'] ?? 'waiting_tech';
+
             $order = RepairOrder::create([
                 'order_code'            => $orderCode,
                 'branch_id'             => $validated['branch_id'],
@@ -141,7 +144,8 @@ class OrderController extends Controller
                 'accessories'           => $validated['accessories'] ?? null,
                 'issue_description'     => $validated['issue_description'],
                 'appearance_notes'      => $validated['appearance_notes'] ?? null,
-                'status'                => 'inspecting',
+                'status'                => $initialStatus,
+                'customer_approved_at'  => $initialStatus === 'waiting_tech' ? now() : null,
                 'total_price'           => $validated['estimated_price'] ?? 0.00,
                 'warranty_terms_days'   => $validated['warranty_terms_days'] ?? 90,
                 'created_by_user_id'    => $request->user()->id,
@@ -170,7 +174,7 @@ class OrderController extends Controller
                 'ip_address'     => $request->ip(),
             ]);
 
-            // 6. Tạo thông báo vận hành và phát sự kiện realtime tức thì
+            // 6. Tạo thông báo vận hành và phát sự kiện realtime tức thì cho kỹ thuật viên
             $order->loadMissing('branch');
             $branchName = $order->branch?->name ?? 'chi nhánh';
 
@@ -194,7 +198,7 @@ class OrderController extends Controller
                 now()->toIso8601String(),
                 "/repairs?id={$order->id}",
                 $order->branch_id,
-                null,
+                'technician',
                 null,
                 'order_created',
                 'order.created'
@@ -325,6 +329,7 @@ class OrderController extends Controller
             'repair_note'         => 'nullable|string',
             'parts_used'          => 'nullable|string',
             'rework_reason'       => 'nullable|string',
+            'technician_id'       => 'nullable|exists:users,id',
         ]);
 
         $rawStatus = (string) ($validated['transition'] ?? $validated['status']);
@@ -336,6 +341,7 @@ class OrderController extends Controller
                 'user'                => $request->user(),
                 'admin_id'            => $request->user()?->id,
                 'admin_name'          => $request->user()?->name,
+                'technician_id'       => $validated['technician_id'] ?? null,
                 'decline_reason'      => $validated['decline_reason'] ?? null,
                 'repair_note'         => $validated['repair_note'] ?? null,
                 'parts_used'          => $validated['parts_used'] ?? null,

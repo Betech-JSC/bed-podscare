@@ -23,7 +23,7 @@ class OrderWorkflowService extends BaseWorkflowService
         'rejected'         => ['inspecting', 'waiting_pickup', 'completed', 'cancelled'],
         'waiting_tech'     => ['assigned', 'in_repair'],
         'assigned'         => ['in_repair'],
-        'in_repair'        => ['waiting_parts', 'waiting_qc', 'qc_pending', 'qc_inspecting'],
+        'in_repair'        => ['waiting_parts', 'waiting_qc', 'qc_pending', 'qc_inspecting', 'ready_for_return'],
         'waiting_parts'    => ['in_repair'],
         'rework_needed'    => ['in_repair'],
         'waiting_qc'       => ['ready_for_return', 'rework_needed'],
@@ -96,16 +96,39 @@ class OrderWorkflowService extends BaseWorkflowService
      */
     protected function beforeTransition(Model $model, string $oldStatus, string $newStatus, array $options): void
     {
-        // Khi chuyển sang ready_for_return: bắt buộc phải có biên bản QC Pass
+        // Khi chuyển sang ready_for_return:
         if ($newStatus === 'ready_for_return') {
-            $hasPassedQc = QcInspection::where('repair_order_id', $model->id)
-                ->where('result', 'pass')
-                ->exists();
+            // Cho phép KTV nghiệm thu trực tiếp khi chuyển thẳng từ in_repair sang ready_for_return
+            if ($oldStatus === 'in_repair') {
+                $hasPassedQc = QcInspection::where('repair_order_id', $model->id)
+                    ->where('result', 'pass')
+                    ->exists();
 
-            if (! $hasPassedQc) {
-                throw new \DomainException(
-                    'Đơn hàng chưa có biên bản kiểm định chất lượng đạt chuẩn (QC Pass). Không thể chuyển sang trạng thái sẵn sàng giao trả.'
-                );
+                if (! $hasPassedQc) {
+                    $inspectorId = $options['user']?->id 
+                        ?? ($options['admin_id'] 
+                        ?? ($options['technician_id'] 
+                        ?? ($model->technician_id 
+                        ?? auth()->id())));
+
+                    QcInspection::create([
+                        'tenant_id'       => $model->tenant_id,
+                        'repair_order_id' => $model->id,
+                        'inspector_id'    => $inspectorId,
+                        'result'          => 'pass',
+                        'notes'           => $options['repair_note'] ?? 'Kỹ thuật viên nghiệm thu trực tiếp',
+                    ]);
+                }
+            } else {
+                $hasPassedQc = QcInspection::where('repair_order_id', $model->id)
+                    ->where('result', 'pass')
+                    ->exists();
+
+                if (! $hasPassedQc) {
+                    throw new \DomainException(
+                        'Đơn hàng chưa có biên bản kiểm định chất lượng đạt chuẩn (QC Pass). Không thể chuyển sang trạng thái sẵn sàng giao trả.'
+                    );
+                }
             }
         }
     }
@@ -137,6 +160,13 @@ class OrderWorkflowService extends BaseWorkflowService
                 if (! $model->repair_started_at) {
                     $updates['repair_started_at'] = $now;
                 }
+                if (! empty($options['technician_id'])) {
+                    $updates['technician_id'] = $options['technician_id'];
+                    $updates['tech_accepted_at'] = $now;
+                } elseif (! empty($options['user']) && in_array($options['user']->role ?? '', ['tech', 'technician'], true)) {
+                    $updates['technician_id'] = $options['user']->id;
+                    $updates['tech_accepted_at'] = $now;
+                }
                 break;
             case 'waiting_qc':
             case 'qc_pending':
@@ -151,6 +181,17 @@ class OrderWorkflowService extends BaseWorkflowService
                 break;
             case 'ready_for_return':
                 $updates['qc_passed_at'] = $now;
+                if ($oldStatus === 'in_repair') {
+                    if (! $model->repair_completed_at) {
+                        $updates['repair_completed_at'] = $now;
+                    }
+                    if (! empty($options['repair_note'])) {
+                        $updates['repair_note'] = $options['repair_note'];
+                    }
+                    if (! empty($options['parts_used'])) {
+                        $updates['parts_used_summary'] = $options['parts_used'];
+                    }
+                }
                 break;
             case 'waiting_pickup':
                 $updates['customer_notified_at'] = $now;
@@ -276,7 +317,9 @@ class OrderWorkflowService extends BaseWorkflowService
             ],
             'ready_for_return' => [
                 'title'      => 'Đơn hàng sẵn sàng giao trả',
-                'message'    => "Đơn {$model->order_code} đã hoàn tất kiểm định và sẵn sàng bàn giao cho khách.",
+                'message'    => $oldStatus === 'in_repair'
+                    ? "Đơn {$model->order_code} đã hoàn tất sửa chữa và sẵn sàng bàn giao cho khách."
+                    : "Đơn {$model->order_code} đã hoàn tất kiểm định và sẵn sàng bàn giao cho khách.",
                 'severity'   => 'success',
                 'type'       => 'order_ready_delivery',
                 'role'       => 'cskh',

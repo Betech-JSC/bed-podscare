@@ -156,7 +156,7 @@ export function computeTargetChannels(
     channels.push(`user.${userId}`);
   }
 
-  return channels;
+  return Array.from(new Set(channels));
 }
 
 /* ==========================================================================

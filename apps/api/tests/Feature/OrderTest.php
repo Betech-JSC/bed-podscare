@@ -240,7 +240,8 @@ class OrderTest extends TestCase
         $response = $this->actingAs($user, 'sanctum')->postJson('/api/v1/orders', $payload);
 
         $response->assertStatus(201)
-            ->assertJsonPath('success', true);
+            ->assertJsonPath('success', true)
+            ->assertJsonPath('data.status', 'waiting_tech');
 
         $orderId = $response->json('data.id');
         $orderCode = $response->json('data.order_code');
@@ -263,11 +264,12 @@ class OrderTest extends TestCase
         $this->assertStringContainsString($orderCode, $notification->message);
         $this->assertStringContainsString($branch->name, $notification->message);
 
-        // 2. Kiểm tra Event OrderOperationalEvent được dispatch với đầy đủ thông tin
+        // 2. Kiểm tra Event OrderOperationalEvent được dispatch với đầy đủ thông tin (targetRole = technician)
         Event::assertDispatched(OrderOperationalEvent::class, function (OrderOperationalEvent $event) use ($orderId, $orderCode, $branch, $notification) {
             return $event->orderId === $orderId
                 && $event->orderCode === $orderCode
                 && $event->branchId === $branch->id
+                && $event->targetRole === 'technician'
                 && $event->type === 'order_created'
                 && $event->title === 'Tiếp nhận đơn mới'
                 && $event->severity === 'info'

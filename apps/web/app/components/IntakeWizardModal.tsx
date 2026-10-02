@@ -1,7 +1,6 @@
 'use client';
 
 import React, { useState, useEffect, useRef } from 'react';
-import { useRouter } from 'next/navigation';
 import {
   Modal,
   Button,
@@ -23,7 +22,7 @@ import type {
 } from '@podscare/types';
 import { repairService, deviceService, serviceService, type CommonIssueItem } from '@podscare/api-client';
 import { usePodsCare } from '../providers';
-import { realtimeEventBus } from '../utils/socketNotifications';
+import { useSilentPrint, PrintFormatModal } from './print';
 
 export interface IntakeWizardModalProps {
   isOpen: boolean;
@@ -55,10 +54,11 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
   onClose,
   onSuccess,
 }) => {
-  const router = useRouter();
   const { toast } = useToast();
   const { categories, deviceProfiles, addOrder, currentUser, branch, branchId, branches } =
     usePodsCare();
+  const { printReceipt, currentFormat, setFormat, isPrinting: isSilentPrinting } = useSilentPrint();
+  const [printModalOpen, setPrintModalOpen] = useState(false);
 
   const contentTopRef = useRef<HTMLDivElement>(null);
 
@@ -366,32 +366,6 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
         newId = data.data.order_code;
       }
       toast(`Đã tiếp nhận thành công đơn ${newId}`, 'success');
-
-      // Kích hoạt ngay sự kiện thông báo vận hành cục bộ (Local Hybrid Feedback)
-      const operationalNotification = {
-        id: `notif-${newId}-${Date.now()}`,
-        type: 'order_created' as const,
-        title: 'Tiếp nhận đơn mới',
-        message: `Đơn ${newId} (${payload.customer_name}) đã được tiếp nhận thành công.`,
-        orderCode: newId,
-        orderId: newId,
-        severity: 'info' as const,
-        timestamp: new Date().toISOString(),
-        actionUrl: `/repairs?id=${newId}`,
-        branchId: branchIdNum,
-      };
-
-      // 1. Phát sự kiện qua RealtimeEventBus
-      realtimeEventBus.emit('order.created', operationalNotification);
-
-      // 2. Phát CustomEvent trên window cho NotificationProvider & E2E / browser listeners
-      if (typeof window !== 'undefined') {
-        window.dispatchEvent(
-          new CustomEvent('podscare:operational_event', {
-            detail: operationalNotification,
-          })
-        );
-      }
     } catch (err: any) {
       console.warn('API call failed, saving locally:', err);
       toast(`Đã lưu đơn ${newId}: ${err?.message || ''}`, 'info');
@@ -429,15 +403,20 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
     onClose();
 
     if (shouldPrint) {
-      router.push(`/print/${newId}`);
+      toast(`Đang gửi lệnh in phiếu tiếp nhận (${currentFormat.toUpperCase()})...`, 'info');
+      printReceipt(newOrder, currentFormat);
+      if (onSuccess) {
+        onSuccess(newOrder, true);
+      }
     } else if (onSuccess) {
-      onSuccess(newOrder, shouldPrint);
+      onSuccess(newOrder, false);
     }
   };
 
   return (
-    <Modal
-      isOpen={isOpen}
+    <>
+      <Modal
+        isOpen={isOpen}
       onClose={onClose}
       maxWidth="xl"
       eyebrow="CSKH · TIẾP NHẬN THIẾT BỊ"
@@ -493,6 +472,18 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
             </Button>
           ) : (
             <div className="flex items-center gap-2 flex-1 sm:flex-initial justify-end">
+              {/* Nút chọn nhanh khổ in */}
+              <button
+                type="button"
+                onClick={() => setPrintModalOpen(true)}
+                className="flex items-center gap-1 px-2.5 py-1.5 rounded-[8px] bg-[#f0f5f2] hover:bg-[#e4ede7] border border-[#d8e3dc] text-xs text-[#176b58] font-semibold transition-colors cursor-pointer"
+                title="Nhấn để đổi khổ in mặc định"
+              >
+                <span>🖨️ Khổ:</span>
+                <span className="font-bold uppercase font-mono">{currentFormat}</span>
+                <span className="text-[10px] text-[#71867c]">▾</span>
+              </button>
+
               <Button
                 variant="secondary"
                 size="md"
@@ -500,17 +491,21 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
                 onClick={() => handleSave(false)}
                 className="min-h-[44px] h-11 sm:h-9 px-3 sm:px-4 text-xs sm:text-sm font-medium touch-manipulation cursor-pointer"
               >
-                {isSubmitting ? 'Đang lưu...' : 'Lưu'}
+                {isSubmitting ? 'Đang lưu...' : 'Lưu đơn'}
               </Button>
               <Button
                 variant="primary"
                 size="md"
-                icon="arrow"
-                disabled={isSubmitting}
+                disabled={isSubmitting || isSilentPrinting}
                 onClick={() => handleSave(true)}
-                className="min-h-[44px] h-11 sm:h-9 flex-1 sm:flex-initial px-3 sm:px-5 text-xs sm:text-sm font-bold shadow-md active:scale-[0.98] transition-transform justify-center touch-manipulation cursor-pointer"
+                className="min-h-[44px] h-11 sm:h-9 flex-1 sm:flex-initial px-3 sm:px-5 text-xs sm:text-sm font-bold shadow-md active:scale-[0.98] transition-transform justify-center touch-manipulation cursor-pointer flex items-center gap-1.5"
               >
-                {isSubmitting ? 'Đang lưu & Mở...' : 'Lưu & Xem phiếu ↗'}
+                <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <polyline points="6 9 6 2 18 2 18 9" />
+                  <path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2" />
+                  <rect x="6" y="14" width="12" height="8" />
+                </svg>
+                <span>{isSubmitting ? 'Đang lưu...' : 'Lưu & In phiếu'}</span>
               </Button>
             </div>
           )}
@@ -869,5 +864,11 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
         )}
       </div>
     </Modal>
+    <PrintFormatModal
+      isOpen={printModalOpen}
+      onClose={() => setPrintModalOpen(false)}
+      onSelectFormat={(f) => setFormat(f)}
+    />
+  </>
   );
 };

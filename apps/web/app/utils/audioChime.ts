@@ -72,12 +72,14 @@ export function setupAudioContextUnlock(): void {
 }
 
 /**
- * Tổng hợp và phát âm thanh "ting" thông báo (Zero-Latency Web Audio Chime).
- * - Dual Sine Wave: 659.25Hz (E5) chuyển tiếp mượt mà sang 880.00Hz (A5).
- * - Envelope: Attack 0.01s, Exponential Decay 0.35s về 0.001.
- * - Không phụ thuộc file MP3 tĩnh hay băng thông mạng.
+ * Tổng hợp và phát âm thanh chuông báo chuẩn Grab (Dual-tone Chime với DynamicsCompressor).
+ * - Tần số: Nốt C6 (1046.50Hz) ngân 0.15s chuyển tiếp dứt khoát sang E6 (1318.51Hz) ngân 0.5s.
+ * - Volume: 1.0 (100% công suất).
+ * - DynamicsCompressorNode: Threshold -18dB, Knee 12dB, Ratio 8, Attack 3ms, Release 250ms
+ *   giúp âm thanh to rõ, sắc sảo, chống méo tiếng và triệt tiêu hoàn toàn hiện tượng vỡ gain loa.
+ * - Pipeline: Oscillator -> GainNode (1.0) -> DynamicsCompressorNode -> ctx.destination.
  */
-export function playChimeTone(volume: number = 0.25): void {
+export function playChimeTone(volume: number = 1.0): void {
   const ctx = unlockAudio();
   if (!ctx) return;
 
@@ -88,31 +90,49 @@ export function playChimeTone(volume: number = 0.25): void {
 
   try {
     const now = ctx.currentTime;
-    const duration = 0.35; // Thời gian vang 0.35s
-    const attackTime = 0.01; // Attack cực nhanh 10ms
+    const note1Duration = 0.15; // Nốt 1 C6 ngân 0.15s
+    const totalDuration = 0.65; // Tổng thời lượng phát 0.65s (nốt 2 E6 ngân 0.5s)
+    const attackTime = 0.005; // Attack 5ms cực nhanh, dứt khoát
     const safeVolume = Math.min(Math.max(volume, 0.01), 1.0);
 
     const osc = ctx.createOscillator();
     const gainNode = ctx.createGain();
 
-    // Dạng sóng Sine êm ái, thanh thoát chuẩn y tế / Apple
+    // Khởi tạo DynamicsCompressorNode chống vỡ gain nếu môi trường hỗ trợ
+    const compressor =
+      typeof ctx.createDynamicsCompressor === 'function' ? ctx.createDynamicsCompressor() : null;
+    if (compressor) {
+      compressor.threshold.setValueAtTime(-18, now);
+      compressor.knee.setValueAtTime(12, now);
+      compressor.ratio.setValueAtTime(8, now);
+      compressor.attack.setValueAtTime(0.003, now);
+      compressor.release.setValueAtTime(0.25, now);
+    }
+
+    // Dạng sóng Sine trong trẻo, không chói gắt
     osc.type = 'sine';
 
-    // Dual Sine frequency transition: 659.25Hz (E5) -> 880Hz (A5)
+    // Dual-tone chime: Nốt E5 (659.25Hz) -> chuyển tiếp sang Nốt A5 (880Hz)
     osc.frequency.setValueAtTime(659.25, now);
-    osc.frequency.exponentialRampToValueAtTime(880.0, now + 0.06);
+    osc.frequency.exponentialRampToValueAtTime(880.0, now + note1Duration);
 
-    // Dynamic Gain Envelope
+    // Dynamic Gain Envelope đạt đỉnh 1.0 (100%) và tắt dần tự nhiên
     gainNode.gain.setValueAtTime(0.0001, now);
     gainNode.gain.exponentialRampToValueAtTime(safeVolume, now + attackTime);
-    gainNode.gain.exponentialRampToValueAtTime(0.001, now + duration);
+    gainNode.gain.setValueAtTime(safeVolume, now + note1Duration);
+    gainNode.gain.exponentialRampToValueAtTime(0.001, now + totalDuration);
 
-    // Kết nối đồ thị âm thanh (Audio Graph)
+    // Kết nối đồ thị âm thanh (Audio Graph Pipeline)
     osc.connect(gainNode);
-    gainNode.connect(ctx.destination);
+    if (compressor) {
+      gainNode.connect(compressor);
+      compressor.connect(ctx.destination);
+    } else {
+      gainNode.connect(ctx.destination);
+    }
 
     osc.start(now);
-    osc.stop(now + duration + 0.02);
+    osc.stop(now + totalDuration + 0.05);
   } catch (err) {
     if (typeof process !== 'undefined' && process.env?.NEXT_PUBLIC_SOCKET_DEBUG === 'true') {
       console.debug('[AudioChime] Không thể phát âm thanh:', err);

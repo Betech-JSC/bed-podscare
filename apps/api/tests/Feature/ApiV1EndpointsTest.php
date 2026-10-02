@@ -142,6 +142,7 @@ class ApiV1EndpointsTest extends TestCase
             'customer_id'         => $customer->id,
             'device_model_id'     => $device->id,
             'issue_description'   => 'AirPods mất tiếng một bên tai',
+            'status'              => 'inspecting',
             'estimated_price'     => 300000,
             'warranty_terms_days' => 90,
             'checklists'          => [
