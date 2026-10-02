@@ -297,7 +297,8 @@ export const TrackingView: React.FC<{ initialId?: string }> = ({ initialId = '' 
               Không tìm thấy đơn sửa chữa phù hợp
             </h3>
             <p className="text-sm text-[#7e8d85] max-w-[440px] mx-auto leading-relaxed">
-              Không tìm thấy phiếu có mã <b>{searchId}</b>. Quý khách vui lòng kiểm tra lại mã số
+              Không tìm thấy phiếu có mã{' '}
+              <b>{searchId}</b>. Quý khách vui lòng kiểm tra lại mã số
               trên biên lai hoặc liên hệ hotline cửa hàng để được hỗ trợ.
             </p>
           </div>

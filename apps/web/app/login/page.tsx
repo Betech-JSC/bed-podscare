@@ -461,7 +461,8 @@ function LoginFormContent() {
                     icon={<Icon name="building" size={14} />}
                   />
                   <p className="text-[11px] text-[#7d8c85] m-0">
-                    Mặc định hệ thống là <b className="font-semibold">fixo-master</b>. Chỉ đổi nếu bạn làm việc tại chuỗi độc lập đối tác.
+                    Mặc định hệ thống là{' '}
+                    <b className="font-semibold">fixo-master</b>. Chỉ đổi nếu bạn làm việc tại chuỗi độc lập đối tác.
                   </p>
                 </div>
               )}

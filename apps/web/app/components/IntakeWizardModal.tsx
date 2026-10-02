@@ -522,7 +522,7 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
               <span className="w-6 h-6 rounded-[7px] bg-[#eaf4ef] text-[#176b58] text-xs font-bold grid place-items-center">
                 01
               </span>
-              Thông tin khách hàng & Chi nhánh tiếp nhận
+              <span>Thông tin khách hàng & Chi nhánh tiếp nhận</span>
             </h3>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
               <Input
@@ -631,7 +631,7 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
               <span className="w-6 h-6 rounded-[7px] bg-[#eaf4ef] text-[#176b58] text-xs font-bold grid place-items-center">
                 02
               </span>
-              Thiết bị tiếp nhận
+              <span>Thiết bị tiếp nhận</span>
             </h3>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <Select
@@ -752,7 +752,7 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
                 <span className="w-6 h-6 rounded-[7px] bg-[#eaf4ef] text-[#176b58] text-xs font-bold grid place-items-center">
                   03
                 </span>
-                Test chức năng tại quầy
+                <span>Test chức năng tại quầy</span>
               </h3>
               <span className="text-xs text-[#176b58] bg-[#eaf4ef] px-2.5 py-0.5 rounded-[10px] font-semibold">
                 {effectiveChecks.length} chức năng · {selectedCategory}
@@ -790,7 +790,7 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
               <span className="w-6 h-6 rounded-[7px] bg-[#eaf4ef] text-[#176b58] text-xs font-bold grid place-items-center">
                 04
               </span>
-              Ngoại hình thiết bị & Ảnh chụp
+              <span>Ngoại hình thiết bị & Ảnh chụp</span>
             </h3>
             <p className="text-xs text-[#829189] mb-3">
               Chụp và tải ảnh tình trạng bên ngoài, vết trầy xước và phụ kiện đi kèm để đối chiếu lúc trả máy.
@@ -820,7 +820,7 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
               <span className="w-6 h-6 rounded-[7px] bg-[#eaf4ef] text-[#176b58] text-xs font-bold grid place-items-center">
                 05
               </span>
-              Chi phí sửa chữa dự kiến & Cam kết
+              <span>Chi phí sửa chữa dự kiến & Cam kết</span>
             </h3>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5 mb-3.5">
               <CurrencyInput

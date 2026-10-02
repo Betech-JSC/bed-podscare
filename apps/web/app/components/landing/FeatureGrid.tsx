@@ -83,9 +83,11 @@ export const FeatureGrid: React.FC = () => {
           {/* Left Column Intro */}
           <div className="bg-white rounded-2xl p-6 sm:p-8 border border-[#e6ebe8] shadow-xs lg:sticky lg:top-28">
             <h3 className="font-heading font-extrabold text-[24px] sm:text-[28px] text-[#102d35] leading-[1.2] mb-4">
-              Quản lý <span className="text-[#176b58]">đơn giản.</span>
+              Quản lý{' '}
+              <span className="text-[#176b58]">đơn giản.</span>{' '}
               <br />
-              Vận hành <span className="text-[#176b58]">hiệu quả.</span>
+              Vận hành{' '}
+              <span className="text-[#176b58]">hiệu quả.</span>
             </h3>
             <p className="text-[14px] text-[#71817b] leading-relaxed mb-6">
               FIXO được thiết kế chuyên biệt cho ngành sửa chữa thiết bị công nghệ, giúp bạn tiết kiệm thời gian, tối ưu hóa công thợ và kiểm soát doanh thu minh bạch.

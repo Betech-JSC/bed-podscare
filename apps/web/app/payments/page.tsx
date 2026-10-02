@@ -515,8 +515,11 @@ export default function PaymentsPage() {
                     ⚠️ Chưa cấu hình thông tin ngân hàng VietQR
                   </div>
                   <p>
-                    Vui lòng khai báo các biến môi trường <code>NEXT_PUBLIC_VIETQR_BANK_ID</code>,{' '}
-                    <code>NEXT_PUBLIC_VIETQR_ACCOUNT_NO</code> và <code>NEXT_PUBLIC_VIETQR_ACCOUNT_NAME</code>{' '}
+                    Vui lòng khai báo các biến môi trường{' '}
+                    <code>NEXT_PUBLIC_VIETQR_BANK_ID</code>,{' '}
+                    <code>NEXT_PUBLIC_VIETQR_ACCOUNT_NO</code>{' '}
+                    và{' '}
+                    <code>NEXT_PUBLIC_VIETQR_ACCOUNT_NAME</code>{' '}
                     trong file cấu hình để tạo mã VietQR tự động.
                   </p>
                 </div>

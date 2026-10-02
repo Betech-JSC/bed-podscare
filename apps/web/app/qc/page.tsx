@@ -195,7 +195,7 @@ export default function QCInspectionPage() {
                       {order.device}
                     </h3>
                     <p className="text-xs text-[#75837b] my-1">
-                      Kỹ Thuật: <b>{order.tech}</b> · {order.date}
+                      Kỹ Thuật:{' '}<b>{order.tech}</b> · {order.date}
                     </p>
 
                     <div className="bg-[#f7faf8] p-2.5 rounded border border-[#edf1ee] my-2 text-xs">
@@ -291,7 +291,7 @@ export default function QCInspectionPage() {
                   Lỗi ban đầu: <b>{selectedOrder.issue}</b>
                 </span>
                 <span>
-                  Linh kiện đã dùng: <b>{selectedOrder.partsUsed || 'Không'}</b>
+                  Linh kiện đã dùng:{' '}<b>{selectedOrder.partsUsed || 'Không'}</b>
                 </span>
               </div>
               <p className="text-[#516058] m-0">

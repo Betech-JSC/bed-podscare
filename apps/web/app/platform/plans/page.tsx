@@ -296,7 +296,9 @@ export default function PlatformPlansPage() {
               <strong className="text-[#1c302b] block text-sm font-bold mb-1">
                 Nguyên tắc áp dụng hạn mức SaaS FIXO
               </strong>
-              Các gói cước được áp dụng tức thời cho các đối tác đăng ký mới hoặc gia hạn. Các gian hàng đang trong thời hạn hợp đồng sẽ tiếp tục áp dụng mức giá và hạn mức đã ký kết cho tới kỳ thanh toán tiếp theo. Thanh toán được tự động đối soát và kích hoạt qua cổng SePay VietQR.
+              <p className="m-0">
+                Các gói cước được áp dụng tức thời cho các đối tác đăng ký mới hoặc gia hạn. Các gian hàng đang trong thời hạn hợp đồng sẽ tiếp tục áp dụng mức giá và hạn mức đã ký kết cho tới kỳ thanh toán tiếp theo. Thanh toán được tự động đối soát và kích hoạt qua cổng SePay VietQR.
+              </p>
             </div>
           </div>
         </div>

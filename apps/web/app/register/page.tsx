@@ -165,7 +165,9 @@ export default function RegisterStorePage() {
               Đăng ký gian hàng thành công!
             </h3>
             <p className="text-xs text-[#52635a] leading-relaxed mb-4 max-w-[480px] mx-auto">
-              Hồ sơ của gian hàng <strong className="text-[#176b58]">{successData.store_name}</strong> (Mã:{' '}
+              Hồ sơ của gian hàng{' '}
+              <strong className="text-[#176b58]">{successData.store_name}</strong>{' '}
+              (Mã:{' '}
               <span className="font-mono font-bold text-[#1c302b]">{successData.store_code}</span>) đã được chuyển đến Ban quản trị FIXO để phê duyệt.
             </p>
             <div className="p-3 bg-white border border-[#e2ece6] rounded-[8px] text-xs text-[#6e7d75] mb-6 text-left space-y-1.5">
@@ -298,7 +300,8 @@ export default function RegisterStorePage() {
               <div className="p-3 rounded-[8px] bg-[#f8faf9] border border-[#e5ece8] text-xs text-[#6e7d75] flex items-center gap-2">
                 <span className="w-2 h-2 rounded-full bg-[#176b58] shrink-0" />
                 <span>
-                  Sau khi gửi đăng ký, gian hàng được tạo ở trạng thái <strong>Chờ duyệt (Trial 14 ngày)</strong>.
+                  Sau khi gửi đăng ký, gian hàng được tạo ở trạng thái{' '}
+                  <strong>Chờ duyệt (Trial 14 ngày)</strong>.
                 </span>
               </div>
 

@@ -383,7 +383,7 @@ export default function PlatformIntegrationsPage() {
                 <span className="w-5 h-5 rounded-full bg-[#eaf4ef] text-[#176b58] font-bold flex items-center justify-center flex-none text-[11px]">
                   3
                 </span>
-                <span>Lấy <strong>API Token</strong> từ SePay điền vào ô bên trên và bấm nút <em>&quot;Kiểm tra kết nối Live&quot;</em>.</span>
+                <span>Lấy{' '}<strong>API Token</strong>{' '}từ SePay điền vào ô bên trên và bấm nút{' '}<em>&quot;Kiểm tra kết nối Live&quot;</em>.</span>
               </div>
             </div>
           </div>

@@ -64,8 +64,8 @@ export function LandingPreview() {
             </div>
 
             <h1>
-              Quản lý cửa hàng sửa chữa
-              <span> dễ dàng, chuyên nghiệp hơn</span>
+              Quản lý cửa hàng sửa chữa{' '}
+              <span>dễ dàng, chuyên nghiệp hơn</span>
             </h1>
 
             <p className="hero-description">
@@ -428,9 +428,10 @@ export function LandingPreview() {
             <div className="feature-intro">
 
               <h3>
-                Quản lý
-                <span>đơn giản.</span>
-                Vận hành
+                Quản lý{' '}
+                <span>đơn giản.</span>{' '}
+                <br />
+                Vận hành{' '}
                 <span>hiệu quả.</span>
               </h3>
 
@@ -694,7 +695,7 @@ export function LandingPreview() {
             </p>
 
             <div className="price">
-              0đ <small>/ 14 ngày</small>
+              0đ{' '}<small>/ 14 ngày</small>
             </div>
 
             <div className="price-note">
