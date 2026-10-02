@@ -128,6 +128,7 @@ export const AppSidebar: React.FC<AppSidebarProps> = ({
       'branches',
       'users',
       'payments',
+      'subscription',
       'kpi',
       'audit',
     ],
@@ -185,6 +186,7 @@ export const AppSidebar: React.FC<AppSidebarProps> = ({
     { id: 'branches', label: 'Quản lý Chi nhánh', icon: 'spark' },
     { id: 'users', label: 'Tài khoản & Phân quyền', icon: 'customers' },
     { id: 'payments', label: 'Thanh toán', icon: 'payments' },
+    { id: 'subscription', label: 'Gói cước & Bản quyền', icon: 'shield', href: '/subscription' },
     { id: 'kpi', label: 'Hiệu suất KPI', icon: 'kpi' },
     { id: 'audit', label: 'Nhật ký hoạt động', icon: 'audit' },
   ];

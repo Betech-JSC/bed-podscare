@@ -85,6 +85,13 @@ class OrderController extends Controller
         $user = $request->user();
         $isStaff = $user && $user->role !== 'admin';
 
+        $tenant = $user?->tenant;
+        if ($tenant) {
+            $quotaService = app(\App\Services\QuotaService::class);
+            $quotaService->checkSubscriptionActive($tenant);
+            $quotaService->checkOrderQuota($tenant);
+        }
+
         $rules = [
             'branch_id'             => ($isStaff && $user->branch_id) ? 'nullable|exists:branches,id' : 'required|exists:branches,id',
             'customer_id'           => 'required_without:customer_phone|nullable|exists:customers,id',

@@ -13,6 +13,8 @@ use App\Http\Controllers\Api\V1\PartnerController;
 use App\Http\Controllers\Api\V1\PaymentController;
 use App\Http\Controllers\Api\V1\QcController;
 use App\Http\Controllers\Api\V1\QuoteController;
+use App\Http\Controllers\Api\V1\SaasBillingController;
+use App\Http\Controllers\Api\V1\SePayPlatformWebhookController;
 use App\Http\Controllers\Api\V1\ServiceController;
 use App\Http\Controllers\Api\V1\ShipmentController;
 use App\Http\Controllers\Api\V1\SuperAdminController;
@@ -56,6 +58,10 @@ Route::prefix('v1')->group(function () {
         Route::get('/branches/{id}', [BranchController::class, 'show'])->name('api.v1.branches.show');
 
         Route::get('/warranties/lookup', [WarrantyController::class, 'lookup'])->name('api.v1.warranties.lookup');
+
+        // SePay VietQR Platform Webhooks
+        Route::post('/webhooks/sepay', [SePayPlatformWebhookController::class, 'handle'])->name('api.v1.webhooks.sepay');
+        Route::post('/saas/sepay/webhook', [SePayPlatformWebhookController::class, 'handle'])->name('api.v1.saas.sepay.webhook');
     });
 
 
@@ -157,6 +163,15 @@ Route::prefix('v1')->group(function () {
         // Staff KPI & Performance
         Route::get('/kpi/dashboard', [KpiController::class, 'dashboard'])->name('api.v1.kpi.dashboard');
         Route::get('/kpi/staff', [KpiController::class, 'staff'])->name('api.v1.kpi.staff');
+
+        // SaaS Subscription & Billing
+        Route::prefix('saas')->group(function () {
+            Route::get('/current', [SaasBillingController::class, 'current'])->name('api.v1.saas.current');
+            Route::get('/current-plan', [SaasBillingController::class, 'current'])->name('api.v1.saas.current_plan');
+            Route::get('/plans', [SaasBillingController::class, 'plans'])->name('api.v1.saas.plans');
+            Route::post('/subscribe', [SaasBillingController::class, 'subscribe'])->name('api.v1.saas.subscribe');
+            Route::get('/invoices/{refCode}/status', [SaasBillingController::class, 'invoiceStatus'])->name('api.v1.saas.invoices.status');
+        });
 
         // Platform Super Admin Portal
         Route::middleware('super_admin')->prefix('platform')->group(function () {

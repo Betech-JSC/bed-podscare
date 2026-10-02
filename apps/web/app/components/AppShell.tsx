@@ -13,6 +13,7 @@ import {
   Modal,
 } from '@podscare/ui';
 import type { UserProfile } from '@podscare/types';
+import { saasService } from '@podscare/api-client';
 import { usePodsCare, useNotifications } from '../providers';
 
 export interface AppShellProps {
@@ -152,6 +153,38 @@ export const AppShell: React.FC<AppShellProps> = ({ children, crumbName = 'Tổn
     };
   }, [notificationOpen]);
 
+  // Theo dõi thông tin bản quyền SaaS và hạn dùng cho Topbar badge
+  const [subInfo, setSubInfo] = useState<{
+    plan: string;
+    daysRemaining: number | null;
+    isExpired: boolean;
+  } | null>(null);
+
+  useEffect(() => {
+    if (isAuthenticated && currentUser?.role !== 'super_admin') {
+      saasService
+        .getCurrent()
+        .then((res) => {
+          if (res?.success && res?.data) {
+            const tenant = res.data.tenant;
+            const usage = res.data.usage;
+            const plan = tenant?.plan || usage?.subscription?.plan_id || 'trial';
+            const days = tenant?.days_remaining ?? usage?.subscription?.days_remaining ?? 14;
+            const expired =
+              usage?.subscription?.is_expired || (typeof days === 'number' && days <= 0);
+            setSubInfo({
+              plan,
+              daysRemaining: days,
+              isExpired: expired,
+            });
+          }
+        })
+        .catch(() => {
+          // Fallback an toàn khi chưa nạp được dữ liệu
+        });
+    }
+  }, [isAuthenticated, currentUser?.role, pathname]);
+
   // Auth & Role Guard: redirect if unauthenticated or accessing unauthorized portal
   useEffect(() => {
     if (!isLoadingAuth) {
@@ -245,6 +278,53 @@ export const AppShell: React.FC<AppShellProps> = ({ children, crumbName = 'Tổn
           unreadCount={unreadCount}
           isNotificationOpen={notificationOpen}
           onOpenNotifications={() => setNotificationOpen((prev) => !prev)}
+          planBadgeSlot={
+            currentUser?.role !== 'super_admin' ? (
+              <button
+                type="button"
+                onClick={() => router.push('/subscription')}
+                title="Quản lý Gói cước & Bản quyền"
+                className={`hidden sm:inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-bold transition-all border cursor-pointer ${
+                  subInfo?.isExpired
+                    ? 'bg-[#fbefed] text-[#bc5b52] border-[#f5c7c2] hover:bg-[#f8deda]'
+                    : subInfo?.daysRemaining !== null &&
+                      subInfo?.daysRemaining !== undefined &&
+                      subInfo.daysRemaining <= 3
+                    ? 'bg-[#faf3e7] text-[#b77a21] border-[#f4dfc2] hover:bg-[#f4ebd9]'
+                    : subInfo?.plan === 'pro'
+                    ? 'bg-[#f2eff8] text-[#6d5b97] border-[#ded7eb] hover:bg-[#e7e1f2]'
+                    : subInfo?.plan === 'standard'
+                    ? 'bg-[#eaf4ef] text-[#176b58] border-[#cde3d6] hover:bg-[#d6ecdf]'
+                    : 'bg-[#faf3e7] text-[#b77a21] border-[#f4dfc2] hover:bg-[#f4ebd9]'
+                }`}
+              >
+                <span
+                  className={`w-1.5 h-1.5 rounded-full ${
+                    subInfo?.isExpired
+                      ? 'bg-[#ef4444]'
+                      : subInfo?.daysRemaining !== null &&
+                        subInfo?.daysRemaining !== undefined &&
+                        subInfo.daysRemaining <= 3
+                      ? 'bg-[#f59e0b] animate-pulse'
+                      : subInfo?.plan === 'pro'
+                      ? 'bg-[#8b5cf6]'
+                      : 'bg-[#10b981]'
+                  }`}
+                />
+                <span>
+                  {subInfo?.isExpired
+                    ? 'Hết hạn bản quyền'
+                    : subInfo?.plan === 'trial'
+                    ? `Trial · Còn ${subInfo?.daysRemaining ?? 14} ngày`
+                    : subInfo?.plan === 'pro'
+                    ? 'Pro'
+                    : typeof subInfo?.daysRemaining === 'number'
+                    ? `Standard · Còn ${subInfo.daysRemaining} ngày`
+                    : 'Standard'}
+                </span>
+              </button>
+            ) : null
+          }
           notificationSlot={
             <div ref={popoverRef}>
               <NotificationPopover

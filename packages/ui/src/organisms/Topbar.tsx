@@ -11,6 +11,7 @@ export interface TopbarProps {
   unreadCount?: number;
   isNotificationOpen?: boolean;
   notificationSlot?: React.ReactNode;
+  planBadgeSlot?: React.ReactNode;
 }
 
 export const Topbar: React.FC<TopbarProps> = ({
@@ -23,6 +24,7 @@ export const Topbar: React.FC<TopbarProps> = ({
   unreadCount,
   isNotificationOpen = false,
   notificationSlot,
+  planBadgeSlot,
 }) => {
   const todayFormatted = new Intl.DateTimeFormat('vi-VN', {
     weekday: 'long',
@@ -52,8 +54,10 @@ export const Topbar: React.FC<TopbarProps> = ({
         </div>
       </div>
 
-      {/* Right: Search, Notifications, Date */}
-      <div className="flex items-center gap-3 sm:gap-4">
+      {/* Right: Plan Badge, Search, Notifications, Date */}
+      <div className="flex items-center gap-2.5 sm:gap-4">
+        {planBadgeSlot}
+
         {/* Global Search with ⌘K */}
         <div className="w-[200px] md:w-[260px] h-9 border border-[#e4eae6] rounded-[8px] hidden sm:flex items-center px-3 gap-2 text-[#91a098] bg-white focus-within:border-[#75a994] focus-within:ring-2 focus-within:ring-[#176b58]/10 transition-all">
           <Icon name="search" size={16} />

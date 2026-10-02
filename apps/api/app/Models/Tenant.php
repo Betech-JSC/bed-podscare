@@ -18,12 +18,17 @@ class Tenant extends Model
         'status',
         'plan',
         'expires_at',
+        'trial_ends_at',
+        'billing_cycle',
+        'current_plan_id',
+        'intended_plan',
     ];
 
     protected function casts(): array
     {
         return [
-            'expires_at' => 'datetime',
+            'expires_at'    => 'datetime',
+            'trial_ends_at' => 'datetime',
         ];
     }
 
@@ -42,6 +47,21 @@ class Tenant extends Model
         return $this->hasMany(RepairOrder::class);
     }
 
+    public function invoices(): HasMany
+    {
+        return $this->hasMany(SaasInvoice::class, 'tenant_id');
+    }
+
+    public function currentPlan(): \Illuminate\Database\Eloquent\Relations\BelongsTo
+    {
+        return $this->belongsTo(SubscriptionPlan::class, 'current_plan_id');
+    }
+
+    public function planDetails(): \Illuminate\Database\Eloquent\Relations\BelongsTo
+    {
+        return $this->belongsTo(SubscriptionPlan::class, 'current_plan_id');
+    }
+
     public function isActive(): bool
     {
         return $this->status === 'active';
@@ -55,5 +75,10 @@ class Tenant extends Model
     public function isSuspended(): bool
     {
         return $this->status === 'suspended';
+    }
+
+    public function isSubscriptionActive(): bool
+    {
+        return $this->isActive() && ($this->expires_at === null || $this->expires_at->isFuture());
     }
 }

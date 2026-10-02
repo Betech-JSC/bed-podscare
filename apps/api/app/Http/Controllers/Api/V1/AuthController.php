@@ -109,6 +109,15 @@ class AuthController extends Controller
             if ($tenant->status === 'suspended') {
                 return $this->failure('Gian hàng đã bị tạm khóa. Vui lòng liên hệ hỗ trợ.', 403);
             }
+            if ($tenant->expires_at && $tenant->expires_at->isPast()) {
+                return response()->json([
+                    'success'    => false,
+                    'message'    => 'Gói dịch vụ của gian hàng đã hết hạn. Vui lòng gia hạn gói dịch vụ.',
+                    'error'      => 'SUBSCRIPTION_EXPIRED',
+                    'error_code' => 'SUBSCRIPTION_EXPIRED',
+                    'redirect'   => '/subscription',
+                ], 403);
+            }
         }
 
         // 3. Tìm user thuộc tenant
@@ -144,12 +153,16 @@ class AuthController extends Controller
         $resolvedTenant = $user->tenant ?? $tenant;
         $tenantData = null;
         if ($resolvedTenant) {
+            $daysRemaining = $resolvedTenant->expires_at ? max(0, (int) now()->diffInDays($resolvedTenant->expires_at, false)) : null;
             $tenantData = [
-                'id'     => $resolvedTenant->id,
-                'code'   => $resolvedTenant->code,
-                'name'   => $resolvedTenant->name,
-                'status' => $resolvedTenant->status,
-                'plan'   => $resolvedTenant->plan,
+                'id'             => $resolvedTenant->id,
+                'code'           => $resolvedTenant->code,
+                'name'           => $resolvedTenant->name,
+                'status'         => $resolvedTenant->status,
+                'plan'           => $resolvedTenant->plan,
+                'expires_at'     => $resolvedTenant->expires_at?->toISOString(),
+                'trial_ends_at'  => $resolvedTenant->trial_ends_at?->toISOString(),
+                'days_remaining' => $daysRemaining,
             ];
         }
 
@@ -188,6 +201,22 @@ class AuthController extends Controller
     {
         $user = $request->user()->load(['branch', 'tenant']);
 
+        $resolvedTenant = $user->tenant;
+        $tenantData = null;
+        if ($resolvedTenant) {
+            $daysRemaining = $resolvedTenant->expires_at ? max(0, (int) now()->diffInDays($resolvedTenant->expires_at, false)) : null;
+            $tenantData = [
+                'id'             => $resolvedTenant->id,
+                'code'           => $resolvedTenant->code,
+                'name'           => $resolvedTenant->name,
+                'status'         => $resolvedTenant->status,
+                'plan'           => $resolvedTenant->plan,
+                'expires_at'     => $resolvedTenant->expires_at?->toISOString(),
+                'trial_ends_at'  => $resolvedTenant->trial_ends_at?->toISOString(),
+                'days_remaining' => $daysRemaining,
+            ];
+        }
+
         $userData = [
             'id'         => $user->id,
             'name'       => $user->name,
@@ -195,13 +224,7 @@ class AuthController extends Controller
             'phone'      => $user->phone,
             'role'       => $user->role,
             'tenant_id'  => $user->tenant_id,
-            'tenant'     => $user->tenant ? [
-                'id'     => $user->tenant->id,
-                'code'   => $user->tenant->code,
-                'name'   => $user->tenant->name,
-                'status' => $user->tenant->status,
-                'plan'   => $user->tenant->plan,
-            ] : null,
+            'tenant'     => $tenantData,
             'avatar_url' => $user->avatar_url,
             'branch_id'  => $user->branch_id,
             'branch'     => $user->branch?->only(['id', 'code', 'name']),

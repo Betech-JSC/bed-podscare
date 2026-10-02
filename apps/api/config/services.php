@@ -35,4 +35,15 @@ return [
         ],
     ],
 
+    'sepay' => [
+        'api_key'        => env('SEPAY_WEBHOOK_SECRET', 'fixo_secret_sepay_platform_2026'),
+        'webhook_secret' => env('SEPAY_WEBHOOK_SECRET', 'fixo_secret_sepay_platform_2026'),
+        'account_number' => env('SEPAY_ACCOUNT_NUMBER', '0388960848'),
+        'bank_name'      => env('SEPAY_BANK_CODE', 'MB'),
+        'bank_code'      => env('SEPAY_BANK_CODE', 'MB'),
+        'account_name'   => env('SEPAY_ACCOUNT_HOLDER', 'CONG TY FIXO VIET NAM'),
+        'account_holder' => env('SEPAY_ACCOUNT_HOLDER', 'CONG TY FIXO VIET NAM'),
+        'qr_template'    => env('SEPAY_QR_TEMPLATE', 'compact2'),
+    ],
+
 ];

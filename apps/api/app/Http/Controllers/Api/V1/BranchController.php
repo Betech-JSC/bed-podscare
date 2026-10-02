@@ -47,6 +47,13 @@ class BranchController extends Controller
             return $this->forbidden('Chỉ quản trị viên (Admin) mới có quyền tạo chi nhánh mới.');
         }
 
+        $tenant = $request->user()->tenant;
+        if ($tenant) {
+            $quotaService = app(\App\Services\QuotaService::class);
+            $quotaService->checkSubscriptionActive($tenant);
+            $quotaService->checkBranchQuota($tenant);
+        }
+
         if ($request->has('code') && is_string($request->input('code'))) {
             $request->merge(['code' => strtoupper(trim($request->input('code')))]);
         }

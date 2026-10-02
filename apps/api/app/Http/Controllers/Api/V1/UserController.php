@@ -48,6 +48,13 @@ class UserController extends Controller
      */
     public function store(Request $request): JsonResponse
     {
+        $tenant = $request->user()?->tenant;
+        if ($tenant) {
+            $quotaService = app(\App\Services\QuotaService::class);
+            $quotaService->checkSubscriptionActive($tenant);
+            $quotaService->checkUserQuota($tenant);
+        }
+
         $validated = $request->validate([
             'name'      => 'required|string|max:255',
             'email'     => 'required|email|max:255|unique:users,email',
@@ -62,6 +69,7 @@ class UserController extends Controller
         $role = $validated['role'] === 'tech' ? 'technician' : $validated['role'];
 
         $user = new User([
+            'tenant_id'  => $tenant?->id,
             'name'       => $validated['name'],
             'email'      => $validated['email'],
             'phone'      => $validated['phone'] ?? null,

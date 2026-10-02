@@ -24,6 +24,7 @@ class DatabaseSeeder extends Seeder
             CommonIssueSeeder::class,
             RebrandToFixoSeeder::class,
             MigrateExistingDataToMasterTenantSeeder::class,
+            SubscriptionPlanSeeder::class,
         ]);
     }
 }

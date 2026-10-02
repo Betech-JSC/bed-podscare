@@ -198,19 +198,19 @@ class TenantAuthenticationTest extends TestCase
         $response->assertStatus(201)
             ->assertJsonPath('success', true)
             ->assertJsonPath('data.tenant.code', $storeCode)
-            ->assertJsonPath('data.tenant.status', 'pending')
+            ->assertJsonPath('data.tenant.status', 'active')
             ->assertJsonPath('data.tenant.plan', 'trial');
 
         $this->assertDatabaseHas('tenants', [
             'code'   => $storeCode,
-            'status' => 'pending',
+            'status' => 'active',
             'plan'   => 'trial',
         ]);
 
         $this->assertDatabaseHas('users', [
             'email'     => "chu_{$storeCode}@tiemmoi.vn",
             'role'      => 'admin',
-            'is_active' => false,
+            'is_active' => true,
         ]);
     }
 

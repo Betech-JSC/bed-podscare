@@ -1,12 +1,21 @@
 'use client';
 
-import React, { useState } from 'react';
-import { useRouter } from 'next/navigation';
+import React, { useState, Suspense } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { Button, Input, Icon } from '@podscare/ui';
 
-export default function RegisterStorePage() {
+function RegisterStoreForm() {
   const router = useRouter();
+  const searchParams = useSearchParams();
 
+  // Đọc query parameter `plan` ('trial' | 'standard' | 'pro', mặc định 'trial')
+  const rawPlan = searchParams?.get('plan')?.toLowerCase();
+  const initialPlan =
+    rawPlan === 'standard' || rawPlan === 'pro' || rawPlan === 'trial'
+      ? (rawPlan as 'trial' | 'standard' | 'pro')
+      : 'trial';
+
+  const [selectedPlan, setSelectedPlan] = useState<'trial' | 'standard' | 'pro'>(initialPlan);
   const [storeName, setStoreName] = useState('');
   const [storeCode, setStoreCode] = useState('');
   const [ownerName, setOwnerName] = useState('');
@@ -19,6 +28,7 @@ export default function RegisterStorePage() {
     store_name: string;
     store_code: string;
     email: string;
+    plan: string;
   } | null>(null);
 
   // Tự động chuẩn hóa slug cho mã gian hàng
@@ -90,6 +100,7 @@ export default function RegisterStorePage() {
           phone: phone.trim(),
           email: email.trim(),
           password,
+          plan: selectedPlan,
         }),
       });
 
@@ -100,6 +111,7 @@ export default function RegisterStorePage() {
           store_name: storeName.trim(),
           store_code: storeCode.trim().toLowerCase(),
           email: email.trim(),
+          plan: selectedPlan,
         });
         // Lưu tạm vào localStorage để khi về login sẽ tự điền mã gian hàng này
         try {
@@ -123,9 +135,15 @@ export default function RegisterStorePage() {
     }
   };
 
+  const planTitles = {
+    trial: 'Gói Dùng thử Miễn phí 14 ngày (0đ)',
+    standard: 'Gói Tiêu chuẩn (299.000đ/tháng - Dùng thử 14 ngày)',
+    pro: 'Gói Chuyên nghiệp (599.000đ/tháng - Dùng thử 14 ngày)',
+  };
+
   return (
     <div className="min-h-screen bg-[#f4f7f5] flex items-center justify-center p-4 sm:p-6 md:p-8">
-      <div className="w-full max-w-[640px] bg-white rounded-[16px] border border-[#e5ece8] shadow-[0_24px_90px_rgba(18,37,27,0.08)] p-6 sm:p-8 md:p-10 animate-in fade-in zoom-in-95 duration-200">
+      <div className="w-full max-w-[660px] bg-white rounded-[16px] border border-[#e5ece8] shadow-[0_24px_90px_rgba(18,37,27,0.08)] p-6 sm:p-8 md:p-10 animate-in fade-in zoom-in-95 duration-200">
         {/* Navigation Bar */}
         <div className="flex items-center justify-between mb-6 pb-3 border-b border-[#f0f3f1]">
           <button
@@ -139,7 +157,7 @@ export default function RegisterStorePage() {
         </div>
 
         {/* Brand Header */}
-        <div className="flex flex-col items-center text-center mb-8">
+        <div className="flex flex-col items-center text-center mb-6">
           <img
             src="/logo.png"
             alt="FIXO Logo"
@@ -151,9 +169,82 @@ export default function RegisterStorePage() {
           <p className="text-xs tracking-[1.3px] text-[#819089] font-bold mt-1 uppercase">
             HỆ SINH THÁI FIXO REPAIR OS
           </p>
-          <p className="text-xs text-[#788880] mt-2 mb-0 max-w-[460px]">
-            Đăng ký sử dụng hệ quản trị sửa chữa chuẩn Enterprise với quy trình tiếp nhận, checklist QC, quản lý kho linh kiện và tra cứu thời gian thực.
+          <p className="text-xs text-[#788880] mt-2 mb-0 max-w-[480px]">
+            Đăng ký sử dụng hệ quản trị sửa chữa chuẩn Enterprise với quy trình tiếp nhận, checklist QC, quản lý kho linh kiện và thanh toán VietQR tự động.
           </p>
+        </div>
+
+        {/* Plan Switcher Selector Tabs */}
+        <div className="mb-4">
+          <label className="block text-xs font-semibold text-[#52635a] mb-2">
+            Chọn gói cước trải nghiệm:
+          </label>
+          <div className="p-1.5 rounded-[12px] bg-[#f0f4f2] border border-[#e2eae5] grid grid-cols-3 gap-1">
+            <button
+              type="button"
+              onClick={() => setSelectedPlan('trial')}
+              className={`py-2 px-2 rounded-[8px] text-xs font-bold transition-all text-center cursor-pointer ${
+                selectedPlan === 'trial'
+                  ? 'bg-white text-[#176b58] shadow-sm border border-[#d6e5dd]'
+                  : 'text-[#697972] hover:text-[#1c302b]'
+              }`}
+            >
+              Dùng thử (0đ)
+            </button>
+            <button
+              type="button"
+              onClick={() => setSelectedPlan('standard')}
+              className={`py-2 px-2 rounded-[8px] text-xs font-bold transition-all text-center cursor-pointer ${
+                selectedPlan === 'standard'
+                  ? 'bg-white text-[#176b58] shadow-sm border border-[#d6e5dd]'
+                  : 'text-[#697972] hover:text-[#1c302b]'
+              }`}
+            >
+              Tiêu chuẩn (299k)
+            </button>
+            <button
+              type="button"
+              onClick={() => setSelectedPlan('pro')}
+              className={`py-2 px-2 rounded-[8px] text-xs font-bold transition-all text-center cursor-pointer ${
+                selectedPlan === 'pro'
+                  ? 'bg-white text-[#176b58] shadow-sm border border-[#d6e5dd]'
+                  : 'text-[#697972] hover:text-[#1c302b]'
+              }`}
+            >
+              Chuyên nghiệp (599k)
+            </button>
+          </div>
+        </div>
+
+        {/* Selected Plan Highlight Banner */}
+        <div className="mb-6 p-3.5 rounded-[10px] bg-[#eaf4ef] border border-[#cde3d6] flex items-center justify-between gap-3 animate-in fade-in duration-200">
+          <div className="flex items-center gap-3">
+            <div className="w-8 h-8 rounded-full bg-[#176b58] text-white grid place-items-center flex-none">
+              <Icon name="spark" size={16} />
+            </div>
+            <div>
+              <div className="flex items-center gap-2">
+                <span className="text-[11px] font-bold uppercase tracking-wider text-[#176b58]">
+                  Đang đăng ký:
+                </span>
+                <span className="px-2 py-0.5 rounded-[4px] bg-[#176b58] text-white text-[10px] font-extrabold uppercase">
+                  {selectedPlan === 'trial'
+                    ? 'DÙNG THỬ (TRIAL)'
+                    : selectedPlan === 'standard'
+                    ? 'TIÊU CHUẨN (STANDARD)'
+                    : 'CHUYÊN NGHIỆP (PRO)'}
+                </span>
+              </div>
+              <p className="text-xs text-[#2e4d41] font-medium mt-0.5 mb-0">
+                {selectedPlan === 'trial' &&
+                  'Dùng thử 14 ngày miễn phí (1 chi nhánh, 2 nhân viên, 50 đơn/tháng). Không cần thẻ tín dụng.'}
+                {selectedPlan === 'standard' &&
+                  '299.000đ/tháng · Dùng thử 14 ngày đầu miễn phí. Tối đa 2 chi nhánh, 5 nhân viên, 300 đơn/tháng.'}
+                {selectedPlan === 'pro' &&
+                  '599.000đ/tháng · Dùng thử 14 ngày đầu miễn phí. Không giới hạn chi nhánh, nhân sự & đơn sửa chữa.'}
+              </p>
+            </div>
+          </div>
         </div>
 
         {successData ? (
@@ -165,10 +256,8 @@ export default function RegisterStorePage() {
               Đăng ký gian hàng thành công!
             </h3>
             <p className="text-xs text-[#52635a] leading-relaxed mb-4 max-w-[480px] mx-auto">
-              Hồ sơ của gian hàng{' '}
-              <strong className="text-[#176b58]">{successData.store_name}</strong>{' '}
-              (Mã:{' '}
-              <span className="font-mono font-bold text-[#1c302b]">{successData.store_code}</span>) đã được chuyển đến Ban quản trị FIXO để phê duyệt.
+              Gian hàng <strong className="text-[#176b58]">{successData.store_name}</strong> (Mã:{' '}
+              <span className="font-mono font-bold text-[#1c302b]">{successData.store_code}</span>) đã được khởi tạo thành công với <strong>14 ngày dùng thử miễn phí</strong>.
             </p>
             <div className="p-3 bg-white border border-[#e2ece6] rounded-[8px] text-xs text-[#6e7d75] mb-6 text-left space-y-1.5">
               <div className="flex justify-between">
@@ -180,8 +269,12 @@ export default function RegisterStorePage() {
                 <span className="font-medium text-[#1c302b]">{successData.email}</span>
               </div>
               <div className="flex justify-between">
-                <span>Thời gian phê duyệt:</span>
-                <span className="font-semibold text-[#176b58]">Trong vòng 24 giờ làm việc</span>
+                <span>Gói dịch vụ kích hoạt:</span>
+                <span className="font-bold text-[#176b58]">{planTitles[successData.plan as keyof typeof planTitles] || successData.plan}</span>
+              </div>
+              <div className="flex justify-between">
+                <span>Hạn dùng thử:</span>
+                <span className="font-semibold text-[#176b58]">14 ngày kể từ hôm nay</span>
               </div>
             </div>
             <Button
@@ -191,7 +284,7 @@ export default function RegisterStorePage() {
               className="w-full font-bold"
               onClick={() => router.push('/login')}
             >
-              Quay lại màn hình Đăng nhập →
+              Đăng nhập vào gian hàng ngay →
             </Button>
           </div>
         ) : (
@@ -300,8 +393,8 @@ export default function RegisterStorePage() {
               <div className="p-3 rounded-[8px] bg-[#f8faf9] border border-[#e5ece8] text-xs text-[#6e7d75] flex items-center gap-2">
                 <span className="w-2 h-2 rounded-full bg-[#176b58] shrink-0" />
                 <span>
-                  Sau khi gửi đăng ký, gian hàng được tạo ở trạng thái{' '}
-                  <strong>Chờ duyệt (Trial 14 ngày)</strong>.
+                  Sau khi đăng ký, gian hàng được kích hoạt ngay với{' '}
+                  <strong>14 ngày dùng thử miễn phí</strong>. Bạn có thể gia hạn hoặc nâng cấp bất kỳ lúc nào.
                 </span>
               </div>
 
@@ -337,5 +430,19 @@ export default function RegisterStorePage() {
         </p>
       </div>
     </div>
+  );
+}
+
+export default function RegisterStorePage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="min-h-screen bg-[#f4f7f5] flex items-center justify-center">
+          <div className="w-8 h-8 rounded-full border-2 border-[#176b58] border-t-transparent animate-spin" />
+        </div>
+      }
+    >
+      <RegisterStoreForm />
+    </Suspense>
   );
 }
