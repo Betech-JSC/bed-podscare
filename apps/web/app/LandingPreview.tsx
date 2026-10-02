@@ -771,9 +771,9 @@ export function LandingPreview() {
           </div>
 
           <p>
-            Nền tảng quản lý cửa hàng sửa chữa
-            thiết bị công nghệ hiện đại,
-            đơn giản và dễ sử dụng.
+            Phần mềm quản lý cửa hàng sửa chữa
+            thiết bị công nghệ hàng đầu Việt Nam —
+            Một sản phẩm được phát triển bởi Betech Digital.
           </p>
 
         </div>
@@ -809,7 +809,7 @@ export function LandingPreview() {
 
 
       <div className="copyright">
-        © 2026 FIXO. All rights reserved.
+        © 2026 FIXO. Sản phẩm được phát triển bởi Betech Digital.
       </div>
 
     </div>

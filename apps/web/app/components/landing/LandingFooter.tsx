@@ -45,7 +45,7 @@ export const LandingFooter: React.FC = () => {
             </Link>
 
             <p className="text-[#91a29d] text-[13px] leading-relaxed max-w-[360px] mb-6">
-              Nền tảng quản lý cửa hàng sửa chữa thiết bị công nghệ hiện đại, đơn giản và dễ sử dụng. Giúp tối ưu hóa quy trình tiếp nhận, kho linh kiện và doanh thu trên một hệ thống duy nhất.
+              Phần mềm quản lý cửa hàng sửa chữa thiết bị công nghệ hàng đầu Việt Nam — Một sản phẩm được phát triển bởi Betech Digital.
             </p>
 
             <div className="text-[13px] text-[#8fa09b] space-y-1.5">
@@ -185,7 +185,7 @@ export const LandingFooter: React.FC = () => {
 
         {/* Bottom copyright */}
         <div className="pt-8 border-t border-[#1a3832] flex flex-col sm:flex-row items-center justify-between gap-4 text-[12px] text-[#70817c]">
-          <p>© 2026 FIXO Repair Operating System. All rights reserved.</p>
+          <p>© 2026 FIXO. Sản phẩm được phát triển bởi Betech Digital.</p>
           <p className="flex items-center gap-4">
             <span>Tiêu chuẩn vận hành cửa hàng công nghệ hiện đại</span>
           </p>
