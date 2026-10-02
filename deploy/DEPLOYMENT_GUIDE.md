@@ -122,9 +122,28 @@ php artisan config:clear
 php artisan cache:clear
 ```
 
-### 4.3. Cấu hình Supervisor để Reverb luôn chạy nền
-Tạo file `/etc/supervisor/conf.d/reverb.conf` (copy từ `deploy/supervisor/reverb.conf`):
+### 4.3. Cấu hình Supervisor để Laravel API và Reverb luôn chạy nền
+Tạo file cấu hình Supervisor (copy từ `deploy/supervisor/`):
 ```bash
+# 1. Cấu hình cho Laravel REST API (cổng 8000)
+cat << 'EOF' > /etc/supervisor/conf.d/laravel-api.conf
+[program:laravel-api]
+process_name=%(program_name)s_%(process_num)02d
+directory=/var/www/bed-podscare/apps/api
+command=php artisan serve --host=127.0.0.1 --port=8000
+autostart=true
+autorestart=true
+stopasgroup=true
+killasgroup=true
+user=www-data
+numprocs=1
+redirect_stderr=true
+stdout_logfile=/var/log/laravel-serve.log
+stderr_logfile=/var/log/laravel-serve-err.log
+stopwaitsecs=30
+EOF
+
+# 2. Cấu hình cho Reverb WebSocket (cổng 8080) và Queue Worker
 cat << 'EOF' > /etc/supervisor/conf.d/reverb.conf
 [program:reverb]
 process_name=%(program_name)s_%(process_num)02d
@@ -161,7 +180,7 @@ supervisorctl update
 supervisorctl start all
 supervisorctl status
 ```
-*Kết quả sẽ hiển thị `reverb_00 RUNNING` và `laravel-worker_00 RUNNING`.*
+*Kết quả sẽ hiển thị `laravel-api_00 RUNNING`, `reverb_00 RUNNING` và `laravel-worker_00 RUNNING`.*
 
 ---
 
