@@ -136,7 +136,7 @@ export const TrackingView: React.FC<{ initialId?: string }> = ({ initialId = '' 
             <img
               src="/logo.png"
               alt="FIXO Logo"
-              className="w-9 h-9 rounded-[10px] object-cover shadow-sm flex-none"
+              className="w-9 h-9 rounded-[10px] object-contain shadow-sm flex-none"
             />
             <div>
               <b className="font-heading font-extrabold text-xl tracking-tight text-[#1c302b]">

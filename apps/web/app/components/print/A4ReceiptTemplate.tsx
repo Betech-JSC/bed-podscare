@@ -3,7 +3,7 @@
 import React from 'react';
 import type { RepairOrder } from '@podscare/types';
 import { generateBarcodeSVG, generateQRCodeSVG } from './BarcodeQRUtils';
-import { formatMoney } from './thermalK80HtmlBuilder';
+import { formatMoney, FIXO_LOGO_A4_SVG } from './thermalK80HtmlBuilder';
 
 export interface A4ReceiptTemplateProps {
   order: RepairOrder;
@@ -41,10 +41,10 @@ export const A4ReceiptTemplate: React.FC<A4ReceiptTemplateProps> = ({ order, ori
           {/* Header */}
           <header className="flex justify-between items-center border-b-2 border-[#176b58] pb-1.5 mb-1.5">
             <div className="flex items-center gap-2">
-              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" className="w-8 h-8 flex-none">
-                <rect width="100" height="100" rx="16" fill="#176b58" />
-                <path d="M28 26h44v13H43v13h25v12H43v22H28V26z" fill="#ffffff" />
-              </svg>
+              <div
+                className="w-8 h-8 flex-none [&>svg]:w-full [&>svg]:h-full"
+                dangerouslySetInnerHTML={{ __html: FIXO_LOGO_A4_SVG }}
+              />
               <div>
                 <b className="text-[13pt] font-extrabold text-[#176b58] tracking-tight block leading-none font-heading">
                   FIXO REPAIR OS

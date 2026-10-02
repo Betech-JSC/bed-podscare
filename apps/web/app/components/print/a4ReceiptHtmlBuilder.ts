@@ -6,7 +6,7 @@
 
 import type { RepairOrder } from '@podscare/types';
 import { generateBarcodeSVG, generateQRCodeSVG } from './BarcodeQRUtils';
-import { formatMoney } from './thermalK80HtmlBuilder';
+import { formatMoney, FIXO_LOGO_A4_SVG } from './thermalK80HtmlBuilder';
 
 /**
  * Sinh chuỗi HTML độc lập cho khổ giấy A4 (2 liên đối soát).
@@ -93,10 +93,7 @@ export function renderA4ReceiptHTML(order: RepairOrder, origin?: string): string
       <div class="a4-header">
         <div class="a4-brand-wrap">
           <div class="a4-brand-logo">
-            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" width="34" height="34">
-              <rect width="100" height="100" rx="16" fill="#176b58" />
-              <path d="M28 26h44v13H43v13h25v12H43v22H28V26z" fill="#ffffff" />
-            </svg>
+            ${FIXO_LOGO_A4_SVG}
           </div>
           <div>
             <div class="a4-brand-title">FIXO REPAIR OS</div>

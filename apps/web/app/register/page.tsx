@@ -143,7 +143,7 @@ export default function RegisterStorePage() {
           <img
             src="/logo.png"
             alt="FIXO Logo"
-            className="w-14 h-14 rounded-[12px] object-cover shadow-md mb-3"
+            className="w-14 h-14 rounded-[12px] object-contain shadow-md mb-3"
           />
           <h1 className="font-heading font-extrabold text-[26px] tracking-[-1px] text-[#1c302b] m-0">
             Mở Gian Hàng Mới

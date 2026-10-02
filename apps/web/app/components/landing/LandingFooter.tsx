@@ -29,9 +29,11 @@ export const LandingFooter: React.FC = () => {
                 }
               }}
             >
-              <div className="w-[42px] h-[42px] rounded-xl bg-[#176b58] text-white flex items-center justify-center font-heading font-extrabold text-[15px] shadow-sm tracking-tight">
-                FIXO
-              </div>
+              <img
+                src="/logo.png"
+                alt="FIXO Logo"
+                className="w-[42px] h-[42px] rounded-xl object-contain shadow-sm"
+              />
               <div className="flex flex-col">
                 <span className="font-heading font-extrabold text-[21px] text-white leading-none tracking-tight">
                   FIXO

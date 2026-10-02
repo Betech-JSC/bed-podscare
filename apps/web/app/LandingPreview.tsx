@@ -18,7 +18,7 @@ export function LandingPreview() {
     <div className="container nav-inner">
 
       <Link href="/" className="logo">
-        <div className="logo-box">FIXO</div>
+        <img src="/logo.png" alt="FIXO" className="h-9 w-auto rounded-lg object-contain" />
 
         <div className="logo-text">
           <strong>FIXO</strong>
@@ -756,10 +756,7 @@ export function LandingPreview() {
         <div className="footer-brand">
 
           <div className="logo">
-
-            <div className="logo-box">
-              FIXO
-            </div>
+            <img src="/logo.png" alt="FIXO" className="h-9 w-auto rounded-lg object-contain" />
 
             <div className="logo-text">
               <strong style={{ color: "white" }}>

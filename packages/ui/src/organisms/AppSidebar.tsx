@@ -357,7 +357,7 @@ export const AppSidebar: React.FC<AppSidebarProps> = ({
             <img
               src="/logo.png"
               alt="FIXO Logo"
-              className="w-8 h-8 rounded-[8px] object-cover shadow-sm flex-none"
+              className="w-8 h-8 rounded-[8px] object-contain shadow-sm flex-none"
             />
             <div>
               <b className="font-heading font-extrabold text-[20px] tracking-[-1px] text-[#1c302b] block leading-none">

@@ -313,7 +313,7 @@ function LoginFormContent() {
           <img
             src="/logo.png"
             alt="FIXO Logo"
-            className="w-13 h-13 rounded-[12px] object-cover shadow-sm mb-2.5"
+            className="w-14 h-14 rounded-[12px] object-contain shadow-sm mb-2.5"
           />
           <h1 className="font-heading font-extrabold text-[24px] tracking-[-0.8px] text-[#1c302b] m-0">
             FIXO

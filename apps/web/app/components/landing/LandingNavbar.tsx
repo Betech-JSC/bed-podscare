@@ -35,9 +35,11 @@ export const LandingNavbar: React.FC<LandingNavbarProps> = ({ isAuthenticated = 
             }
           }}
         >
-          <div className="w-[42px] h-[42px] rounded-xl bg-[#102d35] text-white flex items-center justify-center font-heading font-extrabold text-[15px] shadow-sm tracking-tight group-hover:bg-[#176b58] transition-colors">
-            FIXO
-          </div>
+          <img
+            src="/logo.png"
+            alt="FIXO Logo"
+            className="w-[42px] h-[42px] rounded-xl object-contain shadow-sm group-hover:scale-105 transition-transform"
+          />
           <div className="flex flex-col">
             <span className="font-heading font-extrabold text-[21px] text-[#102d35] leading-none tracking-tight">
               FIXO

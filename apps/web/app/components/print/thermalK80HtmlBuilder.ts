@@ -9,7 +9,34 @@ import { generateBarcodeSVG, generateQRCodeSVG } from './BarcodeQRUtils';
 
 export const FIXO_LOGO_SVG = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" width="36" height="36">
   <rect width="100" height="100" rx="20" fill="#000000" />
-  <path d="M28 26h44v13H43v13h25v12H43v22H28V26z" fill="#ffffff" />
+  <!-- F: vát cong & stem bo tròn -->
+  <path d="M 8.5 40.5 C 8.5 37.5 10.5 35.5 13.5 35.5 H 24.5 C 28 35.5 30 38 28.5 41 C 26 45 22.5 47 16.5 47.5 H 14.5 V 49.5 H 22 C 24.5 49.5 26.5 51.5 25.5 54 C 24 57 21 59 16 59.5 H 14.5 V 61.5 C 14.5 63 13.2 64.5 11.5 64.5 C 9.8 64.5 8.5 63 8.5 61.5 Z" fill="#ffffff" />
+  <!-- I: thanh bo góc -->
+  <rect x="31" y="35.5" width="6.5" height="29" rx="3.2" fill="#ffffff" />
+  <!-- X: hai thanh chéo cắt nhau -->
+  <path d="M 40.5 38.5 C 39.5 36.5 41 35.5 43 35.5 L 46.5 35.5 C 48 35.5 49.5 36.5 50.5 38 L 62.5 59.5 C 63.5 61.5 62 64.5 59.5 64.5 L 56 64.5 C 54.5 64.5 53 63.5 52 62 Z" fill="#ffffff" />
+  <path d="M 42.5 61.5 C 41.5 63.5 43 64.5 45 64.5 L 48.5 64.5 C 50 64.5 51.5 63.5 52.5 62 L 64.5 40.5 C 65.5 38.5 64 35.5 61.5 35.5 L 58 35.5 C 56.5 35.5 55 36.5 54 38 Z" fill="#ffffff" />
+  <!-- O: biểu tượng cờ lê nghiêng 45 độ -->
+  <g transform="translate(80, 50) rotate(-45)">
+    <path fill-rule="evenodd" d="M 0 -14.5 A 14.5 14.5 0 1 1 -11 -9.5 L -14.5 -9.5 A 14.5 14.5 0 0 1 0 -14.5 Z M 0 -8.5 A 8.5 8.5 0 1 0 0 8.5 A 8.5 8.5 0 0 0 0 -8.5 Z" fill="#ffffff" />
+    <path d="M -14.5 -1.6 H -2 C -3.5 -3.5 -2.5 -6 0.5 -6 C 2.5 -6 4.5 -4.5 5.5 -2.5 L 2.5 -1.2 C 1.8 -1.8 0.8 -1.8 0.2 -1.2 C -0.5 -0.5 -0.5 0.5 0.2 1.2 C 0.8 1.8 1.8 1.8 2.5 1.2 L 5.5 2.5 C 4.5 4.5 2.5 6 0.5 6 C -2.5 6 -3.5 3.5 -2 1.6 H -14.5 Z" fill="#ffffff" />
+  </g>
+</svg>`;
+
+export const FIXO_LOGO_A4_SVG = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" width="34" height="34">
+  <rect width="100" height="100" rx="18" fill="#176b58" />
+  <!-- F: vát cong & stem bo tròn -->
+  <path d="M 8.5 40.5 C 8.5 37.5 10.5 35.5 13.5 35.5 H 24.5 C 28 35.5 30 38 28.5 41 C 26 45 22.5 47 16.5 47.5 H 14.5 V 49.5 H 22 C 24.5 49.5 26.5 51.5 25.5 54 C 24 57 21 59 16 59.5 H 14.5 V 61.5 C 14.5 63 13.2 64.5 11.5 64.5 C 9.8 64.5 8.5 63 8.5 61.5 Z" fill="#10b981" />
+  <!-- I: thanh bo góc -->
+  <rect x="31" y="35.5" width="6.5" height="29" rx="3.2" fill="#ffffff" />
+  <!-- X: hai thanh chéo cắt nhau -->
+  <path d="M 40.5 38.5 C 39.5 36.5 41 35.5 43 35.5 L 46.5 35.5 C 48 35.5 49.5 36.5 50.5 38 L 62.5 59.5 C 63.5 61.5 62 64.5 59.5 64.5 L 56 64.5 C 54.5 64.5 53 63.5 52 62 Z" fill="#10b981" />
+  <path d="M 42.5 61.5 C 41.5 63.5 43 64.5 45 64.5 L 48.5 64.5 C 50 64.5 51.5 63.5 52.5 62 L 64.5 40.5 C 65.5 38.5 64 35.5 61.5 35.5 L 58 35.5 C 56.5 35.5 55 36.5 54 38 Z" fill="#ffffff" />
+  <!-- O: biểu tượng cờ lê nghiêng 45 độ -->
+  <g transform="translate(80, 50) rotate(-45)">
+    <path fill-rule="evenodd" d="M 0 -14.5 A 14.5 14.5 0 1 1 -11 -9.5 L -14.5 -9.5 A 14.5 14.5 0 0 1 0 -14.5 Z M 0 -8.5 A 8.5 8.5 0 1 0 0 8.5 A 8.5 8.5 0 0 0 0 -8.5 Z" fill="#ffffff" />
+    <path d="M -14.5 -1.6 H -2 C -3.5 -3.5 -2.5 -6 0.5 -6 C 2.5 -6 4.5 -4.5 5.5 -2.5 L 2.5 -1.2 C 1.8 -1.8 0.8 -1.8 0.2 -1.2 C -0.5 -0.5 -0.5 0.5 0.2 1.2 C 0.8 1.8 1.8 1.8 2.5 1.2 L 5.5 2.5 C 4.5 4.5 2.5 6 0.5 6 C -2.5 6 -3.5 3.5 -2 1.6 H -14.5 Z" fill="#ffffff" />
+  </g>
 </svg>`;
 
 export function formatMoney(n?: number): string {
