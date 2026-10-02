@@ -106,7 +106,6 @@ export const AppSidebar: React.FC<AppSidebarProps> = ({
 
   // Role menu item permissions matrix
   const rolePermissions: Record<'admin' | 'cskh' | 'tech' | 'qc' | 'inventory' | 'super_admin', string[]> = {
-    super_admin: [],
     admin: [
       'dashboard',
       'repairs',
@@ -126,6 +125,7 @@ export const AppSidebar: React.FC<AppSidebarProps> = ({
       'kpi',
       'audit',
     ],
+    super_admin: [],
     cskh: [
       'dashboard',
       'repairs',
@@ -198,12 +198,10 @@ export const AppSidebar: React.FC<AppSidebarProps> = ({
   const platformMonitoringNav: NavItemDef[] = [
     { id: 'platform-dashboard', label: 'Tổng quan Toàn sàn', icon: 'dashboard', href: '/platform' },
     { id: 'platform-billing', label: 'Doanh thu SaaS', icon: 'payments', href: '/platform/billing' },
-    { id: 'platform-quotas', label: 'Hạn mức & Quotas', icon: 'spark', href: '/platform/quotas' },
   ];
 
-  const platformSystemNav: NavItemDef[] = [
-    { id: 'platform-health', label: 'Sức khỏe Máy chủ', icon: 'spark', href: '/platform/health' },
-    { id: 'platform-integrations', label: 'Cấu hình Tích hợp', icon: 'spark', href: '/platform/integrations' },
+  const platformRevenueConfigNav: NavItemDef[] = [
+    { id: 'platform-integrations', label: 'Tài khoản nhận tiền SePay', icon: 'spark', href: '/platform/integrations' },
   ];
 
   const renderPlatformNavGroup = (caption: string, items: NavItemDef[], spaced = false) => {
@@ -551,7 +549,7 @@ export const AppSidebar: React.FC<AppSidebarProps> = ({
             <>
               {renderPlatformNavGroup('ĐIỀU HÀNH NỀN TẢNG', platformOperationsNav)}
               {renderPlatformNavGroup('GIÁM SÁT TOÀN SÀN', platformMonitoringNav, true)}
-              {renderPlatformNavGroup('KỸ THUẬT HỆ THỐNG', platformSystemNav, true)}
+              {renderPlatformNavGroup('CẤU HÌNH DOANH THU', platformRevenueConfigNav, true)}
             </>
           ) : (
             <>

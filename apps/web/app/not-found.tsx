@@ -2,9 +2,20 @@
 
 import React from 'react';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import { Icon, Button } from '@podscare/ui';
 
 export default function NotFound() {
+  const router = useRouter();
+
+  const handleBack = () => {
+    if (typeof window !== 'undefined' && window.history.length > 1) {
+      router.back();
+    } else {
+      router.push('/');
+    }
+  };
+
   return (
     <div className="min-h-[80vh] w-full flex items-center justify-center p-4 sm:p-6 bg-[#f4f7f5]">
       <div className="w-full max-w-[480px] bg-white rounded-[10px] border border-[#e5ece8] shadow-[0_2px_5px_rgba(36,60,41,0.03)] p-6 sm:p-8 text-center flex flex-col items-center">
@@ -25,16 +36,26 @@ export default function NotFound() {
           Đường dẫn bạn vừa truy cập không tồn tại hoặc đã được di chuyển trên hệ điều hành FIXO Repair OS.
         </p>
 
-        {/* Action Button to Dashboard */}
-        <Link href="/">
-          <Button
-            variant="primary"
-            size="md"
-            icon="dashboard"
+        {/* Action Button: History Back */}
+        <Button
+          variant="primary"
+          size="md"
+          icon="arrow"
+          onClick={handleBack}
+          className="w-full sm:w-auto"
+        >
+          ← Quay lại trang trước
+        </Button>
+
+        {/* Secondary Safe Fallback Link */}
+        <div className="mt-4 pt-3 border-t border-[#f0f3f1] w-full">
+          <Link
+            href="/"
+            className="text-xs font-semibold text-[#176b58] hover:text-[#125344] hover:underline transition-colors"
           >
-            Quay về trang chủ Dashboard
-          </Button>
-        </Link>
+            Hoặc về trang chủ / tổng quan
+          </Link>
+        </div>
       </div>
     </div>
   );
