@@ -1,6 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { Icon } from '../atoms/Icons';
 import { Avatar } from '../atoms/Avatar';
+import { useToast } from '../molecules/Toast';
 import type { UserProfile } from '@podscare/types';
 
 export interface BranchOption {
@@ -25,7 +26,7 @@ export const mainNavItems: NavItemDef[] = [
 export interface AppSidebarProps {
   currentPath: string;
   onNavigate: (path: string) => void;
-  user?: UserProfile;
+  user?: UserProfile | null;
   onLogout?: () => void;
   isOpen?: boolean;
   onClose?: () => void;
@@ -35,20 +36,15 @@ export interface AppSidebarProps {
   onBranchChange?: (branch: BranchOption) => void;
   repairsCount?: number;
   qcCount?: number;
+  onHelpClick?: () => void;
 }
 
 export const AppSidebar: React.FC<AppSidebarProps> = ({
   currentPath,
   onNavigate,
-  user = {
-    id: '1',
-    name: 'Minh Lê',
-    role: 'admin',
-    roleLabel: 'Quản trị viên',
-    branch: 'Quận 1',
-    initials: 'ML',
-  },
+  user: userProp,
   onLogout,
+  onHelpClick,
   isOpen = false,
   onClose,
   branchName = 'FIXO · Quận 1',
@@ -58,6 +54,16 @@ export const AppSidebar: React.FC<AppSidebarProps> = ({
   repairsCount = 12,
   qcCount = 4,
 }) => {
+  const defaultUser: UserProfile = {
+    id: '1',
+    name: 'Minh Lê',
+    role: 'admin',
+    roleLabel: 'Quản trị viên',
+    branch: 'Quận 1',
+    initials: 'ML',
+  };
+  const user = userProp || defaultUser;
+  const { toast } = useToast();
   const [branchDropdownOpen, setBranchDropdownOpen] = useState(false);
   const navRef = useRef<HTMLElement | null>(null);
   const branchDropdownRef = useRef<HTMLDivElement | null>(null);
@@ -566,8 +572,14 @@ export const AppSidebar: React.FC<AppSidebarProps> = ({
             </p>
             <button
               type="button"
-              onClick={() => alert('Trung tâm trợ giúp: Hotline 1900 xxxx hoặc fixo.com.vn/support')}
-              className="text-[#176b58] font-bold text-xs flex items-center gap-1 hover:underline"
+              onClick={() => {
+                if (onHelpClick) {
+                  onHelpClick();
+                } else {
+                  toast('Trung tâm trợ giúp: Hotline 1900 8888 hoặc fixo.com.vn/support', 'info');
+                }
+              }}
+              className="text-[#176b58] font-bold text-xs flex items-center gap-1 hover:underline cursor-pointer"
             >
               Mở trung tâm <span>↗</span>
             </button>

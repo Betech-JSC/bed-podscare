@@ -89,9 +89,11 @@ export default function DashboardPage() {
   };
 
   // Tech Queue calculations
+  const currentUserId = currentUser?.id ? Number(currentUser.id) : null;
   const techActiveOrders = branchOrders.filter(
     (o) =>
-      Number(o.technicianId || o.technician_id) === Number(currentUser.id) &&
+      currentUserId !== null &&
+      Number(o.technicianId || o.technician_id) === currentUserId &&
       !['Hoàn tất kỹ thuật', 'Chờ QC', 'Sẵn sàng trả', 'Hoàn tất'].includes(o.status)
   );
 
@@ -271,10 +273,10 @@ export default function DashboardPage() {
             FIXO · TỔNG QUAN
           </div>
           <h1 className="font-heading font-bold text-2xl md:text-3xl text-[#1c302b] m-0">
-            Chào buổi sáng, {currentUser.name} 👋
+            Chào buổi sáng, {currentUser?.name || 'Nhân viên'} 👋
           </h1>
           <p className="text-sm text-[#7e8d85] mt-1 mb-0">
-            Đây là tình hình vận hành FIXO hôm nay tại {branch || currentUser.branch}.
+            Đây là tình hình vận hành FIXO hôm nay tại {branch || currentUser?.branch}.
           </p>
         </div>
         <div className="flex items-center gap-2.5">
@@ -591,7 +593,7 @@ export default function DashboardPage() {
             CSKH · WORKSPACE
           </div>
           <h1 className="font-heading font-bold text-2xl md:text-3xl text-[#1c302b] m-0">
-            Chào buổi sáng, {currentUser.name} 👋
+            Chào buổi sáng, {currentUser?.name || 'Nhân viên'} 👋
           </h1>
           <p className="text-sm text-[#7e8d85] mt-1 mb-0">
             Bảng công việc CSKH · Tập trung tiếp nhận, báo giá và chăm sóc khách hàng.
@@ -707,11 +709,11 @@ export default function DashboardPage() {
             Không gian kỹ thuật
           </h1>
           <p className="text-sm text-[#7e8d85] mt-1 mb-0">
-            Xin chào {currentUser.name} · Đây là danh sách việc cần xử lý trong ca hôm nay.
+            Xin chào {currentUser?.name || 'Kỹ thuật viên'} · Đây là danh sách việc cần xử lý trong ca hôm nay.
           </p>
         </div>
         <Button variant="primary" size="md" icon="wrench" onClick={() => router.push('/tech')}>
-          Mở toàn bộ hàng đợi KTV ↗
+          Mở toàn bộ hàng đợi Kỹ Thuật ↗
         </Button>
       </div>
 
@@ -742,7 +744,8 @@ export default function DashboardPage() {
           value={String(
             branchOrders.filter(
               (o) =>
-                Number(o.technicianId || o.technician_id) === Number(currentUser.id) &&
+                currentUserId !== null &&
+                Number(o.technicianId || o.technician_id) === currentUserId &&
                 ['Chờ QC', 'Sẵn sàng trả', 'Hoàn tất'].includes(o.status)
             ).length
           ).padStart(2, '0')}
@@ -787,7 +790,7 @@ export default function DashboardPage() {
                   } catch {
                     const updated: RepairOrder = {
                       ...o,
-                      tech: currentUser.name,
+                      tech: currentUser?.name || 'Kỹ thuật viên',
                       status: 'Đã nhận đơn',
                       statusType: 'progress',
                     };

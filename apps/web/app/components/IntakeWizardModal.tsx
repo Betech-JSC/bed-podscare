@@ -395,7 +395,7 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
       photos,
       appearance: appearance.trim() || 'Không ghi chú',
       testNote: testNote.trim(),
-      createdBy: currentUser.name,
+      createdBy: currentUser?.name || 'Nhân viên',
       createdAt: new Date().toISOString(),
     };
 
@@ -605,11 +605,11 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
                               String(b.id) ===
                               String((currentUser as any)?.branch_id || selectedBranchId)
                           )?.name ||
-                            currentUser.branch ||
+                            currentUser?.branch ||
                             'FIXO · Quận 1'}
                         </strong>
                         <small className="text-xs text-[#7e8e86]">
-                          Gán cố định theo ca làm việc của tài khoản ({currentUser.name})
+                          Gán cố định theo ca làm việc của tài khoản ({currentUser?.name || 'Hiện tại'})
                         </small>
                       </div>
                     </div>

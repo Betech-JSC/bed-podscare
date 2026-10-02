@@ -12,6 +12,7 @@ import {
   TableSkeleton,
   EmptyState,
   useToast,
+  useConfirm,
 } from '@podscare/ui';
 import { AppShell } from '../components/AppShell';
 import { usePodsCare } from '../providers';
@@ -31,6 +32,7 @@ export interface BranchRecord {
 export default function BranchesPage() {
   const router = useRouter();
   const { toast } = useToast();
+  const confirm = useConfirm();
   const { currentUser, fetchBranches } = usePodsCare();
 
   const isAdmin = currentUser?.role === 'admin';
@@ -290,7 +292,14 @@ export default function BranchesPage() {
   // Chuyển đổi trạng thái Tạm ngưng / Kích hoạt
   const handleToggleStatus = async (branch: BranchRecord) => {
     const actionLabel = branch.is_active ? 'tạm ngưng' : 'kích hoạt lại';
-    if (!confirm(`Bạn có chắc chắn muốn ${actionLabel} chi nhánh "${branch.name}"?`)) {
+    const ok = await confirm({
+      title: `${branch.is_active ? 'Tạm ngưng' : 'Kích hoạt'} chi nhánh`,
+      description: `Bạn có chắc chắn muốn ${actionLabel} chi nhánh "${branch.name}" (${branch.code})?`,
+      confirmText: branch.is_active ? 'Tạm ngưng hoạt động' : 'Kích hoạt lại',
+      cancelText: 'Hủy bỏ',
+      variant: branch.is_active ? 'warning' : 'info',
+    });
+    if (!ok) {
       return;
     }
 
@@ -432,7 +441,7 @@ export default function BranchesPage() {
             label="Tổng nhân sự trực thuộc"
             value={totalStaff}
             icon="customers"
-            foot="KTV & CSKH tại các trạm"
+            foot="Kỹ Thuật & CSKH tại các trạm"
             trend="up"
           />
           <StatCard

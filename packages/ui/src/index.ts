@@ -21,6 +21,8 @@ export * from './molecules/PhotoDropzone';
 export * from './molecules/StepperWidget';
 export * from './molecules/FilterBar';
 export * from './molecules/Modal';
+export * from './molecules/ConfirmModal';
+export * from './molecules/ConfirmProvider';
 export * from './molecules/Toast';
 
 // Organisms

@@ -6,8 +6,10 @@ export interface ToastMessage {
   type?: 'success' | 'error' | 'info';
 }
 
+export type ToastParam = string | { message: string; type?: 'success' | 'error' | 'info' };
+
 interface ToastContextType {
-  toast: (message: string, type?: 'success' | 'error' | 'info') => void;
+  toast: (messageOrOptions: ToastParam, type?: 'success' | 'error' | 'info') => void;
 }
 
 const ToastContext = createContext<ToastContextType>({
@@ -19,14 +21,27 @@ export const useToast = () => useContext(ToastContext);
 export const ToastProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [toasts, setToasts] = useState<ToastMessage[]>([]);
 
-  const toast = useCallback((message: string, type: 'success' | 'error' | 'info' = 'success') => {
-    const id = `${Date.now()}-${Math.random().toString(36).substring(2, 6)}`;
-    setToasts((prev) => [...prev, { id, message, type }]);
+  const toast = useCallback(
+    (messageOrOptions: ToastParam, type: 'success' | 'error' | 'info' = 'success') => {
+      let messageText = '';
+      let messageType: 'success' | 'error' | 'info' = type;
 
-    setTimeout(() => {
-      setToasts((prev) => prev.filter((t) => t.id !== id));
-    }, 3200);
-  }, []);
+      if (typeof messageOrOptions === 'object' && messageOrOptions !== null) {
+        messageText = messageOrOptions.message;
+        if (messageOrOptions.type) messageType = messageOrOptions.type;
+      } else {
+        messageText = String(messageOrOptions);
+      }
+
+      const id = `${Date.now()}-${Math.random().toString(36).substring(2, 6)}`;
+      setToasts((prev) => [...prev, { id, message: messageText, type: messageType }]);
+
+      setTimeout(() => {
+        setToasts((prev) => prev.filter((t) => t.id !== id));
+      }, 3200);
+    },
+    []
+  );
 
   return (
     <ToastContext.Provider value={{ toast }}>

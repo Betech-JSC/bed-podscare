@@ -476,7 +476,7 @@ export default function RepairsPage() {
                     <div className="flex items-center gap-2.5 p-3 rounded-[8px] bg-[#eaf4ef] border border-[#d0e5d9] text-xs text-[#176b58]">
                       <span className="w-2 h-2 rounded-full bg-[#176b58] animate-pulse flex-none" />
                       <span>
-                        <strong>Tiến độ:</strong> Thiết bị đang trong quá trình xử lý kỹ thuật bởi KTV. CSKH không can thiệp trạng thái ở bước này.
+                        <strong>Tiến độ:</strong> Thiết bị đang trong quá trình xử lý kỹ thuật bởi Kỹ Thuật. CSKH không can thiệp trạng thái ở bước này.
                       </span>
                     </div>
                   )}
@@ -486,7 +486,7 @@ export default function RepairsPage() {
                     {actions.length === 0 ? (
                       <span className="text-xs text-[#86968f] italic">
                         {role === 'cskh' && inTechPhase
-                          ? 'Đang được KTV xử lý trong phòng kỹ thuật'
+                          ? 'Đang được Kỹ Thuật xử lý trong phòng kỹ thuật'
                           : currentStatusCode === 'completed'
                           ? 'Đơn hàng đã hoàn tất vòng đời'
                           : currentStatusCode === 'cancelled'

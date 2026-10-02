@@ -2,9 +2,9 @@
 
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { ToastProvider } from '@podscare/ui';
+import { ToastProvider, ConfirmProvider } from '@podscare/ui';
 import type { UserRole, UserProfile, RepairOrder, DeviceProfile } from '@podscare/types';
-import { repairService, branchService, deviceService } from '@podscare/api-client';
+import { repairService, branchService, deviceService, authService } from '@podscare/api-client';
 
 import { NotificationProvider } from './providers/NotificationProvider';
 
@@ -22,7 +22,7 @@ export interface BranchItem {
 interface PodsCareContextType {
   role: UserRole;
   setRole: (role: UserRole) => void;
-  currentUser: UserProfile;
+  currentUser: UserProfile | null;
   branch: string;
   branchId: string | number;
   setBranch: (branch: string, branchId?: string | number) => void;
@@ -43,7 +43,7 @@ interface PodsCareContextType {
   isAuthenticated: boolean;
   isLoadingAuth: boolean;
   login: (data: { token: string; user: any }) => void;
-  logout: () => void;
+  logout: () => Promise<void> | void;
   isMounted: boolean;
 }
 
@@ -555,6 +555,11 @@ export const Providers: React.FC<{ children: React.ReactNode }> = ({ children })
     localStorage.setItem('podscare_user', JSON.stringify(profile));
     localStorage.setItem('podscare_role', normRole);
 
+    // Đồng bộ session cookie cho Next.js Edge Middleware
+    if (typeof document !== 'undefined') {
+      document.cookie = `podscare_session_token=${encodeURIComponent(data.token)}; path=/; max-age=${30 * 86400}; SameSite=Lax`;
+    }
+
     setToken(data.token);
     setUserProfile(profile);
     setRoleState(normRole);
@@ -586,53 +591,30 @@ export const Providers: React.FC<{ children: React.ReactNode }> = ({ children })
     }
   };
 
-  const logout = () => {
-    localStorage.removeItem('podscare_token');
-    localStorage.removeItem('podscare_user');
-    localStorage.removeItem('podscare_role');
-    setToken(null);
-    setUserProfile(null);
-    setIsAuthenticated(false);
+  const logout = async () => {
+    try {
+      await authService.logout().catch((err) => {
+        console.warn('Backend logout API returned error (safe fallback ignored):', err);
+      });
+    } finally {
+      // Fail-safe teardown: xóa sạch LocalStorage, Cookie và React Query Cache
+      if (typeof window !== 'undefined') {
+        localStorage.removeItem('podscare_token');
+        localStorage.removeItem('podscare_user');
+        localStorage.removeItem('podscare_role');
+        localStorage.removeItem('podscare_branch');
+        localStorage.removeItem('podscare_branch_id');
+        document.cookie = 'podscare_session_token=; path=/; max-age=0; SameSite=Lax';
+      }
+      queryClient.clear();
+      setToken(null);
+      setUserProfile(null);
+      setIsAuthenticated(false);
+      setOrders([]);
+    }
   };
 
-  const currentUser: UserProfile = userProfile || {
-    id: role === 'super_admin' ? '0' : role === 'admin' ? '1' : role === 'cskh' ? '2' : '3',
-    name:
-      role === 'super_admin'
-        ? 'Tiến Huy / Nhật Bảo'
-        : role === 'admin'
-        ? 'Minh Lê'
-        : role === 'cskh'
-        ? 'Lan Phạm'
-        : 'Tuấn K.',
-    role,
-    roleLabel:
-      role === 'super_admin'
-        ? 'Quản trị Nền tảng'
-        : role === 'admin'
-        ? 'Quản trị viên'
-        : role === 'cskh'
-        ? 'CSKH Tiếp nhận'
-        : role === 'tech'
-        ? 'Kỹ thuật viên'
-        : role === 'qc'
-        ? 'Kiểm định QC'
-        : 'Nhân viên kho',
-    branch: role === 'super_admin' ? 'Nền tảng FIXO' : 'FIXO · Quận 1',
-    branch_id: role === 'super_admin' ? null : 1,
-    initials: role === 'super_admin' ? 'SA' : role === 'admin' ? 'ML' : role === 'cskh' ? 'LP' : 'TK',
-    tenant_id: role === 'super_admin' ? null : 1,
-    tenant:
-      role === 'super_admin'
-        ? null
-        : {
-            id: 1,
-            code: 'fixo-master',
-            name: 'FIXO Master',
-            status: 'active',
-            plan: 'enterprise',
-          },
-  };
+  const currentUser: UserProfile | null = userProfile;
 
   const addOrder = (order: RepairOrder) => {
     setOrders((prev) => [order, ...prev]);
@@ -697,7 +679,9 @@ export const Providers: React.FC<{ children: React.ReactNode }> = ({ children })
           userId={currentUser?.id}
           enabled={isAuthenticated}
         >
-          <ToastProvider>{children}</ToastProvider>
+          <ToastProvider>
+            <ConfirmProvider>{children}</ConfirmProvider>
+          </ToastProvider>
         </NotificationProvider>
       </PodsCareContext.Provider>
     </QueryClientProvider>

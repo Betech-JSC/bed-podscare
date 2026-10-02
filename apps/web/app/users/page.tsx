@@ -13,6 +13,7 @@ import {
   TableSkeleton,
   EmptyState,
   useToast,
+  useConfirm,
 } from '@podscare/ui';
 import { AppShell } from '../components/AppShell';
 import { usePodsCare } from '../providers';
@@ -44,6 +45,7 @@ const FALLBACK_BRANCHES = [
 
 export default function UsersPage() {
   const { toast } = useToast();
+  const confirm = useConfirm();
   const { branches } = usePodsCare();
 
   const [users, setUsers] = useState<UserItem[]>([]);
@@ -189,8 +191,15 @@ export default function UsersPage() {
 
   // Toggle Status (Lock / Unlock)
   const handleToggleStatus = async (user: UserItem) => {
-    const actionName = user.is_active ? 'khóa' : 'kích hoạt';
-    if (!confirm(`Bạn có chắc chắn muốn ${actionName} tài khoản ${user.name}?`)) {
+    const actionName = user.is_active ? 'tạm khóa' : 'kích hoạt';
+    const ok = await confirm({
+      title: `${user.is_active ? 'Tạm khóa' : 'Kích hoạt'} tài khoản`,
+      description: `Bạn có chắc chắn muốn ${actionName} tài khoản "${user.name}" (${user.email})?`,
+      confirmText: user.is_active ? 'Khóa tài khoản' : 'Kích hoạt',
+      cancelText: 'Hủy bỏ',
+      variant: user.is_active ? 'danger' : 'info',
+    });
+    if (!ok) {
       return;
     }
 

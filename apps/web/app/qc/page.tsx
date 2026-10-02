@@ -195,7 +195,7 @@ export default function QCInspectionPage() {
                       {order.device}
                     </h3>
                     <p className="text-xs text-[#75837b] my-1">
-                      KTV: <b>{order.tech}</b> · {order.date}
+                      Kỹ Thuật: <b>{order.tech}</b> · {order.date}
                     </p>
 
                     <div className="bg-[#f7faf8] p-2.5 rounded border border-[#edf1ee] my-2 text-xs">
@@ -203,7 +203,7 @@ export default function QCInspectionPage() {
                       <b className="text-[#33443c] block truncate">{order.issue}</b>
                       {order.repairNote && (
                         <>
-                          <span className="text-[#81908a] block mt-1">Nội dung KTV đã sửa:</span>
+                          <span className="text-[#81908a] block mt-1">Nội dung Kỹ Thuật đã sửa:</span>
                           <span className="text-[#176b58] font-medium block truncate">
                             {order.repairNote}
                           </span>
@@ -244,7 +244,7 @@ export default function QCInspectionPage() {
                 <div className="flex items-center gap-3">
                   <span className="font-mono font-bold text-[#176b58]">{o.id}</span>
                   <b>{o.device}</b>
-                  <span className="text-[#81908a]">KTV: {o.tech}</span>
+                  <span className="text-[#81908a]">Kỹ Thuật: {o.tech}</span>
                 </div>
                 <StatusTag label={o.status} type={o.statusType} />
               </div>
@@ -295,7 +295,7 @@ export default function QCInspectionPage() {
                 </span>
               </div>
               <p className="text-[#516058] m-0">
-                <b>Ghi chú KTV:</b> {selectedOrder.repairNote || 'KTV chưa ghi chú chi tiết'}
+                <b>Ghi chú Kỹ Thuật:</b> {selectedOrder.repairNote || 'Kỹ Thuật chưa ghi chú chi tiết'}
               </p>
             </div>
 
@@ -354,7 +354,7 @@ export default function QCInspectionPage() {
             {!isAllPassed && (
               <div className="p-3 bg-[#fdf5f4] rounded-[8px] border border-[#f5dcd8]">
                 <Textarea
-                  label="Lý do không đạt / Yêu cầu KTV xử lý lại *"
+                  label="Lý do không đạt / Yêu cầu Kỹ Thuật xử lý lại *"
                   value={reworkReason}
                   onChange={(e) => setReworkReason(e.target.value)}
                   placeholder="Ghi rõ tiêu chí nào chưa đạt, ví dụ: Tai trái vẫn còn tiếng rè nhỏ khi tăng âm lượng quá 80%..."

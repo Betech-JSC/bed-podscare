@@ -1,4 +1,5 @@
 export * from './http-client';
+export * from './services/auth.service';
 export * from './services/repair.service';
 export * from './services/device.service';
 export * from './services/customer.service';

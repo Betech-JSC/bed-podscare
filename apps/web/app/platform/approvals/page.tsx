@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
-import { Button, Icon, useToast } from '@podscare/ui';
+import { Button, Icon, useToast, useConfirm } from '@podscare/ui';
 import { AppShell } from '../../components/AppShell';
 
 interface PendingStore {
@@ -19,6 +19,7 @@ interface PendingStore {
 export default function PlatformApprovalsPage() {
   const router = useRouter();
   const { toast } = useToast();
+  const confirm = useConfirm();
 
   const [stores, setStores] = useState<PendingStore[]>([]);
   const [loading, setLoading] = useState(true);
@@ -57,7 +58,14 @@ export default function PlatformApprovalsPage() {
   }, [fetchPendingStores]);
 
   const handleApprove = async (id: number, name: string) => {
-    if (!confirm(`Xác nhận phê duyệt và kích hoạt gian hàng "${name}"?`)) {
+    const ok = await confirm({
+      title: 'Phê duyệt gian hàng',
+      description: `Xác nhận phê duyệt và kích hoạt gian hàng "${name}" trên hệ thống FIXO?`,
+      confirmText: 'Phê duyệt ngay',
+      cancelText: 'Hủy bỏ',
+      variant: 'info',
+    });
+    if (!ok) {
       return;
     }
 
@@ -89,7 +97,14 @@ export default function PlatformApprovalsPage() {
   };
 
   const handleReject = async (id: number, name: string) => {
-    if (!confirm(`Từ chối hồ sơ đăng ký của gian hàng "${name}"?`)) {
+    const ok = await confirm({
+      title: 'Từ chối hồ sơ đăng ký',
+      description: `Bạn có chắc chắn muốn từ chối hồ sơ đăng ký của gian hàng "${name}"?`,
+      confirmText: 'Từ chối hồ sơ',
+      cancelText: 'Đóng',
+      variant: 'danger',
+    });
+    if (!ok) {
       return;
     }
 

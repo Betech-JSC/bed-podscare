@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
-import { Button, Input, Icon, useToast } from '@podscare/ui';
+import { Button, Input, Icon, useToast, useConfirm } from '@podscare/ui';
 import { AppShell } from '../../components/AppShell';
 
 interface StoreItem {
@@ -23,6 +23,7 @@ interface StoreItem {
 export default function PlatformStoresPage() {
   const router = useRouter();
   const { toast } = useToast();
+  const confirm = useConfirm();
 
   const [stores, setStores] = useState<StoreItem[]>([]);
   const [loading, setLoading] = useState(true);
@@ -82,7 +83,16 @@ export default function PlatformStoresPage() {
         ? 'Tạm khóa'
         : 'Kích hoạt lại';
 
-    if (!confirm(`Bạn có chắc chắn muốn ${actionLabel.toLowerCase()} gian hàng "${name}"?`)) {
+    const isDangerous = action === 'suspend';
+    const ok = await confirm({
+      title: `${actionLabel} gian hàng`,
+      description: `Bạn có chắc chắn muốn ${actionLabel.toLowerCase()} gian hàng "${name}"?`,
+      confirmText: actionLabel,
+      cancelText: 'Hủy bỏ',
+      variant: isDangerous ? 'danger' : 'info',
+    });
+
+    if (!ok) {
       return;
     }
 

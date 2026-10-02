@@ -2,12 +2,13 @@
 
 import React, { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
-import { Button, StatusTag, Icon, StepperWidget } from '@podscare/ui';
+import { Button, StatusTag, Icon, StepperWidget, useToast } from '@podscare/ui';
 import type { RepairOrder } from '@podscare/types';
 import { repairService } from '@podscare/api-client';
 
 export const TrackingView: React.FC<{ initialId?: string }> = ({ initialId = '' }) => {
   const router = useRouter();
+  const { toast } = useToast();
   const [searchId, setSearchId] = useState(initialId);
   const [searchPhone, setSearchPhone] = useState('');
   const [hasSearched, setHasSearched] = useState(Boolean(initialId));
@@ -274,7 +275,13 @@ export const TrackingView: React.FC<{ initialId?: string }> = ({ initialId = '' 
                   variant="secondary"
                   size="sm"
                   icon="download"
-                  onClick={() => alert(`Đã sao chép link tra cứu đơn ${searchedOrder.id}`)}
+                  onClick={() => {
+                    if (typeof window !== 'undefined' && navigator.clipboard) {
+                      const shareUrl = `${window.location.origin}/track?id=${encodeURIComponent(searchedOrder.id)}`;
+                      navigator.clipboard.writeText(shareUrl).catch(() => {});
+                    }
+                    toast(`Đã sao chép link tra cứu đơn ${searchedOrder.id}`, 'success');
+                  }}
                 >
                   Sao chép liên kết
                 </Button>

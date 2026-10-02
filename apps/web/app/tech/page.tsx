@@ -41,7 +41,7 @@ export default function TechnicianQueuePage() {
   const [finalCheck, setFinalCheck] = useState('Đã chạy thử, hoạt động hoàn hảo');
   const [consentCheck, setConsentCheck] = useState(false);
 
-  const techName = currentUser.name;
+  const techName = currentUser?.name || 'Kỹ thuật viên';
 
   // Lọc danh sách đơn theo chi nhánh được phân công hoặc chi nhánh đang chọn
   const branchFilteredOrders = useMemo(() => {
@@ -55,7 +55,7 @@ export default function TechnicianQueuePage() {
     });
   }, [orders, branch, branchId]);
 
-  // 1. Hàng đợi máy mới (Live Dispatch): Các đơn waiting_tech chưa có KTV nhận
+  // 1. Hàng đợi máy mới (Live Dispatch): Các đơn waiting_tech chưa có Kỹ Thuật nhận
   const availableOrders = useMemo(() => {
     return branchFilteredOrders.filter((o) => {
       const code = normalizeStatusCode(o.status);
@@ -64,45 +64,49 @@ export default function TechnicianQueuePage() {
     });
   }, [branchFilteredOrders]);
 
-  // 2. Máy KTV đang sửa: Các đơn in_repair, waiting_parts, rework_needed do KTV phụ trách
+  // 2. Máy Kỹ Thuật đang sửa: Các đơn in_repair, waiting_parts, rework_needed do Kỹ Thuật phụ trách
   const myActiveOrders = useMemo(() => {
     return branchFilteredOrders.filter((o) => {
       const code = normalizeStatusCode(o.status);
       const isMyOrder =
-        currentUser.role === 'admin' ||
-        Number(o.technicianId || o.technician_id) === Number(currentUser.id);
+        currentUser?.role === 'admin' ||
+        (currentUser?.id !== undefined &&
+          currentUser?.id !== null &&
+          Number(o.technicianId || o.technician_id) === Number(currentUser.id));
       return (
         isMyOrder &&
         ['in_repair', 'waiting_parts', 'rework_needed', 'assigned'].includes(code)
       );
     });
-  }, [branchFilteredOrders, currentUser.id, currentUser.role]);
+  }, [branchFilteredOrders, currentUser?.id, currentUser?.role]);
 
-  // 3. Đã hoàn thành hôm nay: Các đơn do KTV phụ trách đã chuyển sang ready_for_return, waiting_pickup, completed
+  // 3. Đã hoàn thành hôm nay: Các đơn do Kỹ Thuật phụ trách đã chuyển sang ready_for_return, waiting_pickup, completed
   const myCompletedTodayOrders = useMemo(() => {
     return branchFilteredOrders.filter((o) => {
       const code = normalizeStatusCode(o.status);
       const isMyOrder =
-        currentUser.role === 'admin' ||
-        Number(o.technicianId || o.technician_id) === Number(currentUser.id);
+        currentUser?.role === 'admin' ||
+        (currentUser?.id !== undefined &&
+          currentUser?.id !== null &&
+          Number(o.technicianId || o.technician_id) === Number(currentUser.id));
       return (
         isMyOrder &&
         ['ready_for_return', 'waiting_pickup', 'completed', 'waiting_qc'].includes(code)
       );
     });
-  }, [branchFilteredOrders, currentUser.id, currentUser.role]);
+  }, [branchFilteredOrders, currentUser?.id, currentUser?.role]);
 
-  // Tổng số đơn KTV đã nhận hôm nay
+  // Tổng số đơn Kỹ Thuật đã nhận hôm nay
   const acceptedTodayCount = myActiveOrders.length + myCompletedTodayOrders.length;
 
-  // Hành động Nhận máy 1-chạm (Grab-style live dispatch: waiting_tech -> in_repair)
+  // Hành động Tiếp nhận máy (Grab-style live dispatch: waiting_tech -> in_repair)
   const handleGrabOrder = async (order: RepairOrder) => {
     if (isSubmitting) return;
     setIsSubmitting(true);
     try {
       await repairService.transition(order.id, {
         transition: 'in_repair',
-        technician_id: currentUser.id,
+        technician_id: currentUser?.id,
       });
       await invalidateOrders();
       toast(`⚡ Bạn đã nhận máy ${order.id} thành công! Đơn chuyển thẳng sang Đang sửa.`, 'success');
@@ -123,7 +127,7 @@ export default function TechnicianQueuePage() {
     setCompleteModalOpen(true);
   };
 
-  // Xác nhận hoàn tất sửa chữa và bàn giao ngay cho CSKH (1-chạm: in_repair -> ready_for_return)
+  // Xác nhận hoàn tất sửa chữa và bàn giao ngay cho CSKH (in_repair -> ready_for_return)
   const handleCompleteRepair = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedOrder || isSubmitting) return;
@@ -194,7 +198,7 @@ export default function TechnicianQueuePage() {
               Không gian Kỹ thuật viên
             </h1>
             <p className="text-sm text-[#7e8d85] mt-1 mb-0">
-              Xin chào {techName} · Nhận máy 1-chạm từ quầy CSKH {branchId === 'all' ? 'toàn chuỗi' : branch}, sửa chữa và hoàn tất bàn giao tức thì.
+              Xin chào {techName} · Tiếp nhận máy từ quầy CSKH {branchId === 'all' ? 'toàn chuỗi' : branch}, sửa chữa và hoàn tất bàn giao tức thì.
             </p>
           </div>
           {role === 'admin' ? (
@@ -296,7 +300,7 @@ export default function TechnicianQueuePage() {
                   Hàng đợi máy mới cần nhận (Live Dispatch)
                 </h2>
                 <p className="text-xs text-[#809088] mt-0.5 mb-0">
-                  Đơn do CSKH vừa tiếp nhận tại quầy. Bấm nhận máy ngay 1-chạm để đưa vào bàn sửa chữa.
+                  Đơn do CSKH vừa tiếp nhận tại quầy. Bấm nhận máy ngay để đưa vào bàn sửa chữa.
                 </p>
               </div>
             </div>
@@ -523,7 +527,7 @@ export default function TechnicianQueuePage() {
         </div>
       </div>
 
-      {/* Completion Modal (Task 4.3: 1-chạm hoàn tất sửa chữa & bàn giao CSKH) */}
+      {/* Completion Modal (Task 4.3: Hoàn tất sửa chữa & bàn giao CSKH) */}
       <Modal
         isOpen={completeModalOpen}
         onClose={() => setCompleteModalOpen(false)}

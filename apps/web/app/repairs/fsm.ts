@@ -194,7 +194,7 @@ export function getQuickActionsForStatus(
   if (!status) return [];
   const normalized = normalizeStatusCode(status);
 
-  // FSM UI Guard: CSKH không thể can thiệp vào các trạng thái sửa chữa kỹ thuật của KTV
+  // FSM UI Guard: CSKH không thể can thiệp vào các trạng thái sửa chữa kỹ thuật của Kỹ Thuật
   if (userRole === 'cskh' && TECHNICAL_STAGE_STATUSES.includes(normalized)) {
     return [];
   }

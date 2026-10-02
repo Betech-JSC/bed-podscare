@@ -2,7 +2,17 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import { useRouter, usePathname } from 'next/navigation';
-import { AppSidebar, Topbar, NotificationPopover, type NotificationItem } from '@podscare/ui';
+import {
+  AppSidebar,
+  Topbar,
+  NotificationPopover,
+  type NotificationItem,
+  Avatar,
+  Button,
+  Icon,
+  Modal,
+} from '@podscare/ui';
+import type { UserProfile } from '@podscare/types';
 import { usePodsCare, useNotifications } from '../providers';
 
 export interface AppShellProps {
@@ -10,6 +20,89 @@ export interface AppShellProps {
   crumbName?: string;
   actions?: React.ReactNode;
 }
+
+interface LogoutConfirmModalProps {
+  isOpen: boolean;
+  onClose: () => void;
+  onConfirm: () => Promise<void>;
+  user: UserProfile | null;
+  branchName: string;
+  loading: boolean;
+}
+
+const LogoutConfirmModal: React.FC<LogoutConfirmModalProps> = ({
+  isOpen,
+  onClose,
+  onConfirm,
+  user,
+  branchName,
+  loading,
+}) => {
+  return (
+    <Modal
+      isOpen={isOpen}
+      onClose={loading ? () => {} : onClose}
+      title="Kết thúc ca làm việc"
+      eyebrow="Xác thực phiên"
+      maxWidth="sm"
+      footer={
+        <div className="flex items-center justify-end gap-3 w-full">
+          <Button
+            variant="secondary"
+            size="md"
+            disabled={loading}
+            onClick={onClose}
+            className="text-sm font-semibold"
+          >
+            Hủy bỏ
+          </Button>
+
+          <Button
+            variant="danger"
+            size="md"
+            loading={loading}
+            onClick={onConfirm}
+            className="text-sm font-semibold"
+          >
+            {loading ? 'Đang kết thúc ca làm việc...' : 'Xác nhận đăng xuất'}
+          </Button>
+        </div>
+      }
+    >
+      <div className="space-y-4">
+        {/* User Card */}
+        <div className="p-4 rounded-[12px] bg-[#f7f9f8] border border-[#e5ece8] flex items-center gap-3.5">
+          <Avatar
+            initials={user?.initials || 'NV'}
+            variant="dark"
+            size="lg"
+            className="shadow-sm"
+          />
+          <div className="min-w-0 flex-1">
+            <b className="text-base text-[#1c302b] font-bold block truncate">
+              {user?.name || 'Nhân viên'}
+            </b>
+            <div className="flex items-center gap-2 mt-0.5 text-xs text-[#6e7f77]">
+              <span className="font-semibold text-[#176b58] bg-[#eaf4ef] px-2 py-0.5 rounded-[5px] border border-[#cde2d6]">
+                {user?.roleLabel || user?.role || 'Nhân sự'}
+              </span>
+              <span>·</span>
+              <span className="truncate">{branchName}</span>
+            </div>
+          </div>
+        </div>
+
+        {/* Warning Banner */}
+        <div className="p-3.5 rounded-[10px] bg-[#fbefed] border border-[#f5c7c2] flex items-start gap-2.5 text-xs text-[#bc5b52] leading-relaxed">
+          <Icon name="alert" size={18} className="shrink-0 mt-0.5" />
+          <span>
+            Bạn có chắc chắn muốn kết thúc ca làm việc? Mọi dữ liệu thao tác chưa lưu sẽ bị mất và phiên làm việc sẽ được thu hồi an toàn khỏi hệ thống.
+          </span>
+        </div>
+      </div>
+    </Modal>
+  );
+};
 
 export const AppShell: React.FC<AppShellProps> = ({ children, crumbName = 'Tổng quan' }) => {
   const router = useRouter();
@@ -28,6 +121,8 @@ export const AppShell: React.FC<AppShellProps> = ({ children, crumbName = 'Tổn
 
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [searchVal, setSearchVal] = useState('');
+  const [logoutModalOpen, setLogoutModalOpen] = useState(false);
+  const [logoutLoading, setLogoutLoading] = useState(false);
 
   // Quản lý Notification Center Popover kết nối trực tiếp với NotificationProvider & Web Audio Chime
   const [notificationOpen, setNotificationOpen] = useState(false);
@@ -87,10 +182,20 @@ export const AppShell: React.FC<AppShellProps> = ({ children, crumbName = 'Tổn
     router.push(target, { scroll: false });
   };
 
-
   const handleNotificationClick = (item: NotificationItem) => {
     setNotificationOpen(false);
     handleContextNotificationClick(item, router);
+  };
+
+  const handleLogoutConfirm = async () => {
+    setLogoutLoading(true);
+    try {
+      await logout();
+      setLogoutModalOpen(false);
+      router.replace('/login');
+    } finally {
+      setLogoutLoading(false);
+    }
   };
 
   const repairsCount = orders.filter((o) => !['Hoàn tất', 'Đã hủy'].includes(o.status)).length;
@@ -117,7 +222,7 @@ export const AppShell: React.FC<AppShellProps> = ({ children, crumbName = 'Tổn
       <AppSidebar
         currentPath={currentNav}
         onNavigate={handleNavigate}
-        user={currentUser}
+        user={currentUser || undefined}
         isOpen={mobileMenuOpen}
         onClose={() => setMobileMenuOpen(false)}
         branchName={branch}
@@ -126,12 +231,7 @@ export const AppShell: React.FC<AppShellProps> = ({ children, crumbName = 'Tổn
         onBranchChange={(b) => setBranch(b.name, b.id)}
         repairsCount={repairsCount}
         qcCount={qcCount}
-        onLogout={() => {
-          if (confirm('Bạn có chắc chắn muốn đăng xuất không?')) {
-            logout();
-            router.push('/login');
-          }
-        }}
+        onLogout={() => setLogoutModalOpen(true)}
       />
 
       {/* Main Area */}
@@ -164,6 +264,16 @@ export const AppShell: React.FC<AppShellProps> = ({ children, crumbName = 'Tổn
           {children}
         </main>
       </div>
+
+      {/* Enterprise Logout Confirmation Modal */}
+      <LogoutConfirmModal
+        isOpen={logoutModalOpen}
+        onClose={() => setLogoutModalOpen(false)}
+        onConfirm={handleLogoutConfirm}
+        user={currentUser}
+        branchName={branch}
+        loading={logoutLoading}
+      />
     </div>
   );
 };
