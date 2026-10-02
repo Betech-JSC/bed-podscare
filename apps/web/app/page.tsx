@@ -1,6 +1,6 @@
 import React from 'react';
 import type { Metadata } from 'next';
-import { LandingView } from './components/landing';
+import { LandingPreview } from './LandingPreview';
 
 export const metadata: Metadata = {
   title: 'FIXO — Phần mềm quản lý cửa hàng sửa chữa điện thoại, laptop, thiết bị công nghệ',
@@ -90,7 +90,7 @@ export default function Page() {
         type="application/ld+json"
         dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
       />
-      <LandingView />
+      <LandingPreview />
     </>
   );
 }

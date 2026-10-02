@@ -30,3 +30,11 @@
 - [x] 5.2 Cấu hình SEO metadata hoàn chỉnh (Title: "FIXO — Phần mềm quản lý cửa hàng sửa chữa", description, OpenGraph, viewport) cho trang chủ
 - [x] 5.3 Chạy kiểm tra TypeScript và biên dịch toàn diện ứng dụng web bằng lệnh `pnpm --filter web build`; đảm bảo 0 lỗi type-check và bundle hoàn thành thành công
 - [x] 5.4 Kiểm tra hiển thị responsive và luồng thao tác trên trình duyệt (desktop 1280px, tablet 768px, mobile 375px), xác nhận tất cả anchor link, modal video và CTA hoạt động trơn tru
+
+## 6. Migration to 100% Preview Source & Inter Font (Opsx-Apply Finalization)
+
+- [x] 6.1 Cập nhật toàn bộ typography dự án sang font Inter (`apps/web/app/layout.tsx`, `packages/config-tailwind/tailwind.preset.js`, `apps/web/app/globals.css`)
+- [x] 6.2 Trích xuất 100% CSS nguyên bản từ `<style>` của `preview.html` sang `apps/web/app/landing-preview.css`
+- [x] 6.3 Chuyển toàn bộ 100% markup trong `<body>` của `preview.html` sang JSX tại `apps/web/app/LandingPreview.tsx` và tích hợp vào `apps/web/app/page.tsx`
+- [x] 6.4 Gắn chuẩn liên kết Next.js (`/login`, `/register?plan=trial`, anchors), video alert handler và bảo toàn SEO Metadata
+- [x] 6.5 Xác thực biên dịch Next.js production build (`pnpm --filter web build`) đạt 100% PASS, 0 lỗi

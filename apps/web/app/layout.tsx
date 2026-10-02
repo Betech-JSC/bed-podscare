@@ -1,20 +1,12 @@
 import type { Metadata, Viewport } from 'next';
-import { DM_Sans, Manrope } from 'next/font/google';
+import { Inter } from 'next/font/google';
 import './globals.css';
 import { Providers } from './providers';
 
-const dmSans = DM_Sans({
-  subsets: ['latin'],
-  weight: ['400', '500', '600', '700'],
-  variable: '--font-dm-sans',
+const inter = Inter({
+  subsets: ['latin', 'vietnamese'],
   display: 'swap',
-});
-
-const manrope = Manrope({
-  subsets: ['latin'],
-  weight: ['400', '500', '600', '700', '800'],
-  variable: '--font-manrope',
-  display: 'swap',
+  variable: '--font-inter',
 });
 
 export const metadata: Metadata = {
@@ -44,8 +36,20 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    <html lang="vi" className={`${dmSans.variable} ${manrope.variable}`}>
-      <body className="font-sans bg-[#f4f7f5] text-[#1c302b] min-h-screen">
+    <html lang="vi" className={inter.variable}>
+      <head>
+        <link rel="preconnect" href="https://fonts.googleapis.com" />
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
+        {/* eslint-disable-next-line @next/next/no-page-custom-font */}
+        <link
+          href="https://fonts.googleapis.com/css2?family=Inter:ital,opsz,wght@0,14..32,100..900;1,14..32,100..900&display=swap"
+          rel="stylesheet"
+        />
+      </head>
+      <body
+        className={`${inter.className} font-sans bg-[#f4f7f5] text-[#1c302b] min-h-screen`}
+        style={{ fontFamily: "'Inter', var(--font-inter), -apple-system, BlinkMacSystemFont, sans-serif" }}
+      >
         <Providers>{children}</Providers>
       </body>
     </html>

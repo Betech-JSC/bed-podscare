@@ -36,8 +36,8 @@ module.exports = {
         }
       },
       fontFamily: {
-        sans: ['var(--font-dm-sans)', 'DM Sans', '-apple-system', 'BlinkMacSystemFont', 'sans-serif'],
-        heading: ['var(--font-manrope)', 'Manrope', 'DM Sans', 'sans-serif'],
+        sans: ['Inter', 'var(--font-inter)', '-apple-system', 'BlinkMacSystemFont', 'sans-serif'],
+        heading: ['Inter', 'var(--font-inter)', '-apple-system', 'BlinkMacSystemFont', 'sans-serif'],
       },
       boxShadow: {
         card: '0 2px 5px rgba(36, 60, 41, 0.03)',

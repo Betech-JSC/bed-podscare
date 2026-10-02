@@ -1,0 +1,1856 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+
+  <title>FIXO — Phần mềm quản lý cửa hàng sửa chữa</title>
+  <meta
+    name="description"
+    content="FIXO giúp cửa hàng sửa chữa quản lý đơn sửa chữa, khách hàng, linh kiện, kho, bảo hành, thu chi và doanh thu trên một nền tảng."
+  />
+
+  <style>
+    :root {
+      --green: #087f5b;
+      --green-dark: #075b45;
+      --green-light: #e7f7f1;
+      --navy: #10251f;
+      --text: #263631;
+      --muted: #71817b;
+      --border: #e6ebe8;
+      --bg: #f5f8f6;
+      --white: #ffffff;
+      --shadow: 0 20px 60px rgba(16, 37, 31, 0.10);
+      --radius: 18px;
+    }
+
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    html {
+      scroll-behavior: smooth;
+    }
+
+    body {
+      font-family:
+        Inter,
+        -apple-system,
+        BlinkMacSystemFont,
+        "Segoe UI",
+        Roboto,
+        Arial,
+        sans-serif;
+      color: var(--text);
+      background: #fff;
+      line-height: 1.6;
+    }
+
+    a {
+      text-decoration: none;
+      color: inherit;
+    }
+
+    button {
+      font-family: inherit;
+    }
+
+    .container {
+      width: min(1280px, calc(100% - 48px));
+      margin: auto;
+    }
+
+    /* =========================
+       NAVBAR
+    ========================= */
+
+    .navbar {
+      height: 76px;
+      border-bottom: 1px solid var(--border);
+      background: rgba(255,255,255,.94);
+      backdrop-filter: blur(14px);
+      position: sticky;
+      top: 0;
+      z-index: 100;
+    }
+
+    .nav-inner {
+      height: 100%;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .logo {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .logo-box {
+      width: 42px;
+      height: 42px;
+      border-radius: 12px;
+      background: #102d35;
+      color: #fff;
+      display: grid;
+      place-items: center;
+      font-size: 14px;
+      font-weight: 800;
+    }
+
+    .logo-text strong {
+      display: block;
+      font-size: 21px;
+      line-height: 1;
+      color: var(--navy);
+      letter-spacing: -.5px;
+    }
+
+    .logo-text span {
+      font-size: 8px;
+      letter-spacing: 1.4px;
+      color: #84918d;
+      font-weight: 700;
+    }
+
+    .nav-links {
+      display: flex;
+      align-items: center;
+      gap: 34px;
+      font-size: 14px;
+      font-weight: 600;
+      color: #52615c;
+    }
+
+    .nav-links a:hover {
+      color: var(--green);
+    }
+
+    .nav-actions {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      height: 46px;
+      padding: 0 22px;
+      border-radius: 9px;
+      border: 1px solid var(--border);
+      font-size: 14px;
+      font-weight: 700;
+      cursor: pointer;
+      transition: .2s;
+    }
+
+    .btn:hover {
+      transform: translateY(-1px);
+    }
+
+    .btn-outline {
+      background: white;
+      color: var(--text);
+    }
+
+    .btn-primary {
+      color: white;
+      background: var(--green);
+      border-color: var(--green);
+      box-shadow: 0 8px 20px rgba(8,127,91,.18);
+    }
+
+    .btn-primary:hover {
+      background: var(--green-dark);
+    }
+
+    /* =========================
+       HERO
+    ========================= */
+
+    .hero {
+      background:
+        radial-gradient(
+          circle at 75% 30%,
+          rgba(19,153,111,.09),
+          transparent 35%
+        ),
+        linear-gradient(180deg, #f6faf8 0%, #fff 100%);
+      padding: 70px 0 50px;
+      overflow: hidden;
+    }
+
+    .hero-grid {
+      display: grid;
+      grid-template-columns: 46% 54%;
+      align-items: center;
+      gap: 20px;
+    }
+
+    .eyebrow {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 7px 14px;
+      background: var(--green-light);
+      border-radius: 999px;
+      color: var(--green);
+      font-size: 12px;
+      font-weight: 800;
+      text-transform: uppercase;
+      margin-bottom: 22px;
+    }
+
+    .eyebrow::before {
+      content: "✦";
+    }
+
+    h1 {
+      font-size: clamp(42px, 5vw, 68px);
+      line-height: 1.04;
+      letter-spacing: -3px;
+      color: var(--navy);
+      margin-bottom: 24px;
+    }
+
+    h1 span {
+      color: var(--green);
+    }
+
+    .hero-description {
+      font-size: 18px;
+      color: #66756f;
+      max-width: 620px;
+      margin-bottom: 30px;
+    }
+
+    .hero-actions {
+      display: flex;
+      gap: 12px;
+      flex-wrap: wrap;
+      margin-bottom: 32px;
+    }
+
+    .video-btn {
+      background: white;
+    }
+
+    .hero-benefits {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 12px;
+    }
+
+    .benefit {
+      display: flex;
+      gap: 9px;
+      align-items: center;
+    }
+
+    .benefit-icon {
+      width: 34px;
+      height: 34px;
+      border-radius: 50%;
+      background: #dcf3e9;
+      display: grid;
+      place-items: center;
+      color: var(--green);
+      font-size: 15px;
+    }
+
+    .benefit-text strong {
+      display: block;
+      font-size: 12px;
+      color: var(--navy);
+    }
+
+    .benefit-text span {
+      display: block;
+      color: #8a9691;
+      font-size: 10px;
+      line-height: 1.3;
+    }
+
+    /* =========================
+       DASHBOARD
+    ========================= */
+
+    .dashboard-wrapper {
+      position: relative;
+      padding: 20px 0 30px 30px;
+    }
+
+    .dashboard {
+      background: white;
+      border-radius: 18px;
+      border: 1px solid #dfe7e3;
+      box-shadow: 0 35px 80px rgba(16,37,31,.14);
+      overflow: hidden;
+    }
+
+    .dashboard-top {
+      height: 48px;
+      display: flex;
+      align-items: center;
+      gap: 7px;
+      padding: 0 18px;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: #ccd5d1;
+    }
+
+    .dashboard-content {
+      display: grid;
+      grid-template-columns: 155px 1fr;
+      min-height: 350px;
+    }
+
+    .sidebar {
+      background: #102d35;
+      padding: 20px 12px;
+      color: white;
+    }
+
+    .sidebar-brand {
+      font-weight: 800;
+      margin: 0 8px 22px;
+      font-size: 15px;
+    }
+
+    .sidebar-item {
+      padding: 10px 9px;
+      border-radius: 7px;
+      color: #b7c8c2;
+      font-size: 11px;
+      margin-bottom: 4px;
+    }
+
+    .sidebar-item.active {
+      background: var(--green);
+      color: white;
+    }
+
+    .dashboard-main {
+      padding: 22px;
+      background: #fbfcfb;
+    }
+
+    .dashboard-title {
+      display: flex;
+      justify-content: space-between;
+      margin-bottom: 16px;
+    }
+
+    .dashboard-title h3 {
+      font-size: 18px;
+      color: var(--navy);
+    }
+
+    .date {
+      font-size: 10px;
+      border: 1px solid var(--border);
+      padding: 5px 9px;
+      border-radius: 6px;
+      background: white;
+    }
+
+    .stats {
+      display: grid;
+      grid-template-columns: repeat(4,1fr);
+      gap: 10px;
+      margin-bottom: 15px;
+    }
+
+    .stat {
+      background: white;
+      border: 1px solid var(--border);
+      border-radius: 9px;
+      padding: 12px;
+    }
+
+    .stat-label {
+      font-size: 9px;
+      color: #7d8985;
+      margin-bottom: 4px;
+    }
+
+    .stat-number {
+      font-size: 16px;
+      font-weight: 800;
+      color: var(--navy);
+    }
+
+    .stat-growth {
+      font-size: 8px;
+      color: var(--green);
+      margin-top: 3px;
+    }
+
+    .charts {
+      display: grid;
+      grid-template-columns: 1.5fr 1fr;
+      gap: 10px;
+    }
+
+    .chart-card {
+      background: white;
+      border: 1px solid var(--border);
+      border-radius: 9px;
+      padding: 14px;
+    }
+
+    .chart-title {
+      font-size: 10px;
+      font-weight: 700;
+      margin-bottom: 14px;
+    }
+
+    .bars {
+      height: 130px;
+      display: flex;
+      align-items: flex-end;
+      justify-content: space-between;
+      gap: 6px;
+    }
+
+    .bar {
+      width: 8%;
+      background: #8ed8bd;
+      border-radius: 4px 4px 0 0;
+    }
+
+    .donut {
+      width: 110px;
+      height: 110px;
+      margin: 10px auto;
+      border-radius: 50%;
+      background: conic-gradient(
+        var(--green) 0 65%,
+        #4d8dd8 65% 82%,
+        #f0a44b 82% 94%,
+        #ddd 94%
+      );
+      position: relative;
+    }
+
+    .donut::after {
+      content: "56";
+      position: absolute;
+      inset: 22px;
+      border-radius: 50%;
+      background: white;
+      display: grid;
+      place-items: center;
+      font-weight: 800;
+      color: var(--navy);
+    }
+
+    /* Mobile app */
+
+    .phone {
+      position: absolute;
+      right: -30px;
+      bottom: 0;
+      width: 150px;
+      background: #111d21;
+      border-radius: 24px;
+      padding: 7px;
+      box-shadow: 0 25px 50px rgba(0,0,0,.2);
+    }
+
+    .phone-screen {
+      background: white;
+      border-radius: 18px;
+      overflow: hidden;
+      min-height: 285px;
+    }
+
+    .phone-header {
+      padding: 18px 12px 10px;
+      font-size: 11px;
+      font-weight: 800;
+    }
+
+    .phone-search {
+      margin: 0 10px 10px;
+      border: 1px solid var(--border);
+      padding: 7px;
+      border-radius: 7px;
+      font-size: 8px;
+      color: #87918e;
+    }
+
+    .order {
+      margin: 7px 10px;
+      padding: 9px;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+    }
+
+    .order-id {
+      font-size: 8px;
+      font-weight: 800;
+    }
+
+    .order-name {
+      font-size: 9px;
+      margin-top: 3px;
+    }
+
+    .status {
+      display: inline-block;
+      margin-top: 5px;
+      padding: 3px 6px;
+      border-radius: 5px;
+      background: #dff5e9;
+      color: var(--green);
+      font-size: 7px;
+      font-weight: 700;
+    }
+
+    /* =========================
+       TRUST BAR
+    ========================= */
+
+    .trust-bar {
+      background: white;
+      border: 1px solid var(--border);
+      border-radius: 20px;
+      box-shadow: 0 10px 35px rgba(0,0,0,.05);
+      transform: translateY(20px);
+      position: relative;
+      z-index: 2;
+    }
+
+    .trust-grid {
+      display: grid;
+      grid-template-columns: repeat(4,1fr);
+      padding: 25px;
+    }
+
+    .trust-item {
+      text-align: center;
+      border-right: 1px solid var(--border);
+    }
+
+    .trust-item:last-child {
+      border: none;
+    }
+
+    .trust-number {
+      font-size: 25px;
+      font-weight: 900;
+      color: var(--green);
+    }
+
+    .trust-label {
+      font-size: 12px;
+      color: #77847f;
+    }
+
+    /* =========================
+       FEATURES
+    ========================= */
+
+    .features {
+      padding: 110px 0 80px;
+      background: #f8faf9;
+    }
+
+    .section-heading {
+      text-align: center;
+      max-width: 700px;
+      margin: 0 auto 55px;
+    }
+
+    .section-tag {
+      display: inline-block;
+      padding: 7px 14px;
+      border-radius: 999px;
+      background: var(--green-light);
+      color: var(--green);
+      font-size: 11px;
+      font-weight: 800;
+      margin-bottom: 14px;
+    }
+
+    .section-heading h2 {
+      font-size: 42px;
+      line-height: 1.12;
+      letter-spacing: -1.7px;
+      color: var(--navy);
+      margin-bottom: 15px;
+    }
+
+    .section-heading p {
+      color: var(--muted);
+      font-size: 16px;
+    }
+
+    .feature-layout {
+      display: grid;
+      grid-template-columns: 280px 1fr;
+      gap: 35px;
+      align-items: start;
+    }
+
+    .feature-intro h3 {
+      font-size: 28px;
+      line-height: 1.15;
+      color: var(--navy);
+      margin-bottom: 15px;
+    }
+
+    .feature-intro h3 span {
+      color: var(--green);
+    }
+
+    .feature-intro p {
+      font-size: 14px;
+      color: var(--muted);
+      margin-bottom: 25px;
+    }
+
+    .feature-grid {
+      display: grid;
+      grid-template-columns: repeat(3,1fr);
+      gap: 14px;
+    }
+
+    .feature-card {
+      background: white;
+      border: 1px solid var(--border);
+      padding: 22px;
+      border-radius: 14px;
+      transition: .2s;
+    }
+
+    .feature-card:hover {
+      transform: translateY(-3px);
+      box-shadow: var(--shadow);
+    }
+
+    .feature-icon {
+      width: 42px;
+      height: 42px;
+      display: grid;
+      place-items: center;
+      background: #e9f7f1;
+      border-radius: 10px;
+      color: var(--green);
+      margin-bottom: 16px;
+      font-size: 19px;
+    }
+
+    .feature-card h4 {
+      font-size: 15px;
+      color: var(--navy);
+      margin-bottom: 7px;
+    }
+
+    .feature-card p {
+      font-size: 12px;
+      color: #77847f;
+    }
+
+    /* =========================
+       INDUSTRIES
+    ========================= */
+
+    .industries {
+      padding: 90px 0;
+    }
+
+    .industry-grid {
+      display: grid;
+      grid-template-columns: repeat(6,1fr);
+      gap: 14px;
+    }
+
+    .industry-card {
+      border: 1px solid var(--border);
+      padding: 25px 15px;
+      border-radius: 14px;
+      text-align: center;
+      background: white;
+      transition: .2s;
+    }
+
+    .industry-card:hover {
+      border-color: #b6dfd0;
+      transform: translateY(-3px);
+    }
+
+    .industry-icon {
+      font-size: 30px;
+      margin-bottom: 10px;
+    }
+
+    .industry-card strong {
+      display: block;
+      font-size: 13px;
+      color: var(--navy);
+    }
+
+    .industry-card span {
+      display: block;
+      color: #8a9691;
+      font-size: 10px;
+      margin-top: 4px;
+    }
+
+    /* =========================
+       HOW IT WORKS
+    ========================= */
+
+    .how {
+      padding: 90px 0;
+      background: #f5faf7;
+    }
+
+    .steps {
+      display: grid;
+      grid-template-columns: repeat(4,1fr);
+      gap: 18px;
+    }
+
+    .step {
+      background: white;
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      padding: 25px;
+      position: relative;
+    }
+
+    .step-number {
+      width: 34px;
+      height: 34px;
+      border-radius: 50%;
+      background: var(--green);
+      color: white;
+      display: grid;
+      place-items: center;
+      font-weight: 800;
+      margin-bottom: 20px;
+    }
+
+    .step h3 {
+      color: var(--navy);
+      font-size: 16px;
+      margin-bottom: 7px;
+    }
+
+    .step p {
+      color: var(--muted);
+      font-size: 13px;
+    }
+
+    /* =========================
+       PRICING
+    ========================= */
+
+    .pricing {
+      padding: 100px 0;
+    }
+
+    .pricing-card {
+      max-width: 780px;
+      margin: auto;
+      border: 1px solid #b8ded0;
+      border-radius: 24px;
+      padding: 45px;
+      text-align: center;
+      background:
+        radial-gradient(
+          circle at top,
+          #e8f7f1,
+          transparent 60%
+        ),
+        white;
+      box-shadow: var(--shadow);
+    }
+
+    .pricing-card h2 {
+      font-size: 38px;
+      color: var(--navy);
+      margin-bottom: 12px;
+    }
+
+    .pricing-card p {
+      color: var(--muted);
+      margin-bottom: 25px;
+    }
+
+    .price {
+      font-size: 48px;
+      font-weight: 900;
+      color: var(--green);
+      margin-bottom: 5px;
+    }
+
+    .price small {
+      font-size: 16px;
+      color: var(--muted);
+      font-weight: 500;
+    }
+
+    .price-note {
+      font-size: 12px;
+      color: #84908c;
+      margin-bottom: 25px;
+    }
+
+    /* =========================
+       CTA
+    ========================= */
+
+    .cta {
+      padding: 30px 0 90px;
+    }
+
+    .cta-box {
+      background: #102d35;
+      border-radius: 25px;
+      padding: 60px;
+      text-align: center;
+      color: white;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .cta-box::before {
+      content: "";
+      position: absolute;
+      width: 400px;
+      height: 400px;
+      border-radius: 50%;
+      background: rgba(21,180,130,.15);
+      right: -100px;
+      top: -200px;
+    }
+
+    .cta-box h2 {
+      position: relative;
+      font-size: 42px;
+      letter-spacing: -1.5px;
+      margin-bottom: 14px;
+    }
+
+    .cta-box p {
+      position: relative;
+      color: #b9c8c3;
+      margin-bottom: 28px;
+    }
+
+    /* =========================
+       FOOTER
+    ========================= */
+
+    footer {
+      background: #0c211d;
+      color: white;
+      padding: 55px 0 25px;
+    }
+
+    .footer-grid {
+      display: grid;
+      grid-template-columns: 2fr 1fr 1fr 1fr;
+      gap: 50px;
+      margin-bottom: 45px;
+    }
+
+    .footer-brand p {
+      color: #91a29d;
+      font-size: 13px;
+      max-width: 330px;
+      margin-top: 15px;
+    }
+
+    .footer-column h4 {
+      font-size: 13px;
+      margin-bottom: 15px;
+    }
+
+    .footer-column a {
+      display: block;
+      color: #8fa09b;
+      font-size: 12px;
+      margin-bottom: 9px;
+    }
+
+    .footer-column a:hover {
+      color: white;
+    }
+
+    .copyright {
+      border-top: 1px solid rgba(255,255,255,.1);
+      padding-top: 20px;
+      color: #70817c;
+      font-size: 11px;
+    }
+
+    /* =========================
+       RESPONSIVE
+    ========================= */
+
+    @media(max-width: 1050px) {
+
+      .nav-links {
+        display: none;
+      }
+
+      .hero-grid {
+        grid-template-columns: 1fr;
+      }
+
+      .dashboard-wrapper {
+        padding-left: 0;
+        margin-top: 30px;
+      }
+
+      .feature-layout {
+        grid-template-columns: 1fr;
+      }
+
+      .industry-grid {
+        grid-template-columns: repeat(3,1fr);
+      }
+
+      .steps {
+        grid-template-columns: repeat(2,1fr);
+      }
+    }
+
+    @media(max-width: 700px) {
+
+      .container {
+        width: min(100% - 30px, 1280px);
+      }
+
+      .navbar {
+        height: 65px;
+      }
+
+      .nav-actions .btn-outline {
+        display: none;
+      }
+
+      h1 {
+        font-size: 43px;
+        letter-spacing: -2px;
+      }
+
+      .hero {
+        padding-top: 45px;
+      }
+
+      .hero-description {
+        font-size: 15px;
+      }
+
+      .hero-benefits {
+        grid-template-columns: repeat(2,1fr);
+      }
+
+      .dashboard-content {
+        grid-template-columns: 95px 1fr;
+      }
+
+      .sidebar-item {
+        font-size: 9px;
+      }
+
+      .dashboard-main {
+        padding: 12px;
+      }
+
+      .stats {
+        grid-template-columns: repeat(2,1fr);
+      }
+
+      .charts {
+        grid-template-columns: 1fr;
+      }
+
+      .phone {
+        width: 115px;
+        right: -5px;
+      }
+
+      .trust-grid {
+        grid-template-columns: repeat(2,1fr);
+        gap: 20px;
+      }
+
+      .trust-item:nth-child(2) {
+        border-right: none;
+      }
+
+      .feature-grid {
+        grid-template-columns: 1fr;
+      }
+
+      .industry-grid {
+        grid-template-columns: repeat(2,1fr);
+      }
+
+      .steps {
+        grid-template-columns: 1fr;
+      }
+
+      .pricing-card {
+        padding: 30px 20px;
+      }
+
+      .cta-box {
+        padding: 45px 20px;
+      }
+
+      .cta-box h2 {
+        font-size: 32px;
+      }
+
+      .footer-grid {
+        grid-template-columns: 1fr 1fr;
+        gap: 30px;
+      }
+    }
+  </style>
+</head>
+
+<body>
+
+  <!-- =========================
+       NAVBAR
+  ========================== -->
+
+  <header class="navbar">
+    <div class="container nav-inner">
+
+      <a href="#" class="logo">
+        <div class="logo-box">FIXO</div>
+
+        <div class="logo-text">
+          <strong>FIXO</strong>
+          <span>PHẦN MỀM QUẢN LÝ SỬA CHỮA</span>
+        </div>
+      </a>
+
+      <nav class="nav-links">
+        <a href="#features">Tính năng</a>
+        <a href="#industries">Ngành nghề</a>
+        <a href="#pricing">Bảng giá</a>
+        <a href="#customers">Khách hàng</a>
+        <a href="#docs">Tài liệu</a>
+        <a href="#contact">Liên hệ</a>
+      </nav>
+
+      <div class="nav-actions">
+        <a href="#" class="btn btn-outline">
+          Đăng nhập
+        </a>
+
+        <a href="#pricing" class="btn btn-primary">
+          Dùng thử miễn phí →
+        </a>
+      </div>
+
+    </div>
+  </header>
+
+
+  <!-- =========================
+       HERO
+  ========================== -->
+
+  <section class="hero">
+
+    <div class="container hero-grid">
+
+      <div>
+
+        <div class="eyebrow">
+          Giải pháp quản lý cửa hàng sửa chữa thiết bị công nghệ
+        </div>
+
+        <h1>
+          Quản lý cửa hàng sửa chữa
+          <span>dễ dàng, chuyên nghiệp hơn</span>
+        </h1>
+
+        <p class="hero-description">
+          FIXO giúp bạn quản lý toàn bộ quy trình sửa chữa,
+          khách hàng, linh kiện, bảo hành và doanh thu trên
+          một nền tảng duy nhất.
+        </p>
+
+        <div class="hero-actions">
+
+          <a href="#pricing" class="btn btn-primary">
+            Dùng thử miễn phí 14 ngày →
+          </a>
+
+          <button class="btn video-btn" onclick="showVideo()">
+            ▶ Xem video giới thiệu
+          </button>
+
+        </div>
+
+        <div class="hero-benefits">
+
+          <div class="benefit">
+            <div class="benefit-icon">⚡</div>
+            <div class="benefit-text">
+              <strong>Dễ sử dụng</strong>
+              <span>Bắt đầu ngay</span>
+            </div>
+          </div>
+
+          <div class="benefit">
+            <div class="benefit-icon">☁</div>
+            <div class="benefit-text">
+              <strong>Quản lý mọi lúc</strong>
+              <span>Máy tính, điện thoại</span>
+            </div>
+          </div>
+
+          <div class="benefit">
+            <div class="benefit-icon">✓</div>
+            <div class="benefit-text">
+              <strong>An toàn dữ liệu</strong>
+              <span>Sao lưu tự động</span>
+            </div>
+          </div>
+
+          <div class="benefit">
+            <div class="benefit-icon">♧</div>
+            <div class="benefit-text">
+              <strong>Hỗ trợ tận tâm</strong>
+              <span>7 ngày/tuần</span>
+            </div>
+          </div>
+
+        </div>
+
+      </div>
+
+
+      <!-- DASHBOARD -->
+
+      <div class="dashboard-wrapper">
+
+        <div class="dashboard">
+
+          <div class="dashboard-top">
+            <span class="dot"></span>
+            <span class="dot"></span>
+            <span class="dot"></span>
+          </div>
+
+          <div class="dashboard-content">
+
+            <aside class="sidebar">
+
+              <div class="sidebar-brand">
+                FIXO
+              </div>
+
+              <div class="sidebar-item active">
+                ◈ Tổng quan
+              </div>
+
+              <div class="sidebar-item">
+                ▣ Đơn sửa chữa
+              </div>
+
+              <div class="sidebar-item">
+                ♙ Khách hàng
+              </div>
+
+              <div class="sidebar-item">
+                ◉ Sản phẩm
+              </div>
+
+              <div class="sidebar-item">
+                ◇ Linh kiện
+              </div>
+
+              <div class="sidebar-item">
+                ✓ Bảo hành
+              </div>
+
+              <div class="sidebar-item">
+                ₫ Thu chi
+              </div>
+
+              <div class="sidebar-item">
+                ▥ Báo cáo
+              </div>
+
+            </aside>
+
+
+            <main class="dashboard-main">
+
+              <div class="dashboard-title">
+                <h3>Tổng quan</h3>
+                <span class="date">
+                  01/10/2026 - 31/10/2026
+                </span>
+              </div>
+
+              <div class="stats">
+
+                <div class="stat">
+                  <div class="stat-label">
+                    Doanh thu
+                  </div>
+                  <div class="stat-number">
+                    24.500.000đ
+                  </div>
+                  <div class="stat-growth">
+                    ↑ 12%
+                  </div>
+                </div>
+
+                <div class="stat">
+                  <div class="stat-label">
+                    Đơn sửa chữa
+                  </div>
+                  <div class="stat-number">
+                    56
+                  </div>
+                  <div class="stat-growth">
+                    ↑ 20%
+                  </div>
+                </div>
+
+                <div class="stat">
+                  <div class="stat-label">
+                    Khách hàng mới
+                  </div>
+                  <div class="stat-number">
+                    38
+                  </div>
+                  <div class="stat-growth">
+                    ↑ 15%
+                  </div>
+                </div>
+
+                <div class="stat">
+                  <div class="stat-label">
+                    Linh kiện tồn
+                  </div>
+                  <div class="stat-number">
+                    320
+                  </div>
+                  <div class="stat-growth">
+                    Cập nhật hôm nay
+                  </div>
+                </div>
+
+              </div>
+
+
+              <div class="charts">
+
+                <div class="chart-card">
+
+                  <div class="chart-title">
+                    Doanh thu theo ngày
+                  </div>
+
+                  <div class="bars">
+                    <div class="bar" style="height:30%"></div>
+                    <div class="bar" style="height:42%"></div>
+                    <div class="bar" style="height:38%"></div>
+                    <div class="bar" style="height:55%"></div>
+                    <div class="bar" style="height:47%"></div>
+                    <div class="bar" style="height:65%"></div>
+                    <div class="bar" style="height:72%"></div>
+                    <div class="bar" style="height:64%"></div>
+                    <div class="bar" style="height:83%"></div>
+                    <div class="bar" style="height:92%"></div>
+                  </div>
+
+                </div>
+
+
+                <div class="chart-card">
+
+                  <div class="chart-title">
+                    Tình trạng đơn hàng
+                  </div>
+
+                  <div class="donut"></div>
+
+                </div>
+
+              </div>
+
+            </main>
+
+          </div>
+
+        </div>
+
+
+        <!-- MOBILE APP -->
+
+        <div class="phone">
+
+          <div class="phone-screen">
+
+            <div class="phone-header">
+              Đơn sửa chữa
+            </div>
+
+            <div class="phone-search">
+              Tìm mã đơn, tên khách hàng...
+            </div>
+
+            <div class="order">
+              <div class="order-id">
+                #FX0001223
+              </div>
+
+              <div class="order-name">
+                Nguyễn Văn A
+              </div>
+
+              <div class="status">
+                Đang xử lý
+              </div>
+            </div>
+
+            <div class="order">
+              <div class="order-id">
+                #FX0001222
+              </div>
+
+              <div class="order-name">
+                Trần Thị B
+              </div>
+
+              <div class="status">
+                Đã xong
+              </div>
+            </div>
+
+            <div class="order">
+              <div class="order-id">
+                #FX0001221
+              </div>
+
+              <div class="order-name">
+                Lê Minh C
+              </div>
+
+              <div class="status">
+                Chờ linh kiện
+              </div>
+            </div>
+
+          </div>
+
+        </div>
+
+      </div>
+
+    </div>
+
+
+    <!-- TRUST -->
+
+    <div class="container">
+
+      <div class="trust-bar">
+
+        <div class="trust-grid">
+
+          <div class="trust-item">
+            <div class="trust-number">500+</div>
+            <div class="trust-label">
+              Cửa hàng tin dùng
+            </div>
+          </div>
+
+          <div class="trust-item">
+            <div class="trust-number">50.000+</div>
+            <div class="trust-label">
+              Đơn sửa chữa mỗi tháng
+            </div>
+          </div>
+
+          <div class="trust-item">
+            <div class="trust-number">100.000+</div>
+            <div class="trust-label">
+              Khách hàng được phục vụ
+            </div>
+          </div>
+
+          <div class="trust-item">
+            <div class="trust-number">4.9/5</div>
+            <div class="trust-label">
+              Đánh giá từ khách hàng
+            </div>
+          </div>
+
+        </div>
+
+      </div>
+
+    </div>
+
+  </section>
+
+
+  <!-- =========================
+       FEATURES
+  ========================== -->
+
+  <section class="features" id="features">
+
+    <div class="container">
+
+      <div class="section-heading">
+
+        <div class="section-tag">
+          TÍNH NĂNG NỔI BẬT
+        </div>
+
+        <h2>
+          Tất cả những gì bạn cần
+          để vận hành cửa hàng
+        </h2>
+
+        <p>
+          Không cần sử dụng nhiều phần mềm khác nhau.
+          FIXO tập trung toàn bộ hoạt động cửa hàng
+          trên một hệ thống duy nhất.
+        </p>
+
+      </div>
+
+
+      <div class="feature-layout">
+
+        <div class="feature-intro">
+
+          <h3>
+            Quản lý
+            <span>đơn giản.</span>
+            Vận hành
+            <span>hiệu quả.</span>
+          </h3>
+
+          <p>
+            FIXO được thiết kế riêng cho ngành sửa chữa
+            thiết bị công nghệ, giúp bạn tiết kiệm thời
+            gian và kiểm soát doanh thu.
+          </p>
+
+          <a href="#" class="btn btn-primary">
+            Xem tất cả tính năng →
+          </a>
+
+        </div>
+
+
+        <div class="feature-grid">
+
+          <div class="feature-card">
+            <div class="feature-icon">▣</div>
+            <h4>Quản lý đơn sửa chữa</h4>
+            <p>
+              Tạo đơn, theo dõi tiến độ, in phiếu
+              và quản lý trạng thái sửa chữa.
+            </p>
+          </div>
+
+          <div class="feature-card">
+            <div class="feature-icon">♙</div>
+            <h4>Quản lý khách hàng</h4>
+            <p>
+              Lưu thông tin, lịch sử sửa chữa
+              và chăm sóc khách hàng.
+            </p>
+          </div>
+
+          <div class="feature-card">
+            <div class="feature-icon">◈</div>
+            <h4>Quản lý linh kiện</h4>
+            <p>
+              Theo dõi tồn kho, cảnh báo hết hàng
+              và quản lý nhập xuất.
+            </p>
+          </div>
+
+          <div class="feature-card">
+            <div class="feature-icon">♧</div>
+            <h4>Quản lý bảo hành</h4>
+            <p>
+              Tạo phiếu bảo hành, tra cứu nhanh
+              và nhắc hạn bảo hành.
+            </p>
+          </div>
+
+          <div class="feature-card">
+            <div class="feature-icon">₫</div>
+            <h4>Thu chi & công nợ</h4>
+            <p>
+              Quản lý doanh thu, chi phí
+              và công nợ khách hàng.
+            </p>
+          </div>
+
+          <div class="feature-card">
+            <div class="feature-icon">▥</div>
+            <h4>Báo cáo doanh thu</h4>
+            <p>
+              Thống kê theo ngày, tháng,
+              sản phẩm và kỹ thuật viên.
+            </p>
+          </div>
+
+          <div class="feature-card">
+            <div class="feature-icon">♙</div>
+            <h4>Quản lý nhân viên</h4>
+            <p>
+              Phân quyền, theo dõi hiệu suất
+              và kỹ thuật viên.
+            </p>
+          </div>
+
+          <div class="feature-card">
+            <div class="feature-icon">⚙</div>
+            <h4>Tùy chỉnh linh hoạt</h4>
+            <p>
+              Thiết lập dịch vụ, giá và quy trình
+              phù hợp với cửa hàng.
+            </p>
+          </div>
+
+        </div>
+
+      </div>
+
+    </div>
+
+  </section>
+
+
+  <!-- =========================
+       INDUSTRIES
+  ========================== -->
+
+  <section class="industries" id="industries">
+
+    <div class="container">
+
+      <div class="section-heading">
+
+        <div class="section-tag">
+          PHÙ HỢP NHIỀU NGÀNH NGHỀ
+        </div>
+
+        <h2>
+          Một phần mềm cho mọi
+          cửa hàng sửa chữa
+        </h2>
+
+        <p>
+          FIXO có thể tùy chỉnh cho nhiều mô hình
+          sửa chữa thiết bị công nghệ.
+        </p>
+
+      </div>
+
+
+      <div class="industry-grid">
+
+        <div class="industry-card">
+          <div class="industry-icon">📱</div>
+          <strong>Điện thoại</strong>
+          <span>iPhone, Samsung...</span>
+        </div>
+
+        <div class="industry-card">
+          <div class="industry-icon">💻</div>
+          <strong>Laptop</strong>
+          <span>MacBook, Windows...</span>
+        </div>
+
+        <div class="industry-card">
+          <div class="industry-icon">🎧</div>
+          <strong>Tai nghe</strong>
+          <span>AirPods, Sony...</span>
+        </div>
+
+        <div class="industry-card">
+          <div class="industry-icon">⌚</div>
+          <strong>Đồng hồ</strong>
+          <span>Apple Watch...</span>
+        </div>
+
+        <div class="industry-card">
+          <div class="industry-icon">📲</div>
+          <strong>Máy tính bảng</strong>
+          <span>iPad...</span>
+        </div>
+
+        <div class="industry-card">
+          <div class="industry-icon">🔌</div>
+          <strong>Phụ kiện</strong>
+          <span>Sạc, Cáp...</span>
+        </div>
+
+      </div>
+
+    </div>
+
+  </section>
+
+
+  <!-- =========================
+       HOW IT WORKS
+  ========================== -->
+
+  <section class="how">
+
+    <div class="container">
+
+      <div class="section-heading">
+
+        <div class="section-tag">
+          BẮT ĐẦU TRONG VÀI PHÚT
+        </div>
+
+        <h2>
+          Từ lúc tiếp nhận đến khi giao máy
+        </h2>
+
+        <p>
+          FIXO giúp chuẩn hóa toàn bộ quy trình
+          sửa chữa của cửa hàng.
+        </p>
+
+      </div>
+
+
+      <div class="steps">
+
+        <div class="step">
+          <div class="step-number">1</div>
+          <h3>Tiếp nhận</h3>
+          <p>
+            Tạo phiếu sửa chữa và lưu thông tin khách hàng.
+          </p>
+        </div>
+
+        <div class="step">
+          <div class="step-number">2</div>
+          <h3>Kiểm tra & báo giá</h3>
+          <p>
+            Kỹ thuật viên kiểm tra thiết bị và cập nhật báo giá.
+          </p>
+        </div>
+
+        <div class="step">
+          <div class="step-number">3</div>
+          <h3>Sửa chữa</h3>
+          <p>
+            Theo dõi linh kiện, kỹ thuật viên và tiến độ.
+          </p>
+        </div>
+
+        <div class="step">
+          <div class="step-number">4</div>
+          <h3>Giao máy & bảo hành</h3>
+          <p>
+            Thanh toán, giao máy và tự động lưu lịch sử bảo hành.
+          </p>
+        </div>
+
+      </div>
+
+    </div>
+
+  </section>
+
+
+  <!-- =========================
+       PRICING
+  ========================== -->
+
+  <section class="pricing" id="pricing">
+
+    <div class="container">
+
+      <div class="pricing-card">
+
+        <div class="section-tag">
+          DÙNG THỬ MIỄN PHÍ
+        </div>
+
+        <h2>
+          Bắt đầu quản lý cửa hàng
+          chuyên nghiệp hơn
+        </h2>
+
+        <p>
+          Trải nghiệm đầy đủ tính năng FIXO
+          trước khi lựa chọn gói phù hợp.
+        </p>
+
+        <div class="price">
+          0đ <small>/ 14 ngày</small>
+        </div>
+
+        <div class="price-note">
+          Không cần thẻ tín dụng
+        </div>
+
+        <a href="#" class="btn btn-primary">
+          Tạo tài khoản miễn phí →
+        </a>
+
+      </div>
+
+    </div>
+
+  </section>
+
+
+  <!-- =========================
+       CTA
+  ========================== -->
+
+  <section class="cta">
+
+    <div class="container">
+
+      <div class="cta-box">
+
+        <h2>
+          Sẵn sàng đưa cửa hàng
+          lên một hệ thống mới?
+        </h2>
+
+        <p>
+          Quản lý đơn sửa chữa, khách hàng,
+          kho và doanh thu trên FIXO.
+        </p>
+
+        <a href="#" class="btn btn-primary">
+          Dùng thử FIXO miễn phí →
+        </a>
+
+      </div>
+
+    </div>
+
+  </section>
+
+
+  <!-- =========================
+       FOOTER
+  ========================== -->
+
+  <footer id="contact">
+
+    <div class="container">
+
+      <div class="footer-grid">
+
+        <div class="footer-brand">
+
+          <div class="logo">
+
+            <div class="logo-box">
+              FIXO
+            </div>
+
+            <div class="logo-text">
+              <strong style="color:white">
+                FIXO
+              </strong>
+
+              <span>
+                PHẦN MỀM QUẢN LÝ SỬA CHỮA
+              </span>
+            </div>
+
+          </div>
+
+          <p>
+            Nền tảng quản lý cửa hàng sửa chữa
+            thiết bị công nghệ hiện đại,
+            đơn giản và dễ sử dụng.
+          </p>
+
+        </div>
+
+
+        <div class="footer-column">
+          <h4>Sản phẩm</h4>
+          <a href="#features">Tính năng</a>
+          <a href="#pricing">Bảng giá</a>
+          <a href="#">Dùng thử</a>
+          <a href="#">Đăng nhập</a>
+        </div>
+
+
+        <div class="footer-column">
+          <h4>Hỗ trợ</h4>
+          <a href="#">Trung tâm trợ giúp</a>
+          <a href="#">Tài liệu</a>
+          <a href="#">Hướng dẫn sử dụng</a>
+          <a href="#">Liên hệ</a>
+        </div>
+
+
+        <div class="footer-column">
+          <h4>Công ty</h4>
+          <a href="#">Về FIXO</a>
+          <a href="#">Khách hàng</a>
+          <a href="#">Điều khoản</a>
+          <a href="#">Chính sách bảo mật</a>
+        </div>
+
+      </div>
+
+
+      <div class="copyright">
+        © 2026 FIXO. All rights reserved.
+      </div>
+
+    </div>
+
+  </footer>
+
+
+  <script>
+
+    function showVideo() {
+      alert(
+        "Video giới thiệu FIXO sẽ được tích hợp tại đây."
+      );
+    }
+
+  </script>
+
+</body>
+</html>
