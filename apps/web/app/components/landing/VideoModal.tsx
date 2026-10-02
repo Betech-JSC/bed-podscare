@@ -29,10 +29,10 @@ const SCENES: SceneInfo[] = [
   },
   {
     id: 1,
-    label: '2. KTV Nhận cuốc',
+    label: '2. KTV Nhận sản phẩm',
     badge: 'Đang sửa chữa (in_repair)',
     timeRange: '00:30 - 01:00',
-    title: 'KTV Nổ cuốc Grab 1-chạm',
+    title: 'KTV Nhận sản phẩm 1-chạm',
     description: 'Hệ thống tự động phát sóng đơn sửa chữa tới KTV trực bàn, tự động trừ kho linh kiện.',
   },
   {
@@ -168,7 +168,7 @@ export const VideoModal: React.FC<VideoModalProps> = ({ isOpen, onClose }) => {
                 </span>
               </div>
               <p className="text-[11px] sm:text-[12px] text-[#71817b] mt-0.5">
-                Mô phỏng chu trình khép kín: Tiếp nhận ➔ KTV Nổ cuốc ➔ Nghiệm thu QC ➔ Tem QR & VietQR
+                Mô phỏng chu trình khép kín: Tiếp nhận ➔ KTV Nhận sản phẩm ➔ Nghiệm thu QC ➔ Tem QR & VietQR
               </p>
             </div>
           </div>
@@ -260,7 +260,7 @@ export const VideoModal: React.FC<VideoModalProps> = ({ isOpen, onClose }) => {
                   </div>
                   <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-bold bg-[#faf3e7] text-[#a4722f] border border-[#f1e1c3] animate-pulse">
                     <span className="w-1.5 h-1.5 rounded-full bg-[#f59e0b] animate-ping" />
-                    Chờ KTV nhận cuốc (waiting_tech)
+                    Chờ Kỹ thuật nhận sản phẩm (waiting_tech)
                   </span>
                 </div>
 
@@ -333,7 +333,7 @@ export const VideoModal: React.FC<VideoModalProps> = ({ isOpen, onClose }) => {
               </div>
             )}
 
-            {/* SCENE 1: KTV NỔ CUỐC GRAB 1-CHẠM */}
+            {/* SCENE 1: KTV NHẬN SẢN PHẨM 1-CHẠM (00:30 - 01:00) */}
             {currentSceneIndex === 1 && (
               <div className="w-full max-w-xl bg-white text-[#102d35] rounded-xl shadow-2xl border border-white/20 p-5 animate-in fade-in zoom-in-95 duration-300">
                 {/* Header Dispatch Bar */}
@@ -344,7 +344,7 @@ export const VideoModal: React.FC<VideoModalProps> = ({ isOpen, onClose }) => {
                       <span className="relative inline-flex rounded-full h-3 w-3 bg-[#10b981]" />
                     </span>
                     <span className="font-heading font-extrabold text-[14px] text-[#102d35]">
-                      ĐIỀU PHỐI ĐƠN NỔ CUỐC 1-CHẠM
+                      ĐIỀU PHỐI TIẾP NHẬN SẢN PHẨM 1-CHẠM
                     </span>
                   </div>
                   <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-bold bg-[#edf4f8] text-[#437a9d] border border-[#d1e5f0]">
@@ -357,7 +357,7 @@ export const VideoModal: React.FC<VideoModalProps> = ({ isOpen, onClose }) => {
                   <div className="flex items-start justify-between relative z-10">
                     <div>
                       <div className="flex items-center gap-2 mb-1">
-                        <span className="text-[12px] font-mono text-[#b8ccc4]">Đơn mới nổ cuốc</span>
+                        <span className="text-[12px] font-mono text-[#b8ccc4]">Tiếp nhận sản phẩm mới</span>
                         <span className="px-2 py-0.5 rounded bg-[#f59e0b] text-[#102d35] text-[10px] font-black uppercase">
                           ⚡ Cần xử lý ngay
                         </span>
@@ -380,7 +380,7 @@ export const VideoModal: React.FC<VideoModalProps> = ({ isOpen, onClose }) => {
                       <div className="flex items-center justify-between gap-3">
                         <span className="text-[11px] text-[#b8ccc4] flex items-center gap-1.5">
                           <span className="w-2 h-2 rounded-full bg-[#f59e0b] animate-ping" />
-                          Hệ thống đang phát chuông ting-ting tới 4 KTV...
+                          Hệ thống đang phát chuông ting-ting điều phối sản phẩm sửa chữa tới 4 KTV...
                         </span>
                         <button
                           type="button"
@@ -397,7 +397,7 @@ export const VideoModal: React.FC<VideoModalProps> = ({ isOpen, onClose }) => {
                         </div>
                         <div>
                           <strong className="text-white block font-heading">
-                            KTV Tuấn K. (Bàn Kỹ Thuật 02) đã nhận cuốc!
+                            KTV Tuấn K. (Bàn Kỹ Thuật 02) đã nhận sản phẩm!
                           </strong>
                           <span className="text-[#d1fae5] text-[11px]">
                             Đã tự động khóa đơn và cập nhật tiến độ cho Lễ tân
