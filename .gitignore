@@ -1,6 +1,7 @@
 # OpenSpec
 openspec/
 .agents/
+qa-evidence/
 
 # Dependencies
 node_modules/
