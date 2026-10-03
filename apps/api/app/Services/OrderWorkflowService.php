@@ -22,10 +22,10 @@ class OrderWorkflowService extends BaseWorkflowService
         'quote_pending'    => ['waiting_tech', 'rejected', 'cancelled'],
         'rejected'         => ['inspecting', 'waiting_pickup', 'completed', 'cancelled'],
         'waiting_tech'     => ['assigned', 'in_repair'],
-        'assigned'         => ['in_repair'],
+        'assigned'         => ['in_repair', 'ready_for_return', 'waiting_parts'],
         'in_repair'        => ['waiting_parts', 'waiting_qc', 'qc_pending', 'qc_inspecting', 'ready_for_return'],
         'waiting_parts'    => ['in_repair'],
-        'rework_needed'    => ['in_repair'],
+        'rework_needed'    => ['in_repair', 'ready_for_return', 'waiting_parts'],
         'waiting_qc'       => ['ready_for_return', 'rework_needed'],
         'qc_pending'       => ['ready_for_return', 'rework_needed'],
         'qc_inspecting'    => ['ready_for_return', 'rework_needed'],
@@ -98,8 +98,8 @@ class OrderWorkflowService extends BaseWorkflowService
     {
         // Khi chuyển sang ready_for_return:
         if ($newStatus === 'ready_for_return') {
-            // Cho phép KTV nghiệm thu trực tiếp khi chuyển thẳng từ in_repair sang ready_for_return
-            if ($oldStatus === 'in_repair') {
+            // Cho phép KTV nghiệm thu trực tiếp khi chuyển thẳng từ in_repair, assigned, hoặc rework_needed sang ready_for_return
+            if (in_array($oldStatus, ['in_repair', 'assigned', 'rework_needed'], true)) {
                 $hasPassedQc = QcInspection::where('repair_order_id', $model->id)
                     ->where('result', 'pass')
                     ->exists();
@@ -181,7 +181,15 @@ class OrderWorkflowService extends BaseWorkflowService
                 break;
             case 'ready_for_return':
                 $updates['qc_passed_at'] = $now;
-                if ($oldStatus === 'in_repair') {
+                if (in_array($oldStatus, ['in_repair', 'assigned', 'rework_needed'], true)) {
+                    if (! $model->repair_started_at) {
+                        $updates['repair_started_at'] = $now;
+                    }
+                    if (! $model->technician_id) {
+                        $updates['technician_id'] = $options['technician_id'] 
+                            ?? ($options['user']?->id 
+                            ?? (auth()->id() ?? $model->technician_id));
+                    }
                     if (! $model->repair_completed_at) {
                         $updates['repair_completed_at'] = $now;
                     }
@@ -317,7 +325,7 @@ class OrderWorkflowService extends BaseWorkflowService
             ],
             'ready_for_return' => [
                 'title'      => 'Đơn hàng sẵn sàng giao trả',
-                'message'    => $oldStatus === 'in_repair'
+                'message'    => in_array($oldStatus, ['in_repair', 'assigned', 'rework_needed'], true)
                     ? "Đơn {$model->order_code} đã hoàn tất sửa chữa và sẵn sàng bàn giao cho khách."
                     : "Đơn {$model->order_code} đã hoàn tất kiểm định và sẵn sàng bàn giao cho khách.",
                 'severity'   => 'success',

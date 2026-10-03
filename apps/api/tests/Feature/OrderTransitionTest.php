@@ -605,5 +605,88 @@ class OrderTransitionTest extends TestCase
                 && $event->severity === 'success';
         });
     }
+
+    /**
+     * Test 16: Chuyển nhanh từ assigned sang ready_for_return tự động gán repair_started_at, technician_id và tạo QC pass.
+     */
+    public function test_fast_track_transition_from_assigned_to_ready_for_return(): void
+    {
+        $user = $this->getAuthenticatedUser();
+        $order = $this->createTestOrder('assigned');
+        $this->assertNull($order->repair_started_at);
+
+        $response = $this->actingAs($user, 'sanctum')->postJson("/api/v1/orders/{$order->id}/transition", [
+            'status'      => 'ready_for_return',
+            'repair_note' => 'KTV hoàn tất trực tiếp từ trạng thái đã nhận',
+            'parts_used'  => 'Thay pin Dock sạc',
+        ]);
+
+        $response->assertStatus(200)
+            ->assertJsonPath('success', true)
+            ->assertJsonPath('data.status', 'ready_for_return');
+
+        $fresh = $order->fresh();
+        $this->assertEquals('ready_for_return', $fresh->status);
+        $this->assertNotNull($fresh->repair_started_at);
+        $this->assertNotNull($fresh->repair_completed_at);
+        $this->assertNotNull($fresh->qc_passed_at);
+        $this->assertEquals('Thay pin Dock sạc', $fresh->parts_used_summary);
+
+        // Bản ghi QcInspection tự động tạo với pass
+        $this->assertDatabaseHas('qc_inspections', [
+            'repair_order_id' => $order->id,
+            'result'          => 'pass',
+            'notes'           => 'KTV hoàn tất trực tiếp từ trạng thái đã nhận',
+        ]);
+    }
+
+    /**
+     * Test 17: Chuyển nhanh từ rework_needed sang ready_for_return tự động tạo QC pass.
+     */
+    public function test_fast_track_transition_from_rework_needed_to_ready_for_return(): void
+    {
+        $user = $this->getAuthenticatedUser();
+        $order = $this->createTestOrder('rework_needed');
+
+        $response = $this->actingAs($user, 'sanctum')->postJson("/api/v1/orders/{$order->id}/transition", [
+            'status'      => 'ready_for_return',
+            'repair_note' => 'Đã khắc phục lỗi sau khi QC báo làm lại',
+        ]);
+
+        $response->assertStatus(200)
+            ->assertJsonPath('success', true)
+            ->assertJsonPath('data.status', 'ready_for_return');
+
+        $fresh = $order->fresh();
+        $this->assertEquals('ready_for_return', $fresh->status);
+        $this->assertNotNull($fresh->repair_started_at);
+        $this->assertNotNull($fresh->repair_completed_at);
+        $this->assertNotNull($fresh->qc_passed_at);
+
+        $this->assertDatabaseHas('qc_inspections', [
+            'repair_order_id' => $order->id,
+            'result'          => 'pass',
+            'notes'           => 'Đã khắc phục lỗi sau khi QC báo làm lại',
+        ]);
+    }
+
+    /**
+     * Test 18: Chuyển từ assigned sang waiting_parts thành công.
+     */
+    public function test_transition_from_assigned_to_waiting_parts(): void
+    {
+        $user = $this->getAuthenticatedUser();
+        $order = $this->createTestOrder('assigned');
+
+        $response = $this->actingAs($user, 'sanctum')->postJson("/api/v1/orders/{$order->id}/transition", [
+            'status' => 'waiting_parts',
+        ]);
+
+        $response->assertStatus(200)
+            ->assertJsonPath('success', true)
+            ->assertJsonPath('data.status', 'waiting_parts');
+
+        $this->assertEquals('waiting_parts', $order->fresh()->status);
+    }
 }
 

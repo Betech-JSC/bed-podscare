@@ -111,7 +111,8 @@ export default function TechnicianQueuePage() {
       await invalidateOrders();
       toast(`⚡ Bạn đã nhận máy ${order.id} thành công! Đơn chuyển thẳng sang Đang sửa.`, 'success');
     } catch (err: any) {
-      toast(err?.response?.data?.message || err?.message || 'Không thể nhận đơn máy', 'error');
+      const errorMsg = err?.data?.message || err?.response?.data?.message || err?.message || 'Không thể nhận đơn máy';
+      toast(errorMsg, 'error');
     } finally {
       setIsSubmitting(false);
     }
@@ -127,7 +128,7 @@ export default function TechnicianQueuePage() {
     setCompleteModalOpen(true);
   };
 
-  // Xác nhận hoàn tất sửa chữa và bàn giao ngay cho CSKH (in_repair -> ready_for_return)
+  // Xác nhận hoàn tất sửa chữa và bàn giao ngay cho CSKH (in_repair/assigned -> ready_for_return)
   const handleCompleteRepair = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedOrder || isSubmitting) return;
@@ -153,9 +154,22 @@ export default function TechnicianQueuePage() {
       setCompleteModalOpen(false);
       setSelectedOrder(null);
     } catch (err: any) {
-      toast(err?.response?.data?.message || err?.message || 'Không thể hoàn tất sửa chữa', 'error');
+      const errorMsg = err?.data?.message || err?.response?.data?.message || err?.message || 'Không thể hoàn tất sửa chữa';
+      toast(errorMsg, 'error');
     } finally {
       setIsSubmitting(false);
+    }
+  };
+
+  // Bắt đầu sửa chữa (assigned / rework_needed -> in_repair)
+  const handleStartRepair = async (order: RepairOrder) => {
+    try {
+      await repairService.transition(order.id, { transition: 'in_repair' });
+      await invalidateOrders();
+      toast(`⚡ Đã bắt đầu sửa chữa đơn ${order.id}`, 'success');
+    } catch (err: any) {
+      const errorMsg = err?.data?.message || err?.response?.data?.message || err?.message || 'Không thể bắt đầu sửa';
+      toast(errorMsg, 'error');
     }
   };
 
@@ -166,7 +180,8 @@ export default function TechnicianQueuePage() {
       await invalidateOrders();
       toast(`Đã tạm dừng đơn ${order.id} chờ linh kiện`, 'info');
     } catch (err: any) {
-      toast(err?.response?.data?.message || err?.message || 'Không thể chuyển trạng thái', 'error');
+      const errorMsg = err?.data?.message || err?.response?.data?.message || err?.message || 'Không thể chuyển trạng thái';
+      toast(errorMsg, 'error');
     }
   };
 
@@ -177,7 +192,8 @@ export default function TechnicianQueuePage() {
       await invalidateOrders();
       toast(`Đã tiếp tục sửa chữa đơn ${order.id}`, 'success');
     } catch (err: any) {
-      toast(err?.response?.data?.message || err?.message || 'Không thể tiếp tục sửa', 'error');
+      const errorMsg = err?.data?.message || err?.response?.data?.message || err?.message || 'Không thể tiếp tục sửa';
+      toast(errorMsg, 'error');
     }
   };
 
@@ -414,6 +430,7 @@ export default function TechnicianQueuePage() {
               {myActiveOrders.map((order) => {
                 const code = normalizeStatusCode(order.status);
                 const isWaitingParts = code === 'waiting_parts';
+                const isAssignedOrRework = code === 'assigned' || code === 'rework_needed';
 
                 return (
                   <article
@@ -487,8 +504,30 @@ export default function TechnicianQueuePage() {
                           onClick={() => handleResumeRepair(order)}
                           className="flex-1 font-bold text-xs"
                         >
-                          Tiếp tục sửa →
+                          ▶ Tiếp tục sửa
                         </Button>
+                      ) : isAssignedOrRework ? (
+                        <>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => handleStartRepair(order)}
+                            className="text-xs text-[#176b58] border-[#c4ded0] hover:bg-[#eef6f2] font-semibold"
+                            title="Bắt đầu tiến trình sửa chữa"
+                          >
+                            ⚡ Bắt đầu sửa
+                          </Button>
+                          <Button
+                            variant="primary"
+                            size="md"
+                            icon="check"
+                            disabled={isSubmitting}
+                            onClick={() => openCompleteModal(order)}
+                            className="flex-1 h-9 font-bold text-xs bg-[#176b58] hover:bg-[#125848] text-white shadow-xs cursor-pointer active:scale-[0.98] transition-transform"
+                          >
+                            ✓ Hoàn tất
+                          </Button>
+                        </>
                       ) : (
                         <>
                           <Button
@@ -498,7 +537,7 @@ export default function TechnicianQueuePage() {
                             className="text-xs text-[#708078] border-[#d6dfda]"
                             title="Tạm dừng chờ linh kiện"
                           >
-                            Chờ linh kiện
+                            ⏸ Chờ linh kiện
                           </Button>
                           <Button
                             variant="primary"
