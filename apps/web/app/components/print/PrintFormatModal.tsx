@@ -83,7 +83,7 @@ export const PrintFormatModal: React.FC<PrintFormatModalProps> = ({
               )}
             </div>
             <p className="text-xs text-[#5c6e66] leading-relaxed m-0">
-              Khổ giấy cuộn nhiệt 80mm nhỏ gọn, in siêu tốc trong 1 giây. Tích hợp mã QR tra cứu realtime và mã vạch cho quầy giao dịch.
+              Khổ giấy cuộn nhiệt 80mm in siêu tốc. Tự động in &amp; cắt 2 liên (Bản khách + Tem dán khay bảo mật giá) trên máy in POS Xprinter/Epson.
             </p>
           </div>
         </div>

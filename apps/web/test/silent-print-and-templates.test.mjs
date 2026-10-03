@@ -20,6 +20,13 @@ import {
   PRINT_STORAGE_KEY,
 } from '../app/components/print/printerPreference.ts';
 
+import {
+  renderThermalK80HTML,
+  buildCustomerCopyHtml,
+  buildStoreCopyHtml,
+  formatMoney,
+} from '../app/components/print/thermalK80HtmlBuilder.ts';
+
 test('1. Barcode Code 128 SVG generator (Client-side, Zero-network)', async (t) => {
   await t.test('Sinh chuỗi SVG hợp lệ cho mã đơn hàng', () => {
     const svg = generateBarcodeSVG('PC26-88888', { height: 40, showText: true });
@@ -146,3 +153,88 @@ test('7. Print Touchpoint Integration Verification', () => {
   assert.ok(techContent.includes('handlePrintRoutingSlip'), 'Tech page phải có hàm in tem khay K80');
   assert.ok(techContent.includes('useSilentPrint'), 'Tech page phải dùng useSilentPrint');
 });
+
+test('8. K80 Dual-Slip Auto-Cut & Template Engine Verification', async (t) => {
+  const mockOrder = {
+    id: 'PC26-22580',
+    name: 'Nguyễn Văn A',
+    phone: '0987654321',
+    device: 'AirPods Pro 2',
+    serial: 'GW4Y90ABCD',
+    issue: 'Tai trái rè tiếng khi bật ANC',
+    price: 350000,
+    priceNote: 'Đã bao gồm công thay linh kiện',
+    branch: 'FIXO Landmark 81',
+    createdBy: 'KTV Hoàng',
+    date: '03/10/2026',
+    accessories: 'Hộp sạc, cáp sạc',
+    appearance: 'Trầy nhẹ mặt lưng case',
+    checks: [
+      { label: 'Chống ồn ANC', status: 'Lỗi' },
+      { label: 'Xuyên âm Transparency', status: 'Hoạt động' },
+    ],
+    testNote: 'Pin tai trái còn 85%',
+  };
+
+  await t.test('8.1. buildCustomerCopyHtml: Đầy đủ giá tiền, QR tra cứu, bảng kiểm tra và 2 chữ ký', () => {
+    const html = buildCustomerCopyHtml(mockOrder, 'https://podscare.fixo.vn');
+    assert.ok(html.includes('k80-customer-copy'), 'Phải chứa class k80-customer-copy');
+    assert.ok(html.includes('LIÊN KHÁCH HÀNG'), 'Phải có tiêu đề nhận diện Liên khách hàng');
+    assert.ok(html.includes('PHIẾU TIẾP NHẬN SỬA CHỮA'), 'Phải có tiêu đề phiếu tiếp nhận');
+    assert.ok(html.includes('GIÁ DỰ KIẾN:'), 'Phải hiển thị nhãn GIÁ DỰ KIẾN');
+    assert.ok(html.includes('350.000 ₫'), 'Phải format đúng giá tiền 350.000 ₫');
+    assert.ok(html.includes('/track/PC26-22580'), 'Phải chứa URL tra cứu tiến độ realtime trong QR code');
+    assert.ok(html.includes('KHÁCH HÀNG') && html.includes('TIẾP NHẬN'), 'Phải có 2 khối chữ ký xác nhận');
+    assert.ok(html.includes('k80-feed-spacer'), 'Phải có khoảng đệm đẩy giấy k80-feed-spacer 15mm');
+    assert.ok(html.includes('✂ - - - - - CẮT GIẤY - - - - - ✂'), 'Phải có đường chỉ dẫn cắt giấy nét đứt');
+  });
+
+  await t.test('8.2. buildStoreCopyHtml: Tem khay KTV to rõ, TUYỆT ĐỐI KHÔNG CÓ giá tiền và QR', () => {
+    const html = buildStoreCopyHtml(mockOrder);
+    assert.ok(html.includes('k80-store-copy'), 'Phải chứa class k80-store-copy');
+    assert.ok(html.includes('BẢN LƯU CỬA HÀNG'), 'Phải có tiêu đề nhận diện Bản lưu cửa hàng & kỹ thuật');
+    assert.ok(html.includes('PC26-22580'), 'Phải hiển thị mã phiếu to rõ');
+    assert.ok(html.includes('BỆNH MÁY TIẾP NHẬN'), 'Phải có ô BỆNH MÁY TIẾP NHẬN');
+    assert.ok(html.includes('Khay số: [ ..... ] | Kỹ Thuật: [ .......... ]'), 'Phải có vùng ghi chú viết tay khay số');
+    assert.ok(html.includes('k80-feed-spacer end'), 'Cuối liên 2 phải có k80-feed-spacer end đẩy hết mép giấy');
+
+    // Các điều kiện BẢO MẬT tuyệt đối
+    assert.ok(!html.includes('GIÁ DỰ KIẾN'), 'TUYỆT ĐỐI KHÔNG ĐƯỢC CHỨA nhãn GIÁ DỰ KIẾN');
+    assert.ok(!html.includes('350.000 ₫') && !html.includes(' ₫'), 'TUYỆT ĐỐI KHÔNG ĐƯỢC CHỨA số tiền hoặc ký hiệu tiền tệ ₫');
+    assert.ok(!html.includes('/track/'), 'TUYỆT ĐỐI KHÔNG ĐƯỢC CHỨA link tra cứu tiến độ');
+    assert.ok(!html.includes('Quét mã QR'), 'TUYỆT ĐỐI KHÔNG ĐƯỢC CHỨA mã QR');
+    assert.ok(!html.includes('k80-signatures'), 'TUYỆT ĐỐI KHÔNG ĐƯỢC CHỨA khối chữ ký');
+    assert.ok(!html.includes('k80-footer-note'), 'TUYỆT ĐỐI KHÔNG ĐƯỢC CHỨA cam kết bảo hành khách hàng');
+  });
+
+  await t.test('8.3. renderThermalK80HTML chế độ mặc định dual: Sinh cả 2 liên và bộ ngắt trang Paged Media', () => {
+    const html = renderThermalK80HTML(mockOrder);
+    assert.ok(html.includes('<!DOCTYPE html>'), 'Phải là tài liệu HTML hoàn chỉnh');
+    assert.ok(html.includes('size: 80mm auto;'), 'Phải cấu hình khổ in 80mm');
+    assert.ok(html.includes('page-break-after: always;'), 'Phải có CSS ngắt trang page-break-after: always;');
+    assert.ok(html.includes('break-after: page;'), 'Phải có CSS ngắt trang break-after: page;');
+    assert.ok(html.includes('k80-slip-separator'), 'Phải có phần tử ngắt trang k80-slip-separator giữa 2 liên');
+    assert.ok(html.includes('LIÊN KHÁCH HÀNG'), 'Phải chứa Liên 1');
+    assert.ok(html.includes('BẢN LƯU CỬA HÀNG'), 'Phải chứa Liên 2');
+  });
+
+  await t.test('8.4. renderThermalK80HTML các chế độ slipMode: customer_only, store_only và isRoutingSlip', () => {
+    // Mode customer_only
+    const customerOnlyHtml = renderThermalK80HTML(mockOrder, undefined, { slipMode: 'customer_only' });
+    assert.ok(customerOnlyHtml.includes('LIÊN KHÁCH HÀNG'), 'Phải chứa Liên 1');
+    assert.ok(!customerOnlyHtml.includes('BẢN LƯU CỬA HÀNG'), 'Không được chứa Liên 2');
+    assert.ok(!customerOnlyHtml.includes('<div class="k80-slip-separator"></div>'), 'Không được có thẻ ngắt trang giữa chừng');
+
+    // Mode store_only
+    const storeOnlyHtml = renderThermalK80HTML(mockOrder, undefined, { slipMode: 'store_only' });
+    assert.ok(storeOnlyHtml.includes('BẢN LƯU CỬA HÀNG'), 'Phải chứa Liên 2');
+    assert.ok(!storeOnlyHtml.includes('GIÁ DỰ KIẾN'), 'Không được có giá tiền');
+    assert.ok(!storeOnlyHtml.includes('<div class="k80-slip-separator"></div>'), 'Không được có thẻ ngắt trang');
+
+    // Chữ ký hàm cũ: isRoutingSlip = true
+    const legacyRoutingHtml = renderThermalK80HTML(mockOrder, 'https://fixo.vn', true);
+    assert.ok(legacyRoutingHtml.includes('BẢN LƯU CỬA HÀNG'), 'Legacy routing slip phải render Liên 2');
+    assert.ok(!legacyRoutingHtml.includes('GIÁ DỰ KIẾN'), 'Legacy routing slip không có giá tiền');
+  });
+});
+

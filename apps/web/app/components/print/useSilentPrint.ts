@@ -7,7 +7,10 @@ import {
   getStoredPrintFormat,
   setStoredPrintFormat,
 } from './printerPreference';
-import { renderThermalK80HTML } from './thermalK80HtmlBuilder';
+import {
+  renderThermalK80HTML,
+  type ThermalK80RenderOptions,
+} from './thermalK80HtmlBuilder';
 import { renderA4ReceiptHTML } from './a4ReceiptHtmlBuilder';
 
 export interface UseSilentPrintOptions {
@@ -22,7 +25,7 @@ export interface UseSilentPrintReturn {
   printReceipt: (
     order: RepairOrder,
     formatOverride?: PrintFormat,
-    isRoutingSlip?: boolean
+    optionsOrRoutingSlip?: ThermalK80RenderOptions | boolean
   ) => Promise<boolean>;
 }
 
@@ -61,7 +64,7 @@ export function useSilentPrint(options?: UseSilentPrintOptions): UseSilentPrintR
     async (
       order: RepairOrder,
       formatOverride?: PrintFormat,
-      isRoutingSlip = false
+      optionsOrRoutingSlip: ThermalK80RenderOptions | boolean = false
     ): Promise<boolean> => {
       if (typeof window === 'undefined' || !order) {
         return false;
@@ -90,7 +93,7 @@ export function useSilentPrint(options?: UseSilentPrintOptions): UseSilentPrintR
           const htmlContent =
             activeFormat === 'a4'
               ? renderA4ReceiptHTML(order, origin)
-              : renderThermalK80HTML(order, origin, isRoutingSlip);
+              : renderThermalK80HTML(order, origin, optionsOrRoutingSlip);
 
           // Biến quản lý dọn dẹp (chỉ chạy 1 lần)
           let cleanedUp = false;
