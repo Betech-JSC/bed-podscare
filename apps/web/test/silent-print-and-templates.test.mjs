@@ -146,6 +146,8 @@ test('7. Print Touchpoint Integration Verification', () => {
   const repairsContent = fs.readFileSync(repairsPath, 'utf-8');
   assert.ok(repairsContent.includes('PrintButtonDropdown'), 'Repairs drawer phải tích hợp PrintButtonDropdown');
   assert.ok(repairsContent.includes('useSilentPrint'), 'Repairs page phải dùng useSilentPrint');
+  assert.ok(repairsContent.includes('direction="up"'), 'Repairs modal footer phải cấu hình direction="up" cho PrintButtonDropdown');
+  assert.ok(!repairsContent.includes('Xem mẫu in ↗'), 'Repairs modal footer tuyệt đối không còn nút rời Xem mẫu in ↗');
 
   // 3. Tech Queue: Routing slip print
   const techPath = path.resolve(__dirname, '../app/tech/page.tsx');
@@ -237,4 +239,68 @@ test('8. K80 Dual-Slip Auto-Cut & Template Engine Verification', async (t) => {
     assert.ok(!legacyRoutingHtml.includes('GIÁ DỰ KIẾN'), 'Legacy routing slip không có giá tiền');
   });
 });
+
+test('9. PrintButtonDropdown Dropup Direction and Preview Action Verification', () => {
+  const compPath = path.join(printDir, 'PrintFormatModal.tsx');
+  assert.ok(fs.existsSync(compPath), 'PrintFormatModal.tsx phải tồn tại');
+  const content = fs.readFileSync(compPath, 'utf-8');
+
+  // Kiểm tra prop direction?: 'up' | 'down'
+  assert.ok(content.includes("direction?: 'up' | 'down'"), 'PrintButtonDropdownProps phải hỗ trợ prop direction');
+  assert.ok(content.includes("bottom-full mb-1.5"), 'Menu dropdown phải hỗ trợ class bottom-full mb-1.5 khi direction === "up"');
+  assert.ok(content.includes("top-full mt-1.5"), 'Menu dropdown phải giữ class top-full mt-1.5 khi direction === "down"');
+
+  // Kiểm tra mục xem trước mẫu in
+  assert.ok(content.includes('Xem trước mẫu in'), 'Menu dropdown phải chứa mục Xem trước mẫu in');
+  assert.ok(content.includes("window.open(`/print/${order.id}`, '_blank')"), 'Mục xem trước mẫu in phải gọi window.open sang /print/{order.id}');
+});
+
+test('10. Print Preview Page (/print/[id]) Dual-Slip Synchronization Verification', () => {
+  const previewPagePath = path.resolve(__dirname, '../app/print/[id]/page.tsx');
+  assert.ok(fs.existsSync(previewPagePath), 'print/[id]/page.tsx phải tồn tại');
+  const content = fs.readFileSync(previewPagePath, 'utf-8');
+
+  // Kiểm tra reactive hydration & event listener
+  assert.ok(content.includes('getStoredPrintFormat()'), 'Preview page phải đọc getStoredPrintFormat');
+  assert.ok(content.includes('podscare_printer_format_changed'), 'Preview page phải lắng nghe sự kiện podscare_printer_format_changed');
+  assert.ok(content.includes("addEventListener('storage'"), 'Preview page phải lắng nghe sự kiện storage');
+
+  // Kiểm tra ThermalK80Receipt render dual slip mode
+  assert.ok(content.includes('<ThermalK80Receipt order={order} slipMode="dual" />'), 'Preview page phải render ThermalK80Receipt với slipMode="dual"');
+
+  // Kiểm tra ThermalK80Receipt source chứa vạch dao cắt Xprinter và cả 2 liên
+  const thermalCompPath = path.join(printDir, 'ThermalK80Receipt.tsx');
+  const thermalContent = fs.readFileSync(thermalCompPath, 'utf-8');
+  assert.ok(thermalContent.includes('XPRINTER AUTO-CUTTER'), 'ThermalK80Receipt phải có vạch phân cách dao cắt Xprinter mô phỏng');
+  assert.ok(thermalContent.includes('CustomerSlip'), 'ThermalK80Receipt phải render CustomerSlip');
+  assert.ok(thermalContent.includes('StoreSlip'), 'ThermalK80Receipt phải render StoreSlip');
+});
+
+test('11. CSS Isolation and Typography Protection Verification', () => {
+  // 1. landing-preview.css: Không còn bare h1 selector rò rỉ -3px letter-spacing
+  const landingCssPath = path.resolve(__dirname, '../app/landing-preview.css');
+  assert.ok(fs.existsSync(landingCssPath), 'landing-preview.css phải tồn tại');
+  const cssContent = fs.readFileSync(landingCssPath, 'utf-8');
+
+  assert.ok(!cssContent.match(/^h1\s*\{/m), 'landing-preview.css tuyệt đối không được có bare tag selector h1 {');
+  assert.ok(!cssContent.match(/^h1\s+span\s*\{/m), 'landing-preview.css tuyệt đối không được có bare tag selector h1 span {');
+  assert.ok(cssContent.includes('.landing-preview-root h1'), 'landing-preview.css phải bọc h1 trong scope .landing-preview-root');
+  assert.ok(!cssContent.includes('letter-spacing: -3px;'), 'landing-preview.css không được chứa letter-spacing: -3px làm dính chữ');
+
+  // 2. LandingPreview.tsx: Bọc root container .landing-preview-root
+  const landingCompPath = path.resolve(__dirname, '../app/LandingPreview.tsx');
+  const landingCompContent = fs.readFileSync(landingCompPath, 'utf-8');
+  assert.ok(landingCompContent.includes('className="landing-preview-root min-h-screen"'), 'LandingPreview.tsx phải bọc vùng chứa .landing-preview-root');
+
+  // 3. globals.css: Quy tắc phòng thủ letter-spacing: normal cho heading
+  const globalsCssPath = path.resolve(__dirname, '../app/globals.css');
+  assert.ok(fs.existsSync(globalsCssPath), 'globals.css phải tồn tại');
+  const globalsContent = fs.readFileSync(globalsCssPath, 'utf-8');
+  assert.ok(
+    globalsContent.includes('h1, h2, h3, h4, h5, h6') &&
+    globalsContent.includes('letter-spacing: normal;'),
+    'globals.css phải có quy tắc phòng thủ letter-spacing: normal cho heading'
+  );
+});
+
 

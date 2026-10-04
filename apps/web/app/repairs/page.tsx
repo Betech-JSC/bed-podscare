@@ -411,6 +411,7 @@ export default function RepairsPage() {
                 <PrintButtonDropdown
                   order={selectedOrder}
                   isPrinting={isSilentPrinting}
+                  direction="up"
                   onPrint={(ord, fmt) => {
                     toast(`Đang gửi lệnh in phiếu ${ord.id} (${fmt.toUpperCase()})...`, 'info');
                     printReceipt(ord, fmt);
@@ -419,15 +420,6 @@ export default function RepairsPage() {
                   size="md"
                   buttonText="In phiếu tiếp nhận"
                 />
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => router.push(`/print/${selectedOrder.id}`)}
-                  className="text-xs text-[#6e7f77] hover:text-[#176b58]"
-                  title="Mở xem phiếu in trên tab riêng"
-                >
-                  Xem mẫu in ↗
-                </Button>
               </div>
               <div className="flex gap-2">
                 <Button variant="ghost" onClick={() => setSelectedOrder(null)}>

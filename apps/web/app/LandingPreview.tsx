@@ -9,7 +9,7 @@ export function LandingPreview() {
   const [isVideoOpen, setIsVideoOpen] = useState(false);
 
   return (
-    <>
+    <div className="landing-preview-root min-h-screen">
       {/*  =========================
        NAVBAR
   ==========================  */}
@@ -817,6 +817,6 @@ export function LandingPreview() {
 
       </footer>
       <VideoModal isOpen={isVideoOpen} onClose={() => setIsVideoOpen(false)} />
-    </>
+    </div>
   );
 }

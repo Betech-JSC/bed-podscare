@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { useQuery } from '@tanstack/react-query';
 import { repairService } from '@podscare/api-client';
@@ -22,8 +22,33 @@ export default function PrintReceiptPage() {
   const id = params?.id as string;
   const { orders } = usePodsCare();
 
-  const [format, setFormatState] = useState<PrintFormat>(getStoredPrintFormat);
+  const [format, setFormatState] = useState<PrintFormat>('k80');
   const { printReceipt, isPrinting } = useSilentPrint();
+
+  useEffect(() => {
+    const stored = getStoredPrintFormat();
+    setFormatState((prev) => (prev !== stored ? stored : prev));
+
+    const handleCustomChange = (e: Event) => {
+      const customEvent = e as CustomEvent<{ format: PrintFormat }>;
+      const next = customEvent.detail?.format || getStoredPrintFormat();
+      setFormatState((prev) => (prev !== next ? next : prev));
+    };
+
+    const handleStorageChange = (e: StorageEvent) => {
+      if (e.key === 'podscare_printer_format_pref') {
+        const next = getStoredPrintFormat();
+        setFormatState((prev) => (prev !== next ? next : prev));
+      }
+    };
+
+    window.addEventListener('podscare_printer_format_changed', handleCustomChange);
+    window.addEventListener('storage', handleStorageChange);
+    return () => {
+      window.removeEventListener('podscare_printer_format_changed', handleCustomChange);
+      window.removeEventListener('storage', handleStorageChange);
+    };
+  }, []);
 
   const handleSelectFormat = (newFormat: PrintFormat) => {
     setFormatState(newFormat);
@@ -213,7 +238,7 @@ export default function PrintReceiptPage() {
       {/* Printable Sheet View - Quy chuẩn khổ A4 2 liên: max-h-[132mm], đường cắt print:h-[10mm], ký hiệu ✂ */}
       <div id="printSheetWrapper" className="max-w-[820px] mx-auto print:max-w-none print:w-full">
         {format === 'k80' ? (
-          <ThermalK80Receipt order={order} />
+          <ThermalK80Receipt order={order} slipMode="dual" />
         ) : (
           <A4ReceiptTemplate order={order} />
         )}

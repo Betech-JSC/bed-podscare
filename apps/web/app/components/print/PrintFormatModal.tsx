@@ -135,6 +135,7 @@ export interface PrintButtonDropdownProps {
   variant?: 'primary' | 'secondary' | 'outline';
   size?: 'sm' | 'md' | 'lg';
   buttonText?: string;
+  direction?: 'up' | 'down';
 }
 
 /**
@@ -148,6 +149,7 @@ export const PrintButtonDropdown: React.FC<PrintButtonDropdownProps> = ({
   variant = 'secondary',
   size = 'md',
   buttonText = 'In phiếu',
+  direction = 'down',
 }) => {
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const [configModalOpen, setConfigModalOpen] = useState(false);
@@ -220,7 +222,11 @@ export const PrintButtonDropdown: React.FC<PrintButtonDropdownProps> = ({
           strokeWidth="2.5"
           strokeLinecap="round"
           strokeLinejoin="round"
-          className={`transition-transform duration-150 ${dropdownOpen ? 'rotate-180' : ''}`}
+          className={`transition-transform duration-150 ${
+            direction === 'up'
+              ? dropdownOpen ? '' : 'rotate-180'
+              : dropdownOpen ? 'rotate-180' : ''
+          }`}
         >
           <polyline points="6 9 12 15 18 9" />
         </svg>
@@ -228,7 +234,11 @@ export const PrintButtonDropdown: React.FC<PrintButtonDropdownProps> = ({
 
       {/* Menu dropdown */}
       {dropdownOpen && (
-        <div className="absolute right-0 top-full mt-1.5 w-52 bg-white rounded-[10px] shadow-lg border border-[#e2e9e5] p-1.5 z-50 animate-in fade-in zoom-in-95 duration-100">
+        <div
+          className={`absolute right-0 ${
+            direction === 'up' ? 'bottom-full mb-1.5' : 'top-full mt-1.5'
+          } w-52 bg-white rounded-[10px] shadow-lg border border-[#e2e9e5] p-1.5 z-50 animate-in fade-in zoom-in-95 duration-100`}
+        >
           <div className="text-[10px] font-bold text-[#83958c] uppercase px-2 py-1 tracking-wider">
             Chọn khổ in ngay
           </div>
@@ -255,6 +265,22 @@ export const PrintButtonDropdown: React.FC<PrintButtonDropdownProps> = ({
             {currentFormat === 'a4' && (
               <span className="text-[9px] text-[#176b58] font-bold">★ Mặc định</span>
             )}
+          </button>
+
+          <button
+            type="button"
+            onClick={() => {
+              setDropdownOpen(false);
+              if (typeof window !== 'undefined') {
+                window.open(`/print/${order.id}`, '_blank');
+              }
+            }}
+            className="w-full text-left px-2.5 py-1.5 rounded-[6px] text-xs text-[#1c302b] hover:bg-[#f0f7f3] flex items-center justify-between"
+          >
+            <span className="flex items-center gap-1.5 font-medium">
+              <span>👁</span> Xem trước mẫu in
+            </span>
+            <span className="text-[10px] text-[#6e7f77]">↗</span>
           </button>
 
           <div className="border-t border-[#eef3f0] my-1" />
