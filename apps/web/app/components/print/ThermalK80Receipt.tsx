@@ -21,7 +21,7 @@ export interface ThermalK80ReceiptProps {
  */
 const CustomerSlip: React.FC<{ order: RepairOrder; origin?: string }> = ({ order, origin }) => {
   const currentOrigin =
-    origin || (typeof window !== 'undefined' ? window.location.origin : 'https://podscare.fixo.vn');
+    origin || (typeof window !== 'undefined' ? window.location.origin : 'https://fixo.com.vn');
   const trackUrl = `${currentOrigin}/track/${order.id}`;
 
   const barcodeSvg = generateBarcodeSVG(order.id, {

@@ -14,7 +14,7 @@ import { formatMoney, FIXO_LOGO_A4_SVG } from './thermalK80HtmlBuilder';
  */
 export function renderA4ReceiptHTML(order: RepairOrder, origin?: string): string {
   const currentOrigin =
-    origin || (typeof window !== 'undefined' ? window.location.origin : 'https://podscare.fixo.vn');
+    origin || (typeof window !== 'undefined' ? window.location.origin : 'https://fixo.com.vn');
   const trackUrl = `${currentOrigin}/track/${order.id}`;
 
   const barcodeSvg = generateBarcodeSVG(order.id, {

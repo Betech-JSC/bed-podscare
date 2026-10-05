@@ -244,7 +244,7 @@ export const NotificationProvider: React.FC<NotificationProviderProps> = ({
         params.branch_id = explicitBranchId;
       }
 
-      const res = await notificationService.getNotifications(params);
+      const res = await notificationService.getNotifications(params, { skipAuthRedirect: true });
       const raw = res?.data;
       const list = Array.isArray(raw)
         ? raw

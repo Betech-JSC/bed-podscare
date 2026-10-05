@@ -2,9 +2,15 @@
 
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { ToastProvider, ConfirmProvider } from '@podscare/ui';
+import { ToastProvider, ConfirmProvider, useToast } from '@podscare/ui';
 import type { UserRole, UserProfile, RepairOrder, DeviceProfile } from '@podscare/types';
-import { repairService, branchService, deviceService, authService } from '@podscare/api-client';
+import {
+  repairService,
+  branchService,
+  deviceService,
+  authService,
+  defaultHttpClient,
+} from '@podscare/api-client';
 
 import { NotificationProvider } from './providers/NotificationProvider';
 
@@ -101,6 +107,60 @@ export const DEFAULT_MASTER_BRANCHES: BranchItem[] = [
     is_active: true,
   },
 ];
+
+/**
+ * Component tự phục hồi khi gặp ChunkLoadError do deploy mã nguồn mới trên VPS.
+ * Lắng nghe toàn cục sự kiện error & unhandledrejection, reload trang 1 lần trong 15s để chống vòng lặp.
+ */
+export const ChunkLoadErrorHandler: React.FC = () => {
+  const { toast } = useToast();
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+
+    const handleChunkError = (event: ErrorEvent | PromiseRejectionEvent) => {
+      const message =
+        'message' in event
+          ? event.message
+          : (event as PromiseRejectionEvent).reason?.message ||
+            String((event as PromiseRejectionEvent).reason || '');
+
+      const isChunkError =
+        message.includes('Loading chunk') ||
+        message.includes('ChunkLoadError') ||
+        message.includes('Failed to fetch dynamically imported module');
+
+      if (isChunkError) {
+        const lastReload =
+          sessionStorage.getItem('podscare_chunk_reload_ts') ||
+          sessionStorage.getItem('fixo_last_chunk_reload');
+        const now = Date.now();
+
+        // Chỉ tự động reload 1 lần trong vòng 15 giây để chống reload lặp vô tận
+        if (!lastReload || now - parseInt(lastReload, 10) > 15000) {
+          sessionStorage.setItem('podscare_chunk_reload_ts', String(now));
+          sessionStorage.setItem('fixo_last_chunk_reload', String(now));
+          window.location.reload();
+        } else {
+          toast(
+            'Hệ thống vừa cập nhật phiên bản mới. Vui lòng bấm Ctrl+F5 hoặc tải lại trình duyệt để tiếp tục sử dụng.',
+            'error'
+          );
+        }
+      }
+    };
+
+    window.addEventListener('error', handleChunkError);
+    window.addEventListener('unhandledrejection', handleChunkError);
+
+    return () => {
+      window.removeEventListener('error', handleChunkError);
+      window.removeEventListener('unhandledrejection', handleChunkError);
+    };
+  }, [toast]);
+
+  return null;
+};
 
 export const Providers: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [queryClient] = useState(
@@ -274,6 +334,7 @@ export const Providers: React.FC<{ children: React.ReactNode }> = ({ children })
           if (parsedUser?.role) {
             effectiveRole = parsedUser.role;
           }
+          defaultHttpClient.setToken(savedToken);
           setToken(savedToken);
           setUserProfile(parsedUser);
           setRoleState(effectiveRole);
@@ -282,6 +343,7 @@ export const Providers: React.FC<{ children: React.ReactNode }> = ({ children })
           // ignore
         }
       } else {
+        defaultHttpClient.setToken(null);
         setToken(null);
         setIsAuthenticated(false);
       }
@@ -314,6 +376,7 @@ export const Providers: React.FC<{ children: React.ReactNode }> = ({ children })
         }
       }
     } catch {
+      defaultHttpClient.setToken(null);
       setToken(null);
       setIsAuthenticated(false);
     } finally {
@@ -560,6 +623,7 @@ export const Providers: React.FC<{ children: React.ReactNode }> = ({ children })
       document.cookie = `podscare_session_token=${encodeURIComponent(data.token)}; path=/; max-age=${30 * 86400}; SameSite=Lax`;
     }
 
+    defaultHttpClient.setToken(data.token);
     setToken(data.token);
     setUserProfile(profile);
     setRoleState(normRole);
@@ -607,6 +671,7 @@ export const Providers: React.FC<{ children: React.ReactNode }> = ({ children })
         document.cookie = 'podscare_session_token=; path=/; max-age=0; SameSite=Lax';
       }
       queryClient.clear();
+      defaultHttpClient.setToken(null);
       setToken(null);
       setUserProfile(null);
       setIsAuthenticated(false);
@@ -680,6 +745,7 @@ export const Providers: React.FC<{ children: React.ReactNode }> = ({ children })
           enabled={isAuthenticated}
         >
           <ToastProvider>
+            <ChunkLoadErrorHandler />
             <ConfirmProvider>{children}</ConfirmProvider>
           </ToastProvider>
         </NotificationProvider>

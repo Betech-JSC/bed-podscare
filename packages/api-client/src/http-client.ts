@@ -13,11 +13,13 @@ export class ApiClientError extends Error {
 export interface RequestOptions extends RequestInit {
   params?: Record<string, string | number | boolean | undefined>;
   timeoutMs?: number;
+  skipAuthRedirect?: boolean;
 }
 
 export class HttpClient {
   private baseURL: string;
   private token: string | null = null;
+  private isLoggingOut = false;
 
   constructor(baseURL?: string) {
     const envApi =
@@ -46,6 +48,20 @@ export class HttpClient {
       return localStorage.getItem('podscare_token');
     }
     return null;
+  }
+
+  public handleUnauthorized() {
+    if (this.isLoggingOut) {
+      return;
+    }
+    this.isLoggingOut = true;
+    this.setToken(null);
+    if (typeof window !== 'undefined' && window.location.pathname !== '/login') {
+      window.location.href = '/login';
+    }
+    setTimeout(() => {
+      this.isLoggingOut = false;
+    }, 3000);
   }
 
   public buildUrl(endpoint: string): string {
@@ -115,9 +131,8 @@ export class HttpClient {
         }
 
         if (response.status === 401) {
-          this.setToken(null);
-          if (typeof window !== 'undefined' && window.location.pathname !== '/login') {
-            window.location.href = '/login';
+          if (!options.skipAuthRedirect) {
+            this.handleUnauthorized();
           }
         }
 

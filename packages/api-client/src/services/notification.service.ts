@@ -1,4 +1,4 @@
-import { HttpClient, defaultHttpClient } from '../http-client';
+import { HttpClient, defaultHttpClient, RequestOptions } from '../http-client';
 
 export interface GetNotificationsParams {
   user_id?: string | number;
@@ -15,8 +15,15 @@ export class NotificationService {
    * Lấy danh sách thông báo phân trang từ backend REST API.
    * GET /api/v1/notifications
    */
-  async getNotifications(params?: GetNotificationsParams): Promise<any> {
-    return this.http.get('/api/v1/notifications', { params: params as any });
+  async getNotifications(
+    params?: GetNotificationsParams,
+    options?: Partial<RequestOptions>
+  ): Promise<any> {
+    return this.http.get('/api/v1/notifications', {
+      params: params as any,
+      skipAuthRedirect: true,
+      ...options,
+    });
   }
 
   /**

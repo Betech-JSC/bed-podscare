@@ -48,7 +48,7 @@ test('1. Barcode Code 128 SVG generator (Client-side, Zero-network)', async (t) 
 
 test('2. QR Code Vector SVG generator (Zero-network, Pure Client-side)', async (t) => {
   await t.test('Sinh chuỗi SVG hợp lệ cho URL tra cứu tiến độ realtime', () => {
-    const url = 'https://podscare.fixo.vn/track/PC26-88888';
+    const url = 'https://fixo.com.vn/track/PC26-88888';
     const svg = generateQRCodeSVG(url, { size: 100, margin: 2 });
     assert.ok(svg.startsWith('<svg'), 'Phải bắt đầu bằng thẻ <svg');
     assert.ok(svg.includes('</svg>'), 'Phải kết thúc bằng thẻ </svg>');
@@ -179,7 +179,7 @@ test('8. K80 Dual-Slip Auto-Cut & Template Engine Verification', async (t) => {
   };
 
   await t.test('8.1. buildCustomerCopyHtml: Đầy đủ giá tiền, QR tra cứu, bảng kiểm tra và 2 chữ ký', () => {
-    const html = buildCustomerCopyHtml(mockOrder, 'https://podscare.fixo.vn');
+    const html = buildCustomerCopyHtml(mockOrder, 'https://fixo.com.vn');
     assert.ok(html.includes('k80-customer-copy'), 'Phải chứa class k80-customer-copy');
     assert.ok(html.includes('LIÊN KHÁCH HÀNG'), 'Phải có tiêu đề nhận diện Liên khách hàng');
     assert.ok(html.includes('PHIẾU TIẾP NHẬN SỬA CHỮA'), 'Phải có tiêu đề phiếu tiếp nhận');

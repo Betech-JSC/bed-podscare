@@ -609,7 +609,7 @@ export function buildCustomerCopyHtml(order: RepairOrder, origin?: string): stri
     origin ||
     (typeof window !== 'undefined' && window.location?.origin
       ? window.location.origin
-      : 'https://podscare.fixo.vn');
+      : 'https://fixo.com.vn');
   const trackUrl = `${currentOrigin}/track/${order.id}`;
 
   const barcodeSvg = generateBarcodeSVG(order.id, {
@@ -888,7 +888,7 @@ export function renderThermalK80HTML(
     origin ||
     (typeof window !== 'undefined' && window.location?.origin
       ? window.location.origin
-      : 'https://podscare.fixo.vn');
+      : 'https://fixo.com.vn');
 
   const effectiveMode: ThermalK80SlipMode =
     options.slipMode || (options.isRoutingSlip ? 'store_only' : 'dual');

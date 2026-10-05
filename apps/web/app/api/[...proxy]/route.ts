@@ -15,8 +15,8 @@ const HOP_BY_HOP_HEADERS = new Set([
 
 async function handleProxy(req: NextRequest, { params }: { params: { proxy: string[] } }) {
   const backendBase = (
-    process.env.BACKEND_API_URL ||
     process.env.BACKEND_INTERNAL_URL ||
+    process.env.BACKEND_API_URL ||
     process.env.NEXT_PUBLIC_API_URL ||
     'http://127.0.0.1:8000'
   ).replace(/\/$/, '');
@@ -38,8 +38,16 @@ async function handleProxy(req: NextRequest, { params }: { params: { proxy: stri
     }
   });
 
-  // Explicitly ensure Authorization is forwarded if present
-  const authHeader = req.headers.get('authorization');
+  // Dual-Token Resolution: Ưu tiên header Authorization, fallback tự động đọc từ Cookie 'podscare_session_token'
+  let authHeader = req.headers.get('authorization');
+  if (!authHeader) {
+    const cookieToken = req.cookies.get('podscare_session_token')?.value;
+    if (cookieToken) {
+      const cleanToken = decodeURIComponent(cookieToken).trim();
+      authHeader = cleanToken.startsWith('Bearer ') ? cleanToken : `Bearer ${cleanToken}`;
+    }
+  }
+
   if (authHeader) {
     forwardHeaders['Authorization'] = authHeader;
   }
@@ -66,12 +74,17 @@ async function handleProxy(req: NextRequest, { params }: { params: { proxy: stri
     }
   }
 
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 10000);
+
   try {
     const res = await fetch(url, {
       method: req.method,
       headers: forwardHeaders,
       body,
+      signal: controller.signal,
     });
+    clearTimeout(timeoutId);
 
     const resContentType = res.headers.get('content-type') || '';
     const resText = await res.text();
@@ -104,12 +117,34 @@ async function handleProxy(req: NextRequest, { params }: { params: { proxy: stri
       statusText: res.statusText,
     });
   } catch (err: any) {
+    clearTimeout(timeoutId);
+    const cause = err?.cause as any;
+    const errorCode = cause?.code || err?.code || 'FETCH_FAILED';
+    const errorDetail = cause?.message || err?.message || 'Unknown network error';
+    const causeInfo = cause
+      ? {
+          code: cause.code,
+          syscall: cause.syscall,
+          errno: cause.errno,
+          message: cause.message || String(cause),
+        }
+      : undefined;
+
+    console.error(`[PodsCare Proxy Error] ${req.method} ${url}:`, {
+      message: err.message,
+      code: errorCode,
+      cause: causeInfo,
+    });
+
     return NextResponse.json(
       {
         success: false,
         message: `PodsCare Proxy Error (${req.method} ${url}): ${err.message}`,
         error: err.message,
+        error_code: errorCode,
+        error_detail: errorDetail,
         target_url: url,
+        cause: causeInfo,
       },
       { status: 502 }
     );

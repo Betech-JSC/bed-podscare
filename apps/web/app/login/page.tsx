@@ -3,6 +3,7 @@
 import React, { useState, useEffect, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { Button, Input, useToast, Icon, Checkbox } from '@podscare/ui';
+import { defaultHttpClient } from '@podscare/api-client';
 import { usePodsCare } from '../providers';
 import { unlockAudio } from '../utils/audioChime';
 
@@ -203,6 +204,7 @@ function LoginFormContent() {
       if (res.ok && json?.success && json?.data) {
         // Đồng bộ cookie phiên làm việc
         const token = json.data.token;
+        defaultHttpClient.setToken(token);
         const maxAge = rememberMe ? 30 * 86400 : 86400;
         document.cookie = `podscare_session_token=${encodeURIComponent(token)}; path=/; max-age=${maxAge}; SameSite=Lax`;
 
