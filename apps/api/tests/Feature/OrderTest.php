@@ -335,4 +335,49 @@ class OrderTest extends TestCase
         $responseRepairs->assertStatus(200)
             ->assertJsonPath('success', true);
     }
+
+    /**
+     * Test: Bắt buộc estimated_price > 0 khi tạo đơn tiếp nhận.
+     */
+    public function test_store_order_requires_positive_estimated_price(): void
+    {
+        $user = $this->getAuthenticatedUser();
+        $branch = Branch::first();
+        $device = DeviceModel::first();
+
+        $basePayload = [
+            'branch_id'         => $branch->id,
+            'customer_phone'    => '0987111222',
+            'customer_name'     => 'Khách Kiểm Tra Giá',
+            'device_model_id'   => $device->id,
+            'issue_description' => 'Test lỗi bắt buộc giá tiền',
+        ];
+
+        // 1. Thiếu estimated_price hoàn toàn -> 422
+        $responseMissing = $this->actingAs($user, 'sanctum')->postJson('/api/v1/orders', $basePayload);
+        $responseMissing->assertStatus(422)
+            ->assertJsonValidationErrors(['estimated_price']);
+
+        // 2. estimated_price = 0 -> 422
+        $responseZero = $this->actingAs($user, 'sanctum')->postJson('/api/v1/orders', array_merge($basePayload, [
+            'estimated_price' => 0,
+        ]));
+        $responseZero->assertStatus(422)
+            ->assertJsonValidationErrors(['estimated_price']);
+
+        // 3. estimated_price âm -> 422
+        $responseNegative = $this->actingAs($user, 'sanctum')->postJson('/api/v1/orders', array_merge($basePayload, [
+            'estimated_price' => -50000,
+        ]));
+        $responseNegative->assertStatus(422)
+            ->assertJsonValidationErrors(['estimated_price']);
+
+        // 4. estimated_price > 0 -> 201 Thành công
+        $responseValid = $this->actingAs($user, 'sanctum')->postJson('/api/v1/orders', array_merge($basePayload, [
+            'estimated_price' => 350000,
+        ]));
+        $responseValid->assertStatus(201)
+            ->assertJsonPath('success', true);
+    }
 }
+

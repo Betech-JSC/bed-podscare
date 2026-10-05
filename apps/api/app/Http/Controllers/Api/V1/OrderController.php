@@ -103,7 +103,7 @@ class OrderController extends Controller
             'accessories'           => 'nullable|string|max:255',
             'issue_description'     => 'required|string',
             'appearance_notes'      => 'nullable|string',
-            'estimated_price'       => 'nullable|numeric|min:0',
+            'estimated_price'       => 'required|numeric|gt:0',
             'warranty_terms_days'   => 'nullable|integer|min:0',
             'status'                => 'nullable|string',
             'checklists'            => 'nullable|array',
