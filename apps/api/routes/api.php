@@ -47,6 +47,7 @@ Route::prefix('v1')->group(function () {
 
         // Public catalog & checklist template
         Route::get('/devices/checklist-template', [DeviceController::class, 'checklistTemplate'])->name('api.v1.devices.template');
+        Route::get('/devices/categories', [DeviceController::class, 'categories'])->name('api.v1.devices.categories');
         Route::get('/devices', [DeviceController::class, 'index'])->name('api.v1.devices.index');
         Route::get('/devices/{id}', [DeviceController::class, 'show'])->name('api.v1.devices.show');
 
@@ -81,6 +82,14 @@ Route::prefix('v1')->group(function () {
             Route::post('/users', [UserController::class, 'store'])->name('api.v1.users.store');
             Route::put('/users/{id}', [UserController::class, 'update'])->name('api.v1.users.update');
             Route::post('/users/{id}/toggle-status', [UserController::class, 'toggleStatus'])->name('api.v1.users.toggle_status');
+        });
+
+        // Device Models & Dynamic Checklists Management
+        Route::middleware('role:admin,super_admin')->group(function () {
+            Route::post('/devices', [DeviceController::class, 'store'])->name('api.v1.devices.store');
+            Route::put('/devices/{id}', [DeviceController::class, 'update'])->name('api.v1.devices.update');
+            Route::delete('/devices/{id}', [DeviceController::class, 'destroy'])->name('api.v1.devices.destroy');
+            Route::post('/devices/categories', [DeviceController::class, 'storeCategory'])->name('api.v1.devices.categories.store');
         });
 
         // Branches (write operations protected by admin role)

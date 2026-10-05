@@ -270,22 +270,46 @@ export const Providers: React.FC<{ children: React.ReactNode }> = ({ children })
         console.warn('Could not fetch default checklist templates:', err);
       }
 
+      // Nạp dynamic categories từ API
+      try {
+        const catRes = await deviceService.getCategories();
+        const catData = catRes?.data || (Array.isArray(catRes) ? catRes : []);
+        if (Array.isArray(catData) && catData.length > 0) {
+          setCategories(catData);
+          try {
+            localStorage.setItem('podscare_categories', JSON.stringify(catData));
+          } catch {
+            // ignore
+          }
+        }
+      } catch (err) {
+        console.warn('Could not fetch categories from API:', err);
+      }
+
       if (Array.isArray(list) && list.length > 0) {
-        const mapped: DeviceProfile[] = list.map((d: any) => ({
-          name: d.name,
-          category: d.category || 'AirPods',
-          maker: 'Apple',
-          model: d.model_code || '',
-          icon:
-            d.category === 'Apple Watch'
-              ? 'watch'
-              : d.category === 'Apple Pencil'
-              ? 'pencil'
-              : d.category === 'MacBook' || d.category === 'iPad'
-              ? 'device'
-              : 'headphones',
-          checks: defaultChecks,
-        }));
+        const mapped: DeviceProfile[] = list.map((d: any) => {
+          const modelChecks =
+            Array.isArray(d.checklist_templates) && d.checklist_templates.length > 0
+              ? d.checklist_templates.map((c: any) => c.item_name || c.name || String(c))
+              : defaultChecks;
+
+          return {
+            id: d.id,
+            name: d.name,
+            category: d.category || 'AirPods',
+            maker: d.manufacturer || 'Apple',
+            model: d.model_code || '',
+            icon:
+              d.category === 'Apple Watch'
+                ? 'watch'
+                : d.category === 'Apple Pencil'
+                ? 'pencil'
+                : d.category === 'MacBook' || d.category === 'iPad'
+                ? 'device'
+                : 'headphones',
+            checks: modelChecks,
+          };
+        });
         setDeviceProfiles(mapped);
         try {
           localStorage.setItem('podscare_device_profiles', JSON.stringify(mapped));
@@ -327,6 +351,18 @@ export const Providers: React.FC<{ children: React.ReactNode }> = ({ children })
           const parsed = JSON.parse(cachedProfiles);
           if (Array.isArray(parsed) && parsed.length > 0) {
             setDeviceProfiles(parsed);
+          }
+        } catch {
+          // ignore
+        }
+      }
+
+      const cachedCategories = localStorage.getItem('podscare_categories');
+      if (cachedCategories) {
+        try {
+          const parsedCats = JSON.parse(cachedCategories);
+          if (Array.isArray(parsedCats) && parsedCats.length > 0) {
+            setCategories(parsedCats);
           }
         } catch {
           // ignore
