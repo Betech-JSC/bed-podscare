@@ -82,7 +82,7 @@ export const A4ReceiptTemplate: React.FC<A4ReceiptTemplateProps> = ({ order, ori
           <div className="flex items-center justify-between bg-[#f2f7f4] px-2.5 py-1 rounded mb-2 text-[7.5pt]">
             <div className="flex items-center gap-2">
               <span>MÃ PHIẾU:</span>
-              <b className="text-[9.5pt] text-[#176b58] font-bold font-mono">{order.id}</b>
+              <b className="text-[9.5pt] text-[#176b58] font-semibold font-mono tracking-[1px] tabular-nums">{order.id}</b>
               <div
                 className="hidden sm:inline-block h-5 [&>svg]:h-5 [&>svg]:max-w-[130px]"
                 dangerouslySetInnerHTML={{ __html: barcodeSvg }}
@@ -196,7 +196,7 @@ export const A4ReceiptTemplate: React.FC<A4ReceiptTemplateProps> = ({ order, ori
           <div className="flex justify-between items-center border border-[#176b58] p-1.5 rounded mb-1 text-[7.5pt] bg-[#f7fbf9]">
             <div>
               <span>Giá sửa chữa dự kiến: </span>
-              <b className="text-[9.5pt] text-[#176b58] font-bold">{formatMoney(order.price)}</b>
+              <b className="text-[9.5pt] text-[#176b58] font-semibold tabular-nums tracking-[0.5px]">{formatMoney(order.price)}</b>
               {order.priceNote && <span className="text-[#666666] text-[6.5pt] ml-1">({order.priceNote})</span>}
             </div>
             <div className="flex items-center gap-1.5">

@@ -93,7 +93,7 @@ function generateBarcodeSVG(code: string, options: BarcodeOptions = {}): string 
   }
 
   const textElement = showText
-    ? `<text x="${(totalSvgWidth / 2).toFixed(2)}" y="${(height + fontSize + 1).toFixed(2)}" font-family="monospace, monospace" font-size="${fontSize}" font-weight="bold" text-anchor="middle" fill="#000000" letter-spacing="1">${cleanCode}</text>`
+    ? `<text x="${(totalSvgWidth / 2).toFixed(2)}" y="${(height + fontSize + 1).toFixed(2)}" font-family="monospace, monospace" font-size="${fontSize}" font-weight="600" text-anchor="middle" fill="#000000" letter-spacing="1.2">${cleanCode}</text>`
     : '';
 
   return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${totalSvgWidth.toFixed(2)} ${totalSvgHeight.toFixed(2)}" width="${totalSvgWidth.toFixed(2)}" height="${totalSvgHeight.toFixed(2)}" shape-rendering="crispEdges">
@@ -1019,7 +1019,7 @@ export function renderThermalK80HTML(
     }
     .k80-brand {
       font-size: 16px;
-      font-weight: 900;
+      font-weight: 700;
       letter-spacing: -0.5px;
       margin: 4px 0 2px 0;
     }
@@ -1045,13 +1045,16 @@ export function renderThermalK80HTML(
     }
     .k80-order-code {
       font-size: 17px;
-      font-weight: 900;
+      font-weight: 600;
       font-family: "Courier New", Courier, monospace;
-      letter-spacing: 1px;
+      letter-spacing: 1.2px;
+      font-variant-numeric: tabular-nums;
     }
     .k80-store-order-code {
       font-size: 19px;
-      font-weight: 800;
+      font-weight: 600;
+      letter-spacing: 1.2px;
+      font-variant-numeric: tabular-nums;
     }
     .k80-barcode {
       display: flex;
@@ -1085,7 +1088,8 @@ export function renderThermalK80HTML(
       font-weight: normal;
     }
     .k80-val {
-      font-weight: 700;
+      font-weight: 600;
+      font-variant-numeric: tabular-nums;
       text-align: right;
       flex-grow: 1;
       word-break: break-word;
@@ -1122,7 +1126,7 @@ export function renderThermalK80HTML(
     }
     .k80-store-header {
       font-size: 11.5px;
-      font-weight: 900;
+      font-weight: 700;
       text-align: center;
       text-transform: uppercase;
       letter-spacing: -0.2px;
@@ -1201,7 +1205,9 @@ export function renderThermalK80HTML(
     }
     .k80-price-amount {
       font-size: 15px;
-      font-weight: 900;
+      font-weight: 600;
+      letter-spacing: 0.5px;
+      font-variant-numeric: tabular-nums;
     }
     .k80-qr-wrapper {
       text-align: center;

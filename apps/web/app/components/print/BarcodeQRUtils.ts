@@ -100,7 +100,7 @@ export function generateBarcodeSVG(code: string, options: BarcodeOptions = {}): 
   }
 
   const textElement = showText
-    ? `<text x="${(totalSvgWidth / 2).toFixed(2)}" y="${(height + fontSize + 1).toFixed(2)}" font-family="monospace, monospace" font-size="${fontSize}" font-weight="bold" text-anchor="middle" fill="#000000" letter-spacing="1">${cleanCode}</text>`
+    ? `<text x="${(totalSvgWidth / 2).toFixed(2)}" y="${(height + fontSize + 1).toFixed(2)}" font-family="monospace, monospace" font-size="${fontSize}" font-weight="600" text-anchor="middle" fill="#000000" letter-spacing="1.2">${cleanCode}</text>`
     : '';
 
   return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${totalSvgWidth.toFixed(2)} ${totalSvgHeight.toFixed(2)}" width="${totalSvgWidth.toFixed(2)}" height="${totalSvgHeight.toFixed(2)}" shape-rendering="crispEdges">

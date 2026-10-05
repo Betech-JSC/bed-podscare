@@ -302,8 +302,11 @@ export function renderA4ReceiptHTML(order: RepairOrder, origin?: string, brandin
     }
     .a4-order-code {
       font-size: 10pt;
+      font-weight: 600;
       font-family: monospace;
       color: #176b58;
+      letter-spacing: 1px;
+      font-variant-numeric: tabular-nums;
     }
     .a4-barcode-wrap {
       display: inline-flex;
@@ -397,7 +400,9 @@ export function renderA4ReceiptHTML(order: RepairOrder, origin?: string, brandin
     .a4-price-val {
       font-size: 10pt;
       color: #176b58;
-      font-weight: 900;
+      font-weight: 600;
+      letter-spacing: 0.5px;
+      font-variant-numeric: tabular-nums;
     }
     .a4-price-note {
       color: #666666;

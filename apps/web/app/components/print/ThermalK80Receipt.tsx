@@ -78,7 +78,7 @@ const CustomerSlip: React.FC<{
               dangerouslySetInnerHTML={{ __html: FIXO_LOGO_SVG }}
             />
             <div className="text-left">
-              <h1 className="font-heading font-black text-sm tracking-tight m-0 text-black">
+              <h1 className="font-heading font-bold text-sm tracking-tight m-0 text-black">
                 FIXO REPAIR OS
               </h1>
               <p className="text-[9px] font-bold tracking-wide uppercase m-0 text-gray-700">
@@ -100,7 +100,7 @@ const CustomerSlip: React.FC<{
         <span className="text-[8.5px] font-bold text-gray-600 block uppercase">
           MÃ PHIẾU TIẾP NHẬN
         </span>
-        <span className="text-base font-black font-mono tracking-wider block">
+        <span className="text-base font-semibold font-mono tracking-[1.2px] tabular-nums block">
           {order.id}
         </span>
         <div
@@ -122,7 +122,7 @@ const CustomerSlip: React.FC<{
         </div>
         <div className="flex justify-between">
           <span className="text-gray-700 w-20 flex-shrink-0">Số ĐT:</span>
-          <b className="text-right flex-grow font-mono">{order.phone || '—'}</b>
+          <b className="text-right flex-grow font-mono font-semibold tabular-nums tracking-[0.5px]">{order.phone || '—'}</b>
         </div>
         <div className="flex justify-between">
           <span className="text-gray-700 w-20 flex-shrink-0">Thiết bị:</span>
@@ -130,7 +130,7 @@ const CustomerSlip: React.FC<{
         </div>
         <div className="flex justify-between">
           <span className="text-gray-700 w-20 flex-shrink-0">Serial/Model:</span>
-          <b className="text-right flex-grow font-mono">{order.serial || 'Chưa cập nhật'}</b>
+          <b className="text-right flex-grow font-mono font-semibold tabular-nums tracking-[0.5px]">{order.serial || 'Chưa cập nhật'}</b>
         </div>
         <div className="flex justify-between">
           <span className="text-gray-700 w-20 flex-shrink-0">Phụ kiện:</span>
@@ -198,7 +198,7 @@ const CustomerSlip: React.FC<{
             <span className="text-[8px] text-gray-600 block">({order.priceNote})</span>
           )}
         </div>
-        <b className="text-sm font-black">{formatMoney(order.price)}</b>
+        <b className="text-sm font-semibold tabular-nums tracking-[0.5px]">{formatMoney(order.price)}</b>
       </div>
 
       {/* QR Code */}
@@ -260,7 +260,7 @@ const StoreSlip: React.FC<{ order: RepairOrder }> = ({ order }) => {
     <div className="k80-store-copy">
       {/* Header */}
       <div className="text-center border-b border-dashed border-black pb-2 mb-2">
-        <h2 className="font-heading font-black text-xs tracking-tight uppercase m-0 text-black">
+        <h2 className="font-heading font-bold text-xs tracking-tight uppercase m-0 text-black">
           FIXO REPAIR OS · BẢN LƯU CỬA HÀNG & KỸ THUẬT
         </h2>
         <div className="text-[9px] font-bold text-gray-700 tracking-wide uppercase mt-0.5">
@@ -279,7 +279,7 @@ const StoreSlip: React.FC<{ order: RepairOrder }> = ({ order }) => {
         <span className="text-[8.5px] font-bold text-gray-600 block uppercase">
           MÃ PHIẾU TIẾP NHẬN
         </span>
-        <span className="text-lg font-black font-mono tracking-wider block">
+        <span className="text-lg font-semibold font-mono tracking-[1.2px] tabular-nums block">
           {order.id}
         </span>
         <div
@@ -292,7 +292,7 @@ const StoreSlip: React.FC<{ order: RepairOrder }> = ({ order }) => {
       <div className="space-y-0.5 text-[10.5px]">
         <div className="flex justify-between">
           <span className="text-gray-700 w-20 flex-shrink-0">Khách hàng:</span>
-          <b className="text-right flex-grow">{order.name || 'Khách lẻ'} - {order.phone || '—'}</b>
+          <b className="text-right flex-grow font-semibold tabular-nums">{order.name || 'Khách lẻ'} - {order.phone || '—'}</b>
         </div>
         <div className="flex justify-between">
           <span className="text-gray-700 w-20 flex-shrink-0">Thiết bị:</span>
@@ -300,7 +300,7 @@ const StoreSlip: React.FC<{ order: RepairOrder }> = ({ order }) => {
         </div>
         <div className="flex justify-between">
           <span className="text-gray-700 w-20 flex-shrink-0">Serial/Model:</span>
-          <b className="text-right flex-grow font-mono">{order.serial || 'Chưa cập nhật'}</b>
+          <b className="text-right flex-grow font-mono font-semibold tabular-nums tracking-[0.5px]">{order.serial || 'Chưa cập nhật'}</b>
         </div>
         <div className="flex justify-between">
           <span className="text-gray-700 w-20 flex-shrink-0">Phụ kiện:</span>

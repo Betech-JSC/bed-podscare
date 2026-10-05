@@ -105,24 +105,51 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [deviceList, setDeviceList] = useState<{ id: number; name: string }[]>([]);
 
+  const resetForm = () => {
+    setName('');
+    setPhone('');
+    const userBranchId = (currentUser as any)?.branch_id || (currentUser as any)?.branchId;
+    if (userBranchId) {
+      setSelectedBranchId(userBranchId);
+    } else if (branchId && branchId !== 'all') {
+      setSelectedBranchId(branchId);
+    } else {
+      setSelectedBranchId(1);
+    }
+    setSelectedCategory('AirPods');
+    const firstModel =
+      deviceProfiles.find((p) => p.category === 'AirPods')?.name ||
+      (deviceList as any[]).find((d) => d.category === 'AirPods')?.name ||
+      'AirPods Pro 2';
+    setSelectedDevice(firstModel);
+    setSerial('');
+    setIssue('');
+    setAccessories('');
+    setTestAnswers({});
+    setTestNote('');
+    setAppearance('');
+    setPhotos([]);
+    setPrice('');
+    setPriceNote('');
+    setConsent(true);
+
+    setCurrentStepIndex(0);
+    setMaxReachedStepIndex(0);
+    setCompletedSteps(new Set());
+    setErrors({});
+  };
+
+  const handleModalClose = () => {
+    resetForm();
+    onClose();
+  };
+
   useEffect(() => {
     if (isOpen) {
-      setCurrentStepIndex(0);
-      setMaxReachedStepIndex(0);
-      setCompletedSteps(new Set());
-      setErrors({});
-
-      // Auto assign branch based on current logged in user or active branch
-      const userBranchId = (currentUser as any)?.branch_id || (currentUser as any)?.branchId;
-      if (userBranchId) {
-        setSelectedBranchId(userBranchId);
-      } else if (branchId && branchId !== 'all') {
-        setSelectedBranchId(branchId);
-      } else {
-        setSelectedBranchId(1);
-      }
+      resetForm();
     }
-  }, [isOpen, currentUser, branchId]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isOpen, currentUser, branchId, deviceProfiles, deviceList]);
 
   useEffect(() => {
     deviceService
@@ -415,6 +442,7 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
       };
 
       addOrder(newOrder);
+      resetForm();
       onClose();
 
       if (shouldPrint) {
@@ -442,7 +470,7 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
     <>
       <Modal
         isOpen={isOpen}
-      onClose={onClose}
+      onClose={handleModalClose}
       maxWidth="xl"
       eyebrow="CSKH · TIẾP NHẬN THIẾT BỊ"
       title="Phiếu tiếp nhận sửa chữa (Intake Wizard)"
@@ -467,7 +495,7 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
             <Button
               variant="ghost"
               size="md"
-              onClick={onClose}
+              onClick={handleModalClose}
               disabled={isSubmitting}
               className="min-h-[44px] h-11 sm:h-9 px-3 sm:px-4 text-xs sm:text-sm font-medium touch-manipulation cursor-pointer"
             >
