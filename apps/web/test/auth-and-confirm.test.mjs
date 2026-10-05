@@ -142,30 +142,26 @@ describe('Enterprise Auth Flow & Confirm Modals Test Suite', () => {
   // 2. Login Modernization & ReturnTo Redirection
   // =========================================================================
   describe('2. Login Modernization & Return Destination Logic', () => {
-    test('Task 2.1 - 2.3: apps/web/app/login/page.tsx dual-tab layout and staff demo cards', () => {
+    test('Task 2.1 - 2.3: apps/web/app/login/page.tsx production official login without demo cards', () => {
       const loginPath = path.join(webDir, 'app/login/page.tsx');
       assert.ok(fs.existsSync(loginPath), 'login/page.tsx must exist');
       const content = fs.readFileSync(loginPath, 'utf-8');
 
-      // Dual tab structure
-      assert.ok(content.includes('Đăng nhập ca làm việc'), 'Must contain official login tab label');
-      assert.ok(content.includes('Thử nghiệm ca trực Demo'), 'Must contain demo shift tab label');
-      assert.ok(content.includes("activeTab === 'official'"), 'Must manage activeTab state');
+      // Production official login structure - Demo removed
+      assert.ok(content.includes('Đăng nhập vào ca làm việc'), 'Must contain official login button label');
+      assert.ok(!content.includes('Thử nghiệm ca trực Demo'), 'Must NOT contain demo shift tab label');
+      assert.ok(!content.includes('activeTab'), 'Must NOT manage activeTab state');
+      assert.ok(!content.includes('STAFF_CARDS'), 'Must NOT define STAFF_CARDS array');
 
       // Collapsible store code accordion
       assert.ok(content.includes('showStoreAccordion'), 'Must have collapsible store code accordion state');
       assert.ok(content.includes("localStorage.getItem('fixo_store_code')"), 'Must restore store code from localStorage');
       assert.ok(content.includes("localStorage.setItem('fixo_store_code'"), 'Must persist store code to localStorage');
 
-      // Staff demo cards
-      assert.ok(content.includes('STAFF_CARDS'), 'Must define STAFF_CARDS array');
-      assert.ok(content.includes('superadmin@fixo.com.vn'), 'Must include Super Admin demo card');
-      assert.ok(content.includes('admin@fixo.com.vn'), 'Must include Admin demo card');
-      assert.ok(content.includes('cskh.lan@fixo.com.vn'), 'Must include CSKH demo card');
-      assert.ok(content.includes('ktv.tuan@fixo.com.vn'), 'Must include Technician Q1 demo card');
-      assert.ok(content.includes('ktv.duy@fixo.com.vn'), 'Must include Technician Q3 demo card');
-      assert.ok(content.includes('qc.inspector@fixo.com.vn'), 'Must include QC demo card');
-      assert.ok(content.includes('kho.viet@fixo.com.vn'), 'Must include Warehouse demo card');
+      // Professional auth form elements
+      assert.ok(content.includes('admin@fixo.com.vn hoặc 0901...'), 'Must contain account input placeholder');
+      assert.ok(content.includes('Mật khẩu truy cập'), 'Must contain password field label');
+      assert.ok(content.includes('Ghi nhớ phiên đăng nhập trên thiết bị này'), 'Must contain remember me option');
     });
 
     test('Task 2.4: returnTo query param extraction and destination prioritization logic', () => {
