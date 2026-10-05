@@ -118,6 +118,14 @@ export const ChunkLoadErrorHandler: React.FC = () => {
   useEffect(() => {
     if (typeof window === 'undefined') return;
 
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.getRegistrations().then((registrations) => {
+        for (const registration of registrations) {
+          registration.unregister();
+        }
+      });
+    }
+
     const handleChunkError = (event: ErrorEvent | PromiseRejectionEvent) => {
       const message =
         'message' in event
