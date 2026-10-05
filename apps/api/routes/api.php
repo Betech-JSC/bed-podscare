@@ -19,6 +19,7 @@ use App\Http\Controllers\Api\V1\ServiceController;
 use App\Http\Controllers\Api\V1\ShipmentController;
 use App\Http\Controllers\Api\V1\SuperAdminController;
 use App\Http\Controllers\Api\V1\TenantRegistrationController;
+use App\Http\Controllers\Api\V1\TenantSettingController;
 use App\Http\Controllers\Api\V1\TrackingController;
 use App\Http\Controllers\Api\V1\UserController;
 use App\Http\Controllers\Api\V1\WarrantyController;
@@ -171,6 +172,14 @@ Route::prefix('v1')->group(function () {
             Route::get('/plans', [SaasBillingController::class, 'plans'])->name('api.v1.saas.plans');
             Route::post('/subscribe', [SaasBillingController::class, 'subscribe'])->name('api.v1.saas.subscribe');
             Route::get('/invoices/{refCode}/status', [SaasBillingController::class, 'invoiceStatus'])->name('api.v1.saas.invoices.status');
+        });
+
+        // Tenant Brand & Receipt Settings
+        Route::prefix('tenant')->group(function () {
+            Route::get('/settings', [TenantSettingController::class, 'getSettings'])->name('api.v1.tenant.settings.get');
+            Route::post('/settings', [TenantSettingController::class, 'updateSettings'])->middleware('role:admin')->name('api.v1.tenant.settings.update');
+            Route::post('/logo', [TenantSettingController::class, 'uploadLogo'])->middleware('role:admin')->name('api.v1.tenant.logo.upload');
+            Route::delete('/logo', [TenantSettingController::class, 'deleteLogo'])->middleware('role:admin')->name('api.v1.tenant.logo.delete');
         });
 
         // Platform Super Admin Portal

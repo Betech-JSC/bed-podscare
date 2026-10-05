@@ -126,6 +126,7 @@ export const AppSidebar: React.FC<AppSidebarProps> = ({
       'partners',
       'warranty',
       'branches',
+      'branding',
       'users',
       'payments',
       'subscription',
@@ -184,6 +185,7 @@ export const AppSidebar: React.FC<AppSidebarProps> = ({
 
   const systemNav: NavItemDef[] = [
     { id: 'branches', label: 'Quản lý Chi nhánh', icon: 'spark' },
+    { id: 'branding', label: 'Thương hiệu & Mẫu in', icon: 'spark', href: '/branding' },
     { id: 'users', label: 'Tài khoản & Phân quyền', icon: 'customers' },
     { id: 'payments', label: 'Thanh toán', icon: 'payments' },
     { id: 'subscription', label: 'Gói cước & Bản quyền', icon: 'shield', href: '/subscription' },

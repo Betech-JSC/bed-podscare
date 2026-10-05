@@ -17,6 +17,7 @@ export * from './services/user.service';
 export * from './services/partner.service';
 export * from './services/service.service';
 export * from './services/saas.service';
+export * from './services/tenant.service';
 export * from './hooks/use-repairs';
 export * from './hooks/use-devices';
 export * from './hooks/use-qc';

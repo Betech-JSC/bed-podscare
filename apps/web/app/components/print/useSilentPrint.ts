@@ -90,9 +90,13 @@ export function useSilentPrint(options?: UseSilentPrintOptions): UseSilentPrintR
 
           // 2. Chuẩn bị nội dung HTML tương ứng
           const origin = window.location.origin;
+          const branding =
+            typeof optionsOrRoutingSlip === 'object' && optionsOrRoutingSlip !== null
+              ? optionsOrRoutingSlip.branding
+              : undefined;
           const htmlContent =
             activeFormat === 'a4'
-              ? renderA4ReceiptHTML(order, origin)
+              ? renderA4ReceiptHTML(order, origin, branding)
               : renderThermalK80HTML(order, origin, optionsOrRoutingSlip);
 
           // Biến quản lý dọn dẹp (chỉ chạy 1 lần)

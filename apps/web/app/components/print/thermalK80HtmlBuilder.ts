@@ -592,10 +592,21 @@ export function formatMoney(n?: number): string {
 export type ThermalK80SlipMode = 'dual' | 'customer_only' | 'store_only' | 'routing';
 export type K80SlipMode = ThermalK80SlipMode;
 
+export interface TenantReceiptBranding {
+  logoUrl?: string | null;
+  storeLogoUrl?: string | null;
+  storeName?: string;
+  hotline?: string | null;
+  storeHotline?: string | null;
+  footerNote?: string | null;
+  receiptFooterNote?: string | null;
+}
+
 export interface ThermalK80RenderOptions {
   origin?: string;
   isRoutingSlip?: boolean;
   slipMode?: ThermalK80SlipMode; // Mặc định là 'dual'
+  branding?: TenantReceiptBranding;
 }
 
 /**
@@ -604,13 +615,19 @@ export interface ThermalK80RenderOptions {
  * bảng kiểm tra tại quầy, giá dự kiến, mã QR tra cứu realtime, 2 chữ ký và lưu ý bảo hành.
  * Cuối liên có đệm đẩy giấy 15mm và vạch chỉ dẫn cắt giấy.
  */
-export function buildCustomerCopyHtml(order: RepairOrder, origin?: string): string {
+export function buildCustomerCopyHtml(order: RepairOrder, origin?: string, branding?: TenantReceiptBranding): string {
   const currentOrigin =
     origin ||
     (typeof window !== 'undefined' && window.location?.origin
       ? window.location.origin
       : 'https://fixo.com.vn');
   const trackUrl = `${currentOrigin}/track/${order.id}`;
+
+  const effectiveLogoUrl = branding?.logoUrl || branding?.storeLogoUrl || (order as any).tenant?.logo_url;
+  const effectiveStoreName = branding?.storeName || (order as any).tenant?.name || 'FIXO REPAIR OS';
+  const effectiveBranch = order.branch || branding?.storeName || (order as any).tenant?.name || 'FIXO Store';
+  const effectiveHotline = branding?.hotline || branding?.storeHotline || (order as any).tenant?.hotline || '1900.6868 · fixo.vn';
+  const effectiveFooterNote = branding?.footerNote || branding?.receiptFooterNote || (order as any).tenant?.receipt_footer_note || '* Quý khách vui lòng giữ phiếu này để đối chiếu khi nhận máy.<br />Cảm ơn quý khách đã tin tưởng dịch vụ FIXO Care!';
 
   const barcodeSvg = generateBarcodeSVG(order.id, {
     height: 36,
@@ -652,6 +669,13 @@ export function buildCustomerCopyHtml(order: RepairOrder, origin?: string): stri
 
   return `<div class="k80-wrapper k80-customer-copy">
     <div class="k80-header">
+      ${effectiveLogoUrl ? `
+      <div style="text-align: center; margin-bottom: 3px;">
+        <img src="${effectiveLogoUrl}" class="k80-store-logo" alt="Logo" onerror="this.style.display='none'" />
+      </div>
+      <div class="k80-brand">${effectiveStoreName}</div>
+      <div class="k80-subtitle">PHIẾU TIẾP NHẬN SỬA CHỮA · LIÊN KHÁCH HÀNG</div>
+      ` : `
       <div style="display: flex; justify-content: center; align-items: center; gap: 6px;">
         ${FIXO_LOGO_SVG}
         <div style="text-align: left;">
@@ -659,11 +683,12 @@ export function buildCustomerCopyHtml(order: RepairOrder, origin?: string): stri
           <div class="k80-subtitle">PHIẾU TIẾP NHẬN SỬA CHỮA · LIÊN KHÁCH HÀNG</div>
         </div>
       </div>
+      `}
       <div class="k80-branch-info">
-        <b>Chi nhánh:</b> ${order.branch || 'FIXO Store'}
+        <b>Chi nhánh:</b> ${effectiveBranch}
       </div>
       <div class="k80-branch-info">
-        <b>Hotline CSKH:</b> 1900.6868 · fixo.vn
+        <b>Hotline CSKH:</b> ${effectiveHotline}
       </div>
     </div>
 
@@ -744,9 +769,9 @@ export function buildCustomerCopyHtml(order: RepairOrder, origin?: string): stri
     </div>
 
     <div class="k80-footer-note">
-      * Quý khách vui lòng giữ phiếu này để đối chiếu khi nhận máy.<br />
-      Cảm ơn quý khách đã tin tưởng dịch vụ FIXO Care!
+      ${effectiveFooterNote}
     </div>
+    <div class="k80-powered-by" style="font-size: 8px; color: #666; margin-top: 4px; text-align: center;">⚡ Powered by FIXO Repair OS · fixo.vn</div>
 
     <div class="k80-feed-spacer"></div>
     <div class="k80-cut-line">✂ - - - - - CẮT GIẤY - - - - - ✂</div>
@@ -893,13 +918,23 @@ export function renderThermalK80HTML(
   const effectiveMode: ThermalK80SlipMode =
     options.slipMode || (options.isRoutingSlip ? 'store_only' : 'dual');
 
+  const effectiveBranding: TenantReceiptBranding | undefined =
+    options.branding || (order as any).tenant
+      ? {
+          logoUrl: options.branding?.logoUrl || options.branding?.storeLogoUrl || (order as any).tenant?.logo_url,
+          storeName: options.branding?.storeName || (order as any).tenant?.name,
+          hotline: options.branding?.hotline || options.branding?.storeHotline || (order as any).tenant?.hotline,
+          footerNote: options.branding?.footerNote || options.branding?.receiptFooterNote || (order as any).tenant?.receipt_footer_note,
+        }
+      : undefined;
+
   let bodyContent = '';
   if (effectiveMode === 'dual') {
-    bodyContent = `${buildCustomerCopyHtml(order, effectiveOrigin)}
+    bodyContent = `${buildCustomerCopyHtml(order, effectiveOrigin, effectiveBranding)}
     <div class="k80-slip-separator"></div>
     ${buildStoreCopyHtml(order)}`;
   } else if (effectiveMode === 'customer_only') {
-    bodyContent = buildCustomerCopyHtml(order, effectiveOrigin);
+    bodyContent = buildCustomerCopyHtml(order, effectiveOrigin, effectiveBranding);
   } else {
     // 'store_only' or 'routing'
     bodyContent = buildStoreCopyHtml(order);
@@ -961,6 +996,20 @@ export function renderThermalK80HTML(
       margin: 4px 0;
       letter-spacing: 0.5px;
       font-weight: 600;
+    }
+    .k80-store-logo {
+      max-width: 42mm;
+      max-height: 24mm;
+      object-fit: contain;
+      margin: 0 auto 3px auto;
+      display: block;
+      filter: contrast(110%);
+    }
+    .k80-powered-by {
+      font-size: 8px;
+      color: #666666;
+      margin-top: 4px;
+      text-align: center;
     }
     .k80-header {
       text-align: center;

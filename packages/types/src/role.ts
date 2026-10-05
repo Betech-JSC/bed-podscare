@@ -7,6 +7,9 @@ export interface TenantInfo {
   status: string;
   plan: string;
   expires_at?: string | null;
+  logo_url?: string | null;
+  hotline?: string | null;
+  receipt_footer_note?: string | null;
 }
 
 export interface UserProfile {

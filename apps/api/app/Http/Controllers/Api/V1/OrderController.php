@@ -276,6 +276,7 @@ class OrderController extends Controller
             'shipments.proofs',
             'payments',
             'warranties',
+            'tenant:id,name,code,logo_url,hotline,receipt_footer_note',
         ]);
 
         if (! $order) {

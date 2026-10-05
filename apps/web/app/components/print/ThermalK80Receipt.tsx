@@ -7,6 +7,7 @@ import {
   FIXO_LOGO_SVG,
   formatMoney,
   type ThermalK80SlipMode,
+  type TenantReceiptBranding,
 } from './thermalK80HtmlBuilder';
 
 export interface ThermalK80ReceiptProps {
@@ -14,15 +15,27 @@ export interface ThermalK80ReceiptProps {
   origin?: string;
   isRoutingSlip?: boolean;
   slipMode?: ThermalK80SlipMode;
+  branding?: TenantReceiptBranding;
 }
 
 /**
  * Liên 1: Bản giao khách hàng giữ (Customer Copy)
  */
-const CustomerSlip: React.FC<{ order: RepairOrder; origin?: string }> = ({ order, origin }) => {
+const CustomerSlip: React.FC<{
+  order: RepairOrder;
+  origin?: string;
+  branding?: TenantReceiptBranding;
+}> = ({ order, origin, branding }) => {
   const currentOrigin =
     origin || (typeof window !== 'undefined' ? window.location.origin : 'https://fixo.com.vn');
   const trackUrl = `${currentOrigin}/track/${order.id}`;
+
+  const effectiveBranding = branding || (order as any).tenant;
+  const effectiveLogoUrl = effectiveBranding?.logoUrl || effectiveBranding?.storeLogoUrl || (order as any).tenant?.logo_url;
+  const effectiveStoreName = effectiveBranding?.storeName || (order as any).tenant?.name || 'FIXO REPAIR OS';
+  const effectiveBranch = order.branch || effectiveBranding?.storeName || (order as any).tenant?.name || 'FIXO Store';
+  const effectiveHotline = effectiveBranding?.hotline || effectiveBranding?.storeHotline || (order as any).tenant?.hotline || '1900.6868 · fixo.vn';
+  const effectiveFooterNote = effectiveBranding?.footerNote || effectiveBranding?.receiptFooterNote || (order as any).tenant?.receipt_footer_note || '* Quý khách vui lòng giữ phiếu này để đối chiếu khi nhận máy.<br />Cảm ơn quý khách đã tin tưởng dịch vụ FIXO Care!';
 
   const barcodeSvg = generateBarcodeSVG(order.id, {
     height: 36,
@@ -41,25 +54,44 @@ const CustomerSlip: React.FC<{ order: RepairOrder; origin?: string }> = ({ order
     <div className="k80-customer-copy">
       {/* Header */}
       <div className="text-center border-b border-dashed border-black pb-2 mb-2">
-        <div className="flex items-center justify-center gap-2 mb-1">
-          <div
-            className="w-9 h-9 flex-none"
-            dangerouslySetInnerHTML={{ __html: FIXO_LOGO_SVG }}
-          />
-          <div className="text-left">
+        {effectiveLogoUrl ? (
+          <div className="text-center mb-1">
+            <img
+              src={effectiveLogoUrl}
+              alt="Logo"
+              className="k80-store-logo max-w-[42mm] max-h-[24mm] object-contain mx-auto mb-1 block"
+              onError={(e) => {
+                (e.currentTarget as HTMLElement).style.display = 'none';
+              }}
+            />
             <h1 className="font-heading font-black text-sm tracking-tight m-0 text-black">
-              FIXO REPAIR OS
+              {effectiveStoreName}
             </h1>
             <p className="text-[9px] font-bold tracking-wide uppercase m-0 text-gray-700">
               PHIẾU TIẾP NHẬN SỬA CHỮA · LIÊN KHÁCH HÀNG
             </p>
           </div>
-        </div>
+        ) : (
+          <div className="flex items-center justify-center gap-2 mb-1">
+            <div
+              className="w-9 h-9 flex-none"
+              dangerouslySetInnerHTML={{ __html: FIXO_LOGO_SVG }}
+            />
+            <div className="text-left">
+              <h1 className="font-heading font-black text-sm tracking-tight m-0 text-black">
+                FIXO REPAIR OS
+              </h1>
+              <p className="text-[9px] font-bold tracking-wide uppercase m-0 text-gray-700">
+                PHIẾU TIẾP NHẬN SỬA CHỮA · LIÊN KHÁCH HÀNG
+              </p>
+            </div>
+          </div>
+        )}
         <p className="text-[9.5px] text-gray-800 m-0">
-          <b>Chi nhánh:</b> {order.branch || 'FIXO Store'}
+          <b>Chi nhánh:</b> {effectiveBranch}
         </p>
         <p className="text-[9.5px] text-gray-800 m-0">
-          <b>Hotline CSKH:</b> 1900.6868 · fixo.vn
+          <b>Hotline CSKH:</b> {effectiveHotline}
         </p>
       </div>
 
@@ -194,10 +226,13 @@ const CustomerSlip: React.FC<{ order: RepairOrder; origin?: string }> = ({ order
         </div>
       </div>
 
-      <p className="text-center text-[8px] text-gray-500 mt-2 border-t border-dotted border-gray-400 pt-1 leading-tight m-0">
-        * Quý khách vui lòng giữ phiếu này để đối chiếu khi nhận máy.<br />
-        Cảm ơn quý khách đã tin tưởng dịch vụ FIXO Care!
-      </p>
+      <p
+        className="text-center text-[8px] text-gray-500 mt-2 border-t border-dotted border-gray-400 pt-1 leading-tight m-0"
+        dangerouslySetInnerHTML={{ __html: effectiveFooterNote }}
+      />
+      <div className="k80-powered-by text-center text-[8px] text-gray-500 mt-1">
+        ⚡ Powered by FIXO Repair OS · fixo.vn
+      </div>
 
       {/* Cut feed spacer */}
       <div className="h-[15mm]" />
@@ -345,6 +380,7 @@ export const ThermalK80Receipt: React.FC<ThermalK80ReceiptProps> = ({
   origin,
   isRoutingSlip = false,
   slipMode,
+  branding,
 }) => {
   const effectiveMode: ThermalK80SlipMode =
     slipMode || (isRoutingSlip ? 'store_only' : 'dual');
@@ -353,7 +389,7 @@ export const ThermalK80Receipt: React.FC<ThermalK80ReceiptProps> = ({
     <article className="thermal-receipt bg-white text-black p-3 rounded-[6px] border border-gray-300 shadow-sm w-[74mm] max-w-[74mm] font-sans text-[11px] leading-[1.35] mx-auto select-none print:shadow-none print:border-none print:p-0">
       {effectiveMode === 'dual' && (
         <>
-          <CustomerSlip order={order} origin={origin} />
+          <CustomerSlip order={order} origin={origin} branding={branding} />
 
           {/* Vạch phân cách mô phỏng dao cắt giấy POS - Ẩn khi in thực tế */}
           <div className="my-4 py-2 border-y-2 border-dashed border-gray-400 bg-gray-100 text-center font-mono text-[10px] text-gray-600 flex items-center justify-center gap-2 select-none print:hidden">
@@ -373,7 +409,7 @@ export const ThermalK80Receipt: React.FC<ThermalK80ReceiptProps> = ({
       )}
 
       {effectiveMode === 'customer_only' && (
-        <CustomerSlip order={order} origin={origin} />
+        <CustomerSlip order={order} origin={origin} branding={branding} />
       )}
 
       {(effectiveMode === 'store_only' || effectiveMode === 'routing') && (

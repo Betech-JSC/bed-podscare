@@ -155,14 +155,17 @@ class AuthController extends Controller
         if ($resolvedTenant) {
             $daysRemaining = $resolvedTenant->expires_at ? max(0, (int) now()->diffInDays($resolvedTenant->expires_at, false)) : null;
             $tenantData = [
-                'id'             => $resolvedTenant->id,
-                'code'           => $resolvedTenant->code,
-                'name'           => $resolvedTenant->name,
-                'status'         => $resolvedTenant->status,
-                'plan'           => $resolvedTenant->plan,
-                'expires_at'     => $resolvedTenant->expires_at?->toISOString(),
-                'trial_ends_at'  => $resolvedTenant->trial_ends_at?->toISOString(),
-                'days_remaining' => $daysRemaining,
+                'id'                  => $resolvedTenant->id,
+                'code'                => $resolvedTenant->code,
+                'name'                => $resolvedTenant->name,
+                'status'              => $resolvedTenant->status,
+                'plan'                => $resolvedTenant->plan,
+                'expires_at'          => $resolvedTenant->expires_at?->toISOString(),
+                'trial_ends_at'       => $resolvedTenant->trial_ends_at?->toISOString(),
+                'days_remaining'      => $daysRemaining,
+                'logo_url'            => $resolvedTenant->logo_url,
+                'hotline'             => $resolvedTenant->hotline,
+                'receipt_footer_note' => $resolvedTenant->receipt_footer_note,
             ];
         }
 
@@ -206,14 +209,17 @@ class AuthController extends Controller
         if ($resolvedTenant) {
             $daysRemaining = $resolvedTenant->expires_at ? max(0, (int) now()->diffInDays($resolvedTenant->expires_at, false)) : null;
             $tenantData = [
-                'id'             => $resolvedTenant->id,
-                'code'           => $resolvedTenant->code,
-                'name'           => $resolvedTenant->name,
-                'status'         => $resolvedTenant->status,
-                'plan'           => $resolvedTenant->plan,
-                'expires_at'     => $resolvedTenant->expires_at?->toISOString(),
-                'trial_ends_at'  => $resolvedTenant->trial_ends_at?->toISOString(),
-                'days_remaining' => $daysRemaining,
+                'id'                  => $resolvedTenant->id,
+                'code'                => $resolvedTenant->code,
+                'name'                => $resolvedTenant->name,
+                'status'              => $resolvedTenant->status,
+                'plan'                => $resolvedTenant->plan,
+                'expires_at'          => $resolvedTenant->expires_at?->toISOString(),
+                'trial_ends_at'       => $resolvedTenant->trial_ends_at?->toISOString(),
+                'days_remaining'      => $daysRemaining,
+                'logo_url'            => $resolvedTenant->logo_url,
+                'hotline'             => $resolvedTenant->hotline,
+                'receipt_footer_note' => $resolvedTenant->receipt_footer_note,
             ];
         }
 

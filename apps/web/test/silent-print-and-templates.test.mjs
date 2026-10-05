@@ -105,6 +105,8 @@ test('4. Thermal K80 Receipt Template Standards Verification', () => {
   assert.ok(content.includes('k80-feed-spacer'), 'Phải có khoảng đệm trống 18mm để dao cắt không phạm vào chữ');
   assert.ok(content.includes('/track/'), 'Phải tích hợp URL tra cứu realtime cho mã QR');
   assert.ok(content.includes('PHIẾU ĐIỀU PHỐI / TEM KHAY KỸ THUẬT'), 'Phải hỗ trợ phiếu điều phối/tem khay cho KTV');
+  assert.ok(content.includes('k80-store-logo'), 'Phải có CSS k80-store-logo căn chỉnh logo máy in nhiệt');
+  assert.ok(content.includes('Powered by FIXO Repair OS'), 'Phải có chân trang co-branding Powered by FIXO Repair OS');
 });
 
 test('5. A4 Dual-Copy Template Standards Verification', () => {
@@ -118,6 +120,8 @@ test('5. A4 Dual-Copy Template Standards Verification', () => {
   assert.ok(content.includes('max-height: 132mm;'), 'Phải khóa chiều cao mỗi liên <=132mm');
   assert.ok(content.includes('10mm'), 'Phải có đường cắt phân cách 10mm');
   assert.ok(content.includes('✂'), 'Phải có biểu tượng kéo cắt đối soát');
+  assert.ok(content.includes('a4-store-logo'), 'Phải có CSS a4-store-logo căn chỉnh logo');
+  assert.ok(content.includes('Powered by FIXO Repair OS'), 'Phải có chân trang co-branding Powered by FIXO Repair OS');
 });
 
 test('6. Hidden Iframe Silent Print Engine Lifecycle Verification', () => {
@@ -238,6 +242,28 @@ test('8. K80 Dual-Slip Auto-Cut & Template Engine Verification', async (t) => {
     assert.ok(legacyRoutingHtml.includes('BẢN LƯU CỬA HÀNG'), 'Legacy routing slip phải render Liên 2');
     assert.ok(!legacyRoutingHtml.includes('GIÁ DỰ KIẾN'), 'Legacy routing slip không có giá tiền');
   });
+
+  await t.test('8.5. K80 Branding: Logo tùy chỉnh, hotline và chân trang co-branding', () => {
+    const brandedHtml = renderThermalK80HTML(mockOrder, undefined, {
+      branding: {
+        logoUrl: 'https://cdn.tiem.vn/logo.png',
+        storeName: 'iFix Center',
+        hotline: '0988.777.666',
+        footerNote: 'Bảo hành 1 đổi 1 trong 30 ngày',
+      },
+    });
+
+    assert.ok(brandedHtml.includes('<img src="https://cdn.tiem.vn/logo.png" class="k80-store-logo"'), 'Phải render thẻ img với class k80-store-logo');
+    assert.ok(brandedHtml.includes('iFix Center'), 'Phải hiển thị tên tiệm tùy chỉnh');
+    assert.ok(brandedHtml.includes('0988.777.666'), 'Phải hiển thị hotline tiệm');
+    assert.ok(brandedHtml.includes('Bảo hành 1 đổi 1 trong 30 ngày'), 'Phải hiển thị lời dặn riêng của tiệm');
+    assert.ok(brandedHtml.includes('Powered by FIXO Repair OS · fixo.vn'), 'Luôn chứa chân trang co-branding nền tảng');
+
+    // Khi không có logoUrl: fallback về logo FIXO mặc định
+    const fallbackHtml = renderThermalK80HTML(mockOrder);
+    assert.ok(fallbackHtml.includes('FIXO REPAIR OS'), 'Fallback về nhận diện FIXO tiêu chuẩn');
+    assert.ok(fallbackHtml.includes('Powered by FIXO Repair OS · fixo.vn'), 'Vẫn luôn chứa chân trang co-branding');
+  });
 });
 
 test('9. PrintButtonDropdown Dropup Direction and Preview Action Verification', () => {
@@ -301,6 +327,26 @@ test('11. CSS Isolation and Typography Protection Verification', () => {
     globalsContent.includes('letter-spacing: normal;'),
     'globals.css phải có quy tắc phòng thủ letter-spacing: normal cho heading'
   );
+});
+
+test('12. A4 Template Custom Branding & Co-branding Verification', async (t) => {
+  const a4Path = path.join(printDir, 'a4ReceiptHtmlBuilder.ts');
+  assert.ok(fs.existsSync(a4Path), 'a4ReceiptHtmlBuilder.ts phải tồn tại');
+  const content = fs.readFileSync(a4Path, 'utf-8');
+
+  await t.test('Hỗ trợ logo tùy chỉnh, hotline và lời dặn trên 2 liên đối soát', () => {
+    assert.ok(content.includes('effectiveLogoUrl'), 'Phải tính toán effectiveLogoUrl từ branding hoặc tenant');
+    assert.ok(content.includes('effectiveStoreName'), 'Phải tính toán tên cửa hàng');
+    assert.ok(content.includes('effectiveHotline'), 'Phải hiển thị hotline cửa hàng');
+    assert.ok(content.includes('effectiveFooterNote'), 'Phải hiển thị lời dặn riêng của tiệm');
+    assert.ok(content.includes('<img src="${effectiveLogoUrl}" class="a4-store-logo"'), 'Phải render img class a4-store-logo');
+    assert.ok(content.includes('Powered by FIXO Repair OS · fixo.vn'), 'Phải có co-branding Powered by FIXO Repair OS · fixo.vn');
+  });
+
+  await t.test('Fallback về biểu tượng FIXO mặc định khi chưa có logo tùy chỉnh', () => {
+    assert.ok(content.includes('FIXO_LOGO_A4_SVG'), 'Phải fallback về FIXO_LOGO_A4_SVG');
+    assert.ok(content.includes('a4-brand-logo'), 'Có class a4-brand-logo nhận diện tiêu chuẩn');
+  });
 });
 
 

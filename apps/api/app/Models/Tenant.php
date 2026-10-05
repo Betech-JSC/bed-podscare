@@ -22,6 +22,9 @@ class Tenant extends Model
         'billing_cycle',
         'current_plan_id',
         'intended_plan',
+        'logo_url',
+        'hotline',
+        'receipt_footer_note',
     ];
 
     protected function casts(): array

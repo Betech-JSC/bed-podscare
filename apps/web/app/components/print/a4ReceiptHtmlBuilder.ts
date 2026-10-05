@@ -6,16 +6,23 @@
 
 import type { RepairOrder } from '@podscare/types';
 import { generateBarcodeSVG, generateQRCodeSVG } from './BarcodeQRUtils';
-import { formatMoney, FIXO_LOGO_A4_SVG } from './thermalK80HtmlBuilder';
+import { formatMoney, FIXO_LOGO_A4_SVG, type TenantReceiptBranding } from './thermalK80HtmlBuilder';
 
 /**
  * Sinh chuỗi HTML độc lập cho khổ giấy A4 (2 liên đối soát).
  * Đảm bảo khóa chiều cao mỗi liên <=132mm và đường cắt phân cách 10mm có biểu tượng kéo ✂.
  */
-export function renderA4ReceiptHTML(order: RepairOrder, origin?: string): string {
+export function renderA4ReceiptHTML(order: RepairOrder, origin?: string, branding?: TenantReceiptBranding): string {
   const currentOrigin =
     origin || (typeof window !== 'undefined' ? window.location.origin : 'https://fixo.com.vn');
   const trackUrl = `${currentOrigin}/track/${order.id}`;
+
+  const effectiveBranding = branding || (order as any).tenant;
+  const effectiveLogoUrl = effectiveBranding?.logoUrl || effectiveBranding?.storeLogoUrl || (order as any).tenant?.logo_url;
+  const effectiveStoreName = effectiveBranding?.storeName || (order as any).tenant?.name || 'FIXO REPAIR OS';
+  const effectiveBranch = order.branch || effectiveBranding?.storeName || (order as any).tenant?.name || 'FIXO Store';
+  const effectiveHotline = effectiveBranding?.hotline || effectiveBranding?.storeHotline || (order as any).tenant?.hotline;
+  const effectiveFooterNote = effectiveBranding?.footerNote || effectiveBranding?.receiptFooterNote || (order as any).tenant?.receipt_footer_note;
 
   const barcodeSvg = generateBarcodeSVG(order.id, {
     height: 30,
@@ -93,10 +100,10 @@ export function renderA4ReceiptHTML(order: RepairOrder, origin?: string): string
       <div class="a4-header">
         <div class="a4-brand-wrap">
           <div class="a4-brand-logo">
-            ${FIXO_LOGO_A4_SVG}
+            ${effectiveLogoUrl ? `<img src="${effectiveLogoUrl}" class="a4-store-logo" alt="Logo" onerror="this.style.display='none'" />` : FIXO_LOGO_A4_SVG}
           </div>
           <div>
-            <div class="a4-brand-title">FIXO REPAIR OS</div>
+            <div class="a4-brand-title">${effectiveStoreName}</div>
             <div class="a4-brand-subtitle">PHIẾU TIẾP NHẬN SỬA CHỮA THIẾT BỊ ĐIỆN TỬ</div>
           </div>
         </div>
@@ -112,7 +119,8 @@ export function renderA4ReceiptHTML(order: RepairOrder, origin?: string): string
         </div>
         <div class="a4-infobar-right">
           <div>Ngày nhận: <b>${order.date || 'Hôm nay'}</b></div>
-          <div>Chi nhánh: <b>${order.branch || 'FIXO Store'}</b></div>
+          <div>Chi nhánh: <b>${effectiveBranch}</b></div>
+          ${effectiveHotline ? `<div>Hotline: <b>${effectiveHotline}</b></div>` : ''}
         </div>
       </div>
 
@@ -182,7 +190,8 @@ export function renderA4ReceiptHTML(order: RepairOrder, origin?: string): string
 
       <!-- Footer -->
       <div class="a4-footer">
-        FIXO Repair OS · Phiếu tiếp nhận được lập thành 02 liên có giá trị pháp lý đối chiếu như nhau · Mã: ${order.id}
+        ${effectiveFooterNote ? `<div style="margin-bottom: 2px;">${effectiveFooterNote}</div>` : ''}
+        <div>⚡ Powered by FIXO Repair OS · fixo.vn · Phiếu tiếp nhận được lập thành 02 liên có giá trị pháp lý đối chiếu như nhau · Mã: ${order.id}</div>
       </div>
     </article>`;
   };
@@ -245,6 +254,12 @@ export function renderA4ReceiptHTML(order: RepairOrder, origin?: string): string
       gap: 7px;
     }
     .a4-brand-logo svg {
+      display: block;
+    }
+    .a4-store-logo {
+      max-width: 48mm;
+      max-height: 28mm;
+      object-fit: contain;
       display: block;
     }
     .a4-brand-title {

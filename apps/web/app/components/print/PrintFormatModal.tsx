@@ -122,6 +122,17 @@ export const PrintFormatModal: React.FC<PrintFormatModalProps> = ({
             </p>
           </div>
         </div>
+
+        {/* Quick Link to Branding Settings */}
+        <div className="pt-2.5 border-t border-[#e2e9e5] flex items-center justify-between text-xs text-[#5c6e66]">
+          <span>Cấu hình Logo &amp; Lời dặn chân trang?</span>
+          <a
+            href="/branding"
+            className="text-[#176b58] font-bold hover:underline inline-flex items-center gap-1"
+          >
+            <span>Thiết lập Logo cửa hàng ↗</span>
+          </a>
+        </div>
       </div>
     </Modal>
   );
@@ -295,6 +306,17 @@ export const PrintButtonDropdown: React.FC<PrintButtonDropdownProps> = ({
           >
             <span>⚙️</span> Cài đặt khổ in mặc định...
           </button>
+
+          <a
+            href="/branding"
+            onClick={() => setDropdownOpen(false)}
+            className="w-full text-left px-2.5 py-1.5 rounded-[6px] text-xs text-[#5c6e66] hover:bg-[#f2f5f3] flex items-center justify-between no-underline"
+          >
+            <span className="flex items-center gap-1.5 font-medium">
+              <span>🎨</span> Thiết lập Logo cửa hàng
+            </span>
+            <span className="text-[10px] text-[#6e7f77]">↗</span>
+          </a>
         </div>
       )}
 

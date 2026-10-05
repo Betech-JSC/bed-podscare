@@ -3,20 +3,28 @@
 import React from 'react';
 import type { RepairOrder } from '@podscare/types';
 import { generateBarcodeSVG, generateQRCodeSVG } from './BarcodeQRUtils';
-import { formatMoney, FIXO_LOGO_A4_SVG } from './thermalK80HtmlBuilder';
+import { formatMoney, FIXO_LOGO_A4_SVG, type TenantReceiptBranding } from './thermalK80HtmlBuilder';
 
 export interface A4ReceiptTemplateProps {
   order: RepairOrder;
   origin?: string;
+  branding?: TenantReceiptBranding;
 }
 
 /**
  * Component hiển thị giao diện A4 (2 liên) trong trang xem trước và in
  */
-export const A4ReceiptTemplate: React.FC<A4ReceiptTemplateProps> = ({ order, origin }) => {
+export const A4ReceiptTemplate: React.FC<A4ReceiptTemplateProps> = ({ order, origin, branding }) => {
   const currentOrigin =
     origin || (typeof window !== 'undefined' ? window.location.origin : 'https://fixo.com.vn');
   const trackUrl = `${currentOrigin}/track/${order.id}`;
+
+  const effectiveBranding = branding || (order as any).tenant;
+  const effectiveLogoUrl = effectiveBranding?.logoUrl || effectiveBranding?.storeLogoUrl || (order as any).tenant?.logo_url;
+  const effectiveStoreName = effectiveBranding?.storeName || (order as any).tenant?.name || 'FIXO REPAIR OS';
+  const effectiveBranch = order.branch || effectiveBranding?.storeName || (order as any).tenant?.name || 'FIXO Store';
+  const effectiveHotline = effectiveBranding?.hotline || effectiveBranding?.storeHotline || (order as any).tenant?.hotline;
+  const effectiveFooterNote = effectiveBranding?.footerNote || effectiveBranding?.receiptFooterNote || (order as any).tenant?.receipt_footer_note;
 
   const barcodeSvg = generateBarcodeSVG(order.id, {
     height: 30,
@@ -41,13 +49,24 @@ export const A4ReceiptTemplate: React.FC<A4ReceiptTemplateProps> = ({ order, ori
           {/* Header */}
           <header className="flex justify-between items-center border-b-2 border-[#176b58] pb-1.5 mb-1.5">
             <div className="flex items-center gap-2">
-              <div
-                className="w-8 h-8 flex-none [&>svg]:w-full [&>svg]:h-full"
-                dangerouslySetInnerHTML={{ __html: FIXO_LOGO_A4_SVG }}
-              />
+              {effectiveLogoUrl ? (
+                <img
+                  src={effectiveLogoUrl}
+                  alt="Logo"
+                  className="max-w-[48mm] max-h-[28mm] object-contain flex-none"
+                  onError={(e) => {
+                    (e.currentTarget as HTMLElement).style.display = 'none';
+                  }}
+                />
+              ) : (
+                <div
+                  className="w-8 h-8 flex-none [&>svg]:w-full [&>svg]:h-full"
+                  dangerouslySetInnerHTML={{ __html: FIXO_LOGO_A4_SVG }}
+                />
+              )}
               <div>
                 <b className="text-[13pt] font-extrabold text-[#176b58] tracking-tight block leading-none font-heading">
-                  FIXO REPAIR OS
+                  {effectiveStoreName}
                 </b>
                 <small className="text-[6.5pt] tracking-[0.8px] text-[#555555] block mt-0.5 font-bold uppercase">
                   PHIẾU TIẾP NHẬN SỬA CHỮA THIẾT BỊ
@@ -71,7 +90,8 @@ export const A4ReceiptTemplate: React.FC<A4ReceiptTemplateProps> = ({ order, ori
             </div>
             <div className="flex gap-3 text-[7pt] text-[#444444]">
               <span>Ngày nhận: <b>{order.date || 'Hôm nay'}</b></span>
-              <span>Chi nhánh: <b>{order.branch || 'FIXO Store'}</b></span>
+              <span>Chi nhánh: <b>{effectiveBranch}</b></span>
+              {effectiveHotline && <span>Hotline: <b>{effectiveHotline}</b></span>}
             </div>
           </div>
 
@@ -209,7 +229,8 @@ export const A4ReceiptTemplate: React.FC<A4ReceiptTemplateProps> = ({ order, ori
             </div>
           </div>
           <footer className="mt-1 pt-0.5 border-t border-[#e3e8e5] text-center text-[5.5pt] text-[#777777]">
-            FIXO Repair OS · Phiếu được lập thành 02 liên có giá trị ghi nhận như nhau · {order.id}
+            {effectiveFooterNote && <div className="mb-0.5 text-[#555555]">{effectiveFooterNote}</div>}
+            <div>⚡ Powered by FIXO Repair OS · fixo.vn · Phiếu được lập thành 02 liên có giá trị ghi nhận như nhau · {order.id}</div>
           </footer>
         </div>
       </article>
