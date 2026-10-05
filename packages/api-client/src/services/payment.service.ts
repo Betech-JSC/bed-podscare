@@ -50,6 +50,22 @@ export class PaymentService {
   async createPayment(dto: CreatePaymentDTO): Promise<any> {
     return this.http.post('/api/v1/payments', dto);
   }
+
+  async getPayment(paymentId: number | string): Promise<any> {
+    return this.http.get(`/api/v1/payments/${paymentId}`);
+  }
+
+  async getVietQr(paymentId: number | string): Promise<any> {
+    return this.http.post(`/api/v1/payments/${paymentId}/vietqr`);
+  }
+
+  async confirmPayment(
+    paymentId: number | string,
+    data?: { transaction_ref?: string; notes?: string }
+  ): Promise<any> {
+    return this.http.post(`/api/v1/payments/${paymentId}/confirm`, data || {});
+  }
 }
 
 export const paymentService = new PaymentService();
+

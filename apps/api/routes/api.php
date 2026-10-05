@@ -11,6 +11,7 @@ use App\Http\Controllers\Api\V1\NotificationController;
 use App\Http\Controllers\Api\V1\OrderController;
 use App\Http\Controllers\Api\V1\PartnerController;
 use App\Http\Controllers\Api\V1\PaymentController;
+use App\Http\Controllers\Api\V1\PlatformBillingController;
 use App\Http\Controllers\Api\V1\QcController;
 use App\Http\Controllers\Api\V1\QuoteController;
 use App\Http\Controllers\Api\V1\SaasBillingController;
@@ -154,6 +155,9 @@ Route::prefix('v1')->group(function () {
         // Payments
         Route::get('/payments', [PaymentController::class, 'index'])->name('api.v1.payments.index');
         Route::post('/payments', [PaymentController::class, 'store'])->name('api.v1.payments.store');
+        Route::get('/payments/{id}', [PaymentController::class, 'show'])->name('api.v1.payments.show');
+        Route::post('/payments/{id}/vietqr', [PaymentController::class, 'vietqr'])->name('api.v1.payments.vietqr');
+        Route::post('/payments/{id}/confirm', [PaymentController::class, 'confirm'])->name('api.v1.payments.confirm');
 
         // Notifications
         Route::get('/notifications', [NotificationController::class, 'index'])->name('api.v1.notifications.index');
@@ -198,6 +202,21 @@ Route::prefix('v1')->group(function () {
             Route::post('/stores/{id}/approve', [SuperAdminController::class, 'approveStore'])->name('api.v1.platform.stores.approve');
             Route::post('/stores/{id}/suspend', [SuperAdminController::class, 'suspendStore'])->name('api.v1.platform.stores.suspend');
             Route::post('/stores/{id}/activate', [SuperAdminController::class, 'activateStore'])->name('api.v1.platform.stores.activate');
+
+            // Platform Billing & SaaS Operations
+            Route::get('/billing-stats', [PlatformBillingController::class, 'billingStats'])->name('api.v1.platform.billing_stats');
+            Route::get('/transactions', [PlatformBillingController::class, 'transactions'])->name('api.v1.platform.transactions');
+            Route::post('/stores/{id}/remind-fee', [PlatformBillingController::class, 'remindFee'])->name('api.v1.platform.stores.remind_fee');
+            Route::post('/stores/{id}/renew', [PlatformBillingController::class, 'renewStore'])->name('api.v1.platform.stores.renew');
+
+            // Platform Plans Management
+            Route::get('/plans', [PlatformBillingController::class, 'plans'])->name('api.v1.platform.plans.index');
+            Route::put('/plans/{id}', [PlatformBillingController::class, 'updatePlan'])->name('api.v1.platform.plans.update');
+
+            // Platform SePay Integration
+            Route::get('/integrations/sepay', [PlatformBillingController::class, 'getSepayConfig'])->name('api.v1.platform.integrations.sepay.get');
+            Route::post('/integrations/sepay', [PlatformBillingController::class, 'updateSepayConfig'])->name('api.v1.platform.integrations.sepay.update');
+            Route::post('/integrations/sepay/test-connection', [PlatformBillingController::class, 'testSepayConnection'])->name('api.v1.platform.integrations.sepay.test_connection');
         });
     });
 });

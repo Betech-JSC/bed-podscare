@@ -37,6 +37,9 @@ class TenantSettingController extends Controller
             'logo_url'            => $tenant->logo_url,
             'hotline'             => $tenant->hotline,
             'receipt_footer_note' => $tenant->receipt_footer_note,
+            'bank_code'           => $tenant->bank_code,
+            'bank_account_number' => $tenant->bank_account_number,
+            'bank_account_holder' => $tenant->bank_account_holder,
         ], 'Lấy thông tin nhận diện thương hiệu thành công.');
     }
 
@@ -67,6 +70,9 @@ class TenantSettingController extends Controller
             'name'                => 'nullable|string|max:255',
             'hotline'             => 'nullable|string|max:50',
             'receipt_footer_note' => 'nullable|string|max:255',
+            'bank_code'           => 'nullable|string|max:50',
+            'bank_account_number' => 'nullable|string|max:50',
+            'bank_account_holder' => 'nullable|string|max:150',
         ]);
 
         if ($request->has('name') && ! empty($validated['name'])) {
@@ -78,6 +84,15 @@ class TenantSettingController extends Controller
         if ($request->has('receipt_footer_note')) {
             $tenant->receipt_footer_note = $validated['receipt_footer_note'];
         }
+        if ($request->has('bank_code')) {
+            $tenant->bank_code = $validated['bank_code'];
+        }
+        if ($request->has('bank_account_number')) {
+            $tenant->bank_account_number = $validated['bank_account_number'];
+        }
+        if ($request->has('bank_account_holder')) {
+            $tenant->bank_account_holder = $validated['bank_account_holder'];
+        }
 
         $tenant->save();
 
@@ -88,6 +103,9 @@ class TenantSettingController extends Controller
             'logo_url'            => $tenant->logo_url,
             'hotline'             => $tenant->hotline,
             'receipt_footer_note' => $tenant->receipt_footer_note,
+            'bank_code'           => $tenant->bank_code,
+            'bank_account_number' => $tenant->bank_account_number,
+            'bank_account_holder' => $tenant->bank_account_holder,
         ], 'Cập nhật cấu hình thương hiệu thành công.');
     }
 
@@ -151,6 +169,9 @@ class TenantSettingController extends Controller
                 'logo_url'            => $tenant->logo_url,
                 'hotline'             => $tenant->hotline,
                 'receipt_footer_note' => $tenant->receipt_footer_note,
+                'bank_code'           => $tenant->bank_code,
+                'bank_account_number' => $tenant->bank_account_number,
+                'bank_account_holder' => $tenant->bank_account_holder,
             ], 'Tải lên logo thương hiệu thành công.');
         }
 
@@ -263,6 +284,9 @@ class TenantSettingController extends Controller
                 'logo_url'            => $tenant->logo_url,
                 'hotline'             => $tenant->hotline,
                 'receipt_footer_note' => $tenant->receipt_footer_note,
+                'bank_code'           => $tenant->bank_code,
+                'bank_account_number' => $tenant->bank_account_number,
+                'bank_account_holder' => $tenant->bank_account_holder,
             ], 'Tải lên logo thương hiệu thành công.');
         }
 
@@ -301,6 +325,9 @@ class TenantSettingController extends Controller
             'logo_url'            => null,
             'hotline'             => $tenant->hotline,
             'receipt_footer_note' => $tenant->receipt_footer_note,
+            'bank_code'           => $tenant->bank_code,
+            'bank_account_number' => $tenant->bank_account_number,
+            'bank_account_holder' => $tenant->bank_account_holder,
         ], 'Xóa logo thương hiệu thành công.');
     }
 

@@ -82,30 +82,6 @@ export const DEFAULT_MASTER_BRANCHES: BranchItem[] = [
     code: 'ALL',
     address: 'Toàn hệ thống FIXO',
   },
-  {
-    id: 1,
-    name: 'FIXO · Quận 1',
-    code: 'Q1',
-    address: '142 Nguyễn Thị Minh Khai, Phường Bến Thành, Quận 1, TP.HCM',
-    phone: '028 7300 1234',
-    is_active: true,
-  },
-  {
-    id: 2,
-    name: 'FIXO · Quận 3',
-    code: 'Q3',
-    address: '285 Cách Mạng Tháng Tám, Phường 12, Quận 3, TP.HCM',
-    phone: '028 7300 5678',
-    is_active: true,
-  },
-  {
-    id: 3,
-    name: 'FIXO · TP. Thủ Đức',
-    code: 'THUDUC',
-    address: '56 Võ Văn Ngân, Phường Bình Thọ, TP. Thủ Đức, TP.HCM',
-    phone: '028 7300 9012',
-    is_active: true,
-  },
 ];
 
 /**
@@ -212,13 +188,13 @@ export const Providers: React.FC<{ children: React.ReactNode }> = ({ children })
       const res = await branchService.getBranches();
       const raw = res?.data;
       const list = Array.isArray(raw) ? raw : (raw as any)?.data || (Array.isArray(res) ? res : []);
+      const allBranch: BranchItem = {
+        id: 'all',
+        name: 'Tất cả chi nhánh',
+        code: 'ALL',
+        address: 'Toàn hệ thống FIXO',
+      };
       if (Array.isArray(list) && list.length > 0) {
-        const allBranch: BranchItem = {
-          id: 'all',
-          name: 'Tất cả chi nhánh',
-          code: 'ALL',
-          address: 'Toàn hệ thống FIXO',
-        };
         const mapped: BranchItem[] = [
           allBranch,
           ...list.map((b: any) => ({
@@ -233,6 +209,13 @@ export const Providers: React.FC<{ children: React.ReactNode }> = ({ children })
         setBranches(mapped);
         try {
           localStorage.setItem('podscare_branches', JSON.stringify(mapped));
+        } catch {
+          // ignore
+        }
+      } else {
+        setBranches([allBranch]);
+        try {
+          localStorage.setItem('podscare_branches', JSON.stringify([allBranch]));
         } catch {
           // ignore
         }
@@ -502,6 +485,8 @@ export const Providers: React.FC<{ children: React.ReactNode }> = ({ children })
             phone: o.customer?.phone || '',
             deviceCategory: o.device_model?.category || 'AirPods',
             device: o.device_model?.name || 'AirPods',
+            device_id: o.device_model_id || o.device_model?.id || o.device_id || null,
+            device_model_id: o.device_model_id || o.device_model?.id || o.device_id || null,
             serial: o.serial_number || 'Chưa cập nhật',
             issue: o.issue_description || 'Kiểm tra',
             status: mappedStatus.label,

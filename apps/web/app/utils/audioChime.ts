@@ -140,8 +140,9 @@ export function playChimeTone(volume: number = 1.0): void {
   }
 }
 
-// Alias tương thích với các module gọi playNotificationChime
+// Alias tương thích với các module gọi playNotificationChime & playAudioChime
 export const playNotificationChime = playChimeTone;
+export const playAudioChime = playChimeTone;
 
 const CHIME_THROTTLE_MS = 800; // Throttle 800ms chống spam âm thanh
 const STORAGE_KEY = 'podscare_audio_muted';

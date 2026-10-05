@@ -8,22 +8,30 @@ export interface TenantBrandingSettings {
   logo_url?: string | null;
   hotline?: string | null;
   receipt_footer_note?: string | null;
+  bank_code?: string | null;
+  bank_account_number?: string | null;
+  bank_account_holder?: string | null;
 }
+
+export interface TenantSettings extends TenantBrandingSettings {}
 
 export interface UpdateTenantSettingsPayload {
   name?: string;
   hotline?: string | null;
   receipt_footer_note?: string | null;
+  bank_code?: string | null;
+  bank_account_number?: string | null;
+  bank_account_holder?: string | null;
 }
 
 export class TenantService {
   constructor(private http: HttpClient = defaultHttpClient) {}
 
-  async getSettings(): Promise<ApiResponse<TenantBrandingSettings>> {
+  async getSettings(): Promise<ApiResponse<TenantSettings>> {
     return this.http.get('/api/v1/tenant/settings');
   }
 
-  async updateSettings(payload: UpdateTenantSettingsPayload): Promise<ApiResponse<TenantBrandingSettings>> {
+  async updateSettings(payload: UpdateTenantSettingsPayload): Promise<ApiResponse<TenantSettings>> {
     return this.http.post('/api/v1/tenant/settings', payload);
   }
 

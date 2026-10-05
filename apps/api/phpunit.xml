@@ -30,5 +30,10 @@
         <env name="QUEUE_CONNECTION" value="sync"/>
         <env name="SESSION_DRIVER" value="array"/>
         <env name="TELESCOPE_ENABLED" value="false"/>
+        <env name="SEPAY_ACCOUNT_NUMBER" value="0388960848"/>
+        <env name="SEPAY_BANK_CODE" value="MB"/>
+        <env name="SEPAY_ACCOUNT_HOLDER" value="CONG TY FIXO VIET NAM"/>
+        <env name="SEPAY_WEBHOOK_SECRET" value="fixo_secret_sepay_platform_2026"/>
+        <env name="SEPAY_QR_TEMPLATE" value="compact2"/>
     </php>
 </phpunit>

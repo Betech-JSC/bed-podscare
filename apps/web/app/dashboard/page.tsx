@@ -305,29 +305,25 @@ export default function DashboardPage() {
           label="Đơn đang xử lý"
           value={activeOrdersCount}
           icon="clock"
-          foot="↑ 12,8%"
-          trend="up"
+          foot={`${branchOrders.length} đơn tại chi nhánh`}
         />
         <StatCard
           label="Tiếp nhận hôm nay"
           value={String(todayOrdersCount).padStart(2, '0')}
           icon="plus"
-          foot="↑ 8,3%"
-          trend="up"
+          foot="Cập nhật theo ngày thực tế"
         />
         <StatCard
           label="Doanh thu tháng"
           value={branchRevenueDisplay}
           icon="payments"
-          foot="↑ 18,2%"
-          trend="up"
+          foot={`Tháng ${new Date().getMonth() + 1}, ${new Date().getFullYear()}`}
         />
         <StatCard
           label="Tỷ lệ hoàn thành"
           value={completionRateDisplay}
           icon="check"
-          foot="↑ 2,4%"
-          trend="up"
+          foot={`${completedCount} đơn đã hoàn tất`}
         />
       </div>
 
@@ -341,7 +337,7 @@ export default function DashboardPage() {
                 Doanh thu & đơn hàng
               </h3>
               <p className="text-xs text-[#8a9891] mt-0.5 mb-0">
-                Tổng quan hoạt động trong tháng 9, 2026
+                Tổng quan hoạt động trong tháng {new Date().getMonth() + 1}, {new Date().getFullYear()}
               </p>
             </div>
             <select

@@ -49,6 +49,9 @@ export default function TenantBrandingPage() {
   const [hotline, setHotline] = useState('');
   const [footerNote, setFooterNote] = useState('');
   const [logoUrl, setLogoUrl] = useState<string | null>(null);
+  const [bankCode, setBankCode] = useState('MB');
+  const [bankAccountNumber, setBankAccountNumber] = useState('');
+  const [bankAccountHolder, setBankAccountHolder] = useState('');
 
   // Preview format switch
   const [previewFormat, setPreviewFormat] = useState<'k80' | 'a4'>('k80');
@@ -59,6 +62,15 @@ export default function TenantBrandingPage() {
 
   const isAdmin = role === 'admin' || currentUser?.role === 'admin';
 
+  const toUpperNoDiacritics = (str: string): string => {
+    return str
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .replace(/đ/g, 'd')
+      .replace(/Đ/g, 'D')
+      .toUpperCase();
+  };
+
   const loadSettings = useCallback(async () => {
     setLoading(true);
     try {
@@ -68,6 +80,9 @@ export default function TenantBrandingPage() {
         setHotline(res.data.hotline || '');
         setFooterNote(res.data.receipt_footer_note || '');
         setLogoUrl(res.data.logo_url || null);
+        setBankCode(res.data.bank_code || 'MB');
+        setBankAccountNumber(res.data.bank_account_number || '');
+        setBankAccountHolder(res.data.bank_account_holder || '');
       }
     } catch (err: any) {
       console.error('Failed to load branding settings:', err);
@@ -77,6 +92,9 @@ export default function TenantBrandingPage() {
         setHotline(currentUser.tenant.hotline || '');
         setFooterNote(currentUser.tenant.receipt_footer_note || '');
         setLogoUrl(currentUser.tenant.logo_url || null);
+        setBankCode((currentUser.tenant as any).bank_code || 'MB');
+        setBankAccountNumber((currentUser.tenant as any).bank_account_number || '');
+        setBankAccountHolder((currentUser.tenant as any).bank_account_holder || '');
       }
     } finally {
       setLoading(false);
@@ -105,14 +123,20 @@ export default function TenantBrandingPage() {
         name: storeName.trim() || undefined,
         hotline: hotline.trim() || null,
         receipt_footer_note: footerNote.trim() || null,
+        bank_code: bankCode.trim() || null,
+        bank_account_number: bankAccountNumber.trim() || null,
+        bank_account_holder: bankAccountHolder.trim() || null,
       });
 
       if (res?.success) {
-        toast('Đã lưu cấu hình thương hiệu và mẫu in thành công!', 'success');
+        toast('Đã lưu cấu hình thương hiệu và tài khoản ngân hàng thành công!', 'success');
         if (res.data) {
           setStoreName(res.data.name || '');
           setHotline(res.data.hotline || '');
           setFooterNote(res.data.receipt_footer_note || '');
+          setBankCode(res.data.bank_code || 'MB');
+          setBankAccountNumber(res.data.bank_account_number || '');
+          setBankAccountHolder(res.data.bank_account_holder || '');
         }
       } else {
         toast(res?.message || 'Có lỗi khi lưu cấu hình.', 'error');
@@ -484,6 +508,100 @@ export default function TenantBrandingPage() {
                 <span className="text-[10px] text-[#718279] block">
                   In ở phần chân phiếu giao khách hàng, trước dòng co-branding của nền tảng.
                 </span>
+              </div>
+
+              {/* Bank Account Settings for VietQR */}
+              <div className="pt-4 border-t border-[#eef3f0] space-y-4">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <h3 className="text-sm font-heading font-bold text-[#1c302b] m-0 flex items-center gap-2">
+                      <span className="text-base">🏦</span>
+                      <span>Tài khoản Ngân hàng nhận thanh toán (VietQR Cửa hàng)</span>
+                    </h3>
+                    <p className="text-xs text-[#5c6e66] m-0 mt-0.5">
+                      Khách hàng quét VietQR sẽ chuyển khoản trực tiếp vào tài khoản này của cửa hàng.
+                    </p>
+                  </div>
+                  {bankAccountNumber ? (
+                    <span className="text-[10px] bg-[#e8f5f1] text-[#176b58] font-bold px-2 py-0.5 rounded-full">
+                      Đã liên kết STK
+                    </span>
+                  ) : (
+                    <span className="text-[10px] bg-[#fff8e6] text-[#b58105] font-bold px-2 py-0.5 rounded-full">
+                      Chưa cài đặt STK
+                    </span>
+                  )}
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  {/* Bank Code Dropdown */}
+                  <div className="space-y-1">
+                    <label className="text-xs font-bold text-[#2a3c36] block">
+                      Ngân hàng thụ hưởng
+                    </label>
+                    <select
+                      value={bankCode}
+                      onChange={(e) => setBankCode(e.target.value)}
+                      disabled={!isAdmin || loading}
+                      className="w-full px-3 py-2 text-xs rounded-[8px] border border-[#d2ded8] focus:outline-none focus:border-[#176b58] focus:ring-1 focus:ring-[#176b58] transition-all bg-white"
+                    >
+                      <option value="MB">MB - Ngân hàng Quân Đội (MBBank)</option>
+                      <option value="VCB">VCB - Vietcombank (Ngoại Thương VN)</option>
+                      <option value="TCB">TCB - Techcombank (Kỹ Thương VN)</option>
+                      <option value="ACB">ACB - Ngân hàng Á Châu</option>
+                      <option value="VietinBank">VietinBank - Ngân hàng Công Thương</option>
+                      <option value="BIDV">BIDV - Đầu tư và Phát triển VN</option>
+                      <option value="VPB">VPB - VPBank (Việt Nam Thịnh Vượng)</option>
+                      <option value="TPB">TPB - TPBank (Tiên Phong)</option>
+                      <option value="STB">STB - Sacombank (Sài Gòn Thương Tín)</option>
+                      <option value="HDB">HDB - HDBank (Phát triển TP.HCM)</option>
+                      <option value="VIB">VIB - Ngân hàng Quốc tế</option>
+                      <option value="SHB">SHB - Ngân hàng Sài Gòn Hà Nội</option>
+                      <option value="MSB">MSB - Ngân hàng Hàng Hải</option>
+                      <option value="OCB">OCB - Ngân hàng Phương Đông</option>
+                      <option value="LPB">LPB - LPBank (Lộc Phát VN)</option>
+                    </select>
+                    <span className="text-[10px] text-[#718279] block">
+                      Mã ngân hàng chuẩn VietQR Napas 247.
+                    </span>
+                  </div>
+
+                  {/* Bank Account Number */}
+                  <div className="space-y-1">
+                    <label className="text-xs font-bold text-[#2a3c36] block">
+                      Số tài khoản ngân hàng (STK)
+                    </label>
+                    <input
+                      type="text"
+                      value={bankAccountNumber}
+                      onChange={(e) => setBankAccountNumber(e.target.value.replace(/[^a-zA-Z0-9]/g, ''))}
+                      placeholder="Ví dụ: 0988777666 hoặc 1903..."
+                      disabled={!isAdmin || loading}
+                      className="w-full px-3 py-2 text-xs font-mono font-bold rounded-[8px] border border-[#d2ded8] focus:outline-none focus:border-[#176b58] focus:ring-1 focus:ring-[#176b58] transition-all bg-white"
+                    />
+                    <span className="text-[10px] text-[#718279] block">
+                      Số tài khoản nhận tiền tại quầy của tiệm.
+                    </span>
+                  </div>
+                </div>
+
+                {/* Bank Account Holder */}
+                <div className="space-y-1">
+                  <label className="text-xs font-bold text-[#2a3c36] block">
+                    Tên chủ tài khoản (Viết hoa không dấu)
+                  </label>
+                  <input
+                    type="text"
+                    value={bankAccountHolder}
+                    onChange={(e) => setBankAccountHolder(toUpperNoDiacritics(e.target.value))}
+                    placeholder="Ví dụ: NGUYEN VAN A hoặc CONG TY TNHH FIXO"
+                    disabled={!isAdmin || loading}
+                    className="w-full px-3 py-2 text-xs font-mono font-bold uppercase rounded-[8px] border border-[#d2ded8] focus:outline-none focus:border-[#176b58] focus:ring-1 focus:ring-[#176b58] transition-all bg-white"
+                  />
+                  <span className="text-[10px] text-[#718279] block">
+                    Tên người thụ hưởng (tự động chuẩn hóa viết hoa không dấu).
+                  </span>
+                </div>
               </div>
 
               {/* Co-branding info banner */}

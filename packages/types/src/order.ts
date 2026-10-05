@@ -35,6 +35,8 @@ export interface RepairOrder {
   phone: string;
   deviceCategory?: string;
   device: string;
+  device_id?: number | string | null;
+  device_model_id?: number | string | null;
   serial?: string;
   issue: string;
   status: string;

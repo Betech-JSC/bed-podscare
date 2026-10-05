@@ -1,8 +1,9 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { Button, Icon, Modal, Input, useToast } from '@podscare/ui';
 import { AppShell } from '../../components/AppShell';
+import { platformService, type PlatformPlan } from '@podscare/api-client';
 
 export interface SubscriptionPlan {
   id: string;
@@ -18,78 +19,13 @@ export interface SubscriptionPlan {
   features: string[];
 }
 
-const DEFAULT_PLANS: SubscriptionPlan[] = [
-  {
-    id: 'trial',
-    name: 'Gói Dùng thử',
-    tagline: 'Trải nghiệm toàn diện nền tảng trong 14 ngày',
-    price: 0,
-    period: '14 ngày',
-    activeStoresCount: 4,
-    maxBranches: 1,
-    maxUsers: 2,
-    maxOrdersPerMonth: 50,
-    features: [
-      '1 Chi nhánh hoạt động',
-      'Tối đa 2 tài khoản nhân sự',
-      '50 đơn sửa chữa / tháng',
-      'Tiếp nhận & quản lý sửa chữa',
-      'In phiếu biên nhận chuẩn hóa',
-      'Báo cáo doanh số cơ bản',
-    ],
-  },
-  {
-    id: 'standard',
-    name: 'Gói Tiêu chuẩn',
-    tagline: 'Phù hợp cửa hàng sửa chữa vừa và nhỏ đang tăng trưởng',
-    price: 299000,
-    period: 'tháng',
-    popular: true,
-    activeStoresCount: 22,
-    maxBranches: 2,
-    maxUsers: 5,
-    maxOrdersPerMonth: 300,
-    features: [
-      'Tối đa 2 chi nhánh hoạt động',
-      'Tối đa 5 tài khoản nhân sự',
-      '300 đơn sửa chữa / tháng',
-      'Thu tiền tự động SePay VietQR',
-      'Tra cứu đơn online cho khách hàng',
-      'Quy trình kiểm định QC 2 bước',
-      'Quản lý kho linh kiện tiêu chuẩn',
-      'Hỗ trợ kỹ thuật giờ hành chính',
-    ],
-  },
-  {
-    id: 'pro',
-    name: 'Gói Chuyên nghiệp',
-    tagline: 'Dành cho chuỗi cửa hàng và trung tâm bảo hành quy mô lớn',
-    price: 599000,
-    period: 'tháng',
-    activeStoresCount: 6,
-    maxBranches: 'unlimited',
-    maxUsers: 'unlimited',
-    maxOrdersPerMonth: 'unlimited',
-    features: [
-      'Không giới hạn số chi nhánh',
-      'Không giới hạn tài khoản nhân sự',
-      'Không giới hạn đơn sửa chữa',
-      'Tự động hóa toàn trình VietQR SePay',
-      'Điều chuyển kho liên chi nhánh thời gian thực',
-      'Phân quyền vai trò nâng cao (Role Matrix)',
-      'Báo cáo phân tích KPI & Nhật ký kiểm toán',
-      'Hỗ trợ kỹ thuật VIP ưu tiên 24/7',
-    ],
-  },
-];
-
-const STORAGE_KEY = 'fixo_platform_plans_config';
-
 export default function PlatformPlansPage() {
   const { toast } = useToast();
-  const [plans, setPlans] = useState<SubscriptionPlan[]>(DEFAULT_PLANS);
+  const [plans, setPlans] = useState<SubscriptionPlan[]>([]);
+  const [loading, setLoading] = useState(true);
   const [editingPlan, setEditingPlan] = useState<SubscriptionPlan | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
 
   // Form edit states
   const [editPrice, setEditPrice] = useState<number>(0);
@@ -97,19 +33,42 @@ export default function PlatformPlansPage() {
   const [editMaxOrders, setEditMaxOrders] = useState<string>('50');
   const [editFeatures, setEditFeatures] = useState<string>('');
 
-  useEffect(() => {
+  const loadPlans = useCallback(async () => {
     try {
-      const saved = localStorage.getItem(STORAGE_KEY);
-      if (saved) {
-        const parsed = JSON.parse(saved);
-        if (Array.isArray(parsed) && parsed.length > 0) {
-          setPlans(parsed);
-        }
+      setLoading(true);
+      const res = await platformService.getPlans();
+      const raw = res?.data || res;
+      const list = Array.isArray(raw) ? raw : (raw?.data || []);
+
+      if (Array.isArray(list) && list.length > 0) {
+        const mapped: SubscriptionPlan[] = list.map((p: any) => ({
+          id: String(p.id),
+          name: p.name,
+          tagline: p.tagline || '',
+          price: Number(p.price) || 0,
+          period: p.period || 'tháng',
+          popular: Boolean(p.popular || p.is_popular),
+          activeStoresCount: Number(p.active_stores_count || p.activeStoresCount) || 0,
+          maxBranches: p.max_branches === 'unlimited' || p.max_branches === 0 ? 'unlimited' : (Number(p.max_branches) || 1),
+          maxUsers: p.max_users === 'unlimited' || p.max_users === 0 ? 'unlimited' : (Number(p.max_users) || 2),
+          maxOrdersPerMonth: p.max_orders_per_month === 'unlimited' || p.max_orders_per_month === 0 ? 'unlimited' : (Number(p.max_orders_per_month) || 50),
+          features: Array.isArray(p.features) ? p.features : (typeof p.features === 'string' ? JSON.parse(p.features) : []),
+        }));
+        setPlans(mapped);
+      } else {
+        setPlans([]);
       }
-    } catch (e) {
-      console.warn('Could not read saved plans from localStorage', e);
+    } catch (err) {
+      console.warn('Could not fetch plans from API:', err);
+      toast('Không thể tải danh sách gói cước từ máy chủ.', 'error');
+    } finally {
+      setLoading(false);
     }
-  }, []);
+  }, [toast]);
+
+  useEffect(() => {
+    loadPlans();
+  }, [loadPlans]);
 
   const openEditModal = (plan: SubscriptionPlan) => {
     setEditingPlan(plan);
@@ -120,7 +79,7 @@ export default function PlatformPlansPage() {
     setIsModalOpen(true);
   };
 
-  const handleSavePlan = () => {
+  const handleSavePlan = async () => {
     if (!editingPlan) return;
 
     const parsedBranches: number | 'unlimited' =
@@ -138,34 +97,46 @@ export default function PlatformPlansPage() {
       .map((f) => f.trim())
       .filter((f) => f.length > 0);
 
-    const updatedPlans: SubscriptionPlan[] = plans.map((p) => {
-      if (p.id === editingPlan.id) {
-        return {
-          ...p,
-          price: Math.max(0, editPrice),
-          maxBranches: parsedBranches,
-          maxOrdersPerMonth: parsedOrders,
-          features: updatedFeatures.length > 0 ? updatedFeatures : p.features,
-        };
-      }
-      return p;
-    });
+    const payload: Partial<PlatformPlan> = {
+      price: Math.max(0, editPrice),
+      max_branches: parsedBranches,
+      max_orders_per_month: parsedOrders,
+      features: updatedFeatures.length > 0 ? updatedFeatures : editingPlan.features,
+    };
 
-    setPlans(updatedPlans);
+    setIsSaving(true);
     try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(updatedPlans));
-    } catch (e) {
-      console.warn('Failed to save plans to localStorage', e);
-    }
+      await platformService.updatePlan(editingPlan.id, payload);
 
-    setIsModalOpen(false);
-    toast(`Gói cước "${editingPlan.name}" đã được cập nhật thành công.`, 'success');
+      setPlans((prev) =>
+        prev.map((p) =>
+          p.id === editingPlan.id
+            ? {
+                ...p,
+                price: Math.max(0, editPrice),
+                maxBranches: parsedBranches,
+                maxOrdersPerMonth: parsedOrders,
+                features: updatedFeatures.length > 0 ? updatedFeatures : p.features,
+              }
+            : p
+        )
+      );
+
+      setIsModalOpen(false);
+      toast(`Gói cước "${editingPlan.name}" đã được cập nhật thành công lên hệ thống.`, 'success');
+    } catch (err: any) {
+      toast(err?.response?.data?.message || err?.message || 'Không thể cập nhật gói cước.', 'error');
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   const formatVnd = (amount: number) => {
     if (amount === 0) return '0 đ';
     return new Intl.NumberFormat('vi-VN').format(amount) + ' đ';
   };
+
+  const totalActiveStores = plans.reduce((sum, p) => sum + (p.activeStoresCount || 0), 0);
 
   return (
     <AppShell crumbName="Gói cước & Bản quyền">
@@ -185,106 +156,125 @@ export default function PlatformPlansPage() {
             </p>
           </div>
           <div className="flex items-center gap-3">
+            <Button
+              variant="outline"
+              size="sm"
+              loading={loading}
+              onClick={loadPlans}
+            >
+              Làm mới
+            </Button>
             <div className="bg-white border border-[#e2e8f0] rounded-[8px] px-3 py-2 text-xs text-[#596962]">
-              Tổng gian hàng kích hoạt: <strong className="text-[#176b58] font-bold text-sm">32</strong>
+              Tổng gian hàng kích hoạt: <strong className="text-[#176b58] font-bold text-sm">{totalActiveStores}</strong>
             </div>
           </div>
         </div>
 
-        {/* 3 Plans Grid */}
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 items-stretch">
-          {plans.map((plan) => {
-            const isPopular = plan.popular;
-            return (
-              <div
-                key={plan.id}
-                className={`relative flex flex-col justify-between rounded-[10px] bg-white border p-6 transition-all ${
-                  isPopular
-                    ? 'border-[#176b58] shadow-[0_4px_12px_rgba(23,107,88,0.08)] ring-1 ring-[#176b58]'
-                    : 'border-[#e2e8f0] shadow-sm hover:border-[#cbd5e1]'
-                }`}
-              >
-                {/* Popular Badge */}
-                {isPopular && (
-                  <div className="absolute -top-3 left-1/2 -translate-x-1/2">
-                    <span className="bg-[#176b58] text-white text-[11px] font-bold uppercase tracking-wider px-3 py-0.5 rounded-full shadow-sm">
-                      Phổ biến nhất
-                    </span>
-                  </div>
-                )}
-
-                <div>
-                  {/* Plan Header */}
-                  <div className="flex items-center justify-between gap-2 mb-2">
-                    <h2 className="text-lg font-bold text-[#1c302b]">{plan.name}</h2>
-                    <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-[#f1f5f3] text-[#475750]">
-                      <Icon name="spark" size={13} className="text-[#176b58]" />
-                      {plan.activeStoresCount} gian hàng
-                    </span>
-                  </div>
-
-                  <p className="text-xs text-[#718279] min-h-[34px] leading-relaxed mb-4">
-                    {plan.tagline}
-                  </p>
-
-                  {/* Price */}
-                  <div className="py-4 border-y border-[#f1f5f3] mb-5">
-                    <div className="flex items-baseline gap-1.5">
-                      <span className="text-3xl font-extrabold text-[#1c302b]">
-                        {formatVnd(plan.price)}
-                      </span>
-                      <span className="text-xs font-medium text-[#718279]">
-                        / {plan.period}
+        {/* Plans Grid */}
+        {loading ? (
+          <div className="py-16 text-center text-xs text-[#718279]">
+            <div className="w-8 h-8 rounded-full border-2 border-[#176b58]/20 border-t-[#176b58] animate-spin mx-auto mb-3" />
+            Đang tải dữ liệu gói cước từ máy chủ...
+          </div>
+        ) : plans.length === 0 ? (
+          <div className="bg-white border border-[#e2e8f0] rounded-[10px] p-12 text-center text-sm text-[#718279]">
+            Chưa có gói cước nào được định cấu hình trên máy chủ.
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 items-stretch">
+            {plans.map((plan) => {
+              const isPopular = plan.popular;
+              return (
+                <div
+                  key={plan.id}
+                  className={`relative flex flex-col justify-between rounded-[10px] bg-white border p-6 transition-all ${
+                    isPopular
+                      ? 'border-[#176b58] shadow-[0_4px_12px_rgba(23,107,88,0.08)] ring-1 ring-[#176b58]'
+                      : 'border-[#e2e8f0] shadow-sm hover:border-[#cbd5e1]'
+                  }`}
+                >
+                  {/* Popular Badge */}
+                  {isPopular && (
+                    <div className="absolute -top-3 left-1/2 -translate-x-1/2">
+                      <span className="bg-[#176b58] text-white text-[11px] font-bold uppercase tracking-wider px-3 py-0.5 rounded-full shadow-sm">
+                        Phổ biến nhất
                       </span>
                     </div>
-                    <div className="mt-2 flex items-center gap-3 text-xs text-[#596962]">
-                      <span>
-                        Chi nhánh:{' '}
-                        <strong className="text-[#1c302b]">
-                          {plan.maxBranches === 'unlimited' ? 'Không giới hạn' : plan.maxBranches}
-                        </strong>
-                      </span>
-                      <span>•</span>
-                      <span>
-                        Đơn/tháng:{' '}
-                        <strong className="text-[#1c302b]">
-                          {plan.maxOrdersPerMonth === 'unlimited' ? 'Không giới hạn' : plan.maxOrdersPerMonth}
-                        </strong>
+                  )}
+
+                  <div>
+                    {/* Plan Header */}
+                    <div className="flex items-center justify-between gap-2 mb-2">
+                      <h2 className="text-lg font-bold text-[#1c302b]">{plan.name}</h2>
+                      <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-[#f1f5f3] text-[#475750]">
+                        <Icon name="spark" size={13} className="text-[#176b58]" />
+                        {plan.activeStoresCount} gian hàng
                       </span>
                     </div>
-                  </div>
 
-                  {/* Feature list */}
-                  <div className="space-y-2.5 mb-6">
-                    <p className="text-xs font-bold uppercase tracking-wider text-[#86968f]">
-                      Đặc quyền gói cước:
+                    <p className="text-xs text-[#718279] min-h-[34px] leading-relaxed mb-4">
+                      {plan.tagline}
                     </p>
-                    {plan.features.map((feature, idx) => (
-                      <div key={idx} className="flex items-start gap-2.5 text-xs text-[#334155]">
-                        <span className="w-4 h-4 rounded-full bg-[#eaf4ef] text-[#176b58] flex items-center justify-center flex-none mt-0.5">
-                          <Icon name="check" size={11} />
+
+                    {/* Price */}
+                    <div className="py-4 border-y border-[#f1f5f3] mb-5">
+                      <div className="flex items-baseline gap-1.5">
+                        <span className="text-3xl font-extrabold text-[#1c302b]">
+                          {formatVnd(plan.price)}
                         </span>
-                        <span className="leading-snug">{feature}</span>
+                        <span className="text-xs font-medium text-[#718279]">
+                          / {plan.period}
+                        </span>
                       </div>
-                    ))}
+                      <div className="mt-2 flex items-center gap-3 text-xs text-[#596962]">
+                        <span>
+                          Chi nhánh:{' '}
+                          <strong className="text-[#1c302b]">
+                            {plan.maxBranches === 'unlimited' ? 'Không giới hạn' : plan.maxBranches}
+                          </strong>
+                        </span>
+                        <span>•</span>
+                        <span>
+                          Đơn/tháng:{' '}
+                          <strong className="text-[#1c302b]">
+                            {plan.maxOrdersPerMonth === 'unlimited' ? 'Không giới hạn' : plan.maxOrdersPerMonth}
+                          </strong>
+                        </span>
+                      </div>
+                    </div>
+
+                    {/* Feature list */}
+                    <div className="space-y-2.5 mb-6">
+                      <p className="text-xs font-bold uppercase tracking-wider text-[#86968f]">
+                        Đặc quyền gói cước:
+                      </p>
+                      {plan.features.map((feature, idx) => (
+                        <div key={idx} className="flex items-start gap-2.5 text-xs text-[#334155]">
+                          <span className="w-4 h-4 rounded-full bg-[#eaf4ef] text-[#176b58] flex items-center justify-center flex-none mt-0.5">
+                            <Icon name="check" size={11} />
+                          </span>
+                          <span className="leading-snug">{feature}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Footer Action */}
+                  <div className="pt-4 border-t border-[#f1f5f3]">
+                    <Button
+                      variant={isPopular ? 'primary' : 'outline'}
+                      size="md"
+                      className="w-full"
+                      onClick={() => openEditModal(plan)}
+                    >
+                      Chỉnh sửa đặc quyền
+                    </Button>
                   </div>
                 </div>
-
-                {/* Footer Action */}
-                <div className="pt-4 border-t border-[#f1f5f3]">
-                  <Button
-                    variant={isPopular ? 'primary' : 'outline'}
-                    size="md"
-                    className="w-full"
-                    onClick={() => openEditModal(plan)}
-                  >
-                    Chỉnh sửa đặc quyền
-                  </Button>
-                </div>
-              </div>
-            );
-          })}
-        </div>
+              );
+            })}
+          </div>
+        )}
 
         {/* Info card */}
         <div className="bg-[#f8faf9] border border-[#e2e8f0] rounded-[10px] p-5">
@@ -375,6 +365,7 @@ export default function PlatformPlansPage() {
             <Button
               variant="outline"
               size="sm"
+              disabled={isSaving}
               onClick={() => setIsModalOpen(false)}
             >
               Hủy
@@ -382,6 +373,7 @@ export default function PlatformPlansPage() {
             <Button
               variant="primary"
               size="sm"
+              loading={isSaving}
               onClick={handleSavePlan}
             >
               Lưu thay đổi

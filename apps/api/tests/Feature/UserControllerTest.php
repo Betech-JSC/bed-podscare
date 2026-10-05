@@ -126,10 +126,10 @@ class UserControllerTest extends TestCase
 
     public function test_login_with_phone_and_quick_credentials(): void
     {
-        // Test quick login with demo technician credentials
+        // Test login with seeded technician credentials
         $response = $this->postJson('/api/v1/auth/login', [
-            'email'    => 'tuan.kt@fixo.com.vn',
-            'password' => 'password123',
+            'email'    => 'ktv.tuan@fixo.com.vn',
+            'password' => 'password',
         ]);
 
         $response->assertStatus(200)
@@ -138,8 +138,8 @@ class UserControllerTest extends TestCase
 
         // Test backward compatibility alias
         $responseAlias = $this->postJson('/api/v1/auth/login', [
-            'email'    => 'tuan.kt@podscare.vn',
-            'password' => 'password123',
+            'email'    => 'ktv.tuan@podscare.vn',
+            'password' => 'password',
         ]);
 
         $responseAlias->assertStatus(200)

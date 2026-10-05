@@ -28,42 +28,32 @@ class AuthController extends Controller
 
         $storeCode = trim((string) ($request->input('store_code') ?? $request->input('tenant_code') ?? ''));
 
-        $normalizedEmail = match ($loginInput) {
-            'tuan.kt@podscare.vn' => 'ktv.tuan@fixo.com.vn',
-            'tuan.kt@fixo.com.vn' => 'ktv.tuan@fixo.com.vn',
-            default => $loginInput,
-        };
-
         // Hỗ trợ đăng nhập chéo giữa @podscare.vn và @fixo.com.vn trong quá trình chuyển đổi
         $alternateEmail = null;
-        if (str_contains($normalizedEmail, '@podscare.vn')) {
-            $alternateEmail = str_replace('@podscare.vn', '@fixo.com.vn', $normalizedEmail);
-        } elseif (str_contains($normalizedEmail, '@fixo.com.vn')) {
-            $alternateEmail = str_replace('@fixo.com.vn', '@podscare.vn', $normalizedEmail);
+        if (str_contains($loginInput, '@podscare.vn')) {
+            $alternateEmail = str_replace('@podscare.vn', '@fixo.com.vn', $loginInput);
+        } elseif (str_contains($loginInput, '@fixo.com.vn')) {
+            $alternateEmail = str_replace('@fixo.com.vn', '@podscare.vn', $loginInput);
         }
 
         $password = $request->input('password');
 
         // 1. Kiểm tra tài khoản Super Admin (nền tảng)
-        // Super admin có thể đăng nhập với store_code rỗng, fixo-platform, hoặc nhận diện trực tiếp qua email/phone
-        $isSuperAdminCandidate = empty($storeCode)
-            || $storeCode === 'fixo-platform'
-            || $loginInput === 'superadmin@fixo.com.vn'
-            || $loginInput === '0900000000';
+        // Super admin xác định qua role='super_admin' trong cơ sở dữ liệu khi store_code rỗng hoặc fixo-platform
+        $isSuperAdminCandidate = empty($storeCode) || $storeCode === 'fixo-platform';
 
         if ($isSuperAdminCandidate) {
             $superAdmin = User::withoutGlobalScope(TenantScope::class)
                 ->where('role', 'super_admin')
-                ->where(function ($q) use ($loginInput, $normalizedEmail, $alternateEmail) {
+                ->where(function ($q) use ($loginInput, $alternateEmail) {
                     $q->where('email', $loginInput)
-                        ->orWhere('email', $normalizedEmail)
                         ->when($alternateEmail, fn ($sq) => $sq->orWhere('email', $alternateEmail))
                         ->orWhere('phone', $loginInput);
                 })
                 ->first();
 
             if ($superAdmin) {
-                if (! Hash::check($password, $superAdmin->password) && ! ($password === 'password123' && Hash::check('password', $superAdmin->password))) {
+                if (! Hash::check($password, $superAdmin->password)) {
                     return $this->failure('Email hoặc mật khẩu không chính xác.', 401);
                 }
 
@@ -132,14 +122,13 @@ class AuthController extends Controller
             });
         }
 
-        $user = $userQuery->where(function ($q) use ($loginInput, $normalizedEmail, $alternateEmail) {
+        $user = $userQuery->where(function ($q) use ($loginInput, $alternateEmail) {
             $q->where('email', $loginInput)
-                ->orWhere('email', $normalizedEmail)
                 ->when($alternateEmail, fn ($sq) => $sq->orWhere('email', $alternateEmail))
                 ->orWhere('phone', $loginInput);
         })->first();
 
-        if (! $user || (! Hash::check($password, $user->password) && ! ($password === 'password123' && Hash::check('password', $user->password)))) {
+        if (! $user || ! Hash::check($password, $user->password)) {
             return $this->failure('Email hoặc mật khẩu không chính xác.', 401);
         }
 

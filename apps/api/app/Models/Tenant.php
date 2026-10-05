@@ -25,6 +25,9 @@ class Tenant extends Model
         'logo_url',
         'hotline',
         'receipt_footer_note',
+        'bank_code',
+        'bank_account_number',
+        'bank_account_holder',
     ];
 
     protected function casts(): array

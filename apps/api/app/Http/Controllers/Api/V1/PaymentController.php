@@ -69,14 +69,18 @@ class PaymentController extends Controller
             $randomNum = str_pad((string) random_int(100, 99999), 4, '0', STR_PAD_LEFT);
             $paymentCode = "FX{$year}-PY-{$randomNum}";
 
+            $isBankTransfer = $validated['payment_method'] === 'bank_transfer';
+            $status = $isBankTransfer ? 'pending' : 'paid';
+            $paidAt = $isBankTransfer ? null : Carbon::now();
+
             $payment = Payment::create([
                 'payment_code'        => $paymentCode,
                 'repair_order_id'     => $order->id,
                 'amount'              => $validated['amount'],
                 'payment_method'      => $validated['payment_method'],
                 'transaction_ref'     => $validated['transaction_ref'] ?? null,
-                'status'              => 'paid',
-                'paid_at'             => Carbon::now(),
+                'status'              => $status,
+                'paid_at'             => $paidAt,
                 'received_by_user_id' => $request->user()->id,
                 'notes'               => $validated['notes'] ?? null,
             ]);
@@ -92,6 +96,135 @@ class PaymentController extends Controller
             ]);
 
             return $this->success($payment->load('repairOrder'), 'Lập phiếu thu thành công.', 201);
+        });
+    }
+
+    /**
+     * Xem chi tiết phiếu thu / thanh toán (phục vụ Polling và biên nhận).
+     */
+    public function show(Request $request, int|string $id): JsonResponse
+    {
+        $payment = Payment::with(['repairOrder.customer', 'receivedByUser:id,name'])->findOrFail($id);
+
+        return $this->success($payment, 'Lấy thông tin phiếu thanh toán thành công.');
+    }
+
+    /**
+     * Sinh mã VietQR cho phiếu thanh toán / đơn sửa chữa tại quầy.
+     */
+    public function vietqr(Request $request, int|string $id): JsonResponse
+    {
+        $payment = Payment::with('repairOrder.tenant')->findOrFail($id);
+        $order = $payment->repairOrder;
+
+        // Ưu tiên lấy thông tin tài khoản ngân hàng của Tenant thuộc đơn hàng
+        $tenant = $order?->tenant ?? $request->user()?->tenant;
+
+        $hasTenantBank = $tenant && ! empty($tenant->bank_account_number) && ! empty($tenant->bank_code);
+
+        $accNumber = $hasTenantBank ? $tenant->bank_account_number : config('sepay.account_number');
+        $bankCode = $hasTenantBank ? $tenant->bank_code : config('sepay.bank_code');
+        $accountHolder = $hasTenantBank ? $tenant->bank_account_holder : config('sepay.account_holder');
+        $template = config('sepay.qr_template', 'compact2');
+
+        $amount = (int) $payment->amount;
+        $transferContent = $order ? $order->order_code : $payment->payment_code;
+
+        $qrUrl = (! empty($accNumber) && ! empty($bankCode))
+            ? "https://qr.sepay.vn/img?acc={$accNumber}&bank={$bankCode}&amount={$amount}&des={$transferContent}&template={$template}"
+            : null;
+
+        $message = $hasTenantBank
+            ? 'Sinh mã VietQR thành công theo tài khoản cửa hàng.'
+            : 'Cửa hàng chưa cài đặt tài khoản ngân hàng. Vui lòng cấu hình trong Cài đặt thương hiệu.';
+
+        return $this->success([
+            'payment_id'       => $payment->id,
+            'payment_code'     => $payment->payment_code,
+            'order_id'         => $order?->id,
+            'order_code'       => $order?->order_code,
+            'amount'           => (float) $payment->amount,
+            'account_number'   => $accNumber,
+            'bank_code'        => $bankCode,
+            'account_holder'   => $accountHolder,
+            'transfer_content' => $transferContent,
+            'qr_url'           => $qrUrl,
+            'is_custom_bank'   => $hasTenantBank,
+            'status'           => $payment->status,
+        ], $message);
+    }
+
+    /**
+     * Xác nhận duyệt phiếu thanh toán chuyển khoản (CSKH / Thu ngân / Admin).
+     */
+    public function confirm(Request $request, int|string $id): JsonResponse
+    {
+        $user = $request->user();
+        if (! $user) {
+            return $this->failure('Chưa xác thực danh tính.', 401);
+        }
+
+        $allowedRoles = ['admin', 'super_admin', 'cskh', 'cashier'];
+        if (! in_array($user->role, $allowedRoles, true)) {
+            return $this->failure('Bạn không có quyền duyệt thanh toán này.', 403);
+        }
+
+        $payment = Payment::with('repairOrder')->findOrFail($id);
+
+        if ($payment->status === 'paid') {
+            return $this->failure('Phiếu thanh toán này đã được duyệt thanh toán trước đó.', 422);
+        }
+
+        if ($payment->status !== 'pending') {
+            return $this->failure('Chỉ có thể duyệt phiếu thanh toán đang ở trạng thái chờ xử lý (pending).', 422);
+        }
+
+        $validated = $request->validate([
+            'transaction_ref' => 'nullable|string|max:100',
+            'notes'           => 'nullable|string|max:500',
+        ]);
+
+        return DB::transaction(function () use ($request, $payment, $user, $validated) {
+            $payment->status = 'paid';
+            $payment->paid_at = Carbon::now();
+            $payment->received_by_user_id = $user->id;
+
+            if (! empty($validated['transaction_ref'])) {
+                $payment->transaction_ref = $validated['transaction_ref'];
+            }
+            if (! empty($validated['notes'])) {
+                $payment->notes = $validated['notes'];
+            }
+
+            $payment->save();
+
+            $order = $payment->repairOrder;
+            if ($order) {
+                $order->status = 'completed';
+                if (! $order->handed_over_at) {
+                    $order->handed_over_at = Carbon::now();
+                }
+                if (! $order->handed_over_by_user_id) {
+                    $order->handed_over_by_user_id = $user->id;
+                }
+                $order->save();
+            }
+
+            AuditLog::create([
+                'tenant_id'      => $order?->tenant_id ?? $user->tenant_id,
+                'user_id'        => $user->id,
+                'user_name'      => $user->name,
+                'action'         => 'Duyệt thanh toán',
+                'auditable_type' => 'Payment',
+                'auditable_id'   => $payment->id,
+                'details'        => "CSKH {$user->name} đã duyệt thanh toán " . number_format((float) $payment->amount) . " ₫" . ($order ? " cho đơn {$order->order_code}" : '') . ($payment->transaction_ref ? " (Mã GD: {$payment->transaction_ref})" : ''),
+                'ip_address'     => $request->ip(),
+            ]);
+
+            return $this->success(
+                $payment->fresh(['repairOrder.customer', 'receivedByUser:id,name']),
+                'Duyệt thanh toán thành công.'
+            );
         });
     }
 }

@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState } from 'react';
-import { qcService, repairService } from '@podscare/api-client';
+import { qcService, repairService, deviceService } from '@podscare/api-client';
 import {
   Button,
   StatusTag,
@@ -22,8 +22,10 @@ export default function QCInspectionPage() {
   const [selectedOrder, setSelectedOrder] = useState<RepairOrder | null>(null);
   const [inspectModalOpen, setInspectModalOpen] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [loadingCriteria, setLoadingCriteria] = useState(false);
 
   // QC Checklist Items State: boolean map
+  const [qcCriteria, setQcCriteria] = useState<string[]>([]);
   const [checkedItems, setCheckedItems] = useState<Record<string, boolean>>({});
   const [reworkReason, setReworkReason] = useState('');
   const [qcNotes, setQcNotes] = useState('');
@@ -44,17 +46,43 @@ export default function QCInspectionPage() {
     'Vệ sinh sạch sẽ, không để lại vết keo hoặc bụi màng loa',
   ];
 
-  const openInspectModal = (order: RepairOrder) => {
+  const openInspectModal = async (order: RepairOrder) => {
     setSelectedOrder(order);
-    // Initialize all criteria as checked by default
-    const initialMap: Record<string, boolean> = {};
-    defaultQcCriteria.forEach((crit) => {
-      initialMap[crit] = true;
-    });
-    setCheckedItems(initialMap);
     setReworkReason('');
     setQcNotes('');
     setInspectModalOpen(true);
+    setLoadingCriteria(true);
+
+    try {
+      const deviceId = order.device_id || order.device_model_id;
+      const res = await deviceService.getChecklistTemplate(
+        deviceId ? { device_model_id: deviceId } : { category: order.deviceCategory }
+      );
+      const raw = res?.data || res;
+      const list = Array.isArray(raw) ? raw : (raw?.data || []);
+      const items = list
+        .map((item: any) => item.item_name || item.name || (typeof item === 'string' ? item : ''))
+        .filter(Boolean);
+
+      const effectiveCriteria = items.length > 0 ? items : defaultQcCriteria;
+      setQcCriteria(effectiveCriteria);
+
+      const initialMap: Record<string, boolean> = {};
+      effectiveCriteria.forEach((crit: string) => {
+        initialMap[crit] = true;
+      });
+      setCheckedItems(initialMap);
+    } catch (err) {
+      console.warn('Could not load dynamic checklist template for device:', err);
+      setQcCriteria(defaultQcCriteria);
+      const initialMap: Record<string, boolean> = {};
+      defaultQcCriteria.forEach((crit) => {
+        initialMap[crit] = true;
+      });
+      setCheckedItems(initialMap);
+    } finally {
+      setLoadingCriteria(false);
+    }
   };
 
   const handleToggleCrit = (crit: string) => {
@@ -64,13 +92,13 @@ export default function QCInspectionPage() {
     }));
   };
 
-  const isAllPassed = defaultQcCriteria.every((crit) => checkedItems[crit]);
+  const isAllPassed = qcCriteria.length > 0 && qcCriteria.every((crit) => checkedItems[crit]);
 
   const handlePassQC = async () => {
     if (!selectedOrder) return;
     setIsSubmitting(true);
     try {
-      const criteriaData = defaultQcCriteria.map((c) => ({
+      const criteriaData = qcCriteria.map((c) => ({
         criterion: c,
         is_passed: checkedItems[c] ?? true,
       }));
@@ -109,7 +137,7 @@ export default function QCInspectionPage() {
     }
     setIsSubmitting(true);
     try {
-      const criteriaData = defaultQcCriteria.map((c) => ({
+      const criteriaData = qcCriteria.map((c) => ({
         criterion: c,
         is_passed: checkedItems[c] ?? false,
       }));
@@ -168,7 +196,7 @@ export default function QCInspectionPage() {
                 Đơn hàng chờ kiểm định ({qcOrders.length})
               </h2>
               <p className="text-xs text-[#89958f] mt-0.5 mb-0">
-                Được kỹ thuật viên báo hoàn tất, cần kiểm tra 7 tiêu chuẩn xuất xưởng.
+                Được kỹ thuật viên báo hoàn tất, cần kiểm tra tiêu chuẩn xuất xưởng theo dòng máy.
               </p>
             </div>
             <span className="text-xs font-bold text-[#176b58] bg-[#eaf4ef] px-2.5 py-1 rounded-[10px]">
@@ -303,51 +331,58 @@ export default function QCInspectionPage() {
             <div>
               <div className="flex items-center justify-between mb-2">
                 <h4 className="font-heading font-bold text-sm text-[#1c302b] m-0">
-                  7 Tiêu chuẩn kiểm tra chức năng
+                  {qcCriteria.length} Tiêu chuẩn kiểm tra chức năng ({selectedOrder.device})
                 </h4>
                 <span className="text-xs text-[#81908a]">
                   Bỏ chọn nếu phát hiện tiêu chí không đạt
                 </span>
               </div>
 
-              <div className="border border-[#e5ece8] rounded-[8px] overflow-hidden divide-y divide-[#f0f3f1] bg-white">
-                {defaultQcCriteria.map((crit, idx) => {
-                  const isChecked = checkedItems[crit] ?? true;
-                  return (
-                    <div
-                      key={idx}
-                      onClick={() => handleToggleCrit(crit)}
-                      className={`p-2.5 flex items-center justify-between cursor-pointer transition-colors ${
-                        isChecked ? 'hover:bg-[#fbfdfb]' : 'bg-[#fff8f7]'
-                      }`}
-                    >
-                      <div className="flex items-center gap-2.5">
-                        <Checkbox
-                          checked={isChecked}
-                          onChange={() => handleToggleCrit(crit)}
-                          id={`qc-crit-${idx}`}
-                        />
-                        <span
-                          className={`text-sm ${
-                            isChecked ? 'text-[#33443c] font-medium' : 'text-[#bc5b52] font-bold'
-                          }`}
-                        >
-                          {crit}
-                        </span>
-                      </div>
-                      <span
-                        className={`text-xs font-bold px-2 py-0.5 rounded-[10px] ${
-                          isChecked
-                            ? 'bg-[#eaf4ef] text-[#28805e]'
-                            : 'bg-[#fbefed] text-[#bc5b52]'
+              {loadingCriteria ? (
+                <div className="p-8 text-center text-xs text-[#718279] border border-[#e5ece8] rounded-[8px] bg-white">
+                  <div className="w-6 h-6 rounded-full border-2 border-[#176b58]/20 border-t-[#176b58] animate-spin mx-auto mb-2" />
+                  Đang nạp danh mục tiêu chí kiểm tra theo dòng máy {selectedOrder.device}...
+                </div>
+              ) : (
+                <div className="border border-[#e5ece8] rounded-[8px] overflow-hidden divide-y divide-[#f0f3f1] bg-white">
+                  {qcCriteria.map((crit, idx) => {
+                    const isChecked = checkedItems[crit] ?? true;
+                    return (
+                      <div
+                        key={idx}
+                        onClick={() => handleToggleCrit(crit)}
+                        className={`p-2.5 flex items-center justify-between cursor-pointer transition-colors ${
+                          isChecked ? 'hover:bg-[#fbfdfb]' : 'bg-[#fff8f7]'
                         }`}
                       >
-                        {isChecked ? 'ĐẠT' : 'KHÔNG ĐẠT'}
-                      </span>
-                    </div>
-                  );
-                })}
-              </div>
+                        <div className="flex items-center gap-2.5">
+                          <Checkbox
+                            checked={isChecked}
+                            onChange={() => handleToggleCrit(crit)}
+                            id={`qc-crit-${idx}`}
+                          />
+                          <span
+                            className={`text-sm ${
+                              isChecked ? 'text-[#33443c] font-medium' : 'text-[#bc5b52] font-bold'
+                            }`}
+                          >
+                            {crit}
+                          </span>
+                        </div>
+                        <span
+                          className={`text-xs font-bold px-2 py-0.5 rounded-[10px] ${
+                            isChecked
+                              ? 'bg-[#eaf4ef] text-[#28805e]'
+                              : 'bg-[#fbefed] text-[#bc5b52]'
+                          }`}
+                        >
+                          {isChecked ? 'ĐẠT' : 'KHÔNG ĐẠT'}
+                        </span>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
             </div>
 
             {/* Rework reason textarea (shows when any criteria failed) */}

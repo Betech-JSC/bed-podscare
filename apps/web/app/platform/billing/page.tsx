@@ -1,8 +1,9 @@
 'use client';
 
-import React, { useState, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { Button, Icon, Input, useToast } from '@podscare/ui';
 import { AppShell } from '../../components/AppShell';
+import { platformService } from '@podscare/api-client';
 
 interface ExpiringStore {
   id: number;
@@ -14,8 +15,8 @@ interface ExpiringStore {
   daysRemaining: number;
 }
 
-interface SepayTransaction {
-  id: string;
+interface SepayTransactionItem {
+  id: string | number;
   refCode: string;
   storeCode: string;
   storeName: string;
@@ -23,123 +24,128 @@ interface SepayTransaction {
   amount: number;
   bank: string;
   timestamp: string;
-  status: 'completed' | 'processing';
+  status: 'completed' | 'processing' | 'pending' | 'failed' | 'paid' | string;
 }
-
-const MOCK_EXPIRING_STORES: ExpiringStore[] = [
-  {
-    id: 101,
-    code: 'FIX-HN02',
-    name: 'iCare Service Hà Nội',
-    phone: '0912.345.678',
-    plan: 'Standard (299k/tháng)',
-    expiresAt: '04/10/2026',
-    daysRemaining: 2,
-  },
-  {
-    id: 102,
-    code: 'FIX-DN01',
-    name: 'Apple Care Đà Nẵng',
-    phone: '0988.765.432',
-    plan: 'Pro Enterprise (599k/tháng)',
-    expiresAt: '06/10/2026',
-    daysRemaining: 4,
-  },
-  {
-    id: 103,
-    code: 'FIX-BD03',
-    name: 'Bình Dương Tech Repair',
-    phone: '0903.112.233',
-    plan: 'Standard (299k/tháng)',
-    expiresAt: '08/10/2026',
-    daysRemaining: 6,
-  },
-];
-
-const MOCK_TRANSACTIONS: SepayTransaction[] = [
-  {
-    id: 'TX-98421',
-    refCode: 'SEPAY-882910',
-    storeCode: 'FIX-Q1',
-    storeName: 'FIXO Flagship Quận 1',
-    planName: 'Gói Chuyên nghiệp (12 tháng)',
-    amount: 7188000,
-    bank: 'MBBank VietQR',
-    timestamp: '02/10/2026 09:14',
-    status: 'completed',
-  },
-  {
-    id: 'TX-98420',
-    refCode: 'SEPAY-882909',
-    storeCode: 'FIX-Q3',
-    storeName: 'Sài Gòn Mobile Care',
-    planName: 'Gói Tiêu chuẩn (6 tháng)',
-    amount: 1794000,
-    bank: 'Vietcombank VietQR',
-    timestamp: '01/10/2026 16:32',
-    status: 'completed',
-  },
-  {
-    id: 'TX-98419',
-    refCode: 'SEPAY-882905',
-    storeCode: 'FIX-TD02',
-    storeName: 'Thủ Đức Pods Repair',
-    planName: 'Gói Tiêu chuẩn (1 tháng)',
-    amount: 299000,
-    bank: 'MBBank VietQR',
-    timestamp: '30/09/2026 14:20',
-    status: 'completed',
-  },
-  {
-    id: 'TX-98418',
-    refCode: 'SEPAY-882901',
-    storeCode: 'FIX-HP01',
-    storeName: 'Hải Phòng SmartFix',
-    planName: 'Gói Chuyên nghiệp (1 tháng)',
-    amount: 599000,
-    bank: 'Techcombank VietQR',
-    timestamp: '29/09/2026 11:05',
-    status: 'completed',
-  },
-  {
-    id: 'TX-98417',
-    refCode: 'SEPAY-882898',
-    storeCode: 'FIX-CT01',
-    storeName: 'Cần Thơ Audio Lab',
-    planName: 'Gói Tiêu chuẩn (3 tháng)',
-    amount: 897000,
-    bank: 'ACB VietQR',
-    timestamp: '28/09/2026 18:45',
-    status: 'completed',
-  },
-];
 
 export default function PlatformBillingPage() {
   const { toast } = useToast();
   const [searchQuery, setSearchQuery] = useState('');
-  const [expiringList, setExpiringList] = useState<ExpiringStore[]>(MOCK_EXPIRING_STORES);
-  const [transactions] = useState<SepayTransaction[]>(MOCK_TRANSACTIONS);
+  const [expiringList, setExpiringList] = useState<ExpiringStore[]>([]);
+  const [transactions, setTransactions] = useState<SepayTransactionItem[]>([]);
+  const [loading, setLoading] = useState(true);
   const [actionLoadingId, setActionLoadingId] = useState<number | null>(null);
+
+  // Dynamic KPI Stats
+  const [stats, setStats] = useState({
+    mrr: 0,
+    mrrFormatted: '0 đ',
+    mrrGrowth: 0,
+    activeStoresCount: 0,
+    totalStoresCount: 0,
+    expiringSoonCount: 0,
+    weeklyTransactionsCount: 0,
+  });
 
   const formatVnd = (amount: number) => {
     return new Intl.NumberFormat('vi-VN').format(amount) + ' đ';
   };
 
-  const handleRemindStore = (store: ExpiringStore) => {
+  const loadData = useCallback(async () => {
+    try {
+      setLoading(true);
+      const [statsRes, txRes] = await Promise.allSettled([
+        platformService.getBillingStats(),
+        platformService.getTransactions(),
+      ]);
+
+      if (statsRes.status === 'fulfilled') {
+        const raw = statsRes.value?.data || statsRes.value;
+        const mrrVal = Number(raw?.mrr) || 0;
+        setStats({
+          mrr: mrrVal,
+          mrrFormatted: raw?.mrr_formatted || formatVnd(mrrVal),
+          mrrGrowth: Number(raw?.mrr_growth_percentage) || 0,
+          activeStoresCount: Number(raw?.active_stores_count) || 0,
+          totalStoresCount: Number(raw?.total_stores_count) || 0,
+          expiringSoonCount: Number(raw?.expiring_soon_count) || 0,
+          weeklyTransactionsCount: Number(raw?.weekly_sepay_transactions_count) || 0,
+        });
+
+        if (Array.isArray(raw?.expiring_stores)) {
+          const mappedExpiring: ExpiringStore[] = raw.expiring_stores.map((s: any) => ({
+            id: s.id,
+            code: s.code || `FIX-${s.id}`,
+            name: s.name,
+            phone: s.phone || '',
+            plan: s.plan || s.subscription_plan || 'Standard',
+            expiresAt: s.expires_at || s.expiresAt || '',
+            daysRemaining: s.days_remaining !== undefined ? Number(s.days_remaining) : (s.daysRemaining || 0),
+          }));
+          setExpiringList(mappedExpiring);
+        } else {
+          setExpiringList([]);
+        }
+      }
+
+      if (txRes.status === 'fulfilled') {
+        const rawTx = txRes.value?.data || txRes.value;
+        const list = Array.isArray(rawTx) ? rawTx : (rawTx?.data || []);
+        if (Array.isArray(list)) {
+          const mappedTx: SepayTransactionItem[] = list.map((tx: any) => ({
+            id: tx.id || tx.ref_code || Math.random(),
+            refCode: tx.ref_code || tx.reference_code || tx.code || `TX-${tx.id}`,
+            storeCode: tx.store_code || tx.tenant?.code || tx.store?.code || 'FIX-STORE',
+            storeName: tx.store_name || tx.tenant?.name || tx.store?.name || 'Gian hàng',
+            planName: tx.plan_name || tx.plan?.name || 'Gói bản quyền',
+            amount: Number(tx.amount) || 0,
+            bank: tx.bank || tx.bank_name || tx.payment_method || 'VietQR SePay',
+            timestamp: tx.timestamp || tx.created_at || '',
+            status: tx.status === 'paid' ? 'completed' : (tx.status || 'completed'),
+          }));
+          setTransactions(mappedTx);
+        } else {
+          setTransactions([]);
+        }
+      }
+    } catch (err) {
+      console.warn('Could not fetch platform billing data:', err);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    loadData();
+  }, [loadData]);
+
+  const handleRemindStore = async (store: ExpiringStore) => {
     setActionLoadingId(store.id);
-    setTimeout(() => {
-      setActionLoadingId(null);
+    try {
+      await platformService.remindFee(store.id);
       toast(`Đã gửi thông báo nhắc phí tới ${store.name} (${store.phone}).`, 'success');
-    }, 600);
+    } catch (err: any) {
+      toast(err?.response?.data?.message || err?.message || 'Không thể gửi nhắc phí lúc này.', 'error');
+    } finally {
+      setActionLoadingId(null);
+    }
   };
 
-  const handleRenewStore = (store: ExpiringStore) => {
+  const handleRenewStore = async (store: ExpiringStore) => {
     setActionLoadingId(store.id);
-    setTimeout(() => {
-      setActionLoadingId(null);
+    try {
+      await platformService.renewStore(store.id, { days: 30 });
       setExpiringList((prev) => prev.filter((s) => s.id !== store.id));
-      toast(`Gian hàng ${store.name} đã được gia hạn thêm 30 ngày.`, 'success');
-    }, 600);
+      setStats((prev) => ({
+        ...prev,
+        expiringSoonCount: Math.max(0, prev.expiringSoonCount - 1),
+      }));
+      toast(`Gian hàng ${store.name} đã được gia hạn thành công thêm 30 ngày.`, 'success');
+      loadData();
+    } catch (err: any) {
+      toast(err?.response?.data?.message || err?.message || 'Không thể gia hạn gian hàng.', 'error');
+    } finally {
+      setActionLoadingId(null);
+    }
   };
 
   const filteredTransactions = useMemo(() => {
@@ -172,6 +178,14 @@ export default function PlatformBillingPage() {
             </p>
           </div>
           <div className="flex items-center gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              loading={loading}
+              onClick={loadData}
+            >
+              Làm mới dữ liệu
+            </Button>
             <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-[8px] bg-[#f0f4f2] text-xs font-semibold text-[#176b58] border border-[#d2ded8]">
               <Icon name="checkCheck" size={14} />
               Cổng SePay: Hoạt động (Live)
@@ -190,11 +204,19 @@ export default function PlatformBillingPage() {
               </div>
             </div>
             <div className="text-2xl font-extrabold text-[#1c302b]">
-              14.850.000 đ
+              {loading ? 'Đang tính...' : stats.mrrFormatted}
             </div>
             <div className="mt-2 flex items-center gap-1.5 text-xs">
-              <span className="font-bold text-[#176b58]">+18.5%</span>
-              <span className="text-[#86968f]">so với tháng trước</span>
+              {stats.mrrGrowth !== 0 ? (
+                <>
+                  <span className={`font-bold ${stats.mrrGrowth >= 0 ? 'text-[#176b58]' : 'text-[#ef4444]'}`}>
+                    {stats.mrrGrowth >= 0 ? `+${stats.mrrGrowth}%` : `${stats.mrrGrowth}%`}
+                  </span>
+                  <span className="text-[#86968f]">so với tháng trước</span>
+                </>
+              ) : (
+                <span className="text-[#86968f]">Cập nhật theo dữ liệu thực tế</span>
+              )}
             </div>
           </div>
 
@@ -207,11 +229,11 @@ export default function PlatformBillingPage() {
               </div>
             </div>
             <div className="text-2xl font-extrabold text-[#1c302b]">
-              28 gian hàng
+              {loading ? '...' : `${stats.activeStoresCount} gian hàng`}
             </div>
             <div className="mt-2 flex items-center gap-1.5 text-xs text-[#86968f]">
               <span>Trên tổng số</span>
-              <strong className="text-[#1c302b]">32 đối tác</strong>
+              <strong className="text-[#1c302b]">{stats.totalStoresCount} đối tác</strong>
             </div>
           </div>
 
@@ -224,7 +246,7 @@ export default function PlatformBillingPage() {
               </div>
             </div>
             <div className="text-2xl font-extrabold text-[#b45309]">
-              {expiringList.length} gian hàng
+              {loading ? '...' : `${stats.expiringSoonCount || expiringList.length} gian hàng`}
             </div>
             <div className="mt-2 flex items-center gap-1.5 text-xs">
               <span className="inline-block w-2 h-2 rounded-full bg-[#f59e0b]" />
@@ -241,10 +263,10 @@ export default function PlatformBillingPage() {
               </div>
             </div>
             <div className="text-2xl font-extrabold text-[#1c302b]">
-              15 giao dịch
+              {loading ? '...' : `${stats.weeklyTransactionsCount || transactions.length} giao dịch`}
             </div>
             <div className="mt-2 flex items-center gap-1.5 text-xs text-[#176b58] font-semibold">
-              <span>100% khớp lệnh tự động</span>
+              <span>Khớp lệnh tự động qua Webhook</span>
             </div>
           </div>
         </div>
@@ -263,7 +285,11 @@ export default function PlatformBillingPage() {
             </span>
           </div>
 
-          {expiringList.length === 0 ? (
+          {loading ? (
+            <div className="p-8 text-center text-xs text-[#718279]">
+              Đang tải danh sách gian hàng sắp hết hạn...
+            </div>
+          ) : expiringList.length === 0 ? (
             <div className="p-8 text-center text-xs text-[#718279]">
               Không có gian hàng nào sắp hết hạn trong 7 ngày tới. Tất cả bản quyền đang hoạt động ổn định.
             </div>
@@ -289,9 +315,9 @@ export default function PlatformBillingPage() {
                         </span>
                         <strong className="text-[#1c302b]">{store.name}</strong>
                       </td>
-                      <td className="px-5 py-3.5 text-[#596962]">{store.phone}</td>
+                      <td className="px-5 py-3.5 text-[#596962]">{store.phone || '—'}</td>
                       <td className="px-5 py-3.5 font-semibold text-[#1c302b]">{store.plan}</td>
-                      <td className="px-5 py-3.5 font-medium">{store.expiresAt}</td>
+                      <td className="px-5 py-3.5 font-medium">{store.expiresAt || '—'}</td>
                       <td className="px-5 py-3.5">
                         <span className="inline-flex items-center px-2 py-0.5 rounded text-[11px] font-bold bg-[#fffbeb] text-[#b45309] border border-[#fde68a]">
                           Còn {store.daysRemaining} ngày
@@ -304,7 +330,7 @@ export default function PlatformBillingPage() {
                           disabled={actionLoadingId === store.id}
                           onClick={() => handleRemindStore(store)}
                         >
-                          Gửi nhắc phí
+                          {actionLoadingId === store.id ? 'Đang gửi...' : 'Gửi nhắc phí'}
                         </Button>
                         <Button
                           variant="primary"
@@ -312,7 +338,7 @@ export default function PlatformBillingPage() {
                           disabled={actionLoadingId === store.id}
                           onClick={() => handleRenewStore(store)}
                         >
-                          Gia hạn nhanh
+                          {actionLoadingId === store.id ? 'Đang gia hạn...' : 'Gia hạn nhanh'}
                         </Button>
                       </td>
                     </tr>
@@ -358,7 +384,13 @@ export default function PlatformBillingPage() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-[#f1f5f3] text-[#334155]">
-                {filteredTransactions.map((tx) => (
+                {loading ? (
+                  <tr>
+                    <td colSpan={7} className="px-5 py-8 text-center text-xs text-[#718279]">
+                      Đang tải lịch sử giao dịch...
+                    </td>
+                  </tr>
+                ) : filteredTransactions.map((tx) => (
                   <tr key={tx.id} className="hover:bg-[#fafbfb] transition-colors">
                     <td className="px-5 py-3.5">
                       <span className="font-mono font-bold text-[#1c302b]">{tx.refCode}</span>
@@ -374,19 +406,21 @@ export default function PlatformBillingPage() {
                       {formatVnd(tx.amount)}
                     </td>
                     <td className="px-5 py-3.5 text-[#596962]">{tx.bank}</td>
-                    <td className="px-5 py-3.5 text-[#718279]">{tx.timestamp}</td>
+                    <td className="px-5 py-3.5 text-[#718279]">{tx.timestamp || '—'}</td>
                     <td className="px-5 py-3.5 text-right">
                       <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-[#eaf4ef] text-[#176b58] border border-[#cde2d6]">
                         <span className="w-1.5 h-1.5 rounded-full bg-[#10b981]" />
-                        Thành công
+                        {tx.status === 'completed' || tx.status === 'paid' ? 'Thành công' : tx.status}
                       </span>
                     </td>
                   </tr>
                 ))}
-                {filteredTransactions.length === 0 && (
+                {!loading && filteredTransactions.length === 0 && (
                   <tr>
                     <td colSpan={7} className="px-5 py-8 text-center text-xs text-[#718279]">
-                      Không tìm thấy giao dịch nào phù hợp với từ khóa &quot;{searchQuery}&quot;.
+                      {searchQuery
+                        ? `Không tìm thấy giao dịch nào phù hợp với từ khóa "${searchQuery}".`
+                        : 'Chưa có giao dịch SePay nào được ghi nhận.'}
                     </td>
                   </tr>
                 )}

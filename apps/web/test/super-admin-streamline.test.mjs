@@ -52,11 +52,8 @@ test('Super Admin Streamline: SaaS Plans Page at /platform/plans', () => {
   assert.ok(fs.existsSync(plansPath), 'plans/page.tsx must exist');
   const content = fs.readFileSync(plansPath, 'utf-8');
 
-  assert.ok(content.includes('Gói Dùng thử'), 'Must contain Trial plan');
-  assert.ok(content.includes('Gói Tiêu chuẩn'), 'Must contain Standard plan');
-  assert.ok(content.includes('Gói Chuyên nghiệp'), 'Must contain Pro plan');
-  assert.ok(content.includes('299000'), 'Must contain 299k price');
-  assert.ok(content.includes('599000'), 'Must contain 599k price');
+  assert.ok(content.includes('platformService.getPlans'), 'Must fetch plans from platformService');
+  assert.ok(content.includes('platformService.updatePlan'), 'Must update plans via platformService');
   assert.ok(content.includes('AppShell'), 'Must wrap in AppShell');
   assert.ok(content.includes('Chỉnh sửa đặc quyền') || content.includes('Cập nhật quyền lợi'), 'Must have edit action');
   assert.ok(content.includes('Modal'), 'Must include Modal for editing');
@@ -68,8 +65,8 @@ test('Super Admin Streamline: SaaS Billing Page at /platform/billing', () => {
   const content = fs.readFileSync(billingPath, 'utf-8');
 
   assert.ok(content.includes('DOANH THU & GIA HẠN SAAS'), 'Must have billing title');
-  assert.ok(content.includes('14.850.000'), 'Must contain MRR KPI');
-  assert.ok(content.includes('SePay VietQR'), 'Must mention SePay VietQR');
+  assert.ok(content.includes('platformService.getBillingStats'), 'Must fetch stats from platformService');
+  assert.ok(content.includes('SePay'), 'Must mention SePay');
   assert.ok(content.includes('Cảnh báo Gian hàng sắp hết hạn'), 'Must have renewal warning block');
   assert.ok(content.includes('AppShell'), 'Must wrap in AppShell');
 });

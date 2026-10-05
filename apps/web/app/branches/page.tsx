@@ -87,75 +87,11 @@ export default function BranchesPage() {
         }));
         setBranchesList(mapped);
       } else {
-        // Fallback default sample data if API returns empty
-        setBranchesList([
-          {
-            id: 1,
-            code: 'Q1',
-            name: 'FIXO · Quận 1',
-            address: '142 Nguyễn Thị Minh Khai, Phường Bến Thành, Quận 1, TP.HCM',
-            phone: '028 7300 1234',
-            is_active: true,
-            users_count: 8,
-            repair_orders_count: 142,
-          },
-          {
-            id: 2,
-            code: 'Q3',
-            name: 'FIXO · Quận 3',
-            address: '285 Cách Mạng Tháng Tám, Phường 12, Quận 3, TP.HCM',
-            phone: '028 7300 5678',
-            is_active: true,
-            users_count: 5,
-            repair_orders_count: 98,
-          },
-          {
-            id: 3,
-            code: 'THUDUC',
-            name: 'FIXO · TP. Thủ Đức',
-            address: '56 Võ Văn Ngân, Phường Bình Thọ, TP. Thủ Đức, TP.HCM',
-            phone: '028 7300 9012',
-            is_active: true,
-            users_count: 4,
-            repair_orders_count: 67,
-          },
-        ]);
+        setBranchesList([]);
       }
     } catch (e) {
       console.warn('Could not fetch branches from API:', e);
-      // Fallback sample data if connection fails
-      setBranchesList([
-        {
-          id: 1,
-          code: 'Q1',
-          name: 'FIXO · Quận 1',
-          address: '142 Nguyễn Thị Minh Khai, Phường Bến Thành, Quận 1, TP.HCM',
-          phone: '028 7300 1234',
-          is_active: true,
-          users_count: 8,
-          repair_orders_count: 142,
-        },
-        {
-          id: 2,
-          code: 'Q3',
-          name: 'FIXO · Quận 3',
-          address: '285 Cách Mạng Tháng Tám, Phường 12, Quận 3, TP.HCM',
-          phone: '028 7300 5678',
-          is_active: true,
-          users_count: 5,
-          repair_orders_count: 98,
-        },
-        {
-          id: 3,
-          code: 'THUDUC',
-          name: 'FIXO · TP. Thủ Đức',
-          address: '56 Võ Văn Ngân, Phường Bình Thọ, TP. Thủ Đức, TP.HCM',
-          phone: '028 7300 9012',
-          is_active: true,
-          users_count: 4,
-          repair_orders_count: 67,
-        },
-      ]);
+      setBranchesList([]);
     } finally {
       setLoading(false);
     }
@@ -492,12 +428,25 @@ export default function BranchesPage() {
         {/* Bảng danh sách chi nhánh */}
         {loading ? (
           <TableSkeleton rows={4} cols={6} />
+        ) : branchesList.length === 0 ? (
+          <EmptyState
+            title="Chưa có chi nhánh nào"
+            description="Chưa có chi nhánh nào trên hệ thống. Vui lòng bấm Thêm chi nhánh để bắt đầu khởi tạo mạng lưới."
+            actionLabel="+ Thêm chi nhánh đầu tiên"
+            onAction={() => {
+              setCreateErrors({});
+              setCreateModalOpen(true);
+            }}
+          />
         ) : filteredBranches.length === 0 ? (
           <EmptyState
             title="Không tìm thấy chi nhánh phù hợp"
             description="Thử thay đổi từ khóa tìm kiếm hoặc tạo thêm chi nhánh mới vào hệ thống."
-            actionLabel="+ Thêm chi nhánh mới"
-            onAction={() => setCreateModalOpen(true)}
+            actionLabel="Xóa bộ lọc"
+            onAction={() => {
+              setSearchQuery('');
+              setStatusFilter('all');
+            }}
           />
         ) : (
           <div className="bg-white rounded-[12px] border border-[#e5ece8] shadow-xs overflow-hidden">

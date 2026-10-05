@@ -117,7 +117,7 @@ class KpiController extends Controller
                 });
                 $qcPassRate = $eligibleOrders->count() > 0
                     ? round(($passedOrders->count() / $eligibleOrders->count()) * 100, 1)
-                    : 96.5;
+                    : null;
             }
 
             // Thời gian xử lý trung bình (phút)
@@ -158,6 +158,18 @@ class KpiController extends Controller
                 default              => 'Kỹ thuật viên',
             };
 
+            // Điểm đánh giá (rating) và trend tính động từ dữ liệu thực tế
+            $rating = null;
+            if ($orderCount > 0) {
+                if ($qcPassRate !== null) {
+                    $score = round(($qcPassRate / 100) * 5, 1);
+                    $rating = "{$score}/5";
+                } elseif ($completedCount > 0) {
+                    $score = round(($completedCount / $orderCount) * 5, 1);
+                    $rating = "{$score}/5";
+                }
+            }
+
             $staffKpis[] = [
                 'id'                           => $tech->id,
                 'technician_id'                => $tech->id,
@@ -176,9 +188,9 @@ class KpiController extends Controller
                 'qc_passed'                    => $qcPassed,
                 'qc_total'                     => $qcTotal,
                 'qc_pass_rate'                 => $qcPassRate,
-                'qcPass'                       => "{$qcPassRate}%",
-                'rating'                       => '4.8/5',
-                'trend'                        => '+10.2%',
+                'qcPass'                       => $qcPassRate !== null ? "{$qcPassRate}%" : null,
+                'rating'                       => $rating,
+                'trend'                        => null,
                 'avg_processing_time_minutes'  => $avgMinutes,
                 'avg_processing_time_hours'    => $avgHours,
                 'avg_processing_time_formatted'=> $formattedTime,
@@ -196,7 +208,13 @@ class KpiController extends Controller
 
         $systemQcRate = $totalSystemQcTotal > 0
             ? round(($totalSystemQcPassed / $totalSystemQcTotal) * 100, 1)
-            : 96.5;
+            : ($totalSystemCompleted > 0 ? 100.0 : null);
+
+        $customerSatisfaction = null;
+        if ($totalSystemCompleted > 0 && $systemQcRate !== null) {
+            $csScore = round(($systemQcRate / 100) * 5, 2);
+            $customerSatisfaction = str_replace('.', ',', (string) $csScore) . ' / 5';
+        }
 
         $summary = [
             'total_technicians'            => count($technicians),
@@ -209,8 +227,8 @@ class KpiController extends Controller
             'avg_processing_time_minutes'  => $systemAvgMinutes,
             'avg_processing_time_hours'    => $systemAvgHours,
             'avg_processing_time_formatted'=> $systemFormattedTime,
-            'avg_repair_days'              => ($systemAvgDays > 0 ? str_replace('.', ',', (string) $systemAvgDays) : '1,8') . ' ngày',
-            'customer_satisfaction'        => '4,86 / 5',
+            'avg_repair_days'              => $systemAvgDays > 0 ? (str_replace('.', ',', (string) $systemAvgDays) . ' ngày') : null,
+            'customer_satisfaction'        => $customerSatisfaction,
         ];
 
         // Nếu client yêu cầu chỉ lấy danh sách mảng KTV

@@ -1,10 +1,11 @@
 'use client';
 
 import React, { useState, useEffect, useCallback } from 'react';
-import { paymentService, repairService, type PaymentItem } from '@podscare/api-client';
+import { paymentService, repairService, tenantService, type PaymentItem } from '@podscare/api-client';
 import { Button, StatusTag, FilterBar, EmptyState, Modal, useToast, StatCard, CurrencyInput } from '@podscare/ui';
 import { AppShell } from '../components/AppShell';
 import { usePodsCare } from '../providers';
+import { VietQrPaymentModal } from '../components/VietQrPaymentModal';
 
 interface FormattedPayment {
   id: number | string;
@@ -19,6 +20,7 @@ interface FormattedPayment {
   receivedBy: string;
   date: string;
   transactionRef?: string;
+  rawStatus: string;
 }
 
 interface PendingOrderOption {
@@ -34,7 +36,6 @@ const VIETQR_BANK_ID = process.env.NEXT_PUBLIC_VIETQR_BANK_ID || 'MB';
 const VIETQR_ACCOUNT_NO = process.env.NEXT_PUBLIC_VIETQR_ACCOUNT_NO || '';
 const VIETQR_ACCOUNT_NAME = process.env.NEXT_PUBLIC_VIETQR_ACCOUNT_NAME || '';
 const VIETQR_TEMPLATE = process.env.NEXT_PUBLIC_VIETQR_TEMPLATE || 'compact2';
-const isVietQrConfigured = Boolean(VIETQR_BANK_ID && VIETQR_ACCOUNT_NO);
 
 export default function PaymentsPage() {
   const { toast } = useToast();
@@ -43,7 +44,34 @@ export default function PaymentsPage() {
   const [pendingOrders, setPendingOrders] = useState<PendingOrderOption[]>([]);
   const [selectedPendingCode, setSelectedPendingCode] = useState<string>('');
   const [isLoading, setIsLoading] = useState(true);
+  const [vietQrModalOpen, setVietQrModalOpen] = useState(false);
+  const [activeVietQrPayment, setActiveVietQrPayment] = useState<{
+    paymentId: number | string;
+    orderCode: string;
+    amount: number;
+  } | null>(null);
   const [search, setSearch] = useState('');
+  const [confirmingId, setConfirmingId] = useState<number | string | null>(null);
+  const [storeBank, setStoreBank] = useState<{
+    bankCode?: string;
+    accountNumber?: string;
+    accountName?: string;
+  }>({});
+
+  useEffect(() => {
+    tenantService
+      .getSettings()
+      .then((res) => {
+        if (res?.success && res.data) {
+          setStoreBank({
+            bankCode: res.data.bank_code || undefined,
+            accountNumber: res.data.bank_account_number || undefined,
+            accountName: res.data.bank_account_holder || undefined,
+          });
+        }
+      })
+      .catch(() => {});
+  }, []);
 
   // VietQR modal state
   const [qrModalOpen, setQrModalOpen] = useState(false);
@@ -97,11 +125,12 @@ export default function PaymentsPage() {
             amount: Number(p.amount) || 0,
             method: mapMethodLabel(p.payment_method),
             methodKey: p.payment_method,
-            status: (p.status === 'completed' || p.status === 'paid') ? 'Hoàn tất' : 'Chờ xử lý',
+            status: (p.status === 'completed' || p.status === 'paid') ? 'Hoàn tất' : (p.status === 'pending' ? 'Chờ chuyển khoản' : 'Chờ xử lý'),
             statusType: (p.status === 'completed' || p.status === 'paid') ? 'ready' : 'wait',
-            receivedBy: p.received_by_user?.name || 'Hệ thống SePay',
+            receivedBy: p.received_by_user?.name || (p.status === 'pending' ? 'Chờ CSKH duyệt' : 'Hệ thống SePay'),
             date: dateStr,
             transactionRef: p.transaction_ref || undefined,
+            rawStatus: p.status || 'pending',
           };
         });
         setPayments(mapped);
@@ -115,6 +144,28 @@ export default function PaymentsPage() {
       setIsLoading(false);
     }
   }, []);
+
+  const handleConfirmPayment = async (paymentId: number | string, orderCode?: string) => {
+    setConfirmingId(paymentId);
+    try {
+      await paymentService.confirmPayment(paymentId);
+      toast(`Đã xác nhận nhận tiền thành công cho đơn ${orderCode || `#${paymentId}`}!`, 'success');
+      await loadPayments();
+      await loadPendingOrders();
+      if (invalidateOrders) {
+        await invalidateOrders();
+      }
+    } catch (err: any) {
+      console.error('Could not confirm payment:', err);
+      const errMsg =
+        err?.response?.data?.message ||
+        err?.message ||
+        'Không thể duyệt thanh toán. Vui lòng kiểm tra lại quyền hạn hoặc kết nối.';
+      toast(`Lỗi duyệt thanh toán: ${errMsg}`, 'error');
+    } finally {
+      setConfirmingId(null);
+    }
+  };
 
   const loadPendingOrders = useCallback(async () => {
     try {
@@ -220,17 +271,29 @@ export default function PaymentsPage() {
       // Task 3.1: Loại bỏ regex strip số, gửi trực tiếp order_code hoặc repair_order_id số
       const orderRef = qrOrderCode.trim();
       const repairOrderId = /^\d+$/.test(orderRef) ? Number(orderRef) : orderRef;
-      await paymentService.createPayment({
+      const res = await paymentService.createPayment({
         repair_order_id: repairOrderId,
         amount: qrAmount,
         payment_method: qrMethod,
         notes: `Thanh toán cho đơn ${orderRef}`,
       });
 
-      toast('Tạo phiếu thu thành công', 'success');
+      const paymentData = res?.data || res;
       setQrModalOpen(false);
-      loadPayments();
-      loadPendingOrders();
+
+      if (qrMethod === 'bank_transfer') {
+        const paymentId = paymentData?.id || paymentData?.payment?.id;
+        setActiveVietQrPayment({
+          paymentId: paymentId || 0,
+          orderCode: orderRef,
+          amount: qrAmount,
+        });
+        setVietQrModalOpen(true);
+      } else {
+        toast('Tạo phiếu thu thành công', 'success');
+        loadPayments();
+        loadPendingOrders();
+      }
     } catch (err: any) {
       console.error('Could not create payment on API:', err);
       const errMsg =
@@ -257,11 +320,16 @@ export default function PaymentsPage() {
     );
   });
 
-  // Dynamic VietQR link generation from environment configuration
-  const vietQrUrl = isVietQrConfigured
-    ? `https://img.vietqr.io/image/${VIETQR_BANK_ID}-${VIETQR_ACCOUNT_NO}-${VIETQR_TEMPLATE}.png?amount=${qrAmount}&addInfo=${encodeURIComponent(
+  const effectiveBankId = storeBank.bankCode || VIETQR_BANK_ID;
+  const effectiveAccountNo = storeBank.accountNumber || VIETQR_ACCOUNT_NO;
+  const effectiveAccountName = storeBank.accountName || VIETQR_ACCOUNT_NAME;
+  const isBankConfigured = Boolean(effectiveBankId && effectiveAccountNo);
+
+  // Dynamic VietQR link generation from store bank configuration or fallback
+  const vietQrUrl = isBankConfigured
+    ? `https://img.vietqr.io/image/${effectiveBankId}-${effectiveAccountNo}-${VIETQR_TEMPLATE}.png?amount=${qrAmount}&addInfo=${encodeURIComponent(
         qrOrderCode
-      )}&accountName=${encodeURIComponent(VIETQR_ACCOUNT_NAME)}`
+      )}&accountName=${encodeURIComponent(effectiveAccountName)}`
     : '';
 
   return (
@@ -276,7 +344,7 @@ export default function PaymentsPage() {
               Giao dịch & Thanh toán
             </h1>
             <p className="text-sm text-[#85928c] mt-1 mb-0">
-              Lịch sử phiếu thu, chuyển khoản tự động VietQR SePay và đối soát sổ sách.
+              Lịch sử phiếu thu, chuyển khoản VietQR và đối soát sổ sách.
             </p>
           </div>
           <div className="flex items-center gap-2.5">
@@ -316,7 +384,7 @@ export default function PaymentsPage() {
             label="Chuyển khoản VietQR"
             value={`${transferCount} giao dịch`}
             icon="check"
-            foot="Tự động qua SePay"
+            foot="Xác nhận chuyển khoản tiệm"
             periodLabel=""
             trend="neutral"
           />
@@ -381,6 +449,7 @@ export default function PaymentsPage() {
                     <th className="px-3">Người thu</th>
                     <th className="px-3">Thời gian</th>
                     <th className="px-3">Trạng thái</th>
+                    <th className="px-3 text-right">Thao tác</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-[#f1f3f2] text-sm">
@@ -402,6 +471,21 @@ export default function PaymentsPage() {
                       <td className="px-3 text-[#8a9690] text-xs">{p.date}</td>
                       <td className="px-3">
                         <StatusTag label={p.status} type={p.statusType} />
+                      </td>
+                      <td className="px-3 text-right">
+                        {p.rawStatus === 'pending' ? (
+                          <Button
+                            variant="primary"
+                            size="sm"
+                            disabled={confirmingId === p.id}
+                            onClick={() => handleConfirmPayment(p.id, p.orderCode)}
+                            className="text-xs font-bold bg-[#176b58] hover:bg-[#0e4b3d] text-white whitespace-nowrap"
+                          >
+                            {confirmingId === p.id ? 'Đang duyệt...' : 'Duyệt đã nhận tiền'}
+                          </Button>
+                        ) : (
+                          <span className="text-xs text-[#8a9690] font-medium">—</span>
+                        )}
                       </td>
                     </tr>
                   ))}
@@ -495,7 +579,7 @@ export default function PaymentsPage() {
                   checked={qrMethod === 'bank_transfer'}
                   onChange={() => setQrMethod('bank_transfer')}
                 />
-                VietQR (Chuyển khoản SePay)
+                VietQR (Chuyển khoản tiệm)
               </label>
               <label className="flex items-center gap-1.5 text-xs text-[#2e3e36] cursor-pointer">
                 <input
@@ -509,18 +593,13 @@ export default function PaymentsPage() {
             </div>
 
             {qrMethod === 'bank_transfer' && (
-              !isVietQrConfigured ? (
+              !isBankConfigured ? (
                 <div className="p-4 bg-[#fff8eb] border border-[#fde68a] rounded-[10px] text-xs text-[#92400e] space-y-1">
                   <div className="font-bold flex items-center gap-1.5 text-sm text-[#b45309]">
-                    ⚠️ Chưa cấu hình thông tin ngân hàng VietQR
+                    ⚠️ Chưa cấu hình thông tin ngân hàng VietQR của tiệm
                   </div>
                   <p>
-                    Vui lòng khai báo các biến môi trường{' '}
-                    <code>NEXT_PUBLIC_VIETQR_BANK_ID</code>,{' '}
-                    <code>NEXT_PUBLIC_VIETQR_ACCOUNT_NO</code>{' '}
-                    và{' '}
-                    <code>NEXT_PUBLIC_VIETQR_ACCOUNT_NAME</code>{' '}
-                    trong file cấu hình để tạo mã VietQR tự động.
+                    Vui lòng truy cập trang <strong>Cài đặt Thương hiệu & Mẫu in</strong> để cập nhật thông tin ngân hàng (Mã NH, STK, Chủ TK) của cửa hàng để tạo mã VietQR tự động.
                   </p>
                 </div>
               ) : (
@@ -538,13 +617,13 @@ export default function PaymentsPage() {
                       Quét mã QR bằng App Ngân hàng
                     </div>
                     <div>
-                      Ngân hàng: <b>{VIETQR_BANK_ID}</b>
+                      Ngân hàng: <b>{effectiveBankId}</b>
                     </div>
                     <div>
-                      Số tài khoản: <b className="font-mono text-sm text-[#1c302b]">{VIETQR_ACCOUNT_NO}</b>
+                      Số tài khoản: <b className="font-mono text-sm text-[#1c302b]">{effectiveAccountNo}</b>
                     </div>
                     <div>
-                      Chủ tài khoản: <b>{VIETQR_ACCOUNT_NAME || 'FIXO VIETNAM'}</b>
+                      Chủ tài khoản: <b>{effectiveAccountName || 'CỬA HÀNG'}</b>
                     </div>
                     <div>
                       Số tiền: <b className="text-sm text-[#176b58]">{moneyFormatted(qrAmount)}</b>
@@ -553,7 +632,7 @@ export default function PaymentsPage() {
                       Nội dung CK: <b className="font-mono bg-[#eaf4ef] text-[#176b58] px-1.5 py-0.5 rounded">{qrOrderCode}</b>
                     </div>
                     <div className="text-xs text-[#7e8d85] pt-1">
-                      ⚡ SePay Webhook tự động nhận diện và cập nhật phiếu thu trong 3-5 giây.
+                      ⚡ Tiền chuyển trực tiếp vào tài khoản tiệm. CSKH bấm Duyệt đã nhận tiền để hoàn tất.
                     </div>
                   </div>
                 </div>
@@ -561,6 +640,28 @@ export default function PaymentsPage() {
             )}
           </div>
         </Modal>
+
+        {activeVietQrPayment && (
+          <VietQrPaymentModal
+            isOpen={vietQrModalOpen}
+            onClose={() => {
+              setVietQrModalOpen(false);
+              setActiveVietQrPayment(null);
+              loadPayments();
+              loadPendingOrders();
+            }}
+            paymentId={activeVietQrPayment.paymentId}
+            orderCode={activeVietQrPayment.orderCode}
+            amount={activeVietQrPayment.amount}
+            onSuccess={() => {
+              loadPayments();
+              loadPendingOrders();
+              if (invalidateOrders) {
+                invalidateOrders();
+              }
+            }}
+          />
+        )}
       </div>
     </AppShell>
   );
