@@ -298,4 +298,92 @@ class DeviceCrudApiTest extends TestCase
         $resGetAfter = $this->getJson('/api/v1/devices/categories');
         $this->assertContains($newCategory, $resGetAfter->json('data'));
     }
+
+    /**
+     * Test checklist-template endpoint returns deduplicated criteria across multiple models in a category.
+     */
+    public function test_checklist_template_endpoint_deduplicates_category_items(): void
+    {
+        $category = 'Wearable ' . uniqid();
+
+        // Model 1
+        $model1 = DeviceModel::create([
+            'name' => 'Watch Series A ' . uniqid(),
+            'category' => $category,
+            'model_code' => 'WSA-' . uniqid(),
+            'is_active' => true,
+        ]);
+        ChecklistTemplate::create([
+            'device_model_id' => $model1->id,
+            'category' => $category,
+            'item_name' => 'Màn hình / hiển thị',
+            'order_index' => 1,
+            'is_active' => true,
+        ]);
+        ChecklistTemplate::create([
+            'device_model_id' => $model1->id,
+            'category' => $category,
+            'item_name' => 'Cảm ứng & Nguồn',
+            'order_index' => 2,
+            'is_active' => true,
+        ]);
+
+        // Model 2
+        $model2 = DeviceModel::create([
+            'name' => 'Watch Series B ' . uniqid(),
+            'category' => $category,
+            'model_code' => 'WSB-' . uniqid(),
+            'is_active' => true,
+        ]);
+        ChecklistTemplate::create([
+            'device_model_id' => $model2->id,
+            'category' => $category,
+            'item_name' => 'Màn hình / hiển thị',
+            'order_index' => 1,
+            'is_active' => true,
+        ]);
+        ChecklistTemplate::create([
+            'device_model_id' => $model2->id,
+            'category' => $category,
+            'item_name' => 'Cảm ứng & Nguồn',
+            'order_index' => 2,
+            'is_active' => true,
+        ]);
+
+        $res = $this->getJson('/api/v1/devices/checklist-template?category=' . urlencode($category));
+        $res->assertStatus(200)->assertJsonPath('success', true);
+
+        $items = $res->json('data');
+        $this->assertCount(2, $items, 'Category items should be deduplicated to 2 distinct items');
+        $this->assertEquals(['Màn hình / hiển thị', 'Cảm ứng & Nguồn'], array_column($items, 'item_name'));
+    }
+
+    /**
+     * Test checklist-template endpoint retrieves tailored checklist by device_model_id.
+     */
+    public function test_checklist_template_endpoint_retrieves_by_device_model_id(): void
+    {
+        $category = 'Tablet ' . uniqid();
+        $customModel = DeviceModel::create([
+            'name' => 'Pro Max Tablet ' . uniqid(),
+            'category' => $category,
+            'model_code' => 'TAB-' . uniqid(),
+            'is_active' => true,
+        ]);
+
+        ChecklistTemplate::create([
+            'device_model_id' => $customModel->id,
+            'category' => $category,
+            'item_name' => 'Face ID TrueDepth',
+            'order_index' => 1,
+            'is_active' => true,
+        ]);
+
+        $res = $this->getJson('/api/v1/devices/checklist-template?device_model_id=' . $customModel->id);
+        $res->assertStatus(200)->assertJsonPath('success', true);
+
+        $items = $res->json('data');
+        $this->assertCount(1, $items);
+        $this->assertEquals('Face ID TrueDepth', $items[0]['item_name']);
+    }
 }

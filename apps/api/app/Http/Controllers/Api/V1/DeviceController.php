@@ -296,7 +296,13 @@ class DeviceController extends Controller
     {
         $query = ChecklistTemplate::active();
 
-        if ($modelId = $request->input('device_model_id')) {
+        $modelId = $request->input('device_model_id') ?: $request->input('model_id');
+        if (! $modelId && $request->filled('model_name')) {
+            $model = DeviceModel::where('name', $request->input('model_name'))->first();
+            $modelId = $model?->id;
+        }
+
+        if ($modelId) {
             $hasModelSpecific = ChecklistTemplate::active()->where('device_model_id', $modelId)->exists();
             if ($hasModelSpecific) {
                 $query->where('device_model_id', $modelId);
@@ -311,7 +317,10 @@ class DeviceController extends Controller
             $query->where('category', 'AirPods');
         }
 
-        $template = $query->orderBy('order_index', 'asc')->get();
+        $template = $query->orderBy('order_index', 'asc')
+            ->get()
+            ->unique('item_name')
+            ->values();
 
         return $this->success($template, 'Lấy checklist mẫu kiểm tra tiếp nhận thành công.');
     }

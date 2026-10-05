@@ -136,7 +136,7 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
       .catch(() => {});
   }, []);
 
-  // Fetch dynamic common issues & checklist templates based on selectedCategory
+  // Fetch dynamic common issues & checklist templates based on selectedCategory and selectedDevice
   useEffect(() => {
     if (!isOpen) return;
 
@@ -153,20 +153,34 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
       })
       .catch(() => setCommonIssues(DEFAULT_COMMON_ISSUES[selectedCategory] || []));
 
+    const matchedDevice =
+      deviceList.find((d) => d.name === selectedDevice) ||
+      deviceProfiles.find((p) => p.name === selectedDevice);
+    const modelId = matchedDevice?.id;
+
     deviceService
-      .getChecklistTemplate({ category: selectedCategory })
+      .getChecklistTemplate({
+        category: selectedCategory,
+        ...(modelId ? { device_model_id: modelId } : {}),
+      })
       .then((res: any) => {
         const raw = res?.data || res;
         const list = Array.isArray(raw) ? raw : (raw?.data || []);
         if (Array.isArray(list) && list.length > 0) {
-          const checks = list.map((item: any) => item.item_name || item.name || String(item));
+          const checks = Array.from(
+            new Set(
+              list
+                .map((item: any) => (item.item_name || item.name || String(item)).trim())
+                .filter(Boolean)
+            )
+          );
           setChecklistTemplate(checks);
         } else {
           setChecklistTemplate([]);
         }
       })
       .catch(() => setChecklistTemplate([]));
-  }, [isOpen, selectedCategory]);
+  }, [isOpen, selectedCategory, selectedDevice, deviceList, deviceProfiles]);
 
   const activeProfile =
     deviceProfiles.find((p) => p.name === selectedDevice) ||
@@ -175,20 +189,26 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
 
   const availableModels = deviceProfiles.filter((p) => p.category === selectedCategory);
 
-  const effectiveChecks: string[] =
-    checklistTemplate.length > 0
-      ? checklistTemplate
-      : activeProfile?.checks || [
-          'Kết nối Bluetooth',
-          'Âm thanh tai trái',
-          'Âm thanh tai phải',
-          'Microphone',
-          'Pin & thời lượng sử dụng',
-          'Hộp sạc / nhận sạc',
-          'Chống ồn ANC',
-          'Xuyên âm',
-          'Cảm ứng / thao tác',
-        ];
+  const effectiveChecks: string[] = Array.from(
+    new Set(
+      (checklistTemplate.length > 0
+        ? checklistTemplate
+        : activeProfile?.checks || [
+            'Kết nối Bluetooth',
+            'Âm thanh tai trái',
+            'Âm thanh tai phải',
+            'Microphone',
+            'Pin & thời lượng sử dụng',
+            'Hộp sạc / nhận sạc',
+            'Chống ồn ANC',
+            'Xuyên âm',
+            'Cảm ứng / thao tác',
+          ]
+      )
+        .map((c: any) => (typeof c === 'string' ? c : c.item_name || c.name || String(c)).trim())
+        .filter(Boolean)
+    )
+  );
 
   const handleChipClick = (chip: CommonIssueItem) => {
     const textToAdd = chip.issue_name;
@@ -203,9 +223,6 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
         delete next.issue;
         return next;
       });
-    }
-    if ((price === '' || price === 0) && chip.estimated_cost) {
-      setPrice(Number(chip.estimated_cost));
     }
   };
 
@@ -327,7 +344,7 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
     const branchObj =
       branches.find((b) => String(b.id) === String(branchIdNum)) ||
       branches.find((b) => b.name === branch) ||
-      branches[1] || { id: 1, name: 'FIXO · Quận 1' };
+      branches.find((b) => b.id !== 'all') || { id: branchIdNum, name: branch || 'Chi nhánh tiếp nhận' };
 
     // Resolve device_model_id
     const matchedDevice = deviceList.find(
@@ -355,61 +372,69 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
       checklists: backendChecklists,
     };
 
-    let newId = `PC26-${Math.floor(10000 + Math.random() * 90000)}`;
-
     try {
       const res = await repairService.createIntake(payload);
       const data = res?.data || res;
+      let newId = '';
       if (data?.order_code) {
         newId = data.order_code;
       } else if (data?.data?.order_code) {
         newId = data.data.order_code;
+      } else if (data?.id) {
+        newId = `FX${new Date().getFullYear().toString().slice(-2)}-${String(data.id).padStart(4, '0')}`;
+      } else {
+        throw new Error('Máy chủ không trả về mã đơn hàng hợp lệ.');
       }
+
       toast(`Đã tiếp nhận thành công đơn ${newId}`, 'success');
+
+      const newOrder: RepairOrder = {
+        id: newId,
+        name: name.trim(),
+        phone: phone.trim(),
+        deviceCategory: selectedCategory,
+        device: selectedDevice,
+        serial: serial.trim() || 'Chưa cập nhật',
+        issue: issue.trim(),
+        accessories: accessories.trim() || 'Không gửi kèm',
+        branch: branchObj.name,
+        branchId: branchObj.id,
+        branchName: branchObj.name,
+        status: 'Chờ khách duyệt',
+        statusType: 'wait',
+        price: typeof price === 'number' ? price : 0,
+        priceNote: priceNote.trim(),
+        tech: 'Chưa phân công',
+        date: new Intl.DateTimeFormat('vi-VN').format(new Date()),
+        checks,
+        photos,
+        appearance: appearance.trim() || 'Không ghi chú',
+        testNote: testNote.trim(),
+        createdBy: currentUser?.name || 'Nhân viên',
+        createdAt: new Date().toISOString(),
+      };
+
+      addOrder(newOrder);
+      onClose();
+
+      if (shouldPrint) {
+        toast(`Đang gửi lệnh in phiếu tiếp nhận (${currentFormat.toUpperCase()})...`, 'info');
+        printReceipt(newOrder, currentFormat);
+        if (onSuccess) {
+          onSuccess(newOrder, true);
+        }
+      } else if (onSuccess) {
+        onSuccess(newOrder, false);
+      }
     } catch (err: any) {
-      console.warn('API call failed, saving locally:', err);
-      toast(`Đã lưu đơn ${newId}: ${err?.message || ''}`, 'info');
+      console.error('API createIntake failed:', err);
+      const errMsg =
+        err?.response?.data?.message ||
+        err?.message ||
+        'Không thể tạo đơn tiếp nhận lúc này. Vui lòng kiểm tra kết nối mạng và thử lại.';
+      toast(`Lỗi tạo đơn: ${errMsg}`, 'error');
     } finally {
       setIsSubmitting(false);
-    }
-
-    const newOrder: RepairOrder = {
-      id: newId,
-      name: name.trim(),
-      phone: phone.trim(),
-      deviceCategory: selectedCategory,
-      device: selectedDevice,
-      serial: serial.trim() || 'Chưa cập nhật',
-      issue: issue.trim(),
-      accessories: accessories.trim() || 'Không gửi kèm',
-      branch: branchObj.name,
-      branchId: branchObj.id,
-      branchName: branchObj.name,
-      status: 'Chờ khách duyệt',
-      statusType: 'wait',
-      price: typeof price === 'number' ? price : 0,
-      priceNote: priceNote.trim(),
-      tech: 'Chưa phân công',
-      date: new Intl.DateTimeFormat('vi-VN').format(new Date()),
-      checks,
-      photos,
-      appearance: appearance.trim() || 'Không ghi chú',
-      testNote: testNote.trim(),
-      createdBy: currentUser?.name || 'Nhân viên',
-      createdAt: new Date().toISOString(),
-    };
-
-    addOrder(newOrder);
-    onClose();
-
-    if (shouldPrint) {
-      toast(`Đang gửi lệnh in phiếu tiếp nhận (${currentFormat.toUpperCase()})...`, 'info');
-      printReceipt(newOrder, currentFormat);
-      if (onSuccess) {
-        onSuccess(newOrder, true);
-      }
-    } else if (onSuccess) {
-      onSuccess(newOrder, false);
     }
   };
 
@@ -576,14 +601,7 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
                     }
                   }}
                   error={errors.branch}
-                  options={((branches && branches.filter((b) => b.id !== 'all').length > 0)
-                    ? branches.filter((b) => b.id !== 'all')
-                    : [
-                        { id: 1, name: 'FIXO · Quận 1', code: 'Q1', address: '142 Nguyễn Thị Minh Khai, Phường Bến Thành, Quận 1, TP.HCM' },
-                        { id: 2, name: 'FIXO · Quận 3', code: 'Q3', address: '285 Cách Mạng Tháng Tám, Phường 12, Quận 3, TP.HCM' },
-                        { id: 3, name: 'FIXO · TP. Thủ Đức', code: 'THUDUC', address: '56 Võ Văn Ngân, Phường Bình Thọ, TP. Thủ Đức, TP.HCM' },
-                      ]
-                  ).map((b) => ({
+                  options={(branches ? branches.filter((b) => b.id !== 'all') : []).map((b) => ({
                     value: String(b.id),
                     label: `${b.name} (${b.code}) — ${b.address || ''}`,
                   }))}
@@ -728,11 +746,6 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
                             }`}
                           >
                             <span>{chip.issue_name}</span>
-                            {chip.estimated_cost ? (
-                              <span className="text-[10px] font-mono text-[#768a80]">
-                                ~{new Intl.NumberFormat('vi-VN').format(chip.estimated_cost)} ₫
-                              </span>
-                            ) : null}
                           </button>
                         );
                       })}
