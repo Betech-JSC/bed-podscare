@@ -139,10 +139,10 @@ class TenantBrandingApiTest extends TestCase
         Storage::disk('public')->assertExists($relative);
     }
 
-    public function test_upload_logo_rejects_file_over_2mb_or_invalid_format(): void
+    public function test_upload_logo_rejects_file_over_5mb_or_invalid_format(): void
     {
-        // 1. File dung lượng lớn > 2MB (2049 KB)
-        $largeFile = UploadedFile::fake()->create('heavy_image.png', 2500, 'image/png');
+        // 1. File dung lượng lớn > 5MB (6000 KB > 5120 KB)
+        $largeFile = UploadedFile::fake()->create('heavy_image.png', 6000, 'image/png');
 
         $response = $this->actingAs($this->adminA)
             ->postJson('/api/v1/tenant/logo', [
@@ -161,6 +161,52 @@ class TenantBrandingApiTest extends TestCase
             ]);
 
         $responseInvalid->assertStatus(422)
+            ->assertJsonValidationErrors(['logo']);
+    }
+
+    public function test_upload_logo_supports_base64_data_url_and_custom_mimes(): void
+    {
+        // 1. Upload ảnh PNG qua Base64 Data URL
+        $base64Png = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==';
+
+        $response = $this->actingAs($this->adminA)
+            ->postJson('/api/v1/tenant/logo', [
+                'logo_base64' => $base64Png,
+            ]);
+
+        $response->assertStatus(200)
+            ->assertJsonPath('success', true);
+
+        $logoUrl = $response->json('data.logo_url');
+        $this->assertNotEmpty($logoUrl);
+        $this->assertStringContainsString("/storage/tenants/{$this->tenantA->id}/branding/", $logoUrl);
+
+        $this->tenantA->refresh();
+        $this->assertEquals($logoUrl, $this->tenantA->logo_url);
+
+        $relativePos = strpos($logoUrl, '/storage/');
+        $relative = substr($logoUrl, $relativePos + strlen('/storage/'));
+        Storage::disk('public')->assertExists($relative);
+
+        // 2. Upload ảnh SVG qua field logo dạng Data URL
+        $base64Svg = 'data:image/svg+xml;base64,' . base64_encode('<svg xmlns="http://www.w3.org/2000/svg" width="100" height="100"><circle cx="50" cy="50" r="40" fill="green"/></svg>');
+
+        $responseSvg = $this->actingAs($this->adminA)
+            ->postJson('/api/v1/tenant/logo', [
+                'logo' => $base64Svg,
+            ]);
+
+        $responseSvg->assertStatus(200)
+            ->assertJsonPath('success', true);
+
+        // 3. Từ chối SVG chứa mã script độc hại
+        $maliciousSvg = 'data:image/svg+xml;base64,' . base64_encode('<svg xmlns="http://www.w3.org/2000/svg"><script>alert(1)</script></svg>');
+        $responseMalicious = $this->actingAs($this->adminA)
+            ->postJson('/api/v1/tenant/logo', [
+                'logo' => $maliciousSvg,
+            ]);
+
+        $responseMalicious->assertStatus(422)
             ->assertJsonValidationErrors(['logo']);
     }
 

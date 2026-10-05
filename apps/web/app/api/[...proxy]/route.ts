@@ -52,13 +52,16 @@ async function handleProxy(req: NextRequest, { params }: { params: { proxy: stri
     forwardHeaders['Authorization'] = authHeader;
   }
 
-  let body: string | undefined = undefined;
+  let body: Buffer | undefined = undefined;
   if (['POST', 'PUT', 'PATCH', 'DELETE'].includes(req.method)) {
     try {
-      const text = await req.text();
-      if (text && text.length > 0) {
-        body = text;
-        if (!forwardHeaders['Content-Type'] && !forwardHeaders['content-type']) {
+      const arrayBuf = await req.arrayBuffer();
+      if (arrayBuf && arrayBuf.byteLength > 0) {
+        body = Buffer.from(arrayBuf);
+        const hasContentType = Object.keys(forwardHeaders).some(
+          (k) => k.toLowerCase() === 'content-type'
+        );
+        if (!hasContentType) {
           forwardHeaders['Content-Type'] = 'application/json';
         }
       }
@@ -81,7 +84,7 @@ async function handleProxy(req: NextRequest, { params }: { params: { proxy: stri
     const res = await fetch(url, {
       method: req.method,
       headers: forwardHeaders,
-      body,
+      body: body as any,
       signal: controller.signal,
     });
     clearTimeout(timeoutId);

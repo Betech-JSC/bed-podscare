@@ -114,37 +114,164 @@ class TenantSettingController extends Controller
             return $this->failure('Không tìm thấy thông tin gian hàng.', 404);
         }
 
-        $request->validate([
-            'logo'  => 'nullable|file|mimes:jpeg,png,jpg,svg,webp|max:2048',
-            'file'  => 'nullable|file|mimes:jpeg,png,jpg,svg,webp|max:2048',
-            'image' => 'nullable|file|mimes:jpeg,png,jpg,svg,webp|max:2048',
-        ]);
+        // 1. Kiểm tra nếu request tải lên file dạng multipart
+        $hasUploadFile = $request->hasFile('logo') || $request->hasFile('file') || $request->hasFile('image')
+            || ($request->file('logo') instanceof \Illuminate\Http\UploadedFile)
+            || ($request->file('file') instanceof \Illuminate\Http\UploadedFile)
+            || ($request->file('image') instanceof \Illuminate\Http\UploadedFile);
 
-        $file = $request->file('logo') ?? $request->file('file') ?? $request->file('image');
-        if (! $file) {
-            return $this->failure('Vui lòng chọn file ảnh logo hợp lệ.', 422);
+        if ($hasUploadFile) {
+            $request->validate([
+                'logo'  => 'nullable|file|mimes:jpeg,png,jpg,svg,webp,svg+xml|max:5120',
+                'file'  => 'nullable|file|mimes:jpeg,png,jpg,svg,webp,svg+xml|max:5120',
+                'image' => 'nullable|file|mimes:jpeg,png,jpg,svg,webp,svg+xml|max:5120',
+            ]);
+
+            $file = $request->file('logo') ?? $request->file('file') ?? $request->file('image');
+            if (! $file) {
+                return $this->failure('Vui lòng chọn file ảnh logo hợp lệ.', 422);
+            }
+
+            // Xóa logo cũ trên public disk nếu có
+            $this->deleteDiskLogoFile($tenant->logo_url);
+
+            // Lưu file logo mới
+            $extension = $file->getClientOriginalExtension() ?: 'png';
+            $filename = 'logo_' . time() . '_' . Str::random(8) . '.' . $extension;
+            $path = $file->storeAs("tenants/{$tenant->id}/branding", $filename, 'public');
+            $url = asset("storage/{$path}");
+
+            $tenant->logo_url = $url;
+            $tenant->save();
+
+            return $this->success([
+                'tenant_id'           => $tenant->id,
+                'name'                => $tenant->name,
+                'code'                => $tenant->code,
+                'logo_url'            => $tenant->logo_url,
+                'hotline'             => $tenant->hotline,
+                'receipt_footer_note' => $tenant->receipt_footer_note,
+            ], 'Tải lên logo thương hiệu thành công.');
         }
 
-        // Xóa logo cũ trên public disk nếu có
-        $this->deleteDiskLogoFile($tenant->logo_url);
+        // 2. Hỗ trợ Base64 Data URL (Dual-layer resilience khi client gửi JSON hoặc proxy bị chặn multipart)
+        $base64Input = $request->input('logo_base64')
+            ?? (is_string($request->input('logo')) ? $request->input('logo') : null)
+            ?? (is_string($request->input('image')) ? $request->input('image') : null)
+            ?? (is_string($request->input('file')) ? $request->input('file') : null);
 
-        // Lưu file logo mới
-        $extension = $file->getClientOriginalExtension() ?: 'png';
-        $filename = 'logo_' . time() . '_' . Str::random(8) . '.' . $extension;
-        $path = $file->storeAs("tenants/{$tenant->id}/branding", $filename, 'public');
-        $url = asset("storage/{$path}");
+        if (! empty($base64Input)) {
+            $binaryData = null;
+            $extension = 'png';
 
-        $tenant->logo_url = $url;
-        $tenant->save();
+            if (preg_match('/^data:image\/([a-zA-Z0-9\+\-]+);base64,(.+)$/si', $base64Input, $matches)) {
+                $mimeSub = strtolower($matches[1]);
+                $encodedData = $matches[2];
+                $allowedMimes = [
+                    'png'      => 'png',
+                    'jpeg'     => 'jpg',
+                    'jpg'      => 'jpg',
+                    'webp'     => 'webp',
+                    'svg+xml'  => 'svg',
+                    'svg'      => 'svg',
+                ];
 
-        return $this->success([
-            'tenant_id'           => $tenant->id,
-            'name'                => $tenant->name,
-            'code'                => $tenant->code,
-            'logo_url'            => $tenant->logo_url,
-            'hotline'             => $tenant->hotline,
-            'receipt_footer_note' => $tenant->receipt_footer_note,
-        ], 'Tải lên logo thương hiệu thành công.');
+                if (! isset($allowedMimes[$mimeSub])) {
+                    return response()->json([
+                        'message' => 'The logo field must be a file of type: jpeg, png, jpg, svg, webp.',
+                        'errors'  => [
+                            'logo' => ['The logo field must be a file of type: jpeg, png, jpg, svg, webp.'],
+                        ],
+                    ], 422);
+                }
+
+                $extension = $allowedMimes[$mimeSub];
+                $binaryData = base64_decode($encodedData, true);
+            } else {
+                // Chuỗi Base64 thuần không có prefix Data URL
+                $binaryData = base64_decode($base64Input, true);
+            }
+
+            if ($binaryData === false || strlen($binaryData) === 0) {
+                return response()->json([
+                    'message' => 'Dữ liệu ảnh base64 không hợp lệ.',
+                    'errors'  => [
+                        'logo' => ['Dữ liệu ảnh base64 không hợp lệ.'],
+                    ],
+                ], 422);
+            }
+
+            // Giới hạn dung lượng tối đa 5MB (5120 KB = 5,242,880 bytes)
+            if (strlen($binaryData) > 5 * 1024 * 1024) {
+                return response()->json([
+                    'message' => 'The logo field must not be greater than 5120 kilobytes.',
+                    'errors'  => [
+                        'logo' => ['The logo field must not be greater than 5120 kilobytes.'],
+                    ],
+                ], 422);
+            }
+
+            // Kiểm tra an toàn MIME type qua finfo
+            $finfo = new \finfo(FILEINFO_MIME_TYPE);
+            $detectedMime = $finfo->buffer($binaryData);
+
+            $validMimeMap = [
+                'image/png'     => 'png',
+                'image/jpeg'    => 'jpg',
+                'image/webp'    => 'webp',
+                'image/svg+xml' => 'svg',
+            ];
+
+            // Bảo vệ an toàn SVG và kiểm tra định dạng
+            if ($extension === 'svg' || str_contains($binaryData, '<svg')) {
+                if (str_contains($binaryData, '<?php') || str_contains($binaryData, '<script')) {
+                    return response()->json([
+                        'message' => 'Tệp ảnh chứa mã độc hại nguy hiểm.',
+                        'errors'  => [
+                            'logo' => ['Tệp ảnh chứa mã độc hại nguy hiểm.'],
+                        ],
+                    ], 422);
+                }
+                $extension = 'svg';
+            } elseif (isset($validMimeMap[$detectedMime])) {
+                $extension = $validMimeMap[$detectedMime];
+            } else {
+                return response()->json([
+                    'message' => 'The logo field must be a file of type: jpeg, png, jpg, svg, webp.',
+                    'errors'  => [
+                        'logo' => ['The logo field must be a file of type: jpeg, png, jpg, svg, webp.'],
+                    ],
+                ], 422);
+            }
+
+            // Xóa logo cũ trên public disk nếu có
+            $this->deleteDiskLogoFile($tenant->logo_url);
+
+            // Lưu file logo mới từ dữ liệu Base64
+            $filename = 'logo_' . time() . '_' . Str::random(8) . '.' . $extension;
+            $relativePath = "tenants/{$tenant->id}/branding/{$filename}";
+            Storage::disk('public')->put($relativePath, $binaryData);
+            $url = asset("storage/{$relativePath}");
+
+            $tenant->logo_url = $url;
+            $tenant->save();
+
+            return $this->success([
+                'tenant_id'           => $tenant->id,
+                'name'                => $tenant->name,
+                'code'                => $tenant->code,
+                'logo_url'            => $tenant->logo_url,
+                'hotline'             => $tenant->hotline,
+                'receipt_footer_note' => $tenant->receipt_footer_note,
+            ], 'Tải lên logo thương hiệu thành công.');
+        }
+
+        // 3. Nếu không có file và cũng không có base64, thực hiện validate chuẩn để trả về lỗi 422
+        $request->validate([
+            'logo'  => 'required|file|mimes:jpeg,png,jpg,svg,webp,svg+xml|max:5120',
+        ]);
+
+        return $this->failure('Vui lòng chọn file ảnh logo hợp lệ.', 422);
     }
 
     /**

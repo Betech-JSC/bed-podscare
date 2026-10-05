@@ -124,6 +124,15 @@ export default function TenantBrandingPage() {
     }
   };
 
+  const fileToBase64 = (file: File): Promise<string> => {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(reader.result as string);
+      reader.onerror = (error) => reject(error);
+      reader.readAsDataURL(file);
+    });
+  };
+
   const handleProcessFile = async (file: File) => {
     if (!isAdmin) {
       toast('Chỉ Quản trị viên mới có quyền tải logo lên.', 'error');
@@ -136,23 +145,56 @@ export default function TenantBrandingPage() {
       return;
     }
 
-    // 2MB size limit
-    if (file.size > 2 * 1024 * 1024) {
-      toast('Dung lượng ảnh vượt quá 2MB. Vui lòng nén ảnh và thử lại.', 'error');
+    // Khóa dung lượng ảnh tối đa 5MB (khuyến nghị 2 * 1024 * 1024)
+    if (file.size > 5 * 1024 * 1024) {
+      toast('Dung lượng ảnh vượt quá 5MB. Vui lòng nén ảnh và thử lại.', 'error');
       return;
     }
 
     setUploadingLogo(true);
     try {
-      const res = await tenantService.uploadLogo(file);
+      let res;
+      let usedFallback = false;
+
+      // 1. Thử gửi file nhị phân qua Multipart FormData chuẩn
+      try {
+        res = await tenantService.uploadLogo(file);
+      } catch (uploadErr: any) {
+        // Fallback tự động sang Base64 Data URL nếu Multipart gặp sự cố (Proxy, encoding, network)
+        console.warn('Multipart upload failed, attempting automatic Base64 fallback:', uploadErr);
+        usedFallback = true;
+        const base64Data = await fileToBase64(file);
+        res = await tenantService.uploadLogo(base64Data);
+      }
+
+      // 2. Nếu response không báo success nhưng cũng chưa throw exception, thử fallback Base64
+      if (!res?.success && !usedFallback) {
+        try {
+          const base64Data = await fileToBase64(file);
+          res = await tenantService.uploadLogo(base64Data);
+        } catch {
+          // Giữ lỗi ban đầu nếu fallback cũng không thành công
+        }
+      }
+
       if (res?.success && res.data?.logo_url) {
         setLogoUrl(res.data.logo_url);
         toast('Tải logo thương hiệu lên thành công!', 'success');
       } else {
-        toast(res?.message || 'Không thể tải logo lên.', 'error');
+        const errorMsg =
+          (res as any)?.errors?.logo?.[0] ||
+          res?.message ||
+          'Không thể tải logo lên. Vui lòng thử lại.';
+        toast(errorMsg, 'error');
       }
     } catch (err: any) {
-      toast(err?.message || 'Lỗi khi tải logo lên máy chủ.', 'error');
+      let detailedMsg = err?.message || 'Lỗi khi tải logo lên máy chủ.';
+      if (err?.data?.errors?.logo?.[0]) {
+        detailedMsg = err.data.errors.logo[0];
+      } else if (err?.data?.message) {
+        detailedMsg = err.data.message;
+      }
+      toast(detailedMsg, 'error');
     } finally {
       setUploadingLogo(false);
       if (fileInputRef.current) {
@@ -350,7 +392,7 @@ export default function TenantBrandingPage() {
                       Kéo thả ảnh logo vào đây hoặc bấm để chọn tệp
                     </div>
                     <div className="text-[11px] text-[#6b7c74] mt-1">
-                      Hỗ trợ PNG, JPG, SVG, WEBP (Dung lượng tối đa 2MB). Khuyến nghị ảnh nền trong suốt PNG hoặc SVG tỷ lệ ngang.
+                      Hỗ trợ PNG, JPG, SVG, WEBP (Dung lượng tối đa 5MB). Khuyến nghị ảnh nền trong suốt PNG hoặc SVG tỷ lệ ngang.
                     </div>
                   </div>
                 )}
