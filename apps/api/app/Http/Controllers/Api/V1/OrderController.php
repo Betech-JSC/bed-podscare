@@ -61,6 +61,10 @@ class OrderController extends Controller
             }
         }
 
+        if ($batchCode = $request->input('intake_batch_code')) {
+            $query->where('intake_batch_code', $batchCode);
+        }
+
         if ($search = $request->input('q')) {
             $query->where(function ($q) use ($search) {
                 $q->where('order_code', 'like', "%{$search}%")
@@ -103,6 +107,7 @@ class OrderController extends Controller
             'accessories'           => 'nullable|string|max:255',
             'issue_description'     => 'required|string',
             'appearance_notes'      => 'nullable|string',
+            'intake_batch_code'     => 'nullable|string|max:50',
             'estimated_price'       => 'required|numeric|gt:0',
             'warranty_terms_days'   => 'nullable|integer|min:0',
             'status'                => 'nullable|string',
@@ -143,6 +148,7 @@ class OrderController extends Controller
 
             $order = RepairOrder::create([
                 'order_code'            => $orderCode,
+                'intake_batch_code'     => $validated['intake_batch_code'] ?? null,
                 'branch_id'             => $validated['branch_id'],
                 'customer_id'           => $customerId,
                 'device_model_id'       => $validated['device_model_id'],
@@ -284,6 +290,10 @@ class OrderController extends Controller
         }
 
         $this->authorizeOrderBranch($order, $request->user());
+
+        if ($order->intake_batch_code) {
+            $order->load(['batchOrders.deviceModel', 'batchOrders.customer']);
+        }
 
         return $this->success($order, 'Lấy chi tiết đơn sửa chữa thành công.');
     }

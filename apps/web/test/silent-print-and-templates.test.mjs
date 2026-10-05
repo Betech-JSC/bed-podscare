@@ -142,7 +142,10 @@ test('7. Print Touchpoint Integration Verification', () => {
   const intakePath = path.resolve(__dirname, '../app/components/IntakeWizardModal.tsx');
   const intakeContent = fs.readFileSync(intakePath, 'utf-8');
   assert.ok(intakeContent.includes('useSilentPrint'), 'IntakeWizardModal phải dùng useSilentPrint');
-  assert.ok(intakeContent.includes('printReceipt(newOrder'), 'Phải gọi in ngầm trực tiếp khi lưu');
+  assert.ok(
+    intakeContent.includes('printReceipt(createdOrders') || intakeContent.includes('printReceipt(newOrder'),
+    'Phải gọi in ngầm trực tiếp khi lưu'
+  );
   assert.ok(!intakeContent.includes("router.push('/print/"), 'Không được dùng router.push sang /print/');
 
   // 2. Repairs Drawer: Print dropdown

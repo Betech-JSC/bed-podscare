@@ -609,6 +609,12 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
     const createdOrders: RepairOrder[] = [];
 
     try {
+      // Sinh mã đợt tiếp nhận liên kết các thiết bị tạo cùng lúc
+      const batchCode =
+        devices.length > 1
+          ? `IB26-${Date.now().toString().slice(-6)}${Math.floor(10 + Math.random() * 90)}`
+          : undefined;
+
       // Create orders sequentially for each device
       for (let i = 0; i < devices.length; i++) {
         const dev = devices[i];
@@ -643,6 +649,7 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
           appearance_notes: dev.appearance.trim() || undefined,
           estimated_price: devPrice,
           checklists: backendChecklists,
+          intake_batch_code: batchCode,
         };
 
         const res = await repairService.createIntake(payload);
@@ -682,9 +689,17 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
           testNote: dev.testNote.trim(),
           createdBy: currentUser?.name || 'Nhân viên',
           createdAt: new Date().toISOString(),
+          intake_batch_code: batchCode,
         };
 
         createdOrders.push(newOrder);
+      }
+
+      // Link batchOrders for multi-device batch
+      if (devices.length > 1) {
+        for (const ord of createdOrders) {
+          ord.batchOrders = createdOrders;
+        }
       }
 
       // Add all created orders to store
@@ -703,9 +718,17 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
       onClose();
 
       if (shouldPrint && createdOrders.length > 0) {
-        toast(`Đang gửi lệnh in phiếu tiếp nhận (${currentFormat.toUpperCase()})...`, 'info');
-        for (const newOrder of createdOrders) {
-          printReceipt(newOrder, currentFormat);
+        toast(
+          devices.length > 1
+            ? `Đang gửi lệnh in phiếu tiếp nhận gộp (${createdOrders.length} thiết bị, ${currentFormat.toUpperCase()})...`
+            : `Đang gửi lệnh in phiếu tiếp nhận (${currentFormat.toUpperCase()})...`,
+          'info'
+        );
+        // Single-flight Print Job: gửi 1 lệnh in duy nhất
+        if (createdOrders.length === 1) {
+          printReceipt(createdOrders[0], currentFormat);
+        } else {
+          printReceipt(createdOrders, currentFormat);
         }
         if (onSuccess) {
           onSuccess(createdOrders[0], true);

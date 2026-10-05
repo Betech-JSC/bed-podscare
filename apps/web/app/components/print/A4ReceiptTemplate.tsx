@@ -4,9 +4,11 @@ import React from 'react';
 import type { RepairOrder } from '@podscare/types';
 import { generateBarcodeSVG, generateQRCodeSVG } from './BarcodeQRUtils';
 import { formatMoney, FIXO_LOGO_A4_SVG, type TenantReceiptBranding } from './thermalK80HtmlBuilder';
+import { renderCombinedA4ReceiptHTML } from './a4ReceiptHtmlBuilder';
 
 export interface A4ReceiptTemplateProps {
-  order: RepairOrder;
+  order?: RepairOrder;
+  orders?: RepairOrder[];
   origin?: string;
   branding?: TenantReceiptBranding;
 }
@@ -14,7 +16,22 @@ export interface A4ReceiptTemplateProps {
 /**
  * Component hiển thị giao diện A4 (2 liên) trong trang xem trước và in
  */
-export const A4ReceiptTemplate: React.FC<A4ReceiptTemplateProps> = ({ order, origin, branding }) => {
+export const A4ReceiptTemplate: React.FC<A4ReceiptTemplateProps> = ({ order: singleOrder, orders, origin, branding }) => {
+  if (orders && orders.length >= 2) {
+    const combinedHtml = renderCombinedA4ReceiptHTML(orders, origin, branding);
+    const match = combinedHtml.match(/<body>([\s\S]*?)<\/body>/i);
+    const bodyInner = match ? match[1] : combinedHtml;
+
+    return (
+      <div
+        className="a4-template-wrapper w-full max-w-[196mm] mx-auto bg-white"
+        dangerouslySetInnerHTML={{ __html: bodyInner }}
+      />
+    );
+  }
+
+  const order = singleOrder || (orders && orders[0]);
+  if (!order) return null;
   const currentOrigin =
     origin || (typeof window !== 'undefined' ? window.location.origin : 'https://fixo.com.vn');
   const trackUrl = `${currentOrigin}/track/${order.id}`;

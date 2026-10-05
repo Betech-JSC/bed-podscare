@@ -164,6 +164,7 @@ class CriticalFlawsRemediationTest extends TestCase
             'customer_phone'    => '0987654321',
             'device_model_id'   => $device->id,
             'issue_description' => 'Kiểm tra chi nhánh',
+            'estimated_price'   => 250000,
         ]);
 
         $responseStore->assertStatus(201);

@@ -15,6 +15,7 @@ class RepairOrder extends Model
     protected $fillable = [
         'tenant_id',
         'order_code',
+        'intake_batch_code',
         'branch_id',
         'customer_id',
         'device_model_id',
@@ -150,5 +151,11 @@ class RepairOrder extends Model
     public function payments(): HasMany
     {
         return $this->hasMany(Payment::class);
+    }
+
+    public function batchOrders(): HasMany
+    {
+        return $this->hasMany(RepairOrder::class, 'intake_batch_code', 'intake_batch_code')
+            ->whereNotNull('intake_batch_code');
     }
 }

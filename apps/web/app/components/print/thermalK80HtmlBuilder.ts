@@ -876,17 +876,593 @@ export function buildStoreCopyHtml(order: RepairOrder): string {
 }
 
 /**
+ * Xây dựng nội dung Liên 1 Gộp: Bản giao khách hàng cho đợt tiếp nhận nhiều thiết bị.
+ * Hiển thị đầy đủ danh sách thiết bị [1], [2]..., giá từng máy và khối tổng cộng tiếp nhận.
+ */
+export function buildCombinedCustomerCopyHtml(
+  orders: RepairOrder[],
+  origin?: string,
+  branding?: TenantReceiptBranding
+): string {
+  const primaryOrder = orders[0];
+  const currentOrigin =
+    origin ||
+    (typeof window !== 'undefined' && window.location?.origin
+      ? window.location.origin
+      : 'https://fixo.com.vn');
+  const trackUrl = `${currentOrigin}/track/${primaryOrder.id}`;
+
+  const effectiveLogoUrl = branding?.logoUrl || branding?.storeLogoUrl || (primaryOrder as any).tenant?.logo_url;
+  const effectiveStoreName = branding?.storeName || (primaryOrder as any).tenant?.name || 'FIXO REPAIR OS';
+  const effectiveBranch = primaryOrder.branch || branding?.storeName || (primaryOrder as any).tenant?.name || 'FIXO Store';
+  const effectiveHotline = branding?.hotline || branding?.storeHotline || (primaryOrder as any).tenant?.hotline || '1900.6868 · fixo.vn';
+  const effectiveFooterNote = branding?.footerNote || branding?.receiptFooterNote || (primaryOrder as any).tenant?.receipt_footer_note || '* Quý khách vui lòng giữ phiếu này để đối chiếu khi nhận máy.<br />Cảm ơn quý khách đã tin tưởng dịch vụ FIXO Care!';
+
+  const batchCode = primaryOrder.intake_batch_code || `IB26-${orders.map((o) => o.id.replace(/^FX\d+-/, '')).join('-')}`;
+  const barcodeSvg = generateBarcodeSVG(primaryOrder.intake_batch_code || primaryOrder.id, {
+    height: 36,
+    barWidth: 1.35,
+    showText: false,
+  });
+
+  const qrCodeSvg = generateQRCodeSVG(trackUrl, {
+    size: 96,
+    margin: 1,
+  });
+
+  const totalPrice = orders.reduce((sum, o) => sum + (Number(o.price) || 0), 0);
+  const allOrderCodes = orders.map((o) => o.id).join(', ');
+
+  const devicesHtml = orders
+    .map((dev, idx) => {
+      const checks = Array.isArray(dev.checks) ? dev.checks : [];
+      const failChecks = checks.filter((c) => c.status === 'Lỗi');
+
+      return `
+      <div class="k80-combined-device" style="margin: 5px 0 7px 0; padding: 5px 6px; border: 1px dashed #555555; border-radius: 4px; background: #fafafa;">
+        <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px dotted #bbbbbb; padding-bottom: 3px; margin-bottom: 3px;">
+          <span style="font-weight: 700; font-size: 11.5px; color: #000000;">[${idx + 1}] ${dev.device || 'Thiết bị Apple'}</span>
+          <span style="font-size: 9.5px; font-family: monospace; font-weight: 700; color: #333333;">${dev.id}</span>
+        </div>
+        <div class="k80-row" style="margin: 1.5px 0;">
+          <span class="k80-label" style="width: 22mm;">Serial:</span>
+          <span class="k80-val">${dev.serial || 'Chưa cập nhật'}</span>
+        </div>
+        <div class="k80-row" style="margin: 1.5px 0;">
+          <span class="k80-label" style="width: 22mm;">Phụ kiện:</span>
+          <span class="k80-val">${dev.accessories || 'Không gửi kèm'}</span>
+        </div>
+        <div class="k80-row" style="margin: 1.5px 0;">
+          <span class="k80-label" style="width: 22mm;">Lỗi khách báo:</span>
+          <span class="k80-val" style="color: #000000; font-weight: 700;">${dev.issue || 'Kiểm tra tổng quát'}</span>
+        </div>
+        ${dev.appearance ? `
+        <div class="k80-row" style="margin: 1.5px 0;">
+          <span class="k80-label" style="width: 22mm;">Ngoại hình:</span>
+          <span class="k80-val">${dev.appearance}</span>
+        </div>` : ''}
+        ${checks.length > 0 ? `
+        <div style="font-size: 9px; margin-top: 2px; color: #444444;">
+          Test quầy: ${failChecks.length > 0 ? `<b style="color: #000; text-decoration: underline;">Lỗi (${failChecks.length}): ${failChecks.map((f) => f.label).join(', ')}</b>` : 'Tất cả chức năng cơ bản đạt'}
+        </div>` : ''}
+        ${dev.testNote ? `<div class="k80-test-note" style="margin-top: 2px;"><b>Ghi chú test:</b> ${dev.testNote}</div>` : ''}
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 4px; padding-top: 3px; border-top: 1px dotted #cccccc;">
+          <span style="font-size: 9.5px; font-weight: 700;">Giá dự kiến máy [${idx + 1}]:</span>
+          <span style="font-size: 12px; font-weight: 700; color: #000000;">${formatMoney(dev.price)}</span>
+        </div>
+      </div>`;
+    })
+    .join('');
+
+  return `<div class="k80-wrapper k80-customer-copy">
+    <div class="k80-header">
+      ${effectiveLogoUrl ? `
+      <div style="text-align: center; margin-bottom: 3px;">
+        <img src="${effectiveLogoUrl}" class="k80-store-logo" alt="Logo" onerror="this.style.display='none'" />
+      </div>
+      <div class="k80-brand">${effectiveStoreName}</div>
+      <div class="k80-subtitle">PHIẾU TIẾP NHẬN SỬA CHỮA · LIÊN KHÁCH HÀNG</div>
+      <div style="font-size: 9px; font-weight: 800; color: #176b58; margin-top: 1px;">(ĐỢT TIẾP NHẬN GỘP ${orders.length} THIẾT BỊ)</div>
+      ` : `
+      <div style="display: flex; justify-content: center; align-items: center; gap: 6px;">
+        ${FIXO_LOGO_SVG}
+        <div style="text-align: left;">
+          <div class="k80-brand">FIXO REPAIR OS</div>
+          <div class="k80-subtitle">PHIẾU TIẾP NHẬN SỬA CHỮA · LIÊN KHÁCH HÀNG</div>
+          <div style="font-size: 9px; font-weight: 800; color: #176b58; margin-top: 1px;">(ĐỢT TIẾP NHẬN GỘP ${orders.length} THIẾT BỊ)</div>
+        </div>
+      </div>
+      `}
+      <div class="k80-branch-info">
+        <b>Chi nhánh:</b> ${effectiveBranch}
+      </div>
+      <div class="k80-branch-info">
+        <b>Hotline CSKH:</b> ${effectiveHotline}
+      </div>
+    </div>
+
+    <div class="k80-order-box">
+      <div style="font-size: 8.5px; font-weight: bold; color: #555555; text-transform: uppercase;">MÃ ĐỢT TIẾP NHẬN GỘP</div>
+      <div class="k80-order-code">${batchCode}</div>
+      <div class="k80-barcode">
+        ${barcodeSvg}
+      </div>
+      <div style="font-size: 8.5px; color: #444444; margin-top: 3px; padding: 0 4px;">
+        Mã phiếu: <b>${allOrderCodes}</b>
+      </div>
+    </div>
+
+    <div class="k80-meta">
+      <span>Ngày nhận: <b>${primaryOrder.date || 'Hôm nay'}</b></span>
+      <span>NV: <b>${primaryOrder.createdBy || 'FIXO'}</b></span>
+    </div>
+
+    <div class="k80-section" style="border-top: none; margin-top: 0; padding-top: 0;">
+      <div class="k80-row">
+        <span class="k80-label">Khách hàng:</span>
+        <span class="k80-val">${primaryOrder.name || 'Khách lẻ'}</span>
+      </div>
+      <div class="k80-row">
+        <span class="k80-label">Số điện thoại:</span>
+        <span class="k80-val">${primaryOrder.phone || '—'}</span>
+      </div>
+      <div class="k80-row">
+        <span class="k80-label">Số lượng máy:</span>
+        <span class="k80-val"><b>${orders.length} thiết bị</b></span>
+      </div>
+    </div>
+
+    <div class="k80-section" style="margin-top: 4px; padding-top: 4px;">
+      <div class="k80-section-title" style="font-weight: 800;">DANH SÁCH THIẾT BỊ (${orders.length} MÁY)</div>
+      ${devicesHtml}
+    </div>
+
+    <div class="k80-price-box" style="margin-top: 7px; padding: 7px 8px; border: 2px solid #000000; background: #fbfbfb;">
+      <div>
+        <div class="k80-price-title" style="font-size: 11px;">TỔNG CỘNG TIẾP NHẬN:</div>
+        <div style="font-size: 8.5px; color: #555555;">(${orders.length} thiết bị gửi sửa)</div>
+      </div>
+      <div class="k80-price-amount" style="font-size: 16px; font-weight: 700; color: #000000;">${formatMoney(totalPrice)}</div>
+    </div>
+
+    <div class="k80-qr-wrapper">
+      <div class="k80-qr-box" data-track-url="${trackUrl}">
+        ${qrCodeSvg}
+      </div>
+      <div class="k80-qr-hint">Quét mã QR để theo dõi tiến độ sửa chữa realtime</div>
+    </div>
+
+    <div class="k80-signatures">
+      <div class="k80-sig-col">
+        <b>KHÁCH HÀNG</b>
+        <div class="k80-sig-space"></div>
+        <div style="font-weight: 600;">${primaryOrder.name || ''}</div>
+      </div>
+      <div class="k80-sig-col">
+        <b>TIẾP NHẬN</b>
+        <div class="k80-sig-space"></div>
+        <div style="font-weight: 600;">${primaryOrder.createdBy || 'FIXO'}</div>
+      </div>
+    </div>
+
+    <div class="k80-footer-note">
+      ${effectiveFooterNote}
+    </div>
+    <div class="k80-powered-by" style="font-size: 8px; color: #666; margin-top: 4px; text-align: center;">⚡ Powered by FIXO Repair OS · fixo.vn</div>
+
+    <div class="k80-feed-spacer"></div>
+    <div class="k80-cut-line">✂ - - - - - CẮT GIẤY - - - - - ✂</div>
+  </div>`;
+}
+
+/**
+ * Xây dựng nội dung Liên 2 Gộp: Bản lưu cửa hàng & Kỹ thuật dán khay cho đợt tiếp nhận nhiều thiết bị.
+ * Liệt kê tất cả các máy trong đợt để thủ kho/kỹ thuật kẹp khay đối soát.
+ */
+export function buildCombinedStoreCopyHtml(orders: RepairOrder[]): string {
+  const primaryOrder = orders[0];
+  const batchCode = primaryOrder.intake_batch_code || `IB26-${orders.map((o) => o.id.replace(/^FX\d+-/, '')).join('-')}`;
+  const barcodeSvgStore = generateBarcodeSVG(primaryOrder.intake_batch_code || primaryOrder.id, {
+    height: 24,
+    barWidth: 1.35,
+    showText: false,
+  });
+  const allOrderCodes = orders.map((o) => o.id).join(', ');
+
+  const devicesHtml = orders
+    .map((dev, idx) => {
+      const checks = Array.isArray(dev.checks) ? dev.checks : [];
+      return `
+      <div style="margin: 4px 0 6px 0; padding: 4px 5px; border: 1.5px solid #000000; border-radius: 4px; background: #ffffff;">
+        <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #000000; padding-bottom: 2px; margin-bottom: 3px;">
+          <span style="font-weight: 800; font-size: 11px;">[${idx + 1}] ${dev.id}</span>
+          <span style="font-weight: 700; font-size: 10.5px;">${dev.device || 'Thiết bị Apple'}</span>
+        </div>
+        <div class="k80-row" style="margin: 1px 0;">
+          <span class="k80-label" style="width: 20mm;">Serial:</span>
+          <span class="k80-val">${dev.serial || 'Chưa cập nhật'}</span>
+        </div>
+        <div class="k80-row" style="margin: 1px 0;">
+          <span class="k80-label" style="width: 20mm;">Phụ kiện:</span>
+          <span class="k80-val">${dev.accessories || 'Không gửi kèm'}</span>
+        </div>
+        <div style="font-size: 9.5px; margin: 2px 0;">
+          <b>Bệnh máy:</b> <span style="font-weight: 700;">${dev.issue || 'Kiểm tra'}</span>
+        </div>
+        ${checks.length > 0 ? `
+        <div style="font-size: 8.5px; color: #333333;">
+          Kiểm tra quầy: ${checks.map((c) => `${c.label}: ${c.status}`).join(' | ')}
+        </div>` : ''}
+        <div class="k80-handwrite-box" style="margin-top: 3px; padding: 3px; font-size: 9px;">
+          Khay số: [ ..... ] | Kỹ Thuật: [ .......... ]
+        </div>
+      </div>`;
+    })
+    .join('');
+
+  return `<div class="k80-wrapper k80-store-copy">
+    <div class="k80-store-header">FIXO REPAIR OS · BẢN LƯU CỬA HÀNG & KỸ THUẬT</div>
+    <div class="k80-store-title">PHIẾU ĐIỀU PHỐI / BẢN LƯU GỘP (${orders.length} THIẾT BỊ)</div>
+    <div class="k80-store-sub">Chi nhánh: ${primaryOrder.branch || 'FIXO Store'} · Ngày: ${primaryOrder.date || 'Hôm nay'} · NV: ${primaryOrder.createdBy || 'FIXO'}</div>
+
+    <div class="k80-order-box k80-store-order-box">
+      <div style="font-size: 8.5px; font-weight: bold; color: #555555; text-transform: uppercase;">MÃ ĐỢT TIẾP NHẬN GỘP</div>
+      <div class="k80-order-code k80-store-order-code">${batchCode}</div>
+      <div class="k80-barcode">
+        ${barcodeSvgStore}
+      </div>
+      <div style="font-size: 8.5px; color: #333333; margin-top: 2px;">
+        Mã đơn: <b>${allOrderCodes}</b>
+      </div>
+    </div>
+
+    <div class="k80-section" style="border-top: none; margin-top: 0; padding-top: 0;">
+      <div class="k80-row">
+        <span class="k80-label">Khách hàng:</span>
+        <span class="k80-val">${primaryOrder.name || 'Khách lẻ'} - ${primaryOrder.phone || '—'}</span>
+      </div>
+      <div class="k80-row">
+        <span class="k80-label">Số lượng máy:</span>
+        <span class="k80-val"><b>${orders.length} thiết bị</b></span>
+      </div>
+    </div>
+
+    <div class="k80-section" style="margin-top: 4px; padding-top: 4px;">
+      <div class="k80-section-title">DANH SÁCH THIẾT BỊ DÁN KHAY</div>
+      ${devicesHtml}
+    </div>
+
+    <div class="k80-feed-spacer end"></div>
+  </div>`;
+}
+
+/**
+ * Sinh chuỗi HTML độc lập cho mẫu in nhiệt cuộn 80mm (K80) gộp nhiều thiết bị.
+ */
+export function renderCombinedThermalK80HTML(
+  orders: RepairOrder[],
+  options?: ThermalK80RenderOptions
+): string {
+  if (!orders || orders.length === 0) return '';
+  if (orders.length === 1) return renderThermalK80HTML(orders[0], options);
+
+  const primaryOrder = orders[0];
+  const effectiveOrigin =
+    options?.origin ||
+    (typeof window !== 'undefined' && window.location?.origin
+      ? window.location.origin
+      : 'https://fixo.com.vn');
+
+  const effectiveMode: ThermalK80SlipMode =
+    options?.slipMode || (options?.isRoutingSlip ? 'store_only' : 'dual');
+
+  const effectiveBranding: TenantReceiptBranding | undefined =
+    options?.branding || (primaryOrder as any).tenant
+      ? {
+          logoUrl: options?.branding?.logoUrl || options?.branding?.storeLogoUrl || (primaryOrder as any).tenant?.logo_url,
+          storeName: options?.branding?.storeName || (primaryOrder as any).tenant?.name,
+          hotline: options?.branding?.hotline || options?.branding?.storeHotline || (primaryOrder as any).tenant?.hotline,
+          footerNote: options?.branding?.footerNote || options?.branding?.receiptFooterNote || (primaryOrder as any).tenant?.receipt_footer_note,
+        }
+      : undefined;
+
+  let bodyContent = '';
+  if (effectiveMode === 'dual') {
+    bodyContent = `${buildCombinedCustomerCopyHtml(orders, effectiveOrigin, effectiveBranding)}
+    <div class="k80-slip-separator"></div>
+    ${buildCombinedStoreCopyHtml(orders)}`;
+  } else if (effectiveMode === 'customer_only') {
+    bodyContent = buildCombinedCustomerCopyHtml(orders, effectiveOrigin, effectiveBranding);
+  } else {
+    bodyContent = buildCombinedStoreCopyHtml(orders);
+  }
+
+  const batchCode = primaryOrder.intake_batch_code || `IB26-${orders.length}Devices`;
+
+  return `<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8" />
+  <title>${batchCode} - In nhiệt K80 Gộp (${orders.length} thiết bị)</title>
+  <style>
+    @page {
+      size: 80mm auto;
+      margin: 2mm 3mm 5mm 3mm;
+    }
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+    body {
+      width: 74mm;
+      max-width: 74mm;
+      margin: 0 auto;
+      background: #ffffff !important;
+      color: #000000 !important;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+      font-size: 11px;
+      line-height: 1.35;
+      -webkit-print-color-adjust: exact;
+      print-color-adjust: exact;
+    }
+    .k80-wrapper {
+      padding: 2mm 1mm;
+    }
+    .k80-slip-separator {
+      page-break-after: always;
+      break-after: page;
+      clear: both;
+      display: block;
+      height: 0;
+      margin: 0;
+      padding: 0;
+      border: none;
+    }
+    .k80-feed-spacer {
+      height: 15mm;
+      display: block;
+    }
+    .k80-feed-spacer.end {
+      height: 18mm;
+      display: block;
+    }
+    .k80-cut-line {
+      text-align: center;
+      font-size: 9px;
+      font-family: monospace;
+      color: #333333;
+      margin: 4px 0;
+      letter-spacing: 0.5px;
+      font-weight: 600;
+    }
+    .k80-store-logo {
+      max-width: 42mm;
+      max-height: 24mm;
+      object-fit: contain;
+      margin: 0 auto 3px auto;
+      display: block;
+      filter: contrast(110%);
+    }
+    .k80-powered-by {
+      font-size: 8px;
+      color: #666666;
+      margin-top: 4px;
+      text-align: center;
+    }
+    .k80-header {
+      text-align: center;
+      border-bottom: 1.5px dashed #000000;
+      padding-bottom: 6px;
+      margin-bottom: 6px;
+    }
+    .k80-brand {
+      font-size: 16px;
+      font-weight: 700;
+      letter-spacing: -0.5px;
+      margin: 4px 0 2px 0;
+    }
+    .k80-subtitle {
+      font-size: 9px;
+      font-weight: 700;
+      letter-spacing: 0.5px;
+      text-transform: uppercase;
+    }
+    .k80-branch-info {
+      font-size: 9.5px;
+      color: #222222;
+      margin-top: 3px;
+      line-height: 1.25;
+    }
+    .k80-order-box {
+      text-align: center;
+      margin: 6px 0;
+      padding: 5px 0;
+      background: #f4f4f4;
+      border: 1px solid #000000;
+      border-radius: 4px;
+    }
+    .k80-order-code {
+      font-size: 17px;
+      font-weight: 600;
+      font-family: "Courier New", Courier, monospace;
+      letter-spacing: 1.2px;
+      font-variant-numeric: tabular-nums;
+    }
+    .k80-store-order-code {
+      font-size: 19px;
+      font-weight: 600;
+      letter-spacing: 1.2px;
+      font-variant-numeric: tabular-nums;
+    }
+    .k80-barcode {
+      display: flex;
+      justify-content: center;
+      margin-top: 4px;
+    }
+    .k80-barcode svg {
+      max-width: 90%;
+      height: 32px;
+    }
+    .k80-meta {
+      font-size: 9px;
+      display: flex;
+      justify-content: space-between;
+      margin: 4px 0 6px 0;
+      padding: 0 2px;
+      border-bottom: 1px dotted #888888;
+      padding-bottom: 4px;
+    }
+    .k80-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      margin: 3px 0;
+      font-size: 10.5px;
+    }
+    .k80-label {
+      color: #333333;
+      flex-shrink: 0;
+      width: 25mm;
+      font-weight: normal;
+    }
+    .k80-val {
+      font-weight: 600;
+      font-variant-numeric: tabular-nums;
+      text-align: right;
+      flex-grow: 1;
+      word-break: break-word;
+    }
+    .k80-section {
+      margin-top: 6px;
+      padding-top: 5px;
+      border-top: 1px dashed #444444;
+    }
+    .k80-section-title {
+      font-size: 9.5px;
+      font-weight: 700;
+      letter-spacing: 0.3px;
+      margin-bottom: 4px;
+      color: #000000;
+    }
+    .k80-store-header {
+      font-size: 9px;
+      font-weight: 700;
+      text-align: center;
+      letter-spacing: 0.5px;
+    }
+    .k80-store-title {
+      font-size: 14px;
+      font-weight: 800;
+      text-align: center;
+      margin: 2px 0;
+    }
+    .k80-store-sub {
+      font-size: 9px;
+      text-align: center;
+      color: #333333;
+      margin-bottom: 4px;
+    }
+    .k80-store-order-box {
+      border: 2px solid #000000;
+      background: #ffffff;
+      padding: 4px 0;
+    }
+    .k80-handwrite-box {
+      margin-top: 6px;
+      padding: 5px 6px;
+      border: 1.5px dashed #000000;
+      border-radius: 4px;
+      font-size: 10px;
+      font-weight: 700;
+      text-align: center;
+      background: #ffffff;
+      letter-spacing: 0.3px;
+    }
+    .k80-price-box {
+      margin-top: 7px;
+      padding: 6px;
+      border: 1.5px solid #000000;
+      border-radius: 4px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      background: #fbfbfb;
+    }
+    .k80-price-title {
+      font-size: 10.5px;
+      font-weight: 700;
+    }
+    .k80-price-amount {
+      font-size: 15px;
+      font-weight: 600;
+      letter-spacing: 0.5px;
+      font-variant-numeric: tabular-nums;
+    }
+    .k80-qr-wrapper {
+      text-align: center;
+      margin-top: 8px;
+      padding-top: 6px;
+      border-top: 1px dashed #444444;
+    }
+    .k80-qr-box {
+      display: inline-block;
+      width: 25mm;
+      height: 25mm;
+      margin: 0 auto;
+    }
+    .k80-qr-box svg {
+      width: 100%;
+      height: 100%;
+    }
+    .k80-qr-hint {
+      font-size: 8.5px;
+      font-weight: 600;
+      margin-top: 3px;
+      color: #333333;
+    }
+    .k80-signatures {
+      display: flex;
+      justify-content: space-between;
+      text-align: center;
+      margin-top: 8px;
+      padding-top: 4px;
+      font-size: 9.5px;
+    }
+    .k80-sig-col {
+      width: 48%;
+    }
+    .k80-sig-space {
+      height: 28px;
+    }
+    .k80-footer-note {
+      text-align: center;
+      font-size: 8px;
+      color: #555555;
+      margin-top: 6px;
+      line-height: 1.25;
+      border-top: 1px dotted #888888;
+      padding-top: 4px;
+    }
+  </style>
+</head>
+<body>
+  ${bodyContent}
+</body>
+</html>`;
+}
+
+/**
  * Sinh chuỗi HTML độc lập cho mẫu in nhiệt cuộn 80mm (K80).
  * Hỗ trợ các chế độ:
  * - 'dual' (mặc định): In Liên 1 + Bộ ngắt trang CSS (.k80-slip-separator) + Liên 2.
  * - 'customer_only': Chỉ in duy nhất Liên 1 (bản khách).
  * - 'store_only' / 'routing': Chỉ in duy nhất Liên 2 (bản lưu cửa hàng & kỹ thuật).
  * 
- * Tương thích ngược hoàn toàn với chữ ký hàm cũ:
- * renderThermalK80HTML(order, origin, isRoutingSlip)
+ * Hỗ trợ in 1 đơn hoặc mảng đơn hàng gộp.
  */
 export function renderThermalK80HTML(
-  order: RepairOrder,
+  orderOrOrders: RepairOrder | RepairOrder[],
   originOrOptions?: string | ThermalK80RenderOptions,
   optionsOrRoutingSlip?: ThermalK80RenderOptions | boolean
 ): string {
@@ -908,6 +1484,21 @@ export function renderThermalK80HTML(
       origin = options.origin;
     }
   }
+
+  if (origin && !options.origin) {
+    options.origin = origin;
+  }
+
+  // Nếu là mảng đơn hàng
+  if (Array.isArray(orderOrOrders)) {
+    if (orderOrOrders.length === 0) return '';
+    if (orderOrOrders.length === 1) {
+      return renderThermalK80HTML(orderOrOrders[0], options);
+    }
+    return renderCombinedThermalK80HTML(orderOrOrders, options);
+  }
+
+  const order = orderOrOrders;
 
   const effectiveOrigin =
     origin ||

@@ -379,5 +379,60 @@ class OrderTest extends TestCase
         $responseValid->assertStatus(201)
             ->assertJsonPath('success', true);
     }
+
+    /**
+     * Test: Lưu intake_batch_code khi tiếp nhận nhiều thiết bị và quan hệ batchOrders.
+     */
+    public function test_store_order_with_intake_batch_code_and_batch_orders(): void
+    {
+        $user = $this->getAuthenticatedUser();
+        $branch = Branch::first();
+        $device = DeviceModel::first();
+        $batchCode = 'IB26-' . uniqid();
+
+        // Thiết bị 1
+        $res1 = $this->actingAs($user, 'sanctum')->postJson('/api/v1/orders', [
+            'branch_id'         => $branch->id,
+            'customer_phone'    => '0988777666',
+            'customer_name'     => 'Khách Tiếp Nhận Đa Thiết Bị',
+            'device_model_id'   => $device->id,
+            'issue_description' => 'Thiết bị 1: AirPods Pro rè mic',
+            'estimated_price'   => 350000,
+            'intake_batch_code' => $batchCode,
+        ]);
+        $res1->assertStatus(201)
+            ->assertJsonPath('success', true)
+            ->assertJsonPath('data.intake_batch_code', $batchCode);
+        $order1Id = $res1->json('data.id');
+
+        // Thiết bị 2
+        $res2 = $this->actingAs($user, 'sanctum')->postJson('/api/v1/orders', [
+            'branch_id'         => $branch->id,
+            'customer_phone'    => '0988777666',
+            'customer_name'     => 'Khách Tiếp Nhận Đa Thiết Bị',
+            'device_model_id'   => $device->id,
+            'issue_description' => 'Thiết bị 2: Apple Watch chai pin',
+            'estimated_price'   => 450000,
+            'intake_batch_code' => $batchCode,
+        ]);
+        $res2->assertStatus(201)
+            ->assertJsonPath('success', true)
+            ->assertJsonPath('data.intake_batch_code', $batchCode);
+        $order2Id = $res2->json('data.id');
+
+        // Chi tiết đơn 1 tự động tải batchOrders
+        $showRes = $this->actingAs($user, 'sanctum')->getJson("/api/v1/orders/{$order1Id}");
+        $showRes->assertStatus(200)
+            ->assertJsonPath('data.intake_batch_code', $batchCode);
+        $batchOrders = $showRes->json('data.batch_orders');
+        $this->assertIsArray($batchOrders);
+        $this->assertCount(2, $batchOrders);
+
+        // Lọc theo intake_batch_code qua index
+        $indexRes = $this->actingAs($user, 'sanctum')->getJson("/api/v1/orders?intake_batch_code={$batchCode}");
+        $indexRes->assertStatus(200)
+            ->assertJsonPath('success', true);
+        $this->assertCount(2, $indexRes->json('data.data'));
+    }
 }
 

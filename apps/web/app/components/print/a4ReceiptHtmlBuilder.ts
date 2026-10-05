@@ -11,8 +11,22 @@ import { formatMoney, FIXO_LOGO_A4_SVG, type TenantReceiptBranding } from './the
 /**
  * Sinh chuỗi HTML độc lập cho khổ giấy A4 (2 liên đối soát).
  * Đảm bảo khóa chiều cao mỗi liên <=132mm và đường cắt phân cách 10mm có biểu tượng kéo ✂.
+ * Hỗ trợ nhận 1 đơn hàng hoặc mảng đơn hàng gộp.
  */
-export function renderA4ReceiptHTML(order: RepairOrder, origin?: string, branding?: TenantReceiptBranding): string {
+export function renderA4ReceiptHTML(
+  orderOrOrders: RepairOrder | RepairOrder[],
+  origin?: string,
+  branding?: TenantReceiptBranding
+): string {
+  if (Array.isArray(orderOrOrders)) {
+    if (orderOrOrders.length === 0) return '';
+    if (orderOrOrders.length === 1) {
+      return renderA4ReceiptHTML(orderOrOrders[0], origin, branding);
+    }
+    return renderCombinedA4ReceiptHTML(orderOrOrders, origin, branding);
+  }
+
+  const order = orderOrOrders;
   const currentOrigin =
     origin || (typeof window !== 'undefined' ? window.location.origin : 'https://fixo.com.vn');
   const trackUrl = `${currentOrigin}/track/${order.id}`;
@@ -495,3 +509,429 @@ export function renderA4ReceiptHTML(order: RepairOrder, origin?: string, brandin
 </body>
 </html>`;
 }
+
+/**
+ * Sinh chuỗi HTML độc lập cho khổ giấy A4 gộp nhiều thiết bị (2 liên đối soát).
+ */
+export function renderCombinedA4ReceiptHTML(
+  orders: RepairOrder[],
+  origin?: string,
+  branding?: TenantReceiptBranding
+): string {
+  if (!orders || orders.length === 0) return '';
+  if (orders.length === 1) return renderA4ReceiptHTML(orders[0], origin, branding);
+
+  const primaryOrder = orders[0];
+  const currentOrigin =
+    origin || (typeof window !== 'undefined' ? window.location.origin : 'https://fixo.com.vn');
+  const trackUrl = `${currentOrigin}/track/${primaryOrder.id}`;
+
+  const effectiveBranding = branding || (primaryOrder as any).tenant;
+  const effectiveLogoUrl = effectiveBranding?.logoUrl || effectiveBranding?.storeLogoUrl || (primaryOrder as any).tenant?.logo_url;
+  const effectiveStoreName = effectiveBranding?.storeName || (primaryOrder as any).tenant?.name || 'FIXO REPAIR OS';
+  const effectiveBranch = primaryOrder.branch || effectiveBranding?.storeName || (primaryOrder as any).tenant?.name || 'FIXO Store';
+  const effectiveHotline = effectiveBranding?.hotline || effectiveBranding?.storeHotline || (primaryOrder as any).tenant?.hotline;
+  const effectiveFooterNote = effectiveBranding?.footerNote || effectiveBranding?.receiptFooterNote || (primaryOrder as any).tenant?.receipt_footer_note;
+
+  const batchCode = primaryOrder.intake_batch_code || `IB26-${orders.map((o) => o.id.replace(/^FX\d+-/, '')).join('-')}`;
+  const barcodeSvg = generateBarcodeSVG(primaryOrder.intake_batch_code || primaryOrder.id, {
+    height: 28,
+    barWidth: 1.2,
+    showText: false,
+  });
+
+  const qrCodeSvg = generateQRCodeSVG(trackUrl, {
+    size: 65,
+    margin: 1,
+  });
+
+  const totalPrice = orders.reduce((sum, o) => sum + (Number(o.price) || 0), 0);
+  const allOrderCodes = orders.map((o) => o.id).join(', ');
+
+  const renderSingleCopyHtml = (copyTitle: string) => {
+    return `
+    <article class="a4-copy">
+      <!-- Header -->
+      <div class="a4-header">
+        <div class="a4-brand-wrap">
+          <div class="a4-brand-logo">
+            ${effectiveLogoUrl ? `<img src="${effectiveLogoUrl}" class="a4-store-logo" alt="Logo" onerror="this.style.display='none'" />` : FIXO_LOGO_A4_SVG}
+          </div>
+          <div>
+            <div class="a4-brand-title">${effectiveStoreName}</div>
+            <div class="a4-brand-subtitle">PHIẾU TIẾP NHẬN SỬA CHỮA THIẾT BỊ ĐIỆN TỬ · ĐỢT TIẾP NHẬN GỘP (${orders.length} MÁY)</div>
+          </div>
+        </div>
+        <div class="a4-badge">${copyTitle}</div>
+      </div>
+
+      <!-- Info Bar -->
+      <div class="a4-infobar">
+        <div class="a4-order-info">
+          <span>MÃ ĐỢT TIẾP NHẬN:</span>
+          <b class="a4-order-code">${batchCode}</b>
+          <div class="a4-barcode-wrap">${barcodeSvg}</div>
+        </div>
+        <div class="a4-infobar-right">
+          <div>Ngày nhận: <b>${primaryOrder.date || 'Hôm nay'}</b></div>
+          <div>Chi nhánh: <b>${effectiveBranch}</b></div>
+          ${effectiveHotline ? `<div>Hotline: <b>${effectiveHotline}</b></div>` : ''}
+        </div>
+      </div>
+
+      <!-- Customer Bar -->
+      <div class="a4-section" style="padding: 2.5px 6px; background: #fbfdfc; border: 1px solid #dce4e0; border-radius: 4px; margin-bottom: 3px;">
+        <div style="display: flex; justify-content: space-between; font-size: 8pt;">
+          <div><b>Khách hàng:</b> ${primaryOrder.name || 'Khách lẻ'} · <b>SĐT:</b> ${primaryOrder.phone || '—'}</div>
+          <div><b>Số lượng:</b> ${orders.length} thiết bị · <b>Mã phiếu:</b> ${allOrderCodes}</div>
+        </div>
+      </div>
+
+      <!-- Multi-device Table -->
+      <div class="a4-section" style="flex: 1; overflow: hidden; margin-top: 2px;">
+        <div class="a4-section-title" style="margin-bottom: 2px;">DANH SÁCH THIẾT BỊ TIẾP NHẬN (${orders.length} THIẾT BỊ)</div>
+        <table class="a4-table" style="width: 100%; border-collapse: collapse; font-size: 7.5pt;">
+          <thead>
+            <tr style="background: #eef4f1; border-bottom: 1.5px solid #176b58;">
+              <th style="padding: 2.5px 4px; text-align: center; width: 6%;">STT</th>
+              <th style="padding: 2.5px 4px; text-align: left; width: 28%;">Dòng máy / Serial</th>
+              <th style="padding: 2.5px 4px; text-align: left; width: 18%;">Phụ kiện</th>
+              <th style="padding: 2.5px 4px; text-align: left; width: 30%;">Tình trạng lỗi khách báo</th>
+              <th style="padding: 2.5px 4px; text-align: right; width: 18%;">Chi phí dự kiến</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${orders
+              .map(
+                (dev, idx) => `
+              <tr style="border-bottom: 1px dotted #ccc;">
+                <td style="padding: 2px 4px; text-align: center; font-weight: bold;">${idx + 1}</td>
+                <td style="padding: 2px 4px;">
+                  <b>${dev.device || 'Thiết bị Apple'}</b>
+                  <div style="font-size: 6.5pt; color: #555;">SN: ${dev.serial || 'Chưa cập nhật'} · Mã: ${dev.id}</div>
+                </td>
+                <td style="padding: 2px 4px;">${dev.accessories || 'Không gửi kèm'}</td>
+                <td style="padding: 2px 4px;">
+                  <div>${dev.issue || 'Kiểm tra tổng quát'}</div>
+                  ${dev.appearance ? `<div style="font-size: 6.5pt; color: #666;">Ngoại hình: ${dev.appearance}</div>` : ''}
+                </td>
+                <td style="padding: 2px 4px; text-align: right; font-weight: bold; font-variant-numeric: tabular-nums;">
+                  ${formatMoney(dev.price)}
+                </td>
+              </tr>`
+              )
+              .join('')}
+          </tbody>
+          <tfoot>
+            <tr style="background: #eef6f2; border-top: 1.5px solid #176b58;">
+              <td colspan="4" style="padding: 2.5px 4px; text-align: right; font-weight: bold; color: #176b58;">
+                TỔNG CỘNG TIẾP NHẬN (${orders.length} THIẾT BỊ):
+              </td>
+              <td style="padding: 2.5px 4px; text-align: right; font-weight: 800; font-size: 9pt; color: #176b58; font-variant-numeric: tabular-nums;">
+                ${formatMoney(totalPrice)}
+              </td>
+            </tr>
+          </tfoot>
+        </table>
+      </div>
+
+      <!-- Price & QR -->
+      <div class="a4-price-row" style="margin-top: 2px; padding: 2px 0;">
+        <div class="a4-price-box">
+          <span>TỔNG CHI PHÍ TIẾP NHẬN DỰ KIẾN:</span>
+          <b class="a4-price-val">${formatMoney(totalPrice)}</b>
+          <small class="a4-price-note">(${orders.length} thiết bị)</small>
+        </div>
+        <div class="a4-qr-wrap">
+          <div class="a4-qr-img">${qrCodeSvg}</div>
+          <span class="a4-qr-text">Quét tra cứu tiến độ</span>
+        </div>
+      </div>
+
+      <!-- Terms -->
+      <div class="a4-terms">
+        * Chi phí trên là dự kiến tại thời điểm tiếp nhận. FIXO sẽ chủ động liên hệ quý khách xác nhận trước khi can thiệp nếu có phát sinh linh kiện. Quý khách vui lòng giữ phiếu này để đối chiếu khi nhận lại thiết bị.
+      </div>
+
+      <!-- Signatures -->
+      <div class="a4-signatures">
+        <div class="a4-sig-col">
+          <b>KHÁCH HÀNG</b>
+          <div class="a4-sig-sub">(Ký và ghi rõ họ tên)</div>
+          <div class="a4-sig-space"></div>
+          <div class="a4-sig-name">${primaryOrder.name || ''}</div>
+        </div>
+        <div class="a4-sig-col">
+          <b>NHÂN VIÊN TIẾP NHẬN</b>
+          <div class="a4-sig-sub">(Ký và ghi rõ họ tên)</div>
+          <div class="a4-sig-space"></div>
+          <div class="a4-sig-name">${primaryOrder.createdBy || 'FIXO'}</div>
+        </div>
+      </div>
+
+      <!-- Footer -->
+      <div class="a4-footer">
+        ${effectiveFooterNote ? `<div style="margin-bottom: 2px;">${effectiveFooterNote}</div>` : ''}
+        <div>⚡ Powered by FIXO Repair OS · fixo.vn · Phiếu tiếp nhận được lập thành 02 liên có giá trị pháp lý đối chiếu như nhau · Mã đợt: ${batchCode}</div>
+      </div>
+    </article>`;
+  };
+
+  return `<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8" />
+  <title>${batchCode} - In phiếu A4 Gộp (${orders.length} thiết bị)</title>
+  <style>
+    @page {
+      size: A4 portrait;
+      margin: 5mm 7mm;
+    }
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+    body {
+      width: 100%;
+      margin: 0;
+      padding: 0;
+      background: #ffffff !important;
+      color: #111111 !important;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+      -webkit-print-color-adjust: exact;
+      print-color-adjust: exact;
+      font-size: 8.5pt;
+      line-height: 1.3;
+    }
+    .a4-container {
+      width: 100%;
+      max-width: 196mm;
+      margin: 0 auto;
+    }
+    .a4-copy {
+      height: 132mm;
+      max-height: 132mm;
+      overflow: hidden;
+      border: 1px solid #c8d3cc;
+      border-radius: 6px;
+      padding: 4mm 6mm;
+      background: #ffffff;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+    }
+    .a4-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      border-bottom: 2px solid #176b58;
+      padding-bottom: 3px;
+      margin-bottom: 3px;
+    }
+    .a4-brand-wrap {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .a4-brand-logo {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .a4-store-logo {
+      max-width: 38mm;
+      max-height: 14mm;
+      object-fit: contain;
+      filter: contrast(110%);
+    }
+    .a4-brand-title {
+      font-size: 11pt;
+      font-weight: 800;
+      color: #176b58;
+      letter-spacing: -0.3px;
+      line-height: 1.1;
+    }
+    .a4-brand-subtitle {
+      font-size: 6.5pt;
+      font-weight: 700;
+      color: #4a5c53;
+      letter-spacing: 0.5px;
+      text-transform: uppercase;
+      margin-top: 1px;
+    }
+    .a4-badge {
+      font-size: 7.5pt;
+      font-weight: 700;
+      background: #176b58;
+      color: #ffffff;
+      padding: 3px 8px;
+      border-radius: 4px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+    .a4-infobar {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      background: #f4f7f5;
+      padding: 3px 6px;
+      border-radius: 4px;
+      margin-bottom: 3px;
+      font-size: 7.5pt;
+    }
+    .a4-order-info {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .a4-order-code {
+      font-size: 10pt;
+      font-family: monospace;
+      color: #176b58;
+      letter-spacing: 0.8px;
+    }
+    .a4-barcode-wrap {
+      display: inline-block;
+      vertical-align: middle;
+    }
+    .a4-barcode-wrap svg {
+      height: 24px;
+    }
+    .a4-infobar-right {
+      display: flex;
+      gap: 8px;
+      color: #4a5c53;
+    }
+    .a4-section-title {
+      font-size: 7.5pt;
+      font-weight: 800;
+      color: #176b58;
+      border-bottom: 1px solid #dce4e0;
+      padding-bottom: 1.5px;
+      letter-spacing: 0.3px;
+      text-transform: uppercase;
+    }
+    .a4-price-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      background: #eef6f2;
+      border: 1px solid #b8d0c5;
+      border-radius: 4px;
+      padding: 3px 8px;
+      margin: 2px 0;
+    }
+    .a4-price-box {
+      font-size: 8pt;
+      font-weight: 700;
+      color: #176b58;
+    }
+    .a4-price-val {
+      font-size: 11pt;
+      font-weight: 800;
+      margin-left: 6px;
+      font-variant-numeric: tabular-nums;
+    }
+    .a4-price-note {
+      font-size: 7pt;
+      color: #555555;
+      font-weight: normal;
+      margin-left: 4px;
+    }
+    .a4-qr-wrap {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .a4-qr-img {
+      width: 45px;
+      height: 45px;
+    }
+    .a4-qr-img svg {
+      width: 100%;
+      height: 100%;
+    }
+    .a4-qr-text {
+      font-size: 6.5pt;
+      color: #4a5c53;
+      max-width: 60px;
+      line-height: 1.1;
+    }
+    .a4-terms {
+      font-size: 6pt;
+      color: #666666;
+      font-style: italic;
+      line-height: 1.2;
+      margin: 2px 0;
+    }
+    .a4-signatures {
+      display: flex;
+      justify-content: space-between;
+      text-align: center;
+      margin: 2px 0;
+      font-size: 7.5pt;
+    }
+    .a4-sig-col {
+      width: 45%;
+    }
+    .a4-sig-sub {
+      font-size: 6pt;
+      color: #666666;
+      font-style: italic;
+    }
+    .a4-sig-space {
+      height: 16px;
+    }
+    .a4-sig-name {
+      font-weight: 700;
+      font-size: 7.5pt;
+    }
+    .a4-footer {
+      border-top: 1px solid #e3e8e5;
+      padding-top: 2px;
+      text-align: center;
+      font-size: 6pt;
+      color: #777777;
+    }
+    .a4-divider {
+      height: 10mm;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      position: relative;
+    }
+    .a4-divider-line {
+      width: 100%;
+      border-top: 1px dashed #777777;
+      position: absolute;
+    }
+    .a4-divider-text {
+      position: relative;
+      background: #ffffff;
+      padding: 0 8px;
+      font-size: 7pt;
+      color: #666666;
+      letter-spacing: 2px;
+      font-family: monospace;
+    }
+  </style>
+</head>
+<body>
+  <div class="a4-container" id="printSheetWrapper">
+    <!-- LIÊN 1: CỬA HÀNG GIỮ -->
+    ${renderSingleCopyHtml('LIÊN 1 · BẢN LƯU CỬA HÀNG')}
+
+    <!-- ĐƯỜNG CẮT PHÂN CÁCH ĐỨT NÉT 10mm -->
+    <div class="a4-divider print:h-[10mm]">
+      <div class="a4-divider-line"></div>
+      <span class="a4-divider-text">✂ - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - ✂</span>
+    </div>
+
+    <!-- LIÊN 2: KHÁCH HÀNG GIỮ -->
+    ${renderSingleCopyHtml('LIÊN 2 · BẢN GIAO KHÁCH HÀNG')}
+  </div>
+</body>
+</html>`;
+}
+

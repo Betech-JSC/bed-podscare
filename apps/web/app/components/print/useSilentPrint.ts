@@ -23,7 +23,7 @@ export interface UseSilentPrintReturn {
   currentFormat: PrintFormat;
   setFormat: (format: PrintFormat) => void;
   printReceipt: (
-    order: RepairOrder,
+    orderOrOrders: RepairOrder | RepairOrder[],
     formatOverride?: PrintFormat,
     optionsOrRoutingSlip?: ThermalK80RenderOptions | boolean
   ) => Promise<boolean>;
@@ -58,15 +58,18 @@ export function useSilentPrint(options?: UseSilentPrintOptions): UseSilentPrintR
   }, []);
 
   /**
-   * Kích hoạt in ngầm phiếu sửa chữa hoặc phiếu kỹ thuật
+   * Kích hoạt in ngầm phiếu sửa chữa hoặc phiếu kỹ thuật (hỗ trợ đơn lẻ hoặc mảng đơn hàng gộp)
    */
   const printReceipt = useCallback(
     async (
-      order: RepairOrder,
+      orderOrOrders: RepairOrder | RepairOrder[],
       formatOverride?: PrintFormat,
       optionsOrRoutingSlip: ThermalK80RenderOptions | boolean = false
     ): Promise<boolean> => {
-      if (typeof window === 'undefined' || !order) {
+      if (typeof window === 'undefined' || !orderOrOrders) {
+        return false;
+      }
+      if (Array.isArray(orderOrOrders) && orderOrOrders.length === 0) {
         return false;
       }
 
@@ -88,7 +91,7 @@ export function useSilentPrint(options?: UseSilentPrintOptions): UseSilentPrintR
           iframe.style.opacity = '0';
           iframe.style.pointerEvents = 'none';
 
-          // 2. Chuẩn bị nội dung HTML tương ứng
+          // 2. Chuẩn bị nội dung HTML tương ứng (Single-flight Print Job)
           const origin = window.location.origin;
           const branding =
             typeof optionsOrRoutingSlip === 'object' && optionsOrRoutingSlip !== null
@@ -96,8 +99,8 @@ export function useSilentPrint(options?: UseSilentPrintOptions): UseSilentPrintR
               : undefined;
           const htmlContent =
             activeFormat === 'a4'
-              ? renderA4ReceiptHTML(order, origin, branding)
-              : renderThermalK80HTML(order, origin, optionsOrRoutingSlip);
+              ? renderA4ReceiptHTML(orderOrOrders, origin, branding)
+              : renderThermalK80HTML(orderOrOrders, origin, optionsOrRoutingSlip);
 
           // Biến quản lý dọn dẹp (chỉ chạy 1 lần)
           let cleanedUp = false;

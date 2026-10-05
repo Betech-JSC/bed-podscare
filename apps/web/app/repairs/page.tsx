@@ -136,9 +136,26 @@ export default function RepairsPage() {
         completedAt: o.repair_completed_at,
         customerApprovedAt: o.customer_approved_at,
         createdAt: o.created_at,
+        intake_batch_code: o.intake_batch_code,
+        batchOrders: o.batch_orders || o.batchOrders,
       };
     });
   }, [apiOrdersData, orders, search, statusFilter]);
+
+  const selectedOrderBatchOrders = useMemo(() => {
+    if (!selectedOrder) return undefined;
+    if (selectedOrder.batchOrders && selectedOrder.batchOrders.length > 1) {
+      return selectedOrder.batchOrders;
+    }
+    if (selectedOrder.intake_batch_code) {
+      const allCandidateOrders = filteredOrders.length > 0 ? filteredOrders : orders;
+      const siblings = allCandidateOrders.filter(
+        (o: RepairOrder) => o.intake_batch_code === selectedOrder.intake_batch_code
+      );
+      if (siblings.length > 1) return siblings;
+    }
+    return undefined;
+  }, [selectedOrder, filteredOrders, orders]);
 
   const moneyFormatted = (n: number) =>
     n ? new Intl.NumberFormat('vi-VN').format(n) + ' ₫' : '—';
@@ -410,11 +427,20 @@ export default function RepairsPage() {
               <div className="flex items-center gap-2">
                 <PrintButtonDropdown
                   order={selectedOrder}
+                  batchOrders={selectedOrderBatchOrders}
                   isPrinting={isSilentPrinting}
                   direction="up"
-                  onPrint={(ord, fmt) => {
-                    toast(`Đang gửi lệnh in phiếu ${ord.id} (${fmt.toUpperCase()})...`, 'info');
-                    printReceipt(ord, fmt);
+                  onPrint={(ordOrOrds, fmt) => {
+                    if (Array.isArray(ordOrOrds)) {
+                      toast(
+                        `Đang gửi lệnh in phiếu gộp ${ordOrOrds.length} thiết bị (${fmt.toUpperCase()})...`,
+                        'info'
+                      );
+                      printReceipt(ordOrOrds, fmt);
+                    } else {
+                      toast(`Đang gửi lệnh in phiếu ${ordOrOrds.id} (${fmt.toUpperCase()})...`, 'info');
+                      printReceipt(ordOrOrds, fmt);
+                    }
                   }}
                   variant="secondary"
                   size="md"
@@ -436,6 +462,36 @@ export default function RepairsPage() {
           }
         >
           <div className="space-y-4 text-sm">
+            {/* Đợt tiếp nhận liên kết đa thiết bị */}
+            {selectedOrder.intake_batch_code && selectedOrderBatchOrders && selectedOrderBatchOrders.length > 1 && (
+              <div className="p-3 bg-[#f0f8f4] rounded-[10px] border border-[#d0e5d9] flex flex-wrap items-center justify-between gap-2">
+                <div className="flex items-center gap-2">
+                  <span className="text-sm">📦</span>
+                  <div className="text-xs">
+                    <span className="text-[#556960]">Đợt tiếp nhận: </span>
+                    <strong className="font-mono text-[#176b58] font-bold">{selectedOrder.intake_batch_code}</strong>
+                    <span className="text-[#556960] ml-1.5">({selectedOrderBatchOrders.length} thiết bị cùng đợt)</span>
+                  </div>
+                </div>
+                <div className="flex items-center gap-1.5">
+                  {selectedOrderBatchOrders.map((bo: RepairOrder) => (
+                    <button
+                      key={bo.id}
+                      type="button"
+                      onClick={() => setSelectedOrder(bo)}
+                      className={`px-2 py-0.5 rounded text-xs font-mono font-medium transition-colors cursor-pointer ${
+                        bo.id === selectedOrder.id
+                          ? 'bg-[#176b58] text-white font-bold'
+                          : 'bg-white text-[#176b58] border border-[#c3d7cb] hover:bg-[#e4eee8]'
+                      }`}
+                    >
+                      {bo.id}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+
             {/* Status overview strip */}
             <div className="grid grid-cols-3 gap-3 p-4 bg-[#fafbfa] rounded-[10px] border border-[#edf1ee]">
               <div>

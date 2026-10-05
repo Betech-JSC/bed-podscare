@@ -128,7 +128,7 @@ test('4. Form Reset & Batch Intake Creation / Printing', async (t) => {
     );
   });
 
-  await t.test('4.2. handleSave tạo lần lượt các đơn và gửi in phiếu cho từng máy', () => {
+  await t.test('4.2. handleSave tạo lần lượt các đơn và gửi in phiếu gộp Single-flight', () => {
     assert.ok(
       content.includes('for (let i = 0; i < devices.length; i++)') ||
         content.includes('for (const dev of devices)'),
@@ -143,8 +143,8 @@ test('4. Form Reset & Batch Intake Creation / Printing', async (t) => {
       'Mỗi đơn hàng mới phải được thêm vào store qua addOrder'
     );
     assert.ok(
-      content.includes('printReceipt(newOrder, currentFormat)'),
-      'Lệnh in phiếu phải được kích hoạt cho từng đơn hàng'
+      content.includes('printReceipt(createdOrders') || content.includes('printReceipt(newOrder'),
+      'Lệnh in phiếu phải được kích hoạt sau khi lưu (Single-flight print)'
     );
   });
 });

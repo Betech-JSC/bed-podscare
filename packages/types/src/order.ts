@@ -69,6 +69,8 @@ export interface RepairOrder {
   handedAt?: string;
   createdBy?: string;
   createdAt?: string;
+  intake_batch_code?: string;
+  batchOrders?: RepairOrder[];
 }
 
 export interface CreateIntakeDTO {
@@ -89,6 +91,7 @@ export interface CreateIntakeDTO {
   price?: number;
   priceNote?: string;
   consent?: boolean;
+  intake_batch_code?: string;
 }
 
 export interface UpdateOrderQuoteDTO {

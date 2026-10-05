@@ -281,6 +281,7 @@ class QuotaGuardTest extends TestCase
             'customer_name'     => 'Khách VIP Pro',
             'device_model_id'   => $this->deviceModel->id,
             'issue_description' => 'Ép kính',
+            'estimated_price'   => 350000,
         ]);
 
         $resOrder->assertStatus(201);

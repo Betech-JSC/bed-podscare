@@ -6,12 +6,14 @@ import { generateBarcodeSVG, generateQRCodeSVG } from './BarcodeQRUtils';
 import {
   FIXO_LOGO_SVG,
   formatMoney,
+  renderCombinedThermalK80HTML,
   type ThermalK80SlipMode,
   type TenantReceiptBranding,
 } from './thermalK80HtmlBuilder';
 
 export interface ThermalK80ReceiptProps {
-  order: RepairOrder;
+  order?: RepairOrder;
+  orders?: RepairOrder[];
   origin?: string;
   isRoutingSlip?: boolean;
   slipMode?: ThermalK80SlipMode;
@@ -376,12 +378,34 @@ const StoreSlip: React.FC<{ order: RepairOrder }> = ({ order }) => {
  * Hỗ trợ hiển thị 2 liên trên màn hình xem trước (preview modal) với đường cắt mô phỏng dao cắt Xprinter.
  */
 export const ThermalK80Receipt: React.FC<ThermalK80ReceiptProps> = ({
-  order,
+  order: singleOrder,
+  orders,
   origin,
   isRoutingSlip = false,
   slipMode,
   branding,
 }) => {
+  if (orders && orders.length >= 2) {
+    const combinedHtml = renderCombinedThermalK80HTML(orders, {
+      origin,
+      isRoutingSlip,
+      slipMode,
+      branding,
+    });
+    const match = combinedHtml.match(/<body>([\s\S]*?)<\/body>/i);
+    const bodyInner = match ? match[1] : combinedHtml;
+
+    return (
+      <article
+        className="thermal-receipt bg-white text-black p-3 rounded-[6px] border border-gray-300 shadow-sm w-[74mm] max-w-[74mm] font-sans text-[11px] leading-[1.35] mx-auto select-none print:shadow-none print:border-none print:p-0"
+        dangerouslySetInnerHTML={{ __html: bodyInner }}
+      />
+    );
+  }
+
+  const order = singleOrder || (orders && orders[0]);
+  if (!order) return null;
+
   const effectiveMode: ThermalK80SlipMode =
     slipMode || (isRoutingSlip ? 'store_only' : 'dual');
 

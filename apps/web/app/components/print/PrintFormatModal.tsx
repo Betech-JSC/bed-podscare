@@ -140,7 +140,8 @@ export const PrintFormatModal: React.FC<PrintFormatModalProps> = ({
 
 export interface PrintButtonDropdownProps {
   order: RepairOrder;
-  onPrint: (order: RepairOrder, format: PrintFormat) => void;
+  batchOrders?: RepairOrder[];
+  onPrint: (order: RepairOrder | RepairOrder[], format: PrintFormat) => void;
   isPrinting?: boolean;
   className?: string;
   variant?: 'primary' | 'secondary' | 'outline';
@@ -154,6 +155,7 @@ export interface PrintButtonDropdownProps {
  */
 export const PrintButtonDropdown: React.FC<PrintButtonDropdownProps> = ({
   order,
+  batchOrders,
   onPrint,
   isPrinting = false,
   className = '',
@@ -166,6 +168,12 @@ export const PrintButtonDropdown: React.FC<PrintButtonDropdownProps> = ({
   const [configModalOpen, setConfigModalOpen] = useState(false);
   const [currentFormat, setCurrentFormat] = useState<PrintFormat>(getStoredPrintFormat);
   const dropdownRef = useRef<HTMLDivElement>(null);
+
+  const effectiveBatchOrders =
+    (batchOrders && batchOrders.length > 1 ? batchOrders : undefined) ||
+    (order.batchOrders && order.batchOrders.length > 1 ? order.batchOrders : undefined);
+
+  const hasBatch = Boolean(effectiveBatchOrders && effectiveBatchOrders.length > 1);
 
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
@@ -277,6 +285,35 @@ export const PrintButtonDropdown: React.FC<PrintButtonDropdownProps> = ({
               <span className="text-[9px] text-[#176b58] font-bold">★ Mặc định</span>
             )}
           </button>
+
+          {hasBatch && effectiveBatchOrders && (
+            <>
+              <div className="border-t border-[#eef3f0] my-1" />
+              <div className="text-[10px] font-bold text-[#176b58] uppercase px-2 py-1 tracking-wider flex items-center justify-between">
+                <span>Đợt tiếp nhận ({effectiveBatchOrders.length} máy)</span>
+                {order.intake_batch_code && (
+                  <span className="font-mono text-[9px] bg-[#eaf4ef] px-1 rounded text-[#176b58]">
+                    {order.intake_batch_code}
+                  </span>
+                )}
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  setDropdownOpen(false);
+                  onPrint(effectiveBatchOrders, currentFormat);
+                }}
+                className="w-full text-left px-2.5 py-1.5 rounded-[6px] text-xs bg-[#eaf4ef] hover:bg-[#deede4] text-[#176b58] font-bold flex items-center justify-between transition-colors cursor-pointer"
+              >
+                <span className="flex items-center gap-1.5">
+                  <span>📑</span> In bill gộp ({effectiveBatchOrders.length} thiết bị)
+                </span>
+                <span className="text-[9px] uppercase font-mono font-bold bg-[#176b58] text-white px-1.5 py-0.5 rounded">
+                  {currentFormat}
+                </span>
+              </button>
+            </>
+          )}
 
           <button
             type="button"
