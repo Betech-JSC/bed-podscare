@@ -20,7 +20,14 @@ import type {
   IntakeCheckItem,
   RepairOrder,
 } from '@podscare/types';
-import { repairService, deviceService, serviceService, type CommonIssueItem } from '@podscare/api-client';
+import {
+  repairService,
+  deviceService,
+  serviceService,
+  userService,
+  type CommonIssueItem,
+  type UserRecord,
+} from '@podscare/api-client';
 import { usePodsCare } from '../providers';
 import { useSilentPrint, PrintFormatModal } from './print';
 
@@ -114,6 +121,15 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
     return 1;
   });
 
+  // CSKH Staff Selection State
+  const [cskhUsers, setCskhUsers] = useState<UserRecord[]>([]);
+  const [selectedCskhId, setSelectedCskhId] = useState<string>(() => {
+    if (currentUser?.role === 'cskh' && currentUser?.id) {
+      return String(currentUser.id);
+    }
+    return '';
+  });
+
   // Multi-Device Form State
   const [devices, setDevices] = useState<IntakeDeviceItem[]>([createDefaultDevice('dev-1')]);
   const [activeDeviceIndexStep3, setActiveDeviceIndexStep3] = useState(0);
@@ -158,6 +174,22 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
       setSelectedBranchId(branchId);
     } else {
       setSelectedBranchId(1);
+    }
+
+    if (currentUser?.role === 'cskh' && currentUser?.id) {
+      setSelectedCskhId(String(currentUser.id));
+    } else {
+      const activeBId = userBranchId || (branchId && branchId !== 'all' ? branchId : 1);
+      const branchCskh = cskhUsers.find((u) => String(u.branch_id) === String(activeBId));
+      if (branchCskh) {
+        setSelectedCskhId(String(branchCskh.id));
+      } else if (cskhUsers.length > 0) {
+        setSelectedCskhId(String(cskhUsers[0].id));
+      } else if (currentUser?.id) {
+        setSelectedCskhId(String(currentUser.id));
+      } else {
+        setSelectedCskhId('');
+      }
     }
     setSelectedCategory('AirPods');
     const firstModel =
@@ -210,6 +242,83 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
       })
       .catch(() => {});
   }, []);
+
+  // Fetch active CSKH staff list when modal opens or component mounts
+  useEffect(() => {
+    if (!isOpen) return;
+
+    userService
+      .getUsers({ role: 'cskh', is_active: true, per_page: 100 })
+      .then((res: any) => {
+        const raw = res?.data;
+        const list: UserRecord[] = Array.isArray(raw) ? raw : (raw?.data || []);
+        if (Array.isArray(list)) {
+          setCskhUsers(list);
+        }
+      })
+      .catch((err) => {
+        console.error('Failed to load CSKH staff list:', err);
+      });
+  }, [isOpen]);
+
+  // Smart auto-select CSKH
+  useEffect(() => {
+    if (!isOpen) return;
+
+    if (currentUser?.role === 'cskh' && currentUser?.id) {
+      setSelectedCskhId(String(currentUser.id));
+      return;
+    }
+
+    if (!selectedCskhId) {
+      if (cskhUsers.length > 0) {
+        const branchCskh = cskhUsers.find((u) => String(u.branch_id) === String(selectedBranchId));
+        if (branchCskh) {
+          setSelectedCskhId(String(branchCskh.id));
+        } else {
+          setSelectedCskhId(String(cskhUsers[0].id));
+        }
+      } else if (currentUser?.id) {
+        setSelectedCskhId(String(currentUser.id));
+      }
+    }
+  }, [isOpen, cskhUsers, selectedBranchId, currentUser, selectedCskhId]);
+
+  const cskhOptions = React.useMemo(() => {
+    if (cskhUsers.length === 0) {
+      return [
+        {
+          value: String(currentUser?.id || '1'),
+          label: `${currentUser?.name || 'Tài khoản hiện tại'} (${currentUser?.email || currentUser?.phone || currentUser?.role || 'Hiện tại'}) — Mặc định`,
+        },
+      ];
+    }
+
+    const options = cskhUsers.map((u) => {
+      const contact = u.phone || u.email || '';
+      const branchName = u.branch?.name ? ` — ${u.branch.name}` : '';
+      return {
+        value: String(u.id),
+        label: contact ? `${u.name} (${contact})${branchName}` : `${u.name}${branchName}`,
+      };
+    });
+
+    if (
+      currentUser?.role === 'cskh' &&
+      currentUser?.id &&
+      !options.some((opt) => opt.value === String(currentUser.id))
+    ) {
+      const contact = currentUser.phone || currentUser.email || '';
+      options.unshift({
+        value: String(currentUser.id),
+        label: contact
+          ? `${currentUser.name} (${contact}) — Hiện tại`
+          : `${currentUser.name} — Hiện tại`,
+      });
+    }
+
+    return options;
+  }, [cskhUsers, currentUser]);
 
   // Fetch dynamic common issues for categories
   useEffect(() => {
@@ -447,6 +556,9 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
       if (!selectedBranchId || String(selectedBranchId) === 'all') {
         errs.branch = 'Vui lòng chọn chi nhánh tiếp nhận';
       }
+      if (!selectedCskhId) {
+        errs.created_by_user_id = 'Vui lòng chọn nhân viên tiếp nhận';
+      }
     } else if (step === 1) {
       devices.forEach((dev, idx) => {
         if (!dev.category) {
@@ -482,6 +594,7 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
         delete updated.name;
         delete updated.phone;
         delete updated.branch;
+        delete updated.created_by_user_id;
       } else if (step === 1) {
         delete updated.category;
         delete updated.device;
@@ -511,6 +624,9 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
     if (!phone.trim()) errs.phone = 'Vui lòng nhập số điện thoại';
     if (!selectedBranchId || String(selectedBranchId) === 'all') {
       errs.branch = 'Vui lòng chọn chi nhánh tiếp nhận';
+    }
+    if (!selectedCskhId) {
+      errs.created_by_user_id = 'Vui lòng chọn nhân viên tiếp nhận';
     }
 
     devices.forEach((dev, idx) => {
@@ -569,7 +685,7 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
   const handleSave = async (shouldPrint: boolean) => {
     if (!validateAll()) {
       toast('Vui lòng kiểm tra lại các trường bắt buộc', 'error');
-      if (!name.trim() || !phone.trim() || !selectedBranchId || String(selectedBranchId) === 'all') {
+      if (!name.trim() || !phone.trim() || !selectedBranchId || String(selectedBranchId) === 'all' || !selectedCskhId) {
         setCurrentStepIndex(0);
       } else {
         const hasDeviceErr = devices.some(
@@ -650,6 +766,7 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
           estimated_price: devPrice,
           checklists: backendChecklists,
           intake_batch_code: batchCode,
+          created_by_user_id: selectedCskhId ? Number(selectedCskhId) : undefined,
         };
 
         const res = await repairService.createIntake(payload);
@@ -664,6 +781,13 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
         } else {
           newId = `FX${new Date().getFullYear().toString().slice(-2)}-${Math.floor(1000 + Math.random() * 9000)}`;
         }
+
+        const selectedCskhUser = cskhUsers.find((u) => String(u.id) === String(selectedCskhId));
+        const creatorName =
+          selectedCskhUser?.name ||
+          (String(selectedCskhId) === String(currentUser?.id) ? currentUser?.name : undefined) ||
+          currentUser?.name ||
+          'Nhân viên';
 
         const newOrder: RepairOrder = {
           id: newId,
@@ -687,7 +811,23 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
           photos: dev.photos,
           appearance: dev.appearance.trim() || 'Không ghi chú',
           testNote: dev.testNote.trim(),
-          createdBy: currentUser?.name || 'Nhân viên',
+          createdBy: creatorName,
+          created_by_user_id: selectedCskhId ? Number(selectedCskhId) : (currentUser?.id ? Number(currentUser.id) : undefined),
+          created_by_user: selectedCskhUser
+            ? {
+                id: selectedCskhUser.id,
+                name: selectedCskhUser.name,
+                role: selectedCskhUser.role,
+                email: selectedCskhUser.email,
+              }
+            : currentUser?.id
+            ? {
+                id: Number(currentUser.id),
+                name: currentUser.name,
+                role: currentUser.role,
+                email: currentUser.email,
+              }
+            : null,
           createdAt: new Date().toISOString(),
           intake_batch_code: batchCode,
         };
@@ -897,19 +1037,26 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
                   error={errors.phone}
                   required
                 />
-                <div className="sm:col-span-2">
+                <div className="sm:col-span-1">
                   {currentUser?.role === 'admin' ? (
                     <Select
                       label="Chi nhánh tiếp nhận thiết bị *"
                       value={String(selectedBranchId)}
                       onChange={(e) => {
-                        setSelectedBranchId(e.target.value);
+                        const newBranchId = e.target.value;
+                        setSelectedBranchId(newBranchId);
                         if (errors.branch) {
                           setErrors((prev) => {
                             const next = { ...prev };
                             delete next.branch;
                             return next;
                           });
+                        }
+                        if (currentUser?.role === 'admin' && cskhUsers.length > 0) {
+                          const branchCskh = cskhUsers.find((u) => String(u.branch_id) === String(newBranchId));
+                          if (branchCskh) {
+                            setSelectedCskhId(String(branchCskh.id));
+                          }
                         }
                       }}
                       error={errors.branch}
@@ -949,6 +1096,28 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
                       </div>
                     </div>
                   )}
+                </div>
+
+                <div className="sm:col-span-1">
+                  <Select
+                    label="Nhân viên tiếp nhận / tạo đơn (CSKH) *"
+                    value={selectedCskhId}
+                    onChange={(e) => {
+                      setSelectedCskhId(e.target.value);
+                      if (errors.created_by_user_id) {
+                        setErrors((prev) => {
+                          const next = { ...prev };
+                          delete next.created_by_user_id;
+                          return next;
+                        });
+                      }
+                    }}
+                    error={errors.created_by_user_id}
+                    options={cskhOptions}
+                  />
+                  <p className="mt-1 text-[11px] text-[#71867c]">
+                    Ghi nhận nhân viên CSKH phụ trách tiếp nhận và tư vấn đơn hàng này
+                  </p>
                 </div>
               </div>
             </section>

@@ -11,6 +11,7 @@ use App\Models\IntakePhoto;
 use App\Models\Notification;
 use App\Models\QcInspection;
 use App\Models\RepairOrder;
+use App\Models\User;
 use App\Models\Warranty;
 use App\Services\OrderWorkflowService;
 use Illuminate\Http\JsonResponse;
@@ -31,7 +32,7 @@ class OrderController extends Controller
      */
     public function index(Request $request): JsonResponse
     {
-        $query = RepairOrder::with(['customer', 'deviceModel', 'branch', 'technician', 'qcInspector']);
+        $query = RepairOrder::with(['customer', 'deviceModel', 'branch', 'technician', 'qcInspector', 'createdByUser:id,name,role']);
 
         if ($status = $request->input('status')) {
             $normalized = $this->normalizeStatus($status);
@@ -98,6 +99,7 @@ class OrderController extends Controller
 
         $rules = [
             'branch_id'             => ($isStaff && $user->branch_id) ? 'nullable|exists:branches,id' : 'required|exists:branches,id',
+            'created_by_user_id'    => 'nullable|exists:users,id',
             'customer_id'           => 'required_without:customer_phone|nullable|exists:customers,id',
             'customer_name'         => 'required_with:customer_phone|string|max:255',
             'customer_phone'        => 'nullable|string|max:20',
@@ -123,7 +125,20 @@ class OrderController extends Controller
             $validated['branch_id'] = $user->branch_id;
         }
 
-        return DB::transaction(function () use ($request, $validated) {
+        $cskhUserId = $validated['created_by_user_id'] ?? null;
+        if ($cskhUserId) {
+            $validUser = User::where('id', $cskhUserId)
+                ->where('tenant_id', $user->tenant_id)
+                ->first();
+            if (! $validUser) {
+                return $this->failure('Nhân viên tiếp nhận không hợp lệ hoặc không thuộc cửa hàng.', 422);
+            }
+            $creatorId = $validUser->id;
+        } else {
+            $creatorId = $user->id;
+        }
+
+        return DB::transaction(function () use ($request, $validated, $creatorId) {
             // 1. Tìm hoặc tạo khách hàng
             $customerId = $validated['customer_id'] ?? null;
             if (! $customerId && ! empty($validated['customer_phone'])) {
@@ -161,7 +176,7 @@ class OrderController extends Controller
                 'customer_approved_at'  => $initialStatus === 'waiting_tech' ? now() : null,
                 'total_price'           => $validated['estimated_price'] ?? 0.00,
                 'warranty_terms_days'   => $validated['warranty_terms_days'] ?? 90,
-                'created_by_user_id'    => $request->user()->id,
+                'created_by_user_id'    => $creatorId,
             ]);
 
             // 4. Lưu checklists nếu có
@@ -218,7 +233,7 @@ class OrderController extends Controller
             );
 
             return $this->success(
-                $order->load(['customer', 'deviceModel', 'intakeChecklists']),
+                $order->load(['customer', 'deviceModel', 'intakeChecklists', 'createdByUser:id,name,role']),
                 'Tạo đơn sửa chữa thành công.',
                 201
             );
@@ -345,6 +360,7 @@ class OrderController extends Controller
             'expected_updated_at' => 'nullable|string',
             'decline_reason'      => 'nullable|string',
             'repair_note'         => 'nullable|string',
+            'parts_needed'        => 'nullable|string|max:1000',
             'parts_used'          => 'nullable|string',
             'rework_reason'       => 'nullable|string',
             'technician_id'       => 'nullable|exists:users,id',
@@ -362,6 +378,7 @@ class OrderController extends Controller
                 'technician_id'       => $validated['technician_id'] ?? null,
                 'decline_reason'      => $validated['decline_reason'] ?? null,
                 'repair_note'         => $validated['repair_note'] ?? null,
+                'parts_needed'        => $validated['parts_needed'] ?? $request->input('parts_needed'),
                 'parts_used'          => $validated['parts_used'] ?? null,
                 'rework_reason'       => $validated['rework_reason'] ?? null,
                 'ip'                  => $request->ip(),
@@ -374,6 +391,51 @@ class OrderController extends Controller
         } catch (\DomainException $e) {
             return $this->failure($e->getMessage(), 422);
         }
+    }
+
+    /**
+     * Cập nhật ghi chú linh kiện độc lập mà không đổi trạng thái đơn hàng.
+     */
+    public function updatePartsNote(Request $request, int|string $id): JsonResponse
+    {
+        $order = $this->resolveOrder($id);
+
+        if (! $order) {
+            return $this->empty('Không tìm thấy đơn sửa chữa.');
+        }
+
+        $this->authorizeOrderBranch($order, $request->user());
+
+        $validated = $request->validate([
+            'parts_needed' => 'nullable|string|max:1000',
+            'repair_note'  => 'nullable|string|max:2000',
+            'parts_note'   => 'nullable|string|max:2000',
+        ]);
+
+        $updates = [];
+        if ($request->has('parts_needed')) {
+            $updates['parts_needed'] = $validated['parts_needed'];
+        }
+        $note = $validated['repair_note'] ?? $validated['parts_note'] ?? null;
+        if ($note !== null) {
+            $updates['repair_note'] = $note;
+        }
+
+        if (! empty($updates)) {
+            $order->update($updates);
+        }
+
+        AuditLog::create([
+            'user_id'        => $request->user()?->id,
+            'user_name'      => $request->user()?->name ?? 'Kỹ thuật viên',
+            'action'         => 'Cập nhật ghi chú linh kiện',
+            'auditable_type' => 'RepairOrder',
+            'auditable_id'   => $order->id,
+            'details'        => "Cập nhật yêu cầu linh kiện: " . ($order->parts_needed ?? 'Trống') . (! empty($order->repair_note) ? " | Ghi chú: {$order->repair_note}" : ''),
+            'ip_address'     => $request->ip(),
+        ]);
+
+        return $this->success($order->fresh(), 'Đã lưu ghi chú linh kiện thành công.');
     }
 
     /**

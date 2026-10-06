@@ -58,6 +58,10 @@ export interface RepairOrder {
   warrantyTerm?: string;
   repairNote?: string;
   partsUsed?: string;
+  parts_needed?: string | null;
+  partsNeeded?: string | null;
+  paused_at?: string | null;
+  pausedAt?: string | null;
   finalCheck?: string;
   qcIssue?: string;
   qcApprovedBy?: string;
@@ -68,6 +72,13 @@ export interface RepairOrder {
   completedAt?: string;
   handedAt?: string;
   createdBy?: string;
+  created_by_user_id?: number | string | null;
+  created_by_user?: {
+    id: number;
+    name: string;
+    role: string;
+    email?: string;
+  } | null;
   createdAt?: string;
   intake_batch_code?: string;
   batchOrders?: RepairOrder[];
@@ -92,6 +103,7 @@ export interface CreateIntakeDTO {
   priceNote?: string;
   consent?: boolean;
   intake_batch_code?: string;
+  created_by_user_id?: number | string;
 }
 
 export interface UpdateOrderQuoteDTO {

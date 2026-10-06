@@ -115,6 +115,8 @@ Route::prefix('v1')->group(function () {
         Route::put('/repairs/{id}', [OrderController::class, 'update'])->name('api.v1.repairs.update');
         Route::post('/orders/{id}/transition', [OrderController::class, 'transition'])->name('api.v1.orders.transition');
         Route::post('/repairs/{id}/transition', [OrderController::class, 'transition'])->name('api.v1.repairs.transition');
+        Route::patch('/orders/{id}/parts-note', [OrderController::class, 'updatePartsNote'])->name('api.v1.orders.parts_note');
+        Route::patch('/repairs/{id}/parts-note', [OrderController::class, 'updatePartsNote'])->name('api.v1.repairs.parts_note');
         Route::post('/orders/{id}/assign-technician', [OrderController::class, 'assignTechnician'])->name('api.v1.orders.assign_technician');
         Route::post('/repairs/{id}/assign-technician', [OrderController::class, 'assignTechnician'])->name('api.v1.repairs.assign_technician');
         Route::get('/orders/{id}/allowed-transitions', [OrderController::class, 'allowedTransitions'])->name('api.v1.orders.allowed_transitions');

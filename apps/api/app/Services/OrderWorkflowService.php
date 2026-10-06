@@ -160,12 +160,24 @@ class OrderWorkflowService extends BaseWorkflowService
                 if (! $model->repair_started_at) {
                     $updates['repair_started_at'] = $now;
                 }
+                if ($oldStatus === 'waiting_parts') {
+                    $updates['paused_at'] = null;
+                }
                 if (! empty($options['technician_id'])) {
                     $updates['technician_id'] = $options['technician_id'];
                     $updates['tech_accepted_at'] = $now;
                 } elseif (! empty($options['user']) && in_array($options['user']->role ?? '', ['tech', 'technician'], true)) {
                     $updates['technician_id'] = $options['user']->id;
                     $updates['tech_accepted_at'] = $now;
+                }
+                break;
+            case 'waiting_parts':
+                $updates['paused_at'] = $now;
+                if (! empty($options['parts_needed'])) {
+                    $updates['parts_needed'] = $options['parts_needed'];
+                }
+                if (! empty($options['repair_note'])) {
+                    $updates['repair_note'] = $options['repair_note'];
                 }
                 break;
             case 'waiting_qc':
@@ -258,13 +270,21 @@ class OrderWorkflowService extends BaseWorkflowService
         $adminId = $options['admin_id'] ?? (isset($options['user']) ? $options['user']->id : auth()->id());
         $adminName = $options['admin_name'] ?? (isset($options['user']) ? $options['user']->name : (auth()->user()?->name ?? 'Hệ thống'));
 
+        $details = "Đơn {$model->order_code} chuyển sang {$newStatus}" . (! empty($options['reason']) ? " ({$options['reason']})" : '');
+        if ($oldStatus === 'waiting_parts' && $newStatus === 'in_repair') {
+            $details = "Admin/CSKH {$adminName} đã xác nhận có linh kiện và báo KTV tiếp tục sửa" . (! empty($options['reason']) ? " ({$options['reason']})" : '');
+        } elseif ($newStatus === 'waiting_parts') {
+            $parts = $options['parts_needed'] ?? $model->parts_needed;
+            $details = "Đơn {$model->order_code} tạm dừng chờ linh kiện: " . ($parts ?: 'Chưa ghi rõ') . (! empty($options['repair_note']) ? " | Ghi chú: {$options['repair_note']}" : '');
+        }
+
         AuditLog::create([
             'user_id'        => $adminId,
             'user_name'      => $adminName,
             'action'         => "Đổi trạng thái: {$oldStatus} -> {$newStatus}",
             'auditable_type' => 'RepairOrder',
             'auditable_id'   => $model->id,
-            'details'        => "Đơn {$model->order_code} chuyển sang {$newStatus}" . (! empty($options['reason']) ? " ({$options['reason']})" : ''),
+            'details'        => $details,
             'ip_address'     => $options['ip'] ?? request()->ip(),
         ]);
     }
@@ -300,19 +320,23 @@ class OrderWorkflowService extends BaseWorkflowService
                 'event'      => 'order.assigned',
             ],
             'in_repair' => [
-                'title'      => 'Bắt đầu tiến trình sửa chữa',
-                'message'    => "Đơn {$model->order_code} đang được kỹ thuật viên tiến hành sửa chữa.",
+                'title'      => $oldStatus === 'waiting_parts' ? 'Đã có linh kiện - Tiếp tục sửa chữa' : 'Bắt đầu tiến trình sửa chữa',
+                'message'    => $oldStatus === 'waiting_parts'
+                    ? "Đơn {$model->order_code} đã có linh kiện, KTV tiếp tục sửa chữa."
+                    : "Đơn {$model->order_code} đang được kỹ thuật viên tiến hành sửa chữa.",
                 'severity'   => 'info',
-                'type'       => 'order_in_repair',
+                'type'       => $oldStatus === 'waiting_parts' ? 'order_resumed' : 'order_in_repair',
                 'role'       => 'technician',
                 'event'      => 'order.in_repair',
             ],
             'waiting_parts' => [
                 'title'      => 'Đơn chờ linh kiện',
-                'message'    => "Đơn {$model->order_code} tạm dừng để chờ linh kiện thay thế.",
+                'message'    => ! empty($model->parts_needed)
+                    ? "Đơn {$model->order_code} tạm dừng chờ linh kiện: {$model->parts_needed}."
+                    : "Đơn {$model->order_code} tạm dừng để chờ linh kiện thay thế.",
                 'severity'   => 'warning',
-                'type'       => 'order_status',
-                'role'       => null,
+                'type'       => 'order_waiting_parts',
+                'role'       => 'cskh',
                 'event'      => 'order.waiting_parts',
             ],
             'waiting_qc', 'qc_pending', 'qc_inspecting' => [

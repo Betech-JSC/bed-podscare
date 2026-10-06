@@ -13,7 +13,7 @@ import {
   Icon,
 } from '@podscare/ui';
 import type { RepairOrder } from '@podscare/types';
-import { repairService } from '@podscare/api-client';
+import { repairService, inventoryService } from '@podscare/api-client';
 import { normalizeStatusCode } from '../repairs/fsm';
 import { useSilentPrint } from './print';
 
@@ -49,16 +49,63 @@ export const TechOrderDetailModal: React.FC<TechOrderDetailModalProps> = ({
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [formError, setFormError] = useState('');
 
+  // Parts Request State
+  const [partsNeeded, setPartsNeeded] = useState('');
+  const [partsNote, setPartsNote] = useState('');
+  const [isSavingPartsNote, setIsSavingPartsNote] = useState(false);
+  const [isRequestingParts, setIsRequestingParts] = useState(false);
+  const [inventoryParts, setInventoryParts] = useState<any[]>([]);
+  const [isSearchingInventory, setIsSearchingInventory] = useState(false);
+  const [showSuggestions, setShowSuggestions] = useState(false);
+
   // Reset form when order changes
   useEffect(() => {
     if (order) {
       setRepairNote(order.repairNote || '');
-      setPartsUsed(order.partsUsed || '');
+      const initialPartsNeeded = order.parts_needed || order.partsNeeded || '';
+      setPartsNeeded(initialPartsNeeded);
+      setPartsNote(order.repairNote || '');
+      setPartsUsed(order.partsUsed || initialPartsNeeded || '');
       setFinalCheck(order.finalCheck || 'Đã chạy thử, hoạt động hoàn hảo');
       setConsentCheck(false);
       setFormError('');
     }
   }, [order, isOpen]);
+
+  // Tìm kiếm gợi ý từ kho linh kiện
+  useEffect(() => {
+    let active = true;
+    if (!isOpen) return;
+
+    const timer = setTimeout(async () => {
+      try {
+        setIsSearchingInventory(true);
+        const res = await inventoryService.getParts({
+          q: partsNeeded.trim() || undefined,
+          per_page: 15,
+        });
+        const list = Array.isArray(res?.data?.data)
+          ? res.data.data
+          : Array.isArray(res?.data)
+          ? res.data
+          : Array.isArray(res)
+          ? res
+          : [];
+        if (active) {
+          setInventoryParts(list);
+        }
+      } catch (err) {
+        console.warn('Could not fetch inventory parts:', err);
+      } finally {
+        if (active) setIsSearchingInventory(false);
+      }
+    }, 250);
+
+    return () => {
+      active = false;
+      clearTimeout(timer);
+    };
+  }, [partsNeeded, isOpen]);
 
   if (!order) return null;
 
@@ -116,6 +163,76 @@ export const TechOrderDetailModal: React.FC<TechOrderDetailModalProps> = ({
     }
   };
 
+  // Lưu ghi chú linh kiện độc lập (giữ nguyên in_repair)
+  const handleSavePartsNote = async () => {
+    if (isSavingPartsNote) return;
+    if (!partsNeeded.trim() && !partsNote.trim()) {
+      toast('Vui lòng nhập tên hoặc chọn linh kiện cần yêu cầu trước khi lưu', 'info');
+      return;
+    }
+
+    setIsSavingPartsNote(true);
+    try {
+      await repairService.updatePartsNote(order.id, {
+        parts_needed: partsNeeded.trim(),
+        repair_note: partsNote.trim(),
+      });
+      if (invalidateOrders) await invalidateOrders();
+      toast('Đã cập nhật ghi chú linh kiện thành công', 'success');
+      const updated: RepairOrder = {
+        ...order,
+        parts_needed: partsNeeded.trim(),
+        partsNeeded: partsNeeded.trim(),
+        repairNote: partsNote.trim() || order.repairNote,
+      };
+      if (updateOrder) updateOrder(updated);
+    } catch (err: any) {
+      console.warn('Update parts note error:', err);
+      const errMsg = err?.response?.data?.message || err?.message || 'Lỗi khi lưu ghi chú linh kiện';
+      toast(errMsg, 'error');
+    } finally {
+      setIsSavingPartsNote(false);
+    }
+  };
+
+  // Báo cần linh kiện và tạm dừng đơn hàng (chuyển sang waiting_parts)
+  const handleRequestPartsAndPause = async () => {
+    if (isRequestingParts) return;
+    if (!partsNeeded.trim()) {
+      toast('Vui lòng nhập rõ tên hoặc chọn linh kiện cần thay thế trước khi tạm dừng ca sửa', 'error');
+      return;
+    }
+
+    setIsRequestingParts(true);
+    try {
+      await repairService.transition(order.id, {
+        transition: 'waiting_parts',
+        status: 'Chờ linh kiện',
+        parts_needed: partsNeeded.trim(),
+        repair_note: partsNote.trim() || undefined,
+      });
+      if (invalidateOrders) await invalidateOrders();
+      toast('Đã tạm dừng đơn và gửi cảnh báo thiếu linh kiện tới quầy', 'success');
+      const updated: RepairOrder = {
+        ...order,
+        status: 'Chờ linh kiện',
+        statusType: 'wait',
+        parts_needed: partsNeeded.trim(),
+        partsNeeded: partsNeeded.trim(),
+        repairNote: partsNote.trim() || order.repairNote,
+      };
+      if (updateOrder) updateOrder(updated);
+      if (onCompleteSuccess) onCompleteSuccess(updated);
+      onClose();
+    } catch (err: any) {
+      console.warn('Pause for parts error:', err);
+      const errMsg = err?.response?.data?.message || err?.message || 'Không thể tạm dừng chờ linh kiện';
+      toast(errMsg, 'error');
+    } finally {
+      setIsRequestingParts(false);
+    }
+  };
+
   // Xác nhận hoàn tất sửa chữa và bàn giao
   const handleCompleteRepair = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
@@ -145,12 +262,15 @@ export const TechOrderDetailModal: React.FC<TechOrderDetailModalProps> = ({
     setFormError('');
     setIsSubmitting(true);
 
+    // Tự động điền linh kiện yêu cầu vào linh kiện đã dùng nếu ô trống
+    const effectivePartsUsed = partsUsed.trim() || partsNeeded.trim();
+
     try {
       const payload = {
         transition: 'ready_for_return',
         status: 'ready_for_return',
         repair_note: repairNote.trim(),
-        parts_used: partsUsed.trim() || undefined,
+        parts_used: effectivePartsUsed || undefined,
         final_check_result: finalCheck,
         technician_id: currentUser?.id,
       };
@@ -164,7 +284,7 @@ export const TechOrderDetailModal: React.FC<TechOrderDetailModalProps> = ({
         status: 'Sẵn sàng trả',
         statusType: 'ready',
         repairNote: repairNote.trim(),
-        partsUsed: partsUsed.trim(),
+        partsUsed: effectivePartsUsed,
         finalCheck,
       };
 
@@ -429,6 +549,124 @@ export const TechOrderDetailModal: React.FC<TechOrderDetailModalProps> = ({
             )}
           </div>
 
+          {/* ========================================================================= */}
+          {/* KHU VỰC CHUYÊN DỤNG: 📦 YÊU CẦU & GHI CHÚ LINH KIỆN                         */}
+          {/* ========================================================================= */}
+          {isActive && (
+            <div className="p-4 bg-[#fbfdfc] rounded-[10px] border border-[#dce8e1] space-y-3.5 shadow-xs">
+              <div className="flex items-center justify-between pb-2 border-b border-[#e8f1ec]">
+                <h5 className="text-xs font-bold text-[#176b58] uppercase tracking-[0.8px] m-0 flex items-center gap-1.5">
+                  <span>📦</span> YÊU CẦU & GHI CHÚ LINH KIỆN
+                </h5>
+                {code === 'waiting_parts' && (
+                  <span className="text-[11px] font-bold text-[#b45309] bg-[#fef3c7] px-2 py-0.5 rounded-full border border-[#fde68a]">
+                    ⏸ Đang tạm dừng chờ linh kiện
+                  </span>
+                )}
+              </div>
+
+              {/* Combobox chọn linh kiện kho + hỗ trợ gõ tự do */}
+              <div className="relative">
+                <label className="block text-xs font-bold text-[#2d3d35] mb-1">
+                  Linh kiện cần yêu cầu:
+                </label>
+                <div className="relative">
+                  <Input
+                    value={partsNeeded}
+                    onChange={(e) => {
+                      setPartsNeeded(e.target.value);
+                      setShowSuggestions(true);
+                    }}
+                    onFocus={() => setShowSuggestions(true)}
+                    onBlur={() => {
+                      setTimeout(() => setShowSuggestions(false), 250);
+                    }}
+                    placeholder="Gõ tên linh kiện tự do hoặc tìm kiếm theo SKU kho linh kiện..."
+                  />
+                  {isSearchingInventory && (
+                    <span className="absolute right-3 top-2.5 text-xs text-[#72827a] animate-pulse">
+                      Đang tìm...
+                    </span>
+                  )}
+                </div>
+
+                {/* Dropdown Gợi Ý Từ Kho */}
+                {showSuggestions && (
+                  <div className="absolute left-0 right-0 top-full mt-1 bg-white border border-[#cbe0d5] rounded-[8px] shadow-lg max-h-52 overflow-y-auto z-30 divide-y divide-[#f0f5f2]">
+                    {inventoryParts.length > 0 ? (
+                      inventoryParts.map((part) => (
+                        <div
+                          key={part.id}
+                          onMouseDown={() => {
+                            setPartsNeeded(`${part.name} (SKU: ${part.sku})`);
+                            setShowSuggestions(false);
+                          }}
+                          className="p-2.5 hover:bg-[#f2f8f4] cursor-pointer text-xs flex items-center justify-between transition-colors"
+                        >
+                          <div>
+                            <span className="font-semibold text-[#1c302b] block">{part.name}</span>
+                            <span className="text-[11px] font-mono text-[#5b6e64]">SKU: {part.sku}</span>
+                          </div>
+                          <span
+                            className={`px-2 py-0.5 rounded text-[11px] font-bold ${
+                              (part.stock_quantity ?? 0) > 0
+                                ? 'bg-[#e2f3ea] text-[#176b58]'
+                                : 'bg-[#fee2e2] text-[#b91c1c]'
+                            }`}
+                          >
+                            Còn {part.stock_quantity ?? 0} cái
+                          </span>
+                        </div>
+                      ))
+                    ) : (
+                      <div className="p-3 text-xs text-[#73847c]">
+                        {partsNeeded.trim()
+                          ? `Không tìm thấy trong kho. Nhấn ngoài để dùng tên tự do: "${partsNeeded}"`
+                          : 'Gõ từ khóa để tìm kiếm linh kiện trong kho...'}
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+
+              {/* Textarea Ghi chú gửi Quầy / Admin */}
+              <Textarea
+                label="Ghi chú chi tiết cho Quầy / Admin:"
+                value={partsNote}
+                onChange={(e) => setPartsNote(e.target.value)}
+                placeholder="Ghi rõ tình trạng hỏng hóc, lưu ý kỹ thuật, thời hạn cần linh kiện hoặc thông báo khách..."
+                rows={2}
+              />
+
+              {/* 2 Nút thao tác: Lưu ghi chú & Báo cần linh kiện tạm dừng */}
+              <div className="flex flex-wrap items-center gap-2.5 pt-1">
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  disabled={isSavingPartsNote || isRequestingParts}
+                  onClick={handleSavePartsNote}
+                  className="flex items-center gap-1.5 text-xs text-[#176b58] border-[#a9c9b9] hover:bg-[#eef6f1] font-semibold"
+                >
+                  <Icon name="check" size={14} />
+                  <span>{isSavingPartsNote ? 'Đang lưu...' : '💾 Lưu ghi chú linh kiện'}</span>
+                </Button>
+
+                <Button
+                  type="button"
+                  variant="secondary"
+                  size="sm"
+                  disabled={isSavingPartsNote || isRequestingParts}
+                  onClick={handleRequestPartsAndPause}
+                  className="flex items-center gap-1.5 text-xs bg-[#fef3c7] text-[#92400e] border-[#fde68a] hover:bg-[#fde68a] font-bold"
+                >
+                  <span>⏸</span>
+                  <span>{isRequestingParts ? 'Đang gửi...' : '⏸ Báo cần linh kiện & Tạm dừng'}</span>
+                </Button>
+              </div>
+            </div>
+          )}
+
           {/* Form nghiệm thu cho đơn đang active */}
           {isActive ? (
             <form onSubmit={handleCompleteRepair} className="space-y-4">
@@ -498,6 +736,14 @@ export const TechOrderDetailModal: React.FC<TechOrderDetailModalProps> = ({
                   {order.repairNote || 'Đã sửa chữa và kiểm tra hoàn chỉnh theo tiêu chuẩn.'}
                 </p>
               </div>
+              {(order.parts_needed || order.partsNeeded) && (
+                <div>
+                  <span className="text-[#72827a] block mb-1 font-semibold">Linh kiện đã yêu cầu trong ca sửa:</span>
+                  <p className="text-[#1c302b] m-0 bg-white p-2.5 rounded-[6px] border border-[#edf1ee]">
+                    {order.parts_needed || order.partsNeeded}
+                  </p>
+                </div>
+              )}
               {order.partsUsed && (
                 <div>
                   <span className="text-[#72827a] block mb-1 font-semibold">Linh kiện đã thay thế:</span>

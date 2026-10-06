@@ -129,6 +129,10 @@ export default function RepairsPage() {
         appearance: o.appearance_notes,
         repairNote: o.repair_note,
         partsUsed: o.parts_used_summary,
+        parts_needed: o.parts_needed,
+        partsNeeded: o.parts_needed,
+        paused_at: o.paused_at,
+        pausedAt: o.paused_at,
         finalCheck: o.final_check_result,
         qcIssue: o.qc_note,
         acceptedAt: o.tech_accepted_at,
@@ -141,6 +145,55 @@ export default function RepairsPage() {
       };
     });
   }, [apiOrdersData, orders, search, statusFilter]);
+
+  // Lắng nghe sự kiện realtime cập nhật trạng thái đơn (kèm chuông Audio Chime)
+  React.useEffect(() => {
+    const handleOperationalEvent = (e: any) => {
+      const detail = e.detail;
+      const evName = detail?.eventName || detail?.payload?.eventName || '';
+      const pType = detail?.type || detail?.payload?.type || '';
+      if (evName === 'order.waiting_parts' || pType === 'order_waiting_parts' || evName.startsWith('order.')) {
+        refetch();
+      }
+    };
+
+    window.addEventListener('podscare:operational_event', handleOperationalEvent);
+    return () => {
+      window.removeEventListener('podscare:operational_event', handleOperationalEvent);
+    };
+  }, [refetch]);
+
+  // Admin / CSKH kích hoạt tiếp tục sửa chữa khi đã có linh kiện
+  const handleResumeOrder = async (orderToResume: RepairOrder) => {
+    try {
+      setIsTransitioning(true);
+      await repairService.transition(orderToResume.id, { transition: 'in_repair' });
+      refetch();
+      if (invalidateOrders) await invalidateOrders();
+      toast(`Đã chuyển trạng thái: Tiếp tục sửa chữa. KTV đã nhận được thông báo.`, 'success');
+
+      const updated: RepairOrder = {
+        ...orderToResume,
+        status: 'Đang sửa',
+        statusType: 'progress',
+        paused_at: null,
+        pausedAt: null,
+      };
+      updateOrder(updated);
+      if (selectedOrder && selectedOrder.id === orderToResume.id) {
+        setSelectedOrder(updated);
+      }
+    } catch (err: any) {
+      console.warn('Resume order error:', err);
+      const errMsg =
+        err?.response?.data?.message ||
+        err?.message ||
+        'Không thể mở lại ca sửa.';
+      toast(errMsg, 'error');
+    } finally {
+      setIsTransitioning(false);
+    }
+  };
 
   const selectedOrderBatchOrders = useMemo(() => {
     if (!selectedOrder) return undefined;
@@ -380,7 +433,18 @@ export default function RepairsPage() {
                         </small>
                       </td>
                       <td className="px-4">
-                        <StatusTag label={o.status} type={o.statusType} />
+                        <div className="space-y-1">
+                          <StatusTag label={o.status} type={o.statusType} />
+                          {(o.parts_needed || o.partsNeeded || normalizeStatusCode(o.status) === 'waiting_parts') && (
+                            <div
+                              className="inline-flex items-center gap-1 text-[11px] font-semibold text-[#b45309] bg-[#fef3c7] px-2 py-0.5 rounded border border-[#fde68a] max-w-[190px] truncate"
+                              title={`Linh kiện yêu cầu: ${o.parts_needed || o.partsNeeded || 'Chưa cập nhật'}`}
+                            >
+                              <span>📦</span>
+                              <span className="truncate">Cần: {o.parts_needed || o.partsNeeded || 'Chờ linh kiện'}</span>
+                            </div>
+                          )}
+                        </div>
                       </td>
                       <td className="px-4 font-semibold text-[#405048]">
                         {moneyFormatted(o.price)}
@@ -393,16 +457,31 @@ export default function RepairsPage() {
                         </span>
                       </td>
                       <td className="px-4 text-right">
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            setSelectedOrder(o);
-                          }}
-                        >
-                          ···
-                        </Button>
+                        <div className="flex items-center justify-end gap-1.5">
+                          {normalizeStatusCode(o.status) === 'waiting_parts' && (
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              className="text-xs bg-[#eaf5ef] text-[#176b58] border-[#a9c9b9] hover:bg-[#d8ede1] font-bold"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleResumeOrder(o);
+                              }}
+                            >
+                              ▶ Đã có linh kiện
+                            </Button>
+                          )}
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setSelectedOrder(o);
+                            }}
+                          >
+                            ···
+                          </Button>
+                        </div>
                       </td>
                     </tr>
                   ))}
@@ -492,6 +571,60 @@ export default function RepairsPage() {
               </div>
             )}
 
+            {/* Khối cảnh báo màu cam nổi bật khi đơn chờ linh kiện */}
+            {(normalizeStatusCode(selectedOrder.status) === 'waiting_parts' || Boolean(selectedOrder.parts_needed) || Boolean(selectedOrder.partsNeeded)) && (
+              <div className="p-4 bg-[#fffbeb] rounded-[10px] border border-[#fde68a] space-y-2.5 shadow-xs">
+                <div className="flex items-center justify-between">
+                  <h4 className="text-xs font-bold text-[#b45309] uppercase tracking-wide m-0 flex items-center gap-1.5">
+                    <span>⚠️</span> YÊU CẦU LINH KIỆN TỪ PHÒNG KỸ THUẬT
+                  </h4>
+                  {selectedOrder.paused_at && (
+                    <span className="text-[11px] text-[#92400e] font-medium">
+                      Tạm dừng: {new Date(selectedOrder.paused_at).toLocaleTimeString('vi-VN')}
+                    </span>
+                  )}
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
+                  <div>
+                    <span className="text-[#92400e] font-semibold block mb-0.5">Linh kiện cần:</span>
+                    <b className="text-[#78350f] text-sm block">
+                      {selectedOrder.parts_needed || selectedOrder.partsNeeded || 'Chưa ghi rõ'}
+                    </b>
+                  </div>
+                  <div>
+                    <span className="text-[#92400e] font-semibold block mb-0.5">KTV phụ trách:</span>
+                    <b className="text-[#78350f] text-sm block">
+                      {selectedOrder.tech || 'Kỹ thuật viên'}
+                    </b>
+                  </div>
+                </div>
+
+                {selectedOrder.repairNote && (
+                  <div className="text-xs">
+                    <span className="text-[#92400e] font-semibold block mb-0.5">Ghi chú KTV:</span>
+                    <p className="text-[#78350f] bg-white/70 p-2 rounded border border-[#fef3c7] m-0">
+                      {selectedOrder.repairNote}
+                    </p>
+                  </div>
+                )}
+
+                {normalizeStatusCode(selectedOrder.status) === 'waiting_parts' && (
+                  <div className="pt-1 flex items-center justify-end">
+                    <Button
+                      variant="primary"
+                      size="sm"
+                      disabled={isTransitioning}
+                      onClick={() => handleResumeOrder(selectedOrder)}
+                      className="bg-[#176b58] hover:bg-[#125848] text-white font-bold text-xs"
+                    >
+                      ▶ Đã có linh kiện - Báo KTV tiếp tục sửa
+                    </Button>
+                  </div>
+                )}
+              </div>
+            )}
+
             {/* Status overview strip */}
             <div className="grid grid-cols-3 gap-3 p-4 bg-[#fafbfa] rounded-[10px] border border-[#edf1ee]">
               <div>
@@ -520,7 +653,7 @@ export default function RepairsPage() {
               return (
                 <div className="space-y-2.5 pt-1 pb-3 border-b border-[#f0f3f1]">
                   {/* Status Banner cho CSKH khi đơn ở giai đoạn kỹ thuật */}
-                  {role === 'cskh' && inTechPhase && (
+                  {role === 'cskh' && inTechPhase && currentStatusCode !== 'waiting_parts' && (
                     <div className="flex items-center gap-2.5 p-3 rounded-[8px] bg-[#eaf4ef] border border-[#d0e5d9] text-xs text-[#176b58]">
                       <span className="w-2 h-2 rounded-full bg-[#176b58] animate-pulse flex-none" />
                       <span>

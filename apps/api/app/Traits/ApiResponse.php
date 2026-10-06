@@ -71,6 +71,18 @@ trait ApiResponse
     }
 
     /**
+     * Alias của failure() để đồng bộ tương thích.
+     */
+    protected function error(
+        string $message,
+        int|string $status = 400,
+        mixed $errors = null,
+        ?string $errorCode = null
+    ): JsonResponse {
+        return $this->failure($message, $status, $errors, $errorCode);
+    }
+
+    /**
      * Trả về phản hồi không có quyền truy cập (HTTP 403 Forbidden).
      *
      * @param string $message Thông báo lỗi

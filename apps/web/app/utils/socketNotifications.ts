@@ -34,6 +34,8 @@ export const ALLOWED_NOTIFICATION_TYPES: string[] = [
   'order_created',
   'order_assigned',
   'order_in_repair',
+  'order_waiting_parts',
+  'order_resumed',
   'order_qc_pending',
   'order_ready_delivery',
   'order_completed',

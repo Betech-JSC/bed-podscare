@@ -44,6 +44,13 @@ export class RepairService {
     return this.http.post(`/api/v1/orders/${id}/transition`, payload);
   }
 
+  async updatePartsNote(
+    id: string | number,
+    data: { parts_needed?: string; repair_note?: string; parts_note?: string }
+  ): Promise<any> {
+    return this.http.patch(`/api/v1/orders/${id}/parts-note`, data);
+  }
+
   async updateStatus(
     id: string | number,
     status: string,
