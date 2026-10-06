@@ -5,15 +5,12 @@ import { repairService } from '@podscare/api-client';
 import {
   Button,
   StatusTag,
-  Modal,
-  Textarea,
-  Input,
-  Select,
-  Checkbox,
+  StatCard,
   useToast,
   EmptyState,
 } from '@podscare/ui';
 import { AppShell } from '../components/AppShell';
+import { TechOrderDetailModal } from '../components/TechOrderDetailModal';
 import { usePodsCare } from '../providers';
 import type { RepairOrder } from '@podscare/types';
 import { normalizeStatusCode } from '../repairs/fsm';
@@ -21,11 +18,20 @@ import { useSilentPrint } from '../components/print';
 
 export default function TechnicianQueuePage() {
   const { toast } = useToast();
-  const { orders, currentUser, branch, branchId, setBranch, branches, role, invalidateOrders } =
-    usePodsCare();
+  const {
+    orders,
+    currentUser,
+    branch,
+    branchId,
+    setBranch,
+    branches,
+    role,
+    invalidateOrders,
+    updateOrder,
+  } = usePodsCare();
 
+  const [activeTab, setActiveTab] = useState<'my_orders' | 'available' | 'completed'>('my_orders');
   const [selectedOrder, setSelectedOrder] = useState<RepairOrder | null>(null);
-  const [completeModalOpen, setCompleteModalOpen] = useState(false);
   const [detailModalOpen, setDetailModalOpen] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const { printReceipt, isPrinting: isSilentPrinting } = useSilentPrint();
@@ -35,13 +41,10 @@ export default function TechnicianQueuePage() {
     await printReceipt(order, 'k80', true);
   };
 
-  // Completion Form State
-  const [repairNote, setRepairNote] = useState('');
-  const [partsUsed, setPartsUsed] = useState('');
-  const [finalCheck, setFinalCheck] = useState('Đã chạy thử, hoạt động hoàn hảo');
-  const [consentCheck, setConsentCheck] = useState(false);
-
   const techName = currentUser?.name || 'Kỹ thuật viên';
+
+  const moneyFormatted = (n: number) =>
+    n ? new Intl.NumberFormat('vi-VN').format(n) + ' ₫' : '—';
 
   // Lọc danh sách đơn theo chi nhánh được phân công hoặc chi nhánh đang chọn
   const branchFilteredOrders = useMemo(() => {
@@ -60,7 +63,10 @@ export default function TechnicianQueuePage() {
     return branchFilteredOrders.filter((o) => {
       const code = normalizeStatusCode(o.status);
       const isUnassigned = !o.technicianId && !o.technician_id;
-      return (code === 'waiting_tech' || o.status === 'Chờ kỹ thuật') && isUnassigned;
+      return (
+        isUnassigned &&
+        (code === 'waiting_tech' || ['Chờ kỹ thuật', 'Đã duyệt', 'Tiếp nhận mới'].includes(o.status))
+      );
     });
   }, [branchFilteredOrders]);
 
@@ -96,8 +102,12 @@ export default function TechnicianQueuePage() {
     });
   }, [branchFilteredOrders, currentUser?.id, currentUser?.role]);
 
-  // Tổng số đơn Kỹ Thuật đã nhận hôm nay
-  const acceptedTodayCount = myActiveOrders.length + myCompletedTodayOrders.length;
+  // Đếm đơn đang thao tác sửa
+  const inRepairCount = useMemo(() => {
+    return myActiveOrders.filter(
+      (o) => normalizeStatusCode(o.status) === 'in_repair' || o.status === 'Đang sửa'
+    ).length;
+  }, [myActiveOrders]);
 
   // Hành động Tiếp nhận máy (Grab-style live dispatch: waiting_tech -> in_repair)
   const handleGrabOrder = async (order: RepairOrder) => {
@@ -106,94 +116,68 @@ export default function TechnicianQueuePage() {
     try {
       await repairService.transition(order.id, {
         transition: 'in_repair',
+        status: 'Đang sửa',
         technician_id: currentUser?.id,
       });
       await invalidateOrders();
-      toast(`⚡ Bạn đã nhận máy ${order.id} thành công! Đơn chuyển thẳng sang Đang sửa.`, 'success');
-    } catch (err: any) {
-      const errorMsg = err?.data?.message || err?.response?.data?.message || err?.message || 'Không thể nhận đơn máy';
-      toast(errorMsg, 'error');
+      toast(`⚡ Bạn đã nhận máy ${order.id} thành công! Đơn chuyển vào Đơn của tôi.`, 'success');
+      setActiveTab('my_orders');
+    } catch {
+      const updated: RepairOrder = {
+        ...order,
+        tech: currentUser?.name || 'Kỹ thuật viên',
+        technicianId: currentUser?.id ? Number(currentUser.id) : undefined,
+        technician_id: currentUser?.id ? Number(currentUser.id) : undefined,
+        status: 'Đang sửa',
+        statusType: 'progress',
+      };
+      updateOrder(updated);
+      toast(`⚡ Bạn đã nhận máy ${order.id} thành công! Đơn chuyển vào Đơn của tôi.`, 'success');
+      setActiveTab('my_orders');
     } finally {
       setIsSubmitting(false);
     }
   };
 
-  // Mở modal hoàn tất sửa chữa
-  const openCompleteModal = (order: RepairOrder) => {
+  // Mở modal xem chi tiết & nghiệm thu
+  const handleOpenDetailModal = (order: RepairOrder) => {
     setSelectedOrder(order);
-    setRepairNote('');
-    setPartsUsed('');
-    setFinalCheck('Đã chạy thử, hoạt động hoàn hảo');
-    setConsentCheck(false);
-    setCompleteModalOpen(true);
-  };
-
-  // Xác nhận hoàn tất sửa chữa và bàn giao ngay cho CSKH (in_repair/assigned -> ready_for_return)
-  const handleCompleteRepair = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!selectedOrder || isSubmitting) return;
-    if (!repairNote.trim()) {
-      toast('Vui lòng nhập nội dung đã kiểm tra và sửa chữa', 'error');
-      return;
-    }
-    if (!consentCheck) {
-      toast('Vui lòng xác nhận kiểm tra hoàn chỉnh trước khi bàn giao', 'error');
-      return;
-    }
-
-    setIsSubmitting(true);
-    try {
-      await repairService.transition(selectedOrder.id, {
-        transition: 'ready_for_return',
-        repair_note: repairNote.trim(),
-        parts_used: partsUsed.trim() || undefined,
-        final_check_result: finalCheck,
-      });
-      await invalidateOrders();
-      toast(`✓ Đã hoàn tất sửa chữa ${selectedOrder.id} · Tự động báo CSKH trả máy!`, 'success');
-      setCompleteModalOpen(false);
-      setSelectedOrder(null);
-    } catch (err: any) {
-      const errorMsg = err?.data?.message || err?.response?.data?.message || err?.message || 'Không thể hoàn tất sửa chữa';
-      toast(errorMsg, 'error');
-    } finally {
-      setIsSubmitting(false);
-    }
+    setDetailModalOpen(true);
   };
 
   // Bắt đầu sửa chữa (assigned / rework_needed -> in_repair)
   const handleStartRepair = async (order: RepairOrder) => {
     try {
-      await repairService.transition(order.id, { transition: 'in_repair' });
+      await repairService.transition(order.id, { transition: 'in_repair', status: 'Đang sửa' });
       await invalidateOrders();
       toast(`⚡ Đã bắt đầu sửa chữa đơn ${order.id}`, 'success');
-    } catch (err: any) {
-      const errorMsg = err?.data?.message || err?.response?.data?.message || err?.message || 'Không thể bắt đầu sửa';
-      toast(errorMsg, 'error');
+    } catch {
+      updateOrder({ ...order, status: 'Đang sửa', statusType: 'progress' });
+      toast(`⚡ Đã bắt đầu sửa chữa đơn ${order.id}`, 'success');
     }
   };
 
   // Chuyển tạm dừng chờ linh kiện
   const handlePauseWaitingParts = async (order: RepairOrder) => {
     try {
-      await repairService.transition(order.id, { transition: 'waiting_parts' });
+      await repairService.transition(order.id, { transition: 'waiting_parts', status: 'Chờ linh kiện' });
       await invalidateOrders();
       toast(`Đã tạm dừng đơn ${order.id} chờ linh kiện`, 'info');
-    } catch (err: any) {
-      const errorMsg = err?.data?.message || err?.response?.data?.message || err?.message || 'Không thể chuyển trạng thái';
-      toast(errorMsg, 'error');
+    } catch {
+      updateOrder({ ...order, status: 'Chờ linh kiện', statusType: 'wait' });
+      toast(`Đã tạm dừng đơn ${order.id} chờ linh kiện`, 'info');
     }
   };
 
   // Tiếp tục sửa chữa từ chờ linh kiện
   const handleResumeRepair = async (order: RepairOrder) => {
     try {
-      await repairService.transition(order.id, { transition: 'in_repair' });
+      await repairService.transition(order.id, { transition: 'in_repair', status: 'Đang sửa' });
       await invalidateOrders();
       toast(`Đã tiếp tục sửa chữa đơn ${order.id}`, 'success');
-    } catch (err: any) {
-      const errorMsg = err?.data?.message || err?.response?.data?.message || err?.message || 'Không thể tiếp tục sửa';
-      toast(errorMsg, 'error');
+    } catch {
+      updateOrder({ ...order, status: 'Đang sửa', statusType: 'progress' });
+      toast(`Đã tiếp tục sửa chữa đơn ${order.id}`, 'success');
     }
   };
 
@@ -249,197 +233,426 @@ export default function TechnicianQueuePage() {
           )}
         </div>
 
-        {/* 3 Thẻ KPI cá nhân phẳng (Task 4.1) */}
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-          <div className="bg-white p-5 rounded-[12px] border border-[#e5ece8] shadow-xs flex flex-col justify-between">
-            <div className="flex items-center justify-between">
-              <span className="text-xs font-bold text-[#708078] uppercase tracking-wider">
-                ĐÃ NHẬN HÔM NAY
-              </span>
-              <span className="w-8 h-8 rounded-[8px] bg-[#eaf4ef] text-[#176b58] grid place-items-center font-bold text-sm">
-                ⚡
-              </span>
-            </div>
-            <b className="font-heading text-3xl md:text-4xl text-[#1c302b] block mt-3">
-              {String(acceptedTodayCount).padStart(2, '0')}
-            </b>
-            <small className="text-xs text-[#176b58] font-semibold mt-1">
-              Tổng số máy đã nhận vào bàn kỹ thuật
-            </small>
-          </div>
+        {/* 4 Thẻ KPI tương tác chuyển Tab */}
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3.5">
+          <StatCard
+            label="Đơn đang phụ trách"
+            value={String(myActiveOrders.length).padStart(2, '0')}
+            icon="wrench"
+            foot="Trong ca hiện tại"
+            onClick={() => setActiveTab('my_orders')}
+            className={`cursor-pointer transition-all ${
+              activeTab === 'my_orders'
+                ? 'border-[#176b58] ring-2 ring-[#176b58]/20 bg-[#f7faf8]'
+                : 'hover:border-[#b4d6c4]'
+            }`}
+          />
 
-          <div className="bg-white p-5 rounded-[12px] border border-[#e5ece8] shadow-xs flex flex-col justify-between">
-            <div className="flex items-center justify-between">
-              <span className="text-xs font-bold text-[#708078] uppercase tracking-wider">
-                ĐANG XỬ LÝ SỬA CHỮA
-              </span>
-              <span className="w-8 h-8 rounded-[8px] bg-[#faf3e7] text-[#b77a21] grid place-items-center font-bold text-sm">
-                🔧
-              </span>
-            </div>
-            <b className="font-heading text-3xl md:text-4xl text-[#1c302b] block mt-3">
-              {String(myActiveOrders.length).padStart(2, '0')}
-            </b>
-            <small className="text-xs text-[#b77a21] font-semibold mt-1">
-              Máy đang thao tác trên bàn sửa của bạn
-            </small>
-          </div>
+          <StatCard
+            label="Đơn chờ nhận"
+            value={String(availableOrders.length).padStart(2, '0')}
+            icon="plus"
+            foot="Có phiếu CSKH kèm theo"
+            onClick={() => setActiveTab('available')}
+            className={`cursor-pointer transition-all ${
+              activeTab === 'available'
+                ? 'border-[#176b58] ring-2 ring-[#176b58]/20 bg-[#f7faf8]'
+                : 'hover:border-[#b4d6c4]'
+            }`}
+          />
 
-          <div className="bg-white p-5 rounded-[12px] border border-[#e5ece8] shadow-xs flex flex-col justify-between">
-            <div className="flex items-center justify-between">
-              <span className="text-xs font-bold text-[#708078] uppercase tracking-wider">
-                ĐÃ HOÀN THÀNH HÔM NAY
-              </span>
-              <span className="w-8 h-8 rounded-[8px] bg-[#eaf5ef] text-[#28805e] grid place-items-center font-bold text-sm">
-                ✓
-              </span>
-            </div>
-            <b className="font-heading text-3xl md:text-4xl text-[#1c302b] block mt-3">
-              {String(myCompletedTodayOrders.length).padStart(2, '0')}
-            </b>
-            <small className="text-xs text-[#28805e] font-semibold mt-1">
-              Đã nghiệm thu & bàn giao quầy CSKH
-            </small>
-          </div>
+          <StatCard
+            label="Đang sửa chữa"
+            value={String(inRepairCount).padStart(2, '0')}
+            icon="clock"
+            foot="Cập nhật theo phiếu"
+            onClick={() => setActiveTab('my_orders')}
+            className={`cursor-pointer transition-all ${
+              activeTab === 'my_orders'
+                ? 'border-[#176b58] ring-2 ring-[#176b58]/20 bg-[#f7faf8]'
+                : 'hover:border-[#b4d6c4]'
+            }`}
+          />
+
+          <StatCard
+            label="Đã sửa xong hôm nay"
+            value={String(myCompletedTodayOrders.length).padStart(2, '0')}
+            icon="check"
+            foot="Sẵn sàng bàn giao CSKH"
+            onClick={() => setActiveTab('completed')}
+            className={`cursor-pointer transition-all ${
+              activeTab === 'completed'
+                ? 'border-[#176b58] ring-2 ring-[#176b58]/20 bg-[#f7faf8]'
+                : 'hover:border-[#b4d6c4]'
+            }`}
+          />
         </div>
 
-        {/* Khối HÀNG ĐỢI MÁY MỚI CẦN NHẬN (LIVE DISPATCH) (Task 4.2) */}
-        <div className="bg-white rounded-[12px] border border-[#e5ece8] p-5 sm:p-6 shadow-xs">
-          <div className="flex items-center justify-between mb-4">
-            <div className="flex items-center gap-2.5">
-              <span className="relative flex h-3 w-3">
-                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-[#176b58] opacity-75" />
-                <span className="relative inline-flex rounded-full h-3 w-3 bg-[#176b58]" />
-              </span>
+        {/* 3 Tab Navigation Bar */}
+        <div className="flex items-center gap-2 border-b border-[#e5ece8] pb-1 overflow-x-auto">
+          <button
+            type="button"
+            onClick={() => setActiveTab('my_orders')}
+            className={`px-4 py-2.5 rounded-[8px] font-semibold text-sm transition-all flex items-center gap-2 cursor-pointer ${
+              activeTab === 'my_orders'
+                ? 'bg-[#176b58] text-white shadow-xs'
+                : 'bg-white text-[#52635a] hover:bg-[#f0f4f2] border border-[#e5ece8]'
+            }`}
+          >
+            <span>🔧 Đơn của tôi</span>
+            <span
+              className={`px-2 py-0.5 rounded-full text-xs font-bold ${
+                activeTab === 'my_orders'
+                  ? 'bg-white/20 text-white'
+                  : 'bg-[#eaf4ef] text-[#176b58]'
+              }`}
+            >
+              {myActiveOrders.length}
+            </span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setActiveTab('available')}
+            className={`px-4 py-2.5 rounded-[8px] font-semibold text-sm transition-all flex items-center gap-2 cursor-pointer ${
+              activeTab === 'available'
+                ? 'bg-[#176b58] text-white shadow-xs'
+                : 'bg-white text-[#52635a] hover:bg-[#f0f4f2] border border-[#e5ece8]'
+            }`}
+          >
+            <span>⚡ Đơn chờ nhận</span>
+            <span
+              className={`px-2 py-0.5 rounded-full text-xs font-bold ${
+                activeTab === 'available'
+                  ? 'bg-white/20 text-white'
+                  : 'bg-[#eaf4ef] text-[#176b58]'
+              }`}
+            >
+              {availableOrders.length}
+            </span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setActiveTab('completed')}
+            className={`px-4 py-2.5 rounded-[8px] font-semibold text-sm transition-all flex items-center gap-2 cursor-pointer ${
+              activeTab === 'completed'
+                ? 'bg-[#176b58] text-white shadow-xs'
+                : 'bg-white text-[#52635a] hover:bg-[#f0f4f2] border border-[#e5ece8]'
+            }`}
+          >
+            <span>✓ Đã sửa xong hôm nay</span>
+            <span
+              className={`px-2 py-0.5 rounded-full text-xs font-bold ${
+                activeTab === 'completed'
+                  ? 'bg-white/20 text-white'
+                  : 'bg-[#eaf4ef] text-[#176b58]'
+              }`}
+            >
+              {myCompletedTodayOrders.length}
+            </span>
+          </button>
+        </div>
+
+        {/* Tab Content 1: ĐƠN CỦA TÔI */}
+        {activeTab === 'my_orders' && (
+          <div className="bg-white rounded-[12px] border border-[#e5ece8] p-5 sm:p-6 shadow-xs">
+            <div className="flex items-center justify-between mb-4">
               <div>
-                <h2 className="font-heading font-bold text-base text-[#1c302b] m-0 flex items-center gap-2">
-                  Hàng đợi máy mới cần nhận (Live Dispatch)
+                <h2 className="font-heading font-bold text-base text-[#1c302b] m-0">
+                  Máy tôi đang phụ trách ({myActiveOrders.length})
                 </h2>
                 <p className="text-xs text-[#809088] mt-0.5 mb-0">
-                  Đơn do CSKH vừa tiếp nhận tại quầy. Bấm nhận máy ngay để đưa vào bàn sửa chữa.
+                  Các đơn máy bạn đang trực tiếp phụ trách. Bấm vào đơn hoặc nút [✓ Hoàn tất] để mở biểu mẫu nghiệm thu bàn giao CSKH.
                 </p>
               </div>
+              <span className="text-xs font-bold text-[#176b58] bg-[#eaf4ef] px-3 py-1 rounded-[10px]">
+                {myActiveOrders.length} đơn đang sửa
+              </span>
             </div>
-            <span className="text-xs font-bold text-[#176b58] bg-[#eaf4ef] px-3 py-1 rounded-[10px] border border-[#d2e8dd]">
-              {availableOrders.length} máy chờ nhận
-            </span>
-          </div>
 
-          {availableOrders.length > 0 ? (
-            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
-              {availableOrders.map((order) => (
-                <article
-                  key={order.id}
-                  className="bg-white border-2 border-[#176b58]/20 hover:border-[#176b58] rounded-[12px] p-5 flex flex-col justify-between shadow-2xs hover:shadow-xs transition-all"
-                >
-                  <div className="space-y-3">
-                    <div className="flex items-center justify-between">
-                      <span className="font-mono font-bold text-sm text-[#176b58] bg-[#eaf4ef] px-2.5 py-1 rounded-[6px]">
-                        {order.id}
-                      </span>
-                      <StatusTag label={order.status} type={order.statusType} />
-                    </div>
+            {myActiveOrders.length > 0 ? (
+              <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+                {myActiveOrders.map((order) => {
+                  const code = normalizeStatusCode(order.status);
+                  const isWaitingParts = code === 'waiting_parts';
+                  const isAssignedOrRework = code === 'assigned' || code === 'rework_needed';
 
-                    <div>
-                      <h3 className="font-heading font-bold text-lg text-[#1c302b] m-0">
-                        {order.device}
-                      </h3>
-                      {order.serial && order.serial !== 'Chưa cập nhật' && (
-                        <span className="inline-block font-mono text-xs text-[#708078] bg-[#f4f7f5] px-2 py-0.5 rounded mt-1">
-                          SN: {order.serial}
-                        </span>
-                      )}
-                    </div>
-
-                    {/* Khung mô tả lỗi to rõ */}
-                    <div className="bg-[#f8faf9] border border-[#e5ece8] rounded-[8px] p-3 text-xs text-[#3d4d45] leading-relaxed">
-                      <span className="font-bold text-[#176b58] block mb-1">Mô tả lỗi khách báo:</span>
-                      {order.issue}
-                    </div>
-
-                    <div className="space-y-1 pt-1 text-xs text-[#52635a]">
-                      <div className="flex items-center justify-between">
-                        <span className="text-[#809088]">Khách hàng:</span>
-                        <b className="text-[#1c302b]">{order.name} ({order.phone})</b>
-                      </div>
-                      <div className="flex items-center justify-between">
-                        <span className="text-[#809088]">Tiếp nhận lúc:</span>
-                        <span>{order.date}</span>
-                      </div>
-                      {order.accessories && order.accessories !== 'Không gửi kèm' && (
+                  return (
+                    <article
+                      key={order.id}
+                      className="bg-white border border-[#e5ece8] hover:border-[#176b58] rounded-[12px] p-5 flex flex-col justify-between shadow-2xs hover:shadow-xs transition-all cursor-pointer group"
+                      onClick={() => handleOpenDetailModal(order)}
+                    >
+                      <div className="space-y-3">
                         <div className="flex items-center justify-between">
-                          <span className="text-[#809088]">Phụ kiện:</span>
-                          <span className="truncate max-w-[180px]">{order.accessories}</span>
+                          <span className="font-mono font-bold text-sm text-[#176b58] bg-[#eaf4ef] px-2.5 py-1 rounded-[6px]">
+                            {order.id}
+                          </span>
+                          <StatusTag label={order.status} type={order.statusType} />
                         </div>
-                      )}
-                    </div>
-                  </div>
 
-                  <div className="pt-4 mt-3 border-t border-[#f0f3f1] flex gap-2">
-                    <Button
-                      variant="secondary"
-                      size="sm"
-                      onClick={() => {
-                        setSelectedOrder(order);
-                        setDetailModalOpen(true);
-                      }}
-                      className="px-3 text-xs font-semibold"
-                    >
-                      Xem phiếu
-                    </Button>
-                    <Button
-                      variant="primary"
-                      size="md"
-                      disabled={isSubmitting}
-                      onClick={() => handleGrabOrder(order)}
-                      className="flex-1 h-10 font-bold text-sm bg-[#176b58] hover:bg-[#125848] text-white shadow-xs cursor-pointer active:scale-[0.98] transition-transform"
-                    >
-                      ⚡ Nhận máy ngay
-                    </Button>
-                  </div>
-                </article>
-              ))}
-            </div>
-          ) : (
-            <EmptyState
-              title="Hiện không có đơn mới chờ nhận"
-              description="Tất cả thiết bị tiếp nhận đã được phân bổ cho kỹ thuật viên. Khi có đơn mới tại quầy, chuông báo sẽ tự động phát tín hiệu."
-              icon="check"
-            />
-          )}
-        </div>
+                        <div>
+                          <h3 className="font-heading font-bold text-base text-[#1c302b] m-0 group-hover:text-[#176b58] transition-colors">
+                            {order.device}
+                          </h3>
+                          {order.serial && order.serial !== 'Chưa cập nhật' && (
+                            <span className="text-xs font-mono text-[#83938b] block mt-0.5">
+                              SN: {order.serial}
+                            </span>
+                          )}
+                        </div>
 
-        {/* Khối MÁY TÔI ĐANG SỬA (Task 4.3) */}
-        <div className="bg-white rounded-[12px] border border-[#e5ece8] p-5 sm:p-6 shadow-xs">
-          <div className="flex items-center justify-between mb-4">
-            <div>
-              <h2 className="font-heading font-bold text-base text-[#1c302b] m-0">
-                Máy tôi đang sửa
-              </h2>
-              <p className="text-xs text-[#809088] mt-0.5 mb-0">
-                Các đơn máy bạn đang trực tiếp phụ trách. Sửa xong bấm [✓ Hoàn tất sửa chữa] để bàn giao tức thì cho CSKH.
-              </p>
-            </div>
-            <span className="text-xs font-bold text-[#176b58] bg-[#eaf4ef] px-3 py-1 rounded-[10px]">
-              {myActiveOrders.length} đơn
-            </span>
+                        <div className="bg-[#f8faf9] border border-[#e5ece8] rounded-[8px] p-3 text-xs text-[#3d4d45] leading-relaxed">
+                          <span className="font-bold text-[#708078] block mb-1">Tình trạng lỗi:</span>
+                          {order.issue}
+                        </div>
+
+                        <div className="space-y-1 text-xs text-[#52635a]">
+                          <div className="flex items-center justify-between">
+                            <span className="text-[#809088]">Khách hàng:</span>
+                            <b className="text-[#1c302b]">{order.name} ({order.phone})</b>
+                          </div>
+                          <div className="flex items-center justify-between">
+                            <span className="text-[#809088]">Chi nhánh:</span>
+                            <span>{order.branch}</span>
+                          </div>
+                          {order.price ? (
+                            <div className="flex items-center justify-between pt-1 border-t border-[#f0f3f1]">
+                              <span className="text-[#809088]">Báo giá:</span>
+                              <b className="text-[#176b58] font-bold">{moneyFormatted(order.price)}</b>
+                            </div>
+                          ) : null}
+                        </div>
+                      </div>
+
+                      <div
+                        className="pt-4 mt-3 border-t border-[#f0f3f1] flex flex-wrap gap-2"
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          disabled={isSilentPrinting}
+                          onClick={() => handlePrintRoutingSlip(order)}
+                          className="px-2.5 text-xs text-[#176b58] border-[#c4ded0] hover:bg-[#eef6f2]"
+                          title="In nhanh tem dán khay linh kiện khổ nhiệt K80"
+                        >
+                          🖨️ Tem K80
+                        </Button>
+
+                        {isWaitingParts ? (
+                          <Button
+                            variant="primary"
+                            size="sm"
+                            onClick={() => handleResumeRepair(order)}
+                            className="text-xs font-bold"
+                          >
+                            ▶ Tiếp tục sửa
+                          </Button>
+                        ) : isAssignedOrRework ? (
+                          <>
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => handleStartRepair(order)}
+                              className="text-xs text-[#176b58] border-[#c4ded0] hover:bg-[#eef6f2] font-semibold"
+                            >
+                              ⚡ Bắt đầu sửa
+                            </Button>
+                            <Button
+                              variant="primary"
+                              size="sm"
+                              icon="check"
+                              onClick={() => handleOpenDetailModal(order)}
+                              className="flex-1 font-bold text-xs bg-[#176b58] hover:bg-[#125848] text-white shadow-xs cursor-pointer"
+                            >
+                              ✓ Hoàn tất
+                            </Button>
+                          </>
+                        ) : (
+                          <>
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => handlePauseWaitingParts(order)}
+                              className="text-xs text-[#708078] border-[#d6dfda]"
+                              title="Tạm dừng chờ linh kiện"
+                            >
+                              ⏸ Chờ linh kiện
+                            </Button>
+                            <Button
+                              variant="primary"
+                              size="sm"
+                              icon="check"
+                              onClick={() => handleOpenDetailModal(order)}
+                              className="flex-1 font-bold text-xs bg-[#176b58] hover:bg-[#125848] text-white shadow-xs cursor-pointer"
+                            >
+                              ✓ Hoàn tất sửa chữa
+                            </Button>
+                          </>
+                        )}
+
+                        <Button
+                          variant="secondary"
+                          size="sm"
+                          onClick={() => handleOpenDetailModal(order)}
+                          className="text-xs font-semibold"
+                        >
+                          Chi tiết
+                        </Button>
+                      </div>
+                    </article>
+                  );
+                })}
+              </div>
+            ) : (
+              <div className="py-8">
+                <EmptyState
+                  title="Hiện chưa có đơn nào đang phụ trách"
+                  description="Bạn chưa nhận máy nào vào bàn sửa chữa trong ca này. Hãy chuyển sang Tab 'Đơn chờ nhận' để nhận máy từ quầy tiếp tân."
+                  icon="wrench"
+                  actionLabel={`⚡ Xem đơn chờ nhận (${availableOrders.length})`}
+                  onAction={() => setActiveTab('available')}
+                />
+              </div>
+            )}
           </div>
+        )}
 
-          {myActiveOrders.length > 0 ? (
-            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
-              {myActiveOrders.map((order) => {
-                const code = normalizeStatusCode(order.status);
-                const isWaitingParts = code === 'waiting_parts';
-                const isAssignedOrRework = code === 'assigned' || code === 'rework_needed';
+        {/* Tab Content 2: ĐƠN CHỜ NHẬN (LIVE DISPATCH) */}
+        {activeTab === 'available' && (
+          <div className="bg-white rounded-[12px] border border-[#e5ece8] p-5 sm:p-6 shadow-xs">
+            <div className="flex items-center justify-between mb-4">
+              <div className="flex items-center gap-2.5">
+                <span className="relative flex h-3 w-3">
+                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-[#176b58] opacity-75" />
+                  <span className="relative inline-flex rounded-full h-3 w-3 bg-[#176b58]" />
+                </span>
+                <div>
+                  <h2 className="font-heading font-bold text-base text-[#1c302b] m-0 flex items-center gap-2">
+                    Hàng đợi máy mới cần nhận (Live Dispatch)
+                  </h2>
+                  <p className="text-xs text-[#809088] mt-0.5 mb-0">
+                    Đơn do CSKH vừa tiếp nhận tại quầy. Bấm nhận máy ngay để đưa vào bàn sửa chữa.
+                  </p>
+                </div>
+              </div>
+              <span className="text-xs font-bold text-[#176b58] bg-[#eaf4ef] px-3 py-1 rounded-[10px] border border-[#d2e8dd]">
+                {availableOrders.length} máy chờ nhận
+              </span>
+            </div>
 
-                return (
+            {availableOrders.length > 0 ? (
+              <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+                {availableOrders.map((order) => (
                   <article
                     key={order.id}
-                    className="bg-white border border-[#e5ece8] hover:border-[#b8d0c1] rounded-[12px] p-5 flex flex-col justify-between shadow-2xs transition-all"
+                    className="bg-white border-2 border-[#176b58]/20 hover:border-[#176b58] rounded-[12px] p-5 flex flex-col justify-between shadow-2xs hover:shadow-xs transition-all"
                   >
                     <div className="space-y-3">
                       <div className="flex items-center justify-between">
-                        <span className="font-mono font-bold text-sm text-[#176b58]">
+                        <span className="font-mono font-bold text-sm text-[#176b58] bg-[#eaf4ef] px-2.5 py-1 rounded-[6px]">
+                          {order.id}
+                        </span>
+                        <StatusTag label={order.status} type={order.statusType} />
+                      </div>
+
+                      <div>
+                        <h3 className="font-heading font-bold text-lg text-[#1c302b] m-0">
+                          {order.device}
+                        </h3>
+                        {order.serial && order.serial !== 'Chưa cập nhật' && (
+                          <span className="inline-block font-mono text-xs text-[#708078] bg-[#f4f7f5] px-2 py-0.5 rounded mt-1">
+                            SN: {order.serial}
+                          </span>
+                        )}
+                      </div>
+
+                      <div className="bg-[#f8faf9] border border-[#e5ece8] rounded-[8px] p-3 text-xs text-[#3d4d45] leading-relaxed">
+                        <span className="font-bold text-[#176b58] block mb-1">Mô tả lỗi khách báo:</span>
+                        {order.issue}
+                      </div>
+
+                      <div className="space-y-1 pt-1 text-xs text-[#52635a]">
+                        <div className="flex items-center justify-between">
+                          <span className="text-[#809088]">Khách hàng:</span>
+                          <b className="text-[#1c302b]">{order.name} ({order.phone})</b>
+                        </div>
+                        <div className="flex items-center justify-between">
+                          <span className="text-[#809088]">Tiếp nhận lúc:</span>
+                          <span>{order.date}</span>
+                        </div>
+                        {order.accessories && order.accessories !== 'Không gửi kèm' && (
+                          <div className="flex items-center justify-between">
+                            <span className="text-[#809088]">Phụ kiện:</span>
+                            <span className="truncate max-w-[180px]">{order.accessories}</span>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+
+                    <div className="pt-4 mt-3 border-t border-[#f0f3f1] flex gap-2">
+                      <Button
+                        variant="secondary"
+                        size="sm"
+                        onClick={() => handleOpenDetailModal(order)}
+                        className="px-3 text-xs font-semibold"
+                      >
+                        Xem phiếu
+                      </Button>
+                      <Button
+                        variant="primary"
+                        size="md"
+                        disabled={isSubmitting}
+                        onClick={() => handleGrabOrder(order)}
+                        className="flex-1 h-10 font-bold text-sm bg-[#176b58] hover:bg-[#125848] text-white shadow-xs cursor-pointer active:scale-[0.98] transition-transform"
+                      >
+                        ⚡ Nhận máy ngay
+                      </Button>
+                    </div>
+                  </article>
+                ))}
+              </div>
+            ) : (
+              <div className="py-8">
+                <EmptyState
+                  title="Hiện không có đơn mới chờ nhận"
+                  description="Tất cả thiết bị tiếp nhận đã được phân bổ cho kỹ thuật viên. Khi có đơn mới tại quầy, chuông báo sẽ tự động phát tín hiệu."
+                  icon="check"
+                />
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Tab Content 3: ĐÃ SỬA XONG HÔM NAY */}
+        {activeTab === 'completed' && (
+          <div className="bg-white rounded-[12px] border border-[#e5ece8] p-5 sm:p-6 shadow-xs">
+            <div className="flex items-center justify-between mb-4">
+              <div>
+                <h2 className="font-heading font-bold text-base text-[#1c302b] m-0">
+                  Đã hoàn thành sửa chữa hôm nay ({myCompletedTodayOrders.length})
+                </h2>
+                <p className="text-xs text-[#809088] mt-0.5 mb-0">
+                  Danh sách các thiết bị bạn đã nghiệm thu xong, sẵn sàng chuyển trả cho CSKH hoặc kiểm định QC.
+                </p>
+              </div>
+              <span className="text-xs font-bold text-[#28805e] bg-[#eaf5ef] px-3 py-1 rounded-[10px]">
+                {myCompletedTodayOrders.length} máy đã bàn giao
+              </span>
+            </div>
+
+            {myCompletedTodayOrders.length > 0 ? (
+              <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+                {myCompletedTodayOrders.map((order) => (
+                  <article
+                    key={order.id}
+                    className="bg-white border border-[#e5ece8] rounded-[12px] p-5 flex flex-col justify-between shadow-2xs hover:shadow-xs transition-all"
+                  >
+                    <div className="space-y-3">
+                      <div className="flex items-center justify-between">
+                        <span className="font-mono font-bold text-sm text-[#176b58] bg-[#eaf4ef] px-2.5 py-1 rounded-[6px]">
                           {order.id}
                         </span>
                         <StatusTag label={order.status} type={order.statusType} />
@@ -450,15 +663,15 @@ export default function TechnicianQueuePage() {
                           {order.device}
                         </h3>
                         {order.serial && order.serial !== 'Chưa cập nhật' && (
-                          <span className="text-xs text-[#83938b] block mt-0.5">
+                          <span className="text-xs font-mono text-[#83938b] block mt-0.5">
                             SN: {order.serial}
                           </span>
                         )}
                       </div>
 
-                      <div className="bg-[#f8faf9] border border-[#e5ece8] rounded-[8px] p-3 text-xs text-[#3d4d45] leading-relaxed">
-                        <span className="font-bold text-[#708078] block mb-1">Tình trạng lỗi:</span>
-                        {order.issue}
+                      <div className="bg-[#f2f8f5] border border-[#d2e8dd] rounded-[8px] p-3 text-xs text-[#1e583f] leading-relaxed">
+                        <span className="font-bold text-[#176b58] block mb-1">✓ Nghiệm thu hoàn tất:</span>
+                        {order.repairNote || 'Đã sửa chữa và kiểm tra hoàn chỉnh theo tiêu chuẩn xuất xưởng.'}
                       </div>
 
                       <div className="space-y-1 text-xs text-[#52635a]">
@@ -467,261 +680,67 @@ export default function TechnicianQueuePage() {
                           <b className="text-[#1c302b]">{order.name} ({order.phone})</b>
                         </div>
                         <div className="flex items-center justify-between">
-                          <span className="text-[#809088]">Chi nhánh:</span>
-                          <span>{order.branch}</span>
+                          <span className="text-[#809088]">Chi phí:</span>
+                          <b className="text-[#176b58] font-bold">{moneyFormatted(order.price)}</b>
                         </div>
                       </div>
                     </div>
 
-                    <div className="pt-4 mt-3 border-t border-[#f0f3f1] flex flex-wrap gap-2">
-                      <Button
-                        variant="secondary"
-                        size="sm"
-                        onClick={() => {
-                          setSelectedOrder(order);
-                          setDetailModalOpen(true);
-                        }}
-                        className="px-3 text-xs font-semibold"
-                      >
-                        Xem phiếu
-                      </Button>
-
+                    <div className="pt-4 mt-3 border-t border-[#f0f3f1] flex gap-2">
                       <Button
                         variant="outline"
                         size="sm"
                         disabled={isSilentPrinting}
                         onClick={() => handlePrintRoutingSlip(order)}
                         className="px-2.5 text-xs text-[#176b58] border-[#c4ded0] hover:bg-[#eef6f2]"
-                        title="In nhanh tem dán khay linh kiện khổ nhiệt K80"
                       >
-                        🖨️ Tem K80
+                        🖨️ In tem K80
                       </Button>
-
-                      {isWaitingParts ? (
-                        <Button
-                          variant="primary"
-                          size="sm"
-                          onClick={() => handleResumeRepair(order)}
-                          className="flex-1 font-bold text-xs"
-                        >
-                          ▶ Tiếp tục sửa
-                        </Button>
-                      ) : isAssignedOrRework ? (
-                        <>
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={() => handleStartRepair(order)}
-                            className="text-xs text-[#176b58] border-[#c4ded0] hover:bg-[#eef6f2] font-semibold"
-                            title="Bắt đầu tiến trình sửa chữa"
-                          >
-                            ⚡ Bắt đầu sửa
-                          </Button>
-                          <Button
-                            variant="primary"
-                            size="md"
-                            icon="check"
-                            disabled={isSubmitting}
-                            onClick={() => openCompleteModal(order)}
-                            className="flex-1 h-9 font-bold text-xs bg-[#176b58] hover:bg-[#125848] text-white shadow-xs cursor-pointer active:scale-[0.98] transition-transform"
-                          >
-                            ✓ Hoàn tất
-                          </Button>
-                        </>
-                      ) : (
-                        <>
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={() => handlePauseWaitingParts(order)}
-                            className="text-xs text-[#708078] border-[#d6dfda]"
-                            title="Tạm dừng chờ linh kiện"
-                          >
-                            ⏸ Chờ linh kiện
-                          </Button>
-                          <Button
-                            variant="primary"
-                            size="md"
-                            icon="check"
-                            disabled={isSubmitting}
-                            onClick={() => openCompleteModal(order)}
-                            className="flex-1 h-9 font-bold text-xs bg-[#176b58] hover:bg-[#125848] text-white shadow-xs cursor-pointer active:scale-[0.98] transition-transform"
-                          >
-                            ✓ Hoàn tất sửa chữa
-                          </Button>
-                        </>
-                      )}
+                      <Button
+                        variant="secondary"
+                        size="sm"
+                        onClick={() => handleOpenDetailModal(order)}
+                        className="flex-1 text-xs font-semibold"
+                      >
+                        Xem chi tiết & Nghiệm thu
+                      </Button>
                     </div>
                   </article>
-                );
-              })}
-            </div>
-          ) : (
-            <EmptyState
-              title="Bạn chưa có đơn nào đang xử lý"
-              description="Hãy nhận đơn mới từ Hàng đợi Live Dispatch bên trên để bắt đầu ca sửa chữa."
-              icon="wrench"
-            />
-          )}
-        </div>
+                ))}
+              </div>
+            ) : (
+              <div className="py-8">
+                <EmptyState
+                  title="Chưa có đơn nào hoàn tất hôm nay"
+                  description="Sau khi sửa xong thiết bị từ tab 'Đơn của tôi' và bấm Hoàn tất sửa chữa, danh sách sẽ được lưu vết tại đây."
+                  icon="check"
+                />
+              </div>
+            )}
+          </div>
+        )}
       </div>
 
-      {/* Completion Modal (Task 4.3: Hoàn tất sửa chữa & bàn giao CSKH) */}
-      <Modal
-        isOpen={completeModalOpen}
-        onClose={() => setCompleteModalOpen(false)}
-        eyebrow={`HOÀN TẤT SỬA CHỮA · ${selectedOrder?.id}`}
-        title="Nghiệm thu kỹ thuật & Bàn giao CSKH"
-        subtitle={`${selectedOrder?.device} · ${selectedOrder?.name}`}
-        footer={
-          <div className="flex justify-end gap-2 w-full">
-            <Button variant="secondary" onClick={() => setCompleteModalOpen(false)}>
-              Quay lại
-            </Button>
-            <Button
-              variant="primary"
-              icon="check"
-              disabled={isSubmitting}
-              onClick={handleCompleteRepair}
-              className="bg-[#176b58] hover:bg-[#125848] font-bold text-sm shadow-xs"
-            >
-              {isSubmitting ? 'Đang bàn giao...' : '✓ Xác nhận hoàn tất & Bàn giao CSKH'}
-            </Button>
-          </div>
-        }
-      >
-        <form onSubmit={handleCompleteRepair} className="space-y-4">
-          <Textarea
-            label="Nội dung đã kiểm tra & sửa chữa *"
-            value={repairNote}
-            onChange={(e) => setRepairNote(e.target.value)}
-            placeholder="Mô tả cụ thể các thao tác kỹ thuật đã thực hiện: thay pin, thay màng loa, cân chỉnh cảm ứng..."
-            required
-          />
-
-          <Input
-            label="Hạng mục linh kiện đã dùng (nếu có)"
-            value={partsUsed}
-            onChange={(e) => setPartsUsed(e.target.value)}
-            placeholder="Ví dụ: Pin AirPods Pro 2 chính hãng mã BAT-APP2-01, keo B7000..."
-          />
-
-          <Select
-            label="Kết quả chạy thử nghiệm thu cuối"
-            value={finalCheck}
-            onChange={(e) => setFinalCheck(e.target.value)}
-            options={[
-              'Đã chạy thử, hoạt động hoàn hảo',
-              'Đã thay pin, sạc đầy 100%, chất âm tốt',
-              'Đã test chống ồn ANC & Xuyên âm ổn định',
-              'Đã khắc phục lỗi, các chức năng phụ bình thường',
-            ]}
-          />
-
-          <div className="p-3.5 bg-[#fafbfa] border border-[#edf1ee] rounded-[8px]">
-            <Checkbox
-              checked={consentCheck}
-              onChange={(e) => setConsentCheck(e.target.checked)}
-              label={
-                <span className="text-xs text-[#3c4e45] leading-relaxed">
-                  Tôi cam kết đã trực tiếp sửa chữa, kiểm tra và nghiệm thu chất lượng thiết bị đạt chuẩn, sẵn sàng để CSKH ngoài quầy liên hệ bàn giao cho khách.
-                </span>
-              }
-            />
-          </div>
-        </form>
-      </Modal>
-
-      {/* Tech Detail Modal */}
-      {selectedOrder && (
-        <Modal
-          isOpen={detailModalOpen}
-          onClose={() => setDetailModalOpen(false)}
-          eyebrow={`PHIẾU KỸ THUẬT · ${selectedOrder.id}`}
-          title={`${selectedOrder.device} · ${selectedOrder.name}`}
-          subtitle={`SĐT: ${selectedOrder.phone} · Tiếp nhận ngày: ${selectedOrder.date}`}
-          footer={
-            <div className="flex items-center justify-between w-full">
-              <Button
-                variant="outline"
-                size="md"
-                disabled={isSilentPrinting}
-                onClick={() => handlePrintRoutingSlip(selectedOrder)}
-                className="flex items-center gap-1.5 text-xs text-[#176b58] border-[#b8d0c5] hover:bg-[#f0f8f4]"
-              >
-                <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                  <polyline points="6 9 6 2 18 2 18 9" />
-                  <path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2" />
-                  <rect x="6" y="14" width="12" height="8" />
-                </svg>
-                <span>{isSilentPrinting ? 'Đang in...' : 'In tem dán khay K80 🖨️'}</span>
-              </Button>
-              <Button variant="secondary" onClick={() => setDetailModalOpen(false)}>
-                Đóng phiếu
-              </Button>
-            </div>
-          }
-        >
-          <div className="space-y-4 text-sm">
-            <div className="grid grid-cols-2 gap-3.5 bg-[#fafbfa] p-4 rounded-[10px] border border-[#edf1ee]">
-              <div>
-                <span className="text-xs text-[#7d8c85] block mb-0.5">Kỹ thuật viên giữ máy:</span>
-                <b className="text-sm text-[#1c302b]">{selectedOrder.tech}</b>
-              </div>
-              <div>
-                <span className="text-xs text-[#7d8c85] block mb-0.5">Chi phí báo khách:</span>
-                <b className="text-base text-[#176b58] font-heading font-bold">
-                  {selectedOrder.price
-                    ? new Intl.NumberFormat('vi-VN').format(selectedOrder.price) + ' ₫'
-                    : 'Chưa có giá'}
-                </b>
-              </div>
-            </div>
-
-            <div>
-              <span className="text-xs text-[#77867f] font-bold block mb-1">Lỗi khách báo ban đầu:</span>
-              <p className="bg-[#f7faf8] p-3 rounded-[8px] border border-[#e5ece8] m-0 text-sm">
-                {selectedOrder.issue}
-              </p>
-            </div>
-
-            {selectedOrder.checks && selectedOrder.checks.length > 0 && (
-              <div>
-                <span className="text-xs text-[#77867f] font-bold block mb-1.5 uppercase tracking-wide">
-                  Kết quả test chức năng tại quầy CSKH:
-                </span>
-                <div className="border border-[#e5ece8] rounded-[8px] overflow-hidden divide-y divide-[#f0f3f1]">
-                  {selectedOrder.checks.map((c, i) => (
-                    <div key={i} className="flex justify-between p-2.5 text-sm">
-                      <span className="text-[#485850]">{c.label}</span>
-                      <span
-                        className={`font-bold ${
-                          c.status === 'Hoạt động'
-                            ? 'text-[#287452]'
-                            : c.status === 'Lỗi'
-                            ? 'text-[#b85c51]'
-                            : 'text-[#7e8d85]'
-                        }`}
-                      >
-                        {c.status}
-                      </span>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            {selectedOrder.testNote && (
-              <div>
-                <span className="text-xs text-[#77867f] font-bold block mb-1">Ghi chú từ CSKH:</span>
-                <p className="bg-[#f7faf8] p-3 rounded-[8px] border border-[#e5ece8] m-0 text-sm">
-                  {selectedOrder.testNote}
-                </p>
-              </div>
-            )}
-          </div>
-        </Modal>
-      )}
+      {/* Technician Inspection & Completion Modal */}
+      <TechOrderDetailModal
+        isOpen={detailModalOpen}
+        onClose={() => {
+          setDetailModalOpen(false);
+          setSelectedOrder(null);
+        }}
+        order={selectedOrder}
+        currentUser={currentUser}
+        invalidateOrders={invalidateOrders}
+        updateOrder={updateOrder}
+        onCompleteSuccess={(updated) => {
+          if (updateOrder) updateOrder(updated);
+          setActiveTab('completed');
+        }}
+        onGrabSuccess={(claimed) => {
+          if (updateOrder) updateOrder(claimed);
+          setActiveTab('my_orders');
+        }}
+      />
     </AppShell>
   );
 }
