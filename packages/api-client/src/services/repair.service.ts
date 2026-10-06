@@ -3,6 +3,7 @@ import type {
   CreateIntakeDTO,
   UpdateOrderQuoteDTO,
   CompleteTechOrderDTO,
+  AddAdditionalServiceDTO,
 } from '@podscare/types';
 
 export class RepairService {
@@ -111,6 +112,27 @@ export class RepairService {
     payload: FormData | { photo_url: string; photo_type?: string; caption?: string }
   ): Promise<any> {
     return this.http.post(`/api/v1/orders/${id}/photos`, payload);
+  }
+
+  async addAdditionalService(
+    orderId: string | number,
+    data: AddAdditionalServiceDTO | { name: string; price: number; service_id?: number | null; note?: string | null }
+  ): Promise<any> {
+    return this.http.post(`/api/v1/orders/${orderId}/additional-services`, data);
+  }
+
+  async deleteAdditionalService(
+    orderId: string | number,
+    serviceId: string
+  ): Promise<any> {
+    return this.http.delete(`/api/v1/orders/${orderId}/additional-services/${serviceId}`);
+  }
+
+  async removeAdditionalService(
+    orderId: string | number,
+    serviceId: string
+  ): Promise<any> {
+    return this.deleteAdditionalService(orderId, serviceId);
   }
 }
 

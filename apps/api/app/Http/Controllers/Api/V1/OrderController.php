@@ -573,4 +573,189 @@ class OrderController extends Controller
 
         return $this->success($photo, 'Tải ảnh hiện trạng tiếp nhận thành công.', 201);
     }
+
+    /**
+     * Thêm dịch vụ sửa chữa bổ sung phát sinh tại quầy CSKH.
+     */
+    public function addAdditionalService(Request $request, int|string $id): JsonResponse
+    {
+        $user = $request->user();
+        if (! $user || in_array($user->role, ['technician'], true) || ! in_array($user->role, ['cskh', 'admin', 'super_admin'], true)) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Bạn không có quyền thực hiện thao tác này.',
+            ], 403);
+        }
+
+        $order = $this->resolveOrder($id);
+        if (! $order) {
+            return $this->empty('Không tìm thấy đơn sửa chữa.');
+        }
+
+        $this->authorizeOrderBranch($order, $user);
+
+        if (in_array($order->status, ['completed', 'delivered', 'cancelled'], true)) {
+            return $this->failure('Không thể thêm dịch vụ cho đơn hàng đã hoàn tất hoặc đã hủy.', 422);
+        }
+
+        $validated = $request->validate([
+            'name'       => 'required|string|min:2|max:255',
+            'price'      => 'required|numeric|gt:0',
+            'service_id' => 'nullable|integer',
+            'note'       => 'nullable|string|max:500',
+        ], [
+            'name.required'  => 'Vui lòng chọn hoặc nhập tên dịch vụ bổ sung',
+            'price.required' => 'Đơn giá dịch vụ là bắt buộc, vui lòng nhập tay số tiền đã báo khách',
+            'price.gt'       => 'Đơn giá dịch vụ bổ sung phải lớn hơn 0 VNĐ',
+        ]);
+
+        $savedOrder = DB::transaction(function () use ($order, $validated, $user, $request) {
+            /** @var RepairOrder $lockedOrder */
+            $lockedOrder = RepairOrder::where('id', $order->id)->lockForUpdate()->firstOrFail();
+
+            $serviceItem = $lockedOrder->addAdditionalService($validated, $user);
+
+            AuditLog::create([
+                'user_id'        => $user->id,
+                'user_name'      => $user->name,
+                'action'         => 'Thêm dịch vụ bổ sung',
+                'auditable_type' => 'RepairOrder',
+                'auditable_id'   => $lockedOrder->id,
+                'details'        => "Thêm dịch vụ: {$validated['name']} (" . number_format($validated['price']) . " đ) cho đơn {$lockedOrder->order_code}",
+                'ip_address'     => $request->ip(),
+            ]);
+
+            $notification = Notification::create([
+                'branch_id'  => $lockedOrder->branch_id,
+                'order_id'   => $lockedOrder->id,
+                'type'       => 'additional_service_added',
+                'title'      => "Yêu cầu làm thêm dịch vụ: {$validated['name']}",
+                'message'    => "Khách hàng vừa bổ sung dịch vụ: {$validated['name']} (+" . number_format($validated['price']) . " đ) cho đơn {$lockedOrder->order_code}",
+                'severity'   => 'warning',
+                'action_url' => "/repairs?id={$lockedOrder->id}",
+            ]);
+
+            OrderOperationalEvent::dispatch(
+                $notification->id,
+                $lockedOrder->id,
+                $lockedOrder->order_code ?? (string) $lockedOrder->id,
+                "Yêu cầu làm thêm dịch vụ: {$validated['name']}",
+                "Khách hàng vừa bổ sung dịch vụ: {$validated['name']} (+" . number_format($validated['price']) . " đ) cho đơn {$lockedOrder->order_code}",
+                'warning',
+                now()->toIso8601String(),
+                "/repairs?id={$lockedOrder->id}",
+                $lockedOrder->branch_id,
+                'technician',
+                null,
+                'additional_service_added',
+                'order.additional_service_added'
+            );
+
+            return $lockedOrder;
+        });
+
+        return $this->success(
+            $savedOrder->fresh(['customer', 'deviceModel', 'technician', 'createdByUser:id,name,role']),
+            'Thêm dịch vụ bổ sung thành công.'
+        );
+    }
+
+    /**
+     * Xóa / hủy dịch vụ sửa chữa bổ sung khi khách đổi ý.
+     */
+    public function deleteAdditionalService(Request $request, int|string $id, string $serviceId): JsonResponse
+    {
+        $user = $request->user();
+        if (! $user || in_array($user->role, ['technician'], true) || ! in_array($user->role, ['cskh', 'admin', 'super_admin'], true)) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Bạn không có quyền thực hiện thao tác này.',
+            ], 403);
+        }
+
+        $order = $this->resolveOrder($id);
+        if (! $order) {
+            return $this->empty('Không tìm thấy đơn sửa chữa.');
+        }
+
+        $this->authorizeOrderBranch($order, $user);
+
+        if (in_array($order->status, ['completed', 'delivered', 'cancelled'], true)) {
+            return $this->failure('Không thể xóa dịch vụ cho đơn hàng đã hoàn tất hoặc đã hủy.', 422);
+        }
+
+        $deleted = false;
+        $removedItem = null;
+
+        $savedOrder = DB::transaction(function () use ($order, $serviceId, $user, $request, &$deleted, &$removedItem) {
+            /** @var RepairOrder $lockedOrder */
+            $lockedOrder = RepairOrder::where('id', $order->id)->lockForUpdate()->firstOrFail();
+
+            $services = $lockedOrder->additional_services ?? [];
+            foreach ($services as $s) {
+                if (($s['id'] ?? null) === $serviceId) {
+                    $removedItem = $s;
+                    break;
+                }
+            }
+
+            if (! $removedItem) {
+                return null;
+            }
+
+            $deleted = $lockedOrder->removeAdditionalService($serviceId);
+
+            if ($deleted) {
+                AuditLog::create([
+                    'user_id'        => $user->id,
+                    'user_name'      => $user->name,
+                    'action'         => 'Hủy dịch vụ bổ sung',
+                    'auditable_type' => 'RepairOrder',
+                    'auditable_id'   => $lockedOrder->id,
+                    'details'        => "Hủy dịch vụ: {$removedItem['name']} cho đơn {$lockedOrder->order_code}",
+                    'ip_address'     => $request->ip(),
+                ]);
+
+                $notification = Notification::create([
+                    'branch_id'  => $lockedOrder->branch_id,
+                    'order_id'   => $lockedOrder->id,
+                    'type'       => 'additional_service_deleted',
+                    'title'      => "Đã hủy dịch vụ bổ sung: {$removedItem['name']}",
+                    'message'    => "Dịch vụ {$removedItem['name']} đã được hủy cho đơn {$lockedOrder->order_code}",
+                    'severity'   => 'info',
+                    'action_url' => "/repairs?id={$lockedOrder->id}",
+                ]);
+
+                OrderOperationalEvent::dispatch(
+                    $notification->id,
+                    $lockedOrder->id,
+                    $lockedOrder->order_code ?? (string) $lockedOrder->id,
+                    "Đã hủy dịch vụ bổ sung: {$removedItem['name']}",
+                    "Dịch vụ {$removedItem['name']} đã được hủy cho đơn {$lockedOrder->order_code}",
+                    'info',
+                    now()->toIso8601String(),
+                    "/repairs?id={$lockedOrder->id}",
+                    $lockedOrder->branch_id,
+                    'technician',
+                    null,
+                    'additional_service_deleted',
+                    'order.additional_service_deleted'
+                );
+            }
+
+            return $lockedOrder;
+        });
+
+        if (! $savedOrder || ! $deleted) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Không tìm thấy dịch vụ bổ sung cần xóa.',
+            ], 404);
+        }
+
+        return $this->success(
+            $savedOrder->fresh(['customer', 'deviceModel', 'technician', 'createdByUser:id,name,role']),
+            'Xóa dịch vụ bổ sung thành công.'
+        );
+    }
 }

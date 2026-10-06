@@ -26,7 +26,9 @@ class RepairOrder extends Model
         'appearance_notes',
         'status',
         'total_price',
+        'initial_price',
         'price_note',
+        'additional_services',
         'warranty_terms_days',
         'created_by_user_id',
         'technician_id',
@@ -68,6 +70,8 @@ class RepairOrder extends Model
     {
         return [
             'total_price' => 'decimal:2',
+            'initial_price' => 'decimal:2',
+            'additional_services' => 'array',
             'warranty_terms_days' => 'integer',
             'customer_approved_at' => 'datetime',
             'customer_declined_at' => 'datetime',
@@ -79,6 +83,72 @@ class RepairOrder extends Model
             'customer_notified_at' => 'datetime',
             'handed_over_at' => 'datetime',
         ];
+    }
+
+    public function recalculateTotalPrice(): float
+    {
+        $base = $this->initial_price !== null ? (float) $this->initial_price : (float) $this->total_price;
+        $services = $this->additional_services ?? [];
+        $additionalSum = 0.0;
+        foreach ($services as $srv) {
+            $additionalSum += (float) ($srv['price'] ?? 0);
+        }
+        $newTotal = $base + $additionalSum;
+        $this->total_price = $newTotal;
+        return $newTotal;
+    }
+
+    public function addAdditionalService(array $serviceData, ?User $user = null): array
+    {
+        if ($this->initial_price === null) {
+            $this->initial_price = $this->total_price ?? 0.00;
+        }
+
+        $services = $this->additional_services ?? [];
+        $serviceId = $serviceData['id'] ?? ('srv_' . (string) \Illuminate\Support\Str::uuid());
+
+        $newItem = [
+            'id' => $serviceId,
+            'name' => $serviceData['name'],
+            'price' => (float) $serviceData['price'],
+            'service_id' => isset($serviceData['service_id']) && $serviceData['service_id'] !== '' ? (int) $serviceData['service_id'] : null,
+            'note' => $serviceData['note'] ?? null,
+            'created_at' => now()->toIso8601String(),
+            'created_by_user_id' => $user?->id ?? $serviceData['created_by_user_id'] ?? null,
+            'created_by_name' => $user?->name ?? $serviceData['created_by_name'] ?? 'CSKH',
+        ];
+
+        $services[] = $newItem;
+        $this->additional_services = array_values($services);
+        $this->recalculateTotalPrice();
+        $this->save();
+
+        return $newItem;
+    }
+
+    public function removeAdditionalService(string $serviceId): bool
+    {
+        $services = $this->additional_services ?? [];
+        $found = false;
+        $filtered = [];
+
+        foreach ($services as $item) {
+            if (($item['id'] ?? null) === $serviceId) {
+                $found = true;
+            } else {
+                $filtered[] = $item;
+            }
+        }
+
+        if (! $found) {
+            return false;
+        }
+
+        $this->additional_services = array_values($filtered);
+        $this->recalculateTotalPrice();
+        $this->save();
+
+        return true;
     }
 
     public function branch(): BelongsTo

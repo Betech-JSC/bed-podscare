@@ -29,6 +29,24 @@ export interface DevicePhoto {
   url: string;
 }
 
+export interface AdditionalServiceItem {
+  id: string;
+  name: string;
+  price: number;
+  service_id?: number | null;
+  note?: string | null;
+  created_at: string;
+  created_by_user_id?: number | null;
+  created_by_name?: string | null;
+}
+
+export interface AddAdditionalServiceDTO {
+  name: string;
+  price: number;
+  service_id?: number | null;
+  note?: string | null;
+}
+
 export interface RepairOrder {
   id: string;
   name: string;
@@ -42,6 +60,11 @@ export interface RepairOrder {
   status: string;
   statusType: OrderStatusType;
   price: number;
+  total_price?: number;
+  initial_price?: number;
+  initialPrice?: number;
+  additional_services?: AdditionalServiceItem[];
+  additionalServices?: AdditionalServiceItem[];
   tech: string;
   technicianId?: number | null;
   technician_id?: number | null;

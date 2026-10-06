@@ -12,12 +12,16 @@ import {
   TableSkeleton,
   ErrorFallback,
   useToast,
+  Input,
+  Textarea,
+  CurrencyInput,
+  ConfirmModal,
 } from '@podscare/ui';
 import { AppShell } from '../components/AppShell';
 import { IntakeWizardModal } from '../components/IntakeWizardModal';
 import { usePodsCare } from '../providers';
-import type { RepairOrder } from '@podscare/types';
-import { repairService } from '@podscare/api-client';
+import type { RepairOrder, AdditionalServiceItem } from '@podscare/types';
+import { repairService, serviceService } from '@podscare/api-client';
 import { useQuery } from '@tanstack/react-query';
 import {
   normalizeStatusCode,
@@ -38,6 +42,18 @@ export default function RepairsPage() {
   const [intakeModalOpen, setIntakeModalOpen] = useState(false);
   const [isTransitioning, setIsTransitioning] = useState(false);
   const { printReceipt, isPrinting: isSilentPrinting } = useSilentPrint();
+
+  // Additional services state (CSKH & Admin)
+  const [showAddServiceForm, setShowAddServiceForm] = useState(false);
+  const [newServiceName, setNewServiceName] = useState('');
+  const [newServicePrice, setNewServicePrice] = useState<number | string>('');
+  const [newServiceId, setNewServiceId] = useState<number | null>(null);
+  const [newServiceNote, setNewServiceNote] = useState('');
+  const [serviceError, setServiceError] = useState('');
+  const [isSubmittingService, setIsSubmittingService] = useState(false);
+  const [availableServices, setAvailableServices] = useState<any[]>([]);
+  const [serviceToDelete, setServiceToDelete] = useState<AdditionalServiceItem | null>(null);
+  const [isDeletingService, setIsDeletingService] = useState(false);
 
   // Map label to backend status code
   const statusToBackendMap: Record<string, string> = {
@@ -116,6 +132,12 @@ export default function RepairsPage() {
         status: mappedStatus.label,
         statusType: mappedStatus.type,
         price: Number(o.total_price) || Number(o.estimated_price) || 0,
+        total_price: Number(o.total_price) || Number(o.price) || 0,
+        initial_price: o.initial_price !== null && o.initial_price !== undefined ? Number(o.initial_price) : (Number(o.total_price) || Number(o.price) || 0),
+        initialPrice: o.initial_price !== null && o.initial_price !== undefined ? Number(o.initial_price) : (Number(o.total_price) || Number(o.price) || 0),
+        additional_services: Array.isArray(o.additional_services) ? o.additional_services : (Array.isArray(o.additionalServices) ? o.additionalServices : []),
+        additionalServices: Array.isArray(o.additional_services) ? o.additional_services : (Array.isArray(o.additionalServices) ? o.additionalServices : []),
+        device_model_id: o.device_model_id || o.device_model?.id || null,
         tech: o.technician?.name || 'Chưa phân công',
         technicianId: o.technician_id ?? o.technician?.id ?? null,
         technician_id: o.technician_id ?? o.technician?.id ?? null,
@@ -212,6 +234,148 @@ export default function RepairsPage() {
 
   const moneyFormatted = (n: number) =>
     n ? new Intl.NumberFormat('vi-VN').format(n) + ' ₫' : '—';
+
+  const canManageAdditionalServices = role === 'cskh' || role === 'admin' || (role as string) === 'super_admin';
+
+  const selectedOrderId = selectedOrder?.id;
+  const selectedOrderDeviceModelId = (selectedOrder as any)?.device_model_id;
+
+  // Nạp danh mục dịch vụ sửa chữa theo model để gợi ý nhanh
+  React.useEffect(() => {
+    let active = true;
+    if (!selectedOrderId) return;
+    serviceService
+      .getServices({ device_model_id: selectedOrderDeviceModelId || undefined })
+      .then((res) => {
+        if (!active) return;
+        const list = Array.isArray(res?.data?.data)
+          ? res.data.data
+          : Array.isArray(res?.data)
+          ? res.data
+          : Array.isArray(res)
+          ? res
+          : [];
+        setAvailableServices(list);
+      })
+      .catch((err) => console.warn('Could not fetch services catalog:', err));
+
+    return () => {
+      active = false;
+    };
+  }, [selectedOrderId, selectedOrderDeviceModelId]);
+
+  const handleAddAdditionalService = async () => {
+    if (!selectedOrder) return;
+
+    if (!newServiceName.trim()) {
+      setServiceError('Vui lòng chọn hoặc nhập tên dịch vụ bổ sung');
+      return;
+    }
+
+    const priceNum = typeof newServicePrice === 'number' ? newServicePrice : Number(newServicePrice);
+    if (!priceNum || isNaN(priceNum) || priceNum <= 0) {
+      setServiceError('Đơn giá dịch vụ là bắt buộc và phải lớn hơn 0 VNĐ');
+      return;
+    }
+
+    setServiceError('');
+    setIsSubmittingService(true);
+
+    try {
+      const res = await repairService.addAdditionalService(selectedOrder.id, {
+        name: newServiceName.trim(),
+        price: priceNum,
+        service_id: newServiceId || undefined,
+        note: newServiceNote.trim() || undefined,
+      });
+
+      const updatedRaw = res?.data?.data || res?.data || res;
+      toast(`✓ Đã thêm dịch vụ "${newServiceName.trim()}" cho đơn ${selectedOrder.id}!`, 'success');
+
+      const newAdditional = Array.isArray(updatedRaw.additional_services)
+        ? updatedRaw.additional_services
+        : [
+            ...(selectedOrder.additional_services || []),
+            {
+              id: 'srv_' + Date.now(),
+              name: newServiceName.trim(),
+              price: priceNum,
+              note: newServiceNote.trim() || null,
+              created_at: new Date().toISOString(),
+              created_by_name: 'CSKH',
+            },
+          ];
+
+      const newTotalPrice = updatedRaw.total_price !== undefined
+        ? Number(updatedRaw.total_price)
+        : (Number(selectedOrder.initial_price || selectedOrder.price) + newAdditional.reduce((s: number, i: any) => s + (Number(i.price) || 0), 0));
+
+      const updatedOrder: RepairOrder = {
+        ...selectedOrder,
+        price: newTotalPrice,
+        total_price: newTotalPrice,
+        initial_price: updatedRaw.initial_price !== undefined ? Number(updatedRaw.initial_price) : (selectedOrder.initial_price || selectedOrder.price),
+        initialPrice: updatedRaw.initial_price !== undefined ? Number(updatedRaw.initial_price) : (selectedOrder.initial_price || selectedOrder.price),
+        additional_services: newAdditional,
+        additionalServices: newAdditional,
+      };
+
+      setSelectedOrder(updatedOrder);
+      updateOrder(updatedOrder);
+      if (invalidateOrders) await invalidateOrders();
+      refetch();
+
+      setNewServiceName('');
+      setNewServicePrice('');
+      setNewServiceId(null);
+      setNewServiceNote('');
+      setShowAddServiceForm(false);
+    } catch (err: any) {
+      const errMsg = err?.response?.data?.message || err?.message || 'Không thể thêm dịch vụ bổ sung';
+      setServiceError(errMsg);
+      toast(errMsg, 'error');
+    } finally {
+      setIsSubmittingService(false);
+    }
+  };
+
+  const handleDeleteAdditionalService = async () => {
+    if (!selectedOrder || !serviceToDelete) return;
+
+    setIsDeletingService(true);
+    try {
+      const res = await repairService.deleteAdditionalService(selectedOrder.id, serviceToDelete.id);
+      const updatedRaw = res?.data?.data || res?.data || res;
+      toast(`✓ Đã hủy dịch vụ "${serviceToDelete.name}" thành công!`, 'success');
+
+      const newAdditional = Array.isArray(updatedRaw.additional_services)
+        ? updatedRaw.additional_services
+        : (selectedOrder.additional_services || []).filter((s) => s.id !== serviceToDelete.id);
+
+      const newTotalPrice = updatedRaw.total_price !== undefined
+        ? Number(updatedRaw.total_price)
+        : (Number(selectedOrder.initial_price || selectedOrder.price) + newAdditional.reduce((s: number, i: any) => s + (Number(i.price) || 0), 0));
+
+      const updatedOrder: RepairOrder = {
+        ...selectedOrder,
+        price: newTotalPrice,
+        total_price: newTotalPrice,
+        additional_services: newAdditional,
+        additionalServices: newAdditional,
+      };
+
+      setSelectedOrder(updatedOrder);
+      updateOrder(updatedOrder);
+      if (invalidateOrders) await invalidateOrders();
+      refetch();
+      setServiceToDelete(null);
+    } catch (err: any) {
+      const errMsg = err?.response?.data?.message || err?.message || 'Không thể xóa dịch vụ bổ sung';
+      toast(errMsg, 'error');
+    } finally {
+      setIsDeletingService(false);
+    }
+  };
 
   const statusOptions = [
     { value: 'Tiếp nhận mới', label: 'Tiếp nhận mới' },
@@ -643,6 +807,234 @@ export default function RepairsPage() {
               </div>
             </div>
 
+            {/* ========================================================================= */}
+            {/* 📋 BẢNG KÊ DỊCH VỤ SỬA CHỮA & CHI PHÍ                                      */}
+            {/* ========================================================================= */}
+            <div className="p-4 bg-[#fbfdfc] rounded-[10px] border border-[#dce8e1] space-y-3.5 shadow-xs">
+              <div className="flex items-center justify-between pb-2 border-b border-[#e8f1ec]">
+                <h4 className="text-xs font-bold text-[#176b58] uppercase tracking-[0.8px] m-0 flex items-center gap-1.5">
+                  <span>📋</span> BẢNG KÊ DỊCH VỤ SỬA CHỮA & CHI PHÍ
+                </h4>
+                {canManageAdditionalServices && !['completed', 'cancelled'].includes(normalizeStatusCode(selectedOrder.status)) && !showAddServiceForm && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => {
+                      setShowAddServiceForm(true);
+                      setServiceError('');
+                      setNewServiceName('');
+                      setNewServicePrice('');
+                      setNewServiceId(null);
+                      setNewServiceNote('');
+                    }}
+                    className="text-xs text-[#176b58] border-[#b8d0c5] hover:bg-[#eaf4ef] font-semibold py-1 px-2.5 h-auto flex items-center gap-1"
+                  >
+                    <span>➕</span> Thêm dịch vụ sửa thêm
+                  </Button>
+                )}
+              </div>
+
+              {/* Form thêm dịch vụ bổ sung */}
+              {showAddServiceForm && (
+                <div className="p-3.5 bg-[#f2f8f5] rounded-[8px] border border-[#b8d9cb] space-y-3">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-bold text-[#176b58] uppercase tracking-wide">
+                      Thêm dịch vụ khách yêu cầu làm thêm
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => setShowAddServiceForm(false)}
+                      className="text-[#71857c] hover:text-[#2d3d35] text-xs font-bold cursor-pointer"
+                    >
+                      ✕ Đóng
+                    </button>
+                  </div>
+
+                  {serviceError && (
+                    <div className="p-2 rounded bg-[#fef2f2] border border-[#fecaca] text-[#b91c1c] text-xs font-medium">
+                      ⚠️ {serviceError}
+                    </div>
+                  )}
+
+                  <div className="space-y-2.5">
+                    {/* Gợi ý chọn dịch vụ hoặc gõ tự do */}
+                    <div>
+                      <label className="block text-xs font-bold text-[#2d3d35] mb-1">
+                        Tên dịch vụ làm thêm <span className="text-red-500">*</span>:
+                      </label>
+                      <div className="space-y-1.5">
+                        <Input
+                          placeholder="Gõ tên dịch vụ hoặc chọn gợi ý bên dưới..."
+                          value={newServiceName}
+                          onChange={(e) => {
+                            setNewServiceName(e.target.value);
+                            setServiceError('');
+                          }}
+                        />
+                        {availableServices.length > 0 && (
+                          <div className="flex flex-wrap gap-1.5 pt-0.5">
+                            <span className="text-[11px] text-[#6b7c74] self-center">Gợi ý nhanh:</span>
+                            {availableServices.slice(0, 5).map((srv) => (
+                              <button
+                                key={srv.id}
+                                type="button"
+                                onClick={() => {
+                                  setNewServiceName(srv.name);
+                                  setNewServiceId(srv.id);
+                                  setServiceError('');
+                                }}
+                                className="text-[11px] px-2 py-0.5 rounded bg-white hover:bg-[#d8ece1] border border-[#c5ddd1] text-[#176b58] transition-colors cursor-pointer"
+                              >
+                                {srv.name}
+                              </button>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Đơn giá bắt buộc nhập tay */}
+                    <div>
+                      <CurrencyInput
+                        label="Đơn giá dịch vụ thỏa thuận (VNĐ) *"
+                        placeholder="Nhập số tiền đã báo khách (bắt buộc > 0)..."
+                        value={newServicePrice}
+                        onChangeValue={(val) => {
+                          setNewServicePrice(val);
+                          setServiceError('');
+                        }}
+                      />
+                      <span className="text-[11px] text-[#71857c] italic block mt-0.5">
+                        * Bắt buộc nhập tay theo giá đã chốt với khách hàng.
+                      </span>
+                    </div>
+
+                    {/* Ghi chú */}
+                    <div>
+                      <Textarea
+                        label="Ghi chú dặn dò của khách (nếu có):"
+                        placeholder="Ví dụ: Khách dặn lấy pin dung lượng chuẩn, dùng keo viền chống nước..."
+                        rows={2}
+                        value={newServiceNote}
+                        onChange={(e) => setNewServiceNote(e.target.value)}
+                      />
+                    </div>
+
+                    {/* Nút lưu & hủy */}
+                    <div className="flex items-center justify-end gap-2 pt-1">
+                      <Button
+                        variant="secondary"
+                        size="sm"
+                        disabled={isSubmittingService}
+                        onClick={() => setShowAddServiceForm(false)}
+                      >
+                        Hủy
+                      </Button>
+                      <Button
+                        variant="primary"
+                        size="sm"
+                        disabled={isSubmittingService}
+                        onClick={handleAddAdditionalService}
+                        className="bg-[#176b58] hover:bg-[#125848] text-white font-bold"
+                      >
+                        {isSubmittingService ? 'Đang lưu...' : '✓ Xác nhận thêm dịch vụ'}
+                      </Button>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Bảng kê chi tiết phân rã */}
+              <div className="space-y-2 text-xs">
+                {/* 1. Dịch vụ tiếp nhận ban đầu */}
+                <div className="p-2.5 rounded-[8px] bg-white border border-[#e5ece8] flex items-center justify-between">
+                  <div>
+                    <span className="font-bold text-[#2d3d35] block text-[13px]">
+                      1. Tiếp nhận ban đầu: {selectedOrder.device}
+                    </span>
+                    <span className="text-[#65766e] block mt-0.5">
+                      Lỗi ghi nhận: {selectedOrder.issue}
+                    </span>
+                  </div>
+                  <div className="text-right">
+                    <span className="font-bold text-sm text-[#2d3d35] font-mono">
+                      {moneyFormatted(
+                        selectedOrder.initial_price !== undefined && selectedOrder.initial_price !== null
+                          ? selectedOrder.initial_price
+                          : selectedOrder.initialPrice !== undefined && selectedOrder.initialPrice !== null
+                          ? selectedOrder.initialPrice
+                          : selectedOrder.price
+                      )}
+                    </span>
+                    <span className="block text-[10px] text-[#72837b]">Giá ban đầu</span>
+                  </div>
+                </div>
+
+                {/* 2. Dịch vụ sửa thêm */}
+                {((selectedOrder.additional_services && selectedOrder.additional_services.length > 0) ||
+                  (selectedOrder.additionalServices && selectedOrder.additionalServices.length > 0)) ? (
+                  <div className="space-y-1.5">
+                    <span className="font-bold text-[#176b58] uppercase tracking-wide block pt-1 text-[11px]">
+                      Dịch vụ khách yêu cầu làm thêm ({(selectedOrder.additional_services || selectedOrder.additionalServices || []).length} mục):
+                    </span>
+                    {(selectedOrder.additional_services || selectedOrder.additionalServices || []).map((srv, idx) => (
+                      <div
+                        key={srv.id || idx}
+                        className="p-2.5 rounded-[8px] bg-[#f8fbf9] border border-[#d2e6dc] flex items-start justify-between gap-2"
+                      >
+                        <div className="space-y-0.5">
+                          <div className="flex items-center gap-1.5">
+                            <span className="font-bold text-[#1c302b] text-sm">
+                              #{idx + 2}. {srv.name}
+                            </span>
+                            <span className="text-xs font-bold text-[#176b58] font-mono bg-white px-2 py-0.5 rounded border border-[#b8d9cb]">
+                              +{moneyFormatted(srv.price)}
+                            </span>
+                          </div>
+                          {srv.note && (
+                            <p className="text-[#556960] italic m-0 text-xs">
+                              💬 Dặn dò: {srv.note}
+                            </p>
+                          )}
+                          <div className="text-[11px] text-[#788c82]">
+                            Tạo bởi: <b className="text-[#3b4c45]">{srv.created_by_name || 'CSKH'}</b>
+                            {srv.created_at && (
+                              <span className="ml-1">({new Date(srv.created_at).toLocaleString('vi-VN')})</span>
+                            )}
+                          </div>
+                        </div>
+
+                        {canManageAdditionalServices && !['completed', 'cancelled'].includes(normalizeStatusCode(selectedOrder.status)) && (
+                          <button
+                            type="button"
+                            onClick={() => setServiceToDelete(srv)}
+                            className="text-[#b91c1c] hover:bg-[#fee2e2] px-2 py-1 rounded text-xs font-semibold transition-colors flex items-center gap-1 flex-none cursor-pointer"
+                            title="Hủy dịch vụ này"
+                          >
+                            <span>🗑️</span> Xóa
+                          </button>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="p-2.5 rounded-[8px] bg-[#fdfefe] border border-dashed border-[#d2dfd8] text-center text-[#7e8e86] text-xs">
+                    Chưa phát sinh dịch vụ sửa thêm. Khách có thể yêu cầu bổ sung bất cứ lúc nào trước khi hoàn tất sửa chữa.
+                  </div>
+                )}
+
+                {/* 3. Dòng Tổng cộng thanh toán */}
+                <div className="p-3 bg-[#eaf4ef] rounded-[8px] border-2 border-[#176b58] flex items-center justify-between">
+                  <span className="font-bold text-xs uppercase tracking-wide text-[#176b58]">
+                    TỔNG CỘNG THANH TOÁN:
+                  </span>
+                  <b className="text-lg font-bold text-[#176b58] font-heading">
+                    {moneyFormatted(selectedOrder.total_price !== undefined ? selectedOrder.total_price : selectedOrder.price)}
+                  </b>
+                </div>
+              </div>
+            </div>
+
             {/* Quick State Transitions & Dynamic FSM UI Guard */}
             {(() => {
               const currentStatusCode = normalizeStatusCode(selectedOrder.status);
@@ -776,6 +1168,29 @@ export default function RepairsPage() {
         onClose={() => setIntakeModalOpen(false)}
         onSuccess={() => setIntakeModalOpen(false)}
       />
+
+      {/* Confirm Modal Xóa Dịch Vụ Bổ Sung */}
+      {serviceToDelete && (
+        <ConfirmModal
+          isOpen={Boolean(serviceToDelete)}
+          onClose={() => setServiceToDelete(null)}
+          onConfirm={handleDeleteAdditionalService}
+          title="Xác nhận hủy dịch vụ bổ sung"
+          description={
+            <div>
+              Bạn có chắc chắn muốn hủy dịch vụ{' '}
+              <strong className="text-[#1c302b]">&ldquo;{serviceToDelete.name}&rdquo;</strong>?
+              <div className="mt-2 p-2 bg-[#fef2f2] rounded text-xs text-[#991b1b]">
+                Số tiền <strong>{moneyFormatted(serviceToDelete.price)}</strong> sẽ tự động được trừ lại khỏi tổng thanh toán của đơn hàng.
+              </div>
+            </div>
+          }
+          confirmText="Xác nhận xóa"
+          cancelText="Giữ lại"
+          variant="danger"
+          loading={isDeletingService}
+        />
+      )}
     </AppShell>
   );
 }

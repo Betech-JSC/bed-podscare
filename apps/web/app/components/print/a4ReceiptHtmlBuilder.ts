@@ -108,6 +108,15 @@ export function renderA4ReceiptHTML(
       </div>`
         : '';
 
+    const additionalServices = (order.additional_services || (order as any).additionalServices || []) as any[];
+    const hasAdditional = Array.isArray(additionalServices) && additionalServices.length > 0;
+    const initialPriceVal = order.initial_price !== undefined && order.initial_price !== null
+      ? order.initial_price
+      : (order as any).initialPrice !== undefined && (order as any).initialPrice !== null
+      ? (order as any).initialPrice
+      : order.price;
+    const totalPriceVal = order.total_price !== undefined && order.total_price !== null ? order.total_price : order.price;
+
     return `
     <article class="a4-copy">
       <!-- Header -->
@@ -168,11 +177,26 @@ export function renderA4ReceiptHTML(
         <div class="a4-line">${order.appearance || 'Không ghi nhận vết nứt vỡ ngoại quan'}</div>
       </div>
 
+      ${hasAdditional ? `
+      <!-- Additional Services Breakdown -->
+      <div class="a4-section" style="margin-bottom: 2px; padding: 2px 4px; background: #fafdfb; border: 1px dashed #b8d0c5; border-radius: 4px;">
+        <div style="font-size: 7pt; font-weight: bold; color: #176b58; margin-bottom: 1.5px;">BẢNG KÊ DỊCH VỤ & CHI PHÍ:</div>
+        <div style="display: flex; justify-content: space-between; font-size: 7pt; padding: 1px 0;">
+          <span>1. Tiếp nhận ban đầu (${order.device || 'Thiết bị'}):</span>
+          <b style="font-variant-numeric: tabular-nums;">${formatMoney(initialPriceVal)}</b>
+        </div>
+        ${additionalServices.map((srv: any, i: number) => `
+        <div style="display: flex; justify-content: space-between; font-size: 7pt; padding: 1px 0;">
+          <span>${i + 2}. [Làm thêm] ${srv.name}:</span>
+          <b style="color: #176b58; font-variant-numeric: tabular-nums;">+${formatMoney(srv.price)}</b>
+        </div>`).join('')}
+      </div>` : ''}
+
       <!-- Price & QR -->
       <div class="a4-price-row">
         <div class="a4-price-box">
-          <span>GIÁ SỬA CHỮA DỰ KIẾN:</span>
-          <b class="a4-price-val">${formatMoney(order.price)}</b>
+          <span>${hasAdditional ? 'TỔNG CỘNG THANH TOÁN:' : 'GIÁ SỬA CHỮA DỰ KIẾN:'}</span>
+          <b class="a4-price-val">${formatMoney(totalPriceVal)}</b>
           ${order.priceNote ? `<small class="a4-price-note">(${order.priceNote})</small>` : ''}
         </div>
         <div class="a4-qr-wrap">
@@ -545,7 +569,7 @@ export function renderCombinedA4ReceiptHTML(
     margin: 1,
   });
 
-  const totalPrice = orders.reduce((sum, o) => sum + (Number(o.price) || 0), 0);
+  const totalPrice = orders.reduce((sum, o) => sum + (Number((o as any).total_price || o.price) || 0), 0);
   const allOrderCodes = orders.map((o) => o.id).join(', ');
 
   const renderSingleCopyHtml = (copyTitle: string) => {
@@ -616,7 +640,10 @@ export function renderCombinedA4ReceiptHTML(
                   ${dev.appearance ? `<div style="font-size: 6.5pt; color: #666;">Ngoại hình: ${dev.appearance}</div>` : ''}
                 </td>
                 <td style="padding: 2px 4px; text-align: right; font-weight: bold; font-variant-numeric: tabular-nums;">
-                  ${formatMoney(dev.price)}
+                  ${formatMoney((dev as any).total_price || dev.price)}
+                  ${((dev as any).additional_services?.length || (dev as any).additionalServices?.length) ? `
+                    <div style="font-size: 6pt; color: #176b58; font-weight: normal;">(+${((dev as any).additional_services || (dev as any).additionalServices).length} dv thêm)</div>
+                  ` : ''}
                 </td>
               </tr>`
               )

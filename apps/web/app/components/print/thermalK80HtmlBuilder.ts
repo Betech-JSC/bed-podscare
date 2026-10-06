@@ -667,6 +667,15 @@ export function buildCustomerCopyHtml(order: RepairOrder, origin?: string, brand
       </div>`
       : '';
 
+  const additionalServices = (order.additional_services || (order as any).additionalServices || []) as any[];
+  const hasAdditional = Array.isArray(additionalServices) && additionalServices.length > 0;
+  const initialPriceVal = order.initial_price !== undefined && order.initial_price !== null
+    ? order.initial_price
+    : (order as any).initialPrice !== undefined && (order as any).initialPrice !== null
+    ? (order as any).initialPrice
+    : order.price;
+  const totalPriceVal = order.total_price !== undefined && order.total_price !== null ? order.total_price : order.price;
+
   return `<div class="k80-wrapper k80-customer-copy">
     <div class="k80-header">
       ${effectiveLogoUrl ? `
@@ -740,12 +749,26 @@ export function buildCustomerCopyHtml(order: RepairOrder, origin?: string, brand
 
     ${checksHtml}
 
+    ${hasAdditional ? `
+    <div class="k80-section" style="margin-top: 4px; padding-top: 3px; border-top: 1px dashed #000;">
+      <div class="k80-section-title" style="font-size: 9px; font-weight: 800;">BẢNG KÊ DỊCH VỤ & CHI PHÍ:</div>
+      <div style="display: flex; justify-content: space-between; font-size: 9px; padding: 1.5px 0;">
+        <span>• Tiếp nhận ban đầu:</span>
+        <span style="font-weight: 600;">${formatMoney(initialPriceVal)}</span>
+      </div>
+      ${additionalServices.map((srv: any) => `
+      <div style="display: flex; justify-content: space-between; font-size: 9px; padding: 1.5px 0;">
+        <span>• [Thêm] ${srv.name}:</span>
+        <span style="font-weight: 600;">+${formatMoney(srv.price)}</span>
+      </div>`).join('')}
+    </div>` : ''}
+
     <div class="k80-price-box">
       <div>
-        <div class="k80-price-title">GIÁ DỰ KIẾN:</div>
+        <div class="k80-price-title">${hasAdditional ? 'TỔNG CỘNG THANH TOÁN:' : 'GIÁ DỰ KIẾN:'}</div>
         ${order.priceNote ? `<div style="font-size: 8px; color: #555555;">(${order.priceNote})</div>` : ''}
       </div>
-      <div class="k80-price-amount">${formatMoney(order.price)}</div>
+      <div class="k80-price-amount">${formatMoney(totalPriceVal)}</div>
     </div>
 
     <div class="k80-qr-wrapper">
@@ -910,7 +933,7 @@ export function buildCombinedCustomerCopyHtml(
     margin: 1,
   });
 
-  const totalPrice = orders.reduce((sum, o) => sum + (Number(o.price) || 0), 0);
+  const totalPrice = orders.reduce((sum, o) => sum + (Number((o as any).total_price || o.price) || 0), 0);
   const allOrderCodes = orders.map((o) => o.id).join(', ');
 
   const devicesHtml = orders
@@ -946,9 +969,18 @@ export function buildCombinedCustomerCopyHtml(
           Test quầy: ${failChecks.length > 0 ? `<b style="color: #000; text-decoration: underline;">Lỗi (${failChecks.length}): ${failChecks.map((f) => f.label).join(', ')}</b>` : 'Tất cả chức năng cơ bản đạt'}
         </div>` : ''}
         ${dev.testNote ? `<div class="k80-test-note" style="margin-top: 2px;"><b>Ghi chú test:</b> ${dev.testNote}</div>` : ''}
+        ${((dev as any).additional_services?.length || (dev as any).additionalServices?.length) ? `
+        <div style="font-size: 8.5px; color: #444; margin-top: 2px; padding: 2px 0; border-top: 1px dotted #ddd;">
+          <span style="font-weight: 700;">Dịch vụ làm thêm:</span>
+          ${((dev as any).additional_services || (dev as any).additionalServices).map((s: any) => `
+            <div style="display: flex; justify-content: space-between; padding: 1px 0;">
+              <span>+ ${s.name}:</span>
+              <b>+${formatMoney(s.price)}</b>
+            </div>`).join('')}
+        </div>` : ''}
         <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 4px; padding-top: 3px; border-top: 1px dotted #cccccc;">
-          <span style="font-size: 9.5px; font-weight: 700;">Giá dự kiến máy [${idx + 1}]:</span>
-          <span style="font-size: 12px; font-weight: 700; color: #000000;">${formatMoney(dev.price)}</span>
+          <span style="font-size: 9.5px; font-weight: 700;">Chi phí máy [${idx + 1}]:</span>
+          <span style="font-size: 12px; font-weight: 700; color: #000000;">${formatMoney((dev as any).total_price || dev.price)}</span>
         </div>
       </div>`;
     })

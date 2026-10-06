@@ -117,6 +117,9 @@ export const TechOrderDetailModal: React.FC<TechOrderDetailModalProps> = ({
   const moneyFormatted = (n: number) =>
     n ? new Intl.NumberFormat('vi-VN').format(n) + ' ₫' : '—';
 
+  const additionalServicesList = (order.additional_services || order.additionalServices || []) as any[];
+  const hasAdditionalServices = Array.isArray(additionalServicesList) && additionalServicesList.length > 0;
+
   // In tem khay K80
   const handlePrint = async () => {
     toast(`Đang gửi lệnh in tem khay K80 cho đơn ${order.id}...`, 'info');
@@ -528,6 +531,50 @@ export const TechOrderDetailModal: React.FC<TechOrderDetailModalProps> = ({
             )}
           </div>
         </div>
+
+        {/* ========================================================================= */}
+        {/* ⚡ CARD CẢNH BÁO DỊCH VỤ SỬA THÊM (TỪ QUẦY CSKH)                          */}
+        {/* ========================================================================= */}
+        {hasAdditionalServices && (
+          <div className="p-4 bg-[#f0f8f5] rounded-[10px] border-2 border-[#176b58] space-y-2.5 shadow-sm">
+            <div className="flex items-center justify-between pb-1.5 border-b border-[#cfe5da]">
+              <h4 className="text-xs font-bold text-[#176b58] uppercase tracking-wide m-0 flex items-center gap-1.5">
+                <span>⚡</span> DỊCH VỤ KHÁCH YÊU CẦU LÀM THÊM (TỪ QUẦY CSKH)
+              </h4>
+              <span className="text-[11px] font-bold text-[#176b58] bg-[#d7ede2] px-2 py-0.5 rounded-full">
+                {additionalServicesList.length} hạng mục bổ sung
+              </span>
+            </div>
+            <div className="divide-y divide-[#dceee5]">
+              {additionalServicesList.map((srv, idx) => (
+                <div key={srv.id || idx} className="py-2.5 flex items-start justify-between gap-3 text-xs">
+                  <div>
+                    <b className="text-[#1c302b] text-sm block">#{idx + 1}. {srv.name}</b>
+                    {srv.note && (
+                      <span className="text-[#556960] italic block mt-0.5 font-medium">
+                        💬 Dặn dò CSKH: &ldquo;{srv.note}&rdquo;
+                      </span>
+                    )}
+                    <span className="text-[10px] text-[#788c82] block mt-0.5">
+                      Yêu cầu bởi CSKH: {srv.created_by_name || 'Quầy CSKH'}{' '}
+                      {srv.created_at && (
+                        <span>({new Date(srv.created_at).toLocaleString('vi-VN')})</span>
+                      )}
+                    </span>
+                  </div>
+                  <span className="text-xs font-bold text-[#176b58] bg-white px-2.5 py-1 rounded border border-[#b8d9cb] flex-none">
+                    Đã thu/báo giá: {moneyFormatted(srv.price)}
+                  </span>
+                </div>
+              ))}
+            </div>
+            <div className="pt-1.5 border-t border-[#dceee5] flex items-center justify-between text-xs text-[#176b58]">
+              <span className="font-semibold italic">
+                ⚠️ Thợ chú ý kiểm tra và xử lý trọn vẹn các dịch vụ làm thêm trên trước khi hoàn thành sửa chữa!
+              </span>
+            </div>
+          </div>
+        )}
 
         {/* ========================================================================= */}
         {/* KHỐI 2: THAO TÁC KỸ THUẬT & NGHIỆM THU                                    */}

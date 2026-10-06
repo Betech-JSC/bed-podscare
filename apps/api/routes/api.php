@@ -126,6 +126,14 @@ Route::prefix('v1')->group(function () {
         Route::post('/orders/{id}/photos', [OrderController::class, 'uploadPhoto'])->name('api.v1.orders.photos');
         Route::post('/repairs/{id}/photos', [OrderController::class, 'uploadPhoto'])->name('api.v1.repairs.photos');
 
+        // Additional services (CSKH & Admin exclusive)
+        Route::middleware('role:admin,cskh,super_admin')->group(function () {
+            Route::post('/orders/{id}/additional-services', [OrderController::class, 'addAdditionalService'])->name('api.v1.orders.additional_services.store');
+            Route::delete('/orders/{id}/additional-services/{serviceId}', [OrderController::class, 'deleteAdditionalService'])->name('api.v1.orders.additional_services.destroy');
+            Route::post('/repairs/{id}/additional-services', [OrderController::class, 'addAdditionalService'])->name('api.v1.repairs.additional_services.store');
+            Route::delete('/repairs/{id}/additional-services/{serviceId}', [OrderController::class, 'deleteAdditionalService'])->name('api.v1.repairs.additional_services.destroy');
+        });
+
         // Quotes
         Route::get('/quotes', [QuoteController::class, 'index'])->name('api.v1.quotes.index');
         Route::post('/quotes', [QuoteController::class, 'store'])->name('api.v1.quotes.store');
