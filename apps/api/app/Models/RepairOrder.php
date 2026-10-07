@@ -25,6 +25,7 @@ class RepairOrder extends Model
         'issue_description',
         'appearance_notes',
         'status',
+        'order_type',
         'total_price',
         'initial_price',
         'price_note',
@@ -83,6 +84,24 @@ class RepairOrder extends Model
             'customer_notified_at' => 'datetime',
             'handed_over_at' => 'datetime',
         ];
+    }
+
+    public function isCod(): bool
+    {
+        return ($this->order_type ?? 'in_store') === 'cod';
+    }
+
+    public function isInStore(): bool
+    {
+        return ($this->order_type ?? 'in_store') === 'in_store';
+    }
+
+    public function scopeOrderType($query, ?string $type)
+    {
+        if (! empty($type) && $type !== 'all') {
+            return $query->where('order_type', $type);
+        }
+        return $query;
     }
 
     public function recalculateTotalPrice(): float

@@ -723,6 +723,7 @@ export function buildCustomerCopyHtml(order: RepairOrder, origin?: string, brand
         <span class="k80-label">Số điện thoại:</span>
         <span class="k80-val">${order.phone || '—'}</span>
       </div>
+      <div style="font-weight: bold; font-size: 11px; margin: 4px 0;">${((order as any).order_type === 'cod' || (order as any).orderType === 'cod') ? 'LOẠI ĐƠN: ĐƠN COD (KHÁCH TỈNH)' : 'LOẠI ĐƠN: ĐƠN TẠI CỬA HÀNG'}</div>
       <div class="k80-row">
         <span class="k80-label">Thiết bị:</span>
         <span class="k80-val">${order.device || 'Thiết bị Apple'}</span>
@@ -864,6 +865,7 @@ export function buildStoreCopyHtml(order: RepairOrder): string {
         <span class="k80-label">Khách hàng:</span>
         <span class="k80-val">${order.name || 'Khách lẻ'} - ${order.phone || '—'}</span>
       </div>
+      <div style="font-weight: bold; font-size: 11px; margin: 4px 0;">${((order as any).order_type === 'cod' || (order as any).orderType === 'cod') ? 'LOẠI ĐƠN: ĐƠN COD (KHÁCH TỈNH)' : 'LOẠI ĐƠN: ĐƠN TẠI CỬA HÀNG'}</div>
       <div class="k80-row">
         <span class="k80-label">Thiết bị:</span>
         <span class="k80-val">${order.device || 'Thiết bị Apple'}</span>
@@ -1038,6 +1040,7 @@ export function buildCombinedCustomerCopyHtml(
         <span class="k80-label">Số điện thoại:</span>
         <span class="k80-val">${primaryOrder.phone || '—'}</span>
       </div>
+      <div style="font-weight: bold; font-size: 11px; margin: 4px 0;">${orders.some(o => (o as any).order_type === 'cod' || (o as any).orderType === 'cod') ? 'LOẠI ĐƠN: ĐƠN COD (KHÁCH TỈNH)' : 'LOẠI ĐƠN: ĐƠN TẠI CỬA HÀNG'}</div>
       <div class="k80-row">
         <span class="k80-label">Số lượng máy:</span>
         <span class="k80-val"><b>${orders.length} thiết bị</b></span>
@@ -1153,6 +1156,7 @@ export function buildCombinedStoreCopyHtml(orders: RepairOrder[]): string {
         <span class="k80-label">Khách hàng:</span>
         <span class="k80-val">${primaryOrder.name || 'Khách lẻ'} - ${primaryOrder.phone || '—'}</span>
       </div>
+      <div style="font-weight: bold; font-size: 11px; margin: 4px 0;">${orders.some(o => (o as any).order_type === 'cod' || (o as any).orderType === 'cod') ? 'LOẠI ĐƠN: ĐƠN COD (KHÁCH TỈNH)' : 'LOẠI ĐƠN: ĐƠN TẠI CỬA HÀNG'}</div>
       <div class="k80-row">
         <span class="k80-label">Số lượng máy:</span>
         <span class="k80-val"><b>${orders.length} thiết bị</b></span>

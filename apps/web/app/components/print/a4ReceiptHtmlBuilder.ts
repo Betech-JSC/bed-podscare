@@ -153,6 +153,9 @@ export function renderA4ReceiptHTML(
           <div class="a4-section-title">THÔNG TIN KHÁCH HÀNG</div>
           <div class="a4-line"><b>Họ tên:</b> ${order.name || 'Khách lẻ'}</div>
           <div class="a4-line"><b>Số điện thoại:</b> ${order.phone || '—'}</div>
+          <div class="a4-line" style="font-weight: bold; font-size: 8pt; margin-top: 2px; color: ${((order as any).order_type === 'cod' || (order as any).orderType === 'cod') ? '#b45309' : '#176b58'};">
+            ${((order as any).order_type === 'cod' || (order as any).orderType === 'cod') ? 'LOẠI ĐƠN: ĐƠN COD (KHÁCH TỈNH)' : 'LOẠI ĐƠN: ĐƠN TẠI CỬA HÀNG'}
+          </div>
         </div>
         <div>
           <div class="a4-section-title">THIẾT BỊ TIẾP NHẬN</div>
@@ -608,6 +611,9 @@ export function renderCombinedA4ReceiptHTML(
         <div style="display: flex; justify-content: space-between; font-size: 8pt;">
           <div><b>Khách hàng:</b> ${primaryOrder.name || 'Khách lẻ'} · <b>SĐT:</b> ${primaryOrder.phone || '—'}</div>
           <div><b>Số lượng:</b> ${orders.length} thiết bị · <b>Mã phiếu:</b> ${allOrderCodes}</div>
+        </div>
+        <div style="font-weight: bold; font-size: 8pt; margin-top: 2px; color: ${((primaryOrder as any).order_type === 'cod' || (primaryOrder as any).orderType === 'cod') ? '#b45309' : '#176b58'};">
+          ${((primaryOrder as any).order_type === 'cod' || (primaryOrder as any).orderType === 'cod') ? 'LOẠI ĐƠN: ĐƠN COD (KHÁCH TỈNH)' : 'LOẠI ĐƠN: ĐƠN TẠI CỬA HÀNG'}
         </div>
       </div>
 

@@ -19,6 +19,9 @@ import {
 } from '@podscare/ui';
 import { AppShell } from '../components/AppShell';
 import { IntakeWizardModal } from '../components/IntakeWizardModal';
+import { CheckoutHandoverModal } from '../components/CheckoutHandoverModal';
+import { AdminEditOrderModal } from '../components/AdminEditOrderModal';
+import { ConfirmDeleteOrderModal } from '../components/ConfirmDeleteOrderModal';
 import { usePodsCare } from '../providers';
 import type { RepairOrder, AdditionalServiceItem } from '@podscare/types';
 import { repairService, serviceService } from '@podscare/api-client';
@@ -38,8 +41,14 @@ export default function RepairsPage() {
 
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('');
+  const [orderTypeFilter, setOrderTypeFilter] = useState<'all' | 'in_store' | 'cod'>('all');
   const [selectedOrder, setSelectedOrder] = useState<RepairOrder | null>(null);
   const [intakeModalOpen, setIntakeModalOpen] = useState(false);
+  const [initialIntakeType, setInitialIntakeType] = useState<'in_store' | 'cod'>('in_store');
+  const [intakeDropdownOpen, setIntakeDropdownOpen] = useState(false);
+  const [checkoutModalOpen, setCheckoutModalOpen] = useState(false);
+  const [adminEditModalOpen, setAdminEditModalOpen] = useState(false);
+  const [adminDeleteModalOpen, setAdminDeleteModalOpen] = useState(false);
   const [isTransitioning, setIsTransitioning] = useState(false);
   const { printReceipt, isPrinting: isSilentPrinting } = useSilentPrint();
 
@@ -76,7 +85,7 @@ export default function RepairsPage() {
     isError,
     refetch,
   } = useQuery({
-    queryKey: ['repairs', branchId, statusFilter, search],
+    queryKey: ['repairs', branchId, statusFilter, search, orderTypeFilter],
     queryFn: async () => {
       const params: Record<string, any> = { per_page: 50 };
       if (branchId && branchId !== 'all') {
@@ -88,16 +97,40 @@ export default function RepairsPage() {
       if (search.trim()) {
         params.q = search.trim();
       }
+      if (orderTypeFilter && orderTypeFilter !== 'all') {
+        params.order_type = orderTypeFilter;
+      }
       const res = await repairService.getRepairs(params);
       return res?.data || res;
     },
   });
 
+  const orderCounts = useMemo(() => {
+    const raw = apiOrdersData?.data || apiOrdersData;
+    const list = Array.isArray(raw) ? raw : (orders || []);
+    let total = 0;
+    let inStore = 0;
+    let cod = 0;
+    list.forEach((o: any) => {
+      total++;
+      const t = o.order_type || o.orderType || 'in_store';
+      if (t === 'cod') {
+        cod++;
+      } else {
+        inStore++;
+      }
+    });
+    return { total, inStore, cod };
+  }, [apiOrdersData, orders]);
+
   const filteredOrders: RepairOrder[] = useMemo(() => {
     const raw = apiOrdersData?.data || apiOrdersData;
-    const list = Array.isArray(raw) ? raw : [];
+    let list = Array.isArray(raw) ? raw : [];
     if (list.length === 0 && !search && !statusFilter) {
-      return orders;
+      list = orders;
+    }
+    if (orderTypeFilter !== 'all') {
+      list = list.filter((o: any) => (o.order_type || o.orderType || 'in_store') === orderTypeFilter);
     }
     const statusMap: Record<string, { label: string; type: any }> = {
       inspecting: { label: 'Đang kiểm tra', type: 'progress' },
@@ -123,6 +156,8 @@ export default function RepairsPage() {
       };
       return {
         id: o.order_code || String(o.id),
+        order_type: o.order_type || o.orderType || 'in_store',
+        orderType: o.order_type || o.orderType || 'in_store',
         name: o.customer?.name || 'Khách lẻ',
         phone: o.customer?.phone || '',
         deviceCategory: o.device_model?.category || 'AirPods',
@@ -166,7 +201,7 @@ export default function RepairsPage() {
         batchOrders: o.batch_orders || o.batchOrders,
       };
     });
-  }, [apiOrdersData, orders, search, statusFilter]);
+  }, [apiOrdersData, orders, search, statusFilter, orderTypeFilter]);
 
   // Lắng nghe sự kiện realtime cập nhật trạng thái đơn (kèm chuông Audio Chime)
   React.useEffect(() => {
@@ -473,18 +508,135 @@ export default function RepairsPage() {
               Theo dõi toàn bộ vòng đời tiếp nhận, kiểm định và bàn giao theo từng chi nhánh.
             </p>
           </div>
-          <Button
-            variant="primary"
-            size="md"
-            icon="plus"
-            onClick={() => setIntakeModalOpen(true)}
+          <div
+            className="relative inline-block"
+            onMouseEnter={() => setIntakeDropdownOpen(true)}
+            onMouseLeave={() => setIntakeDropdownOpen(false)}
           >
-            Tiếp nhận thiết bị mới
-          </Button>
+            <Button
+              variant="primary"
+              size="md"
+              icon="plus"
+              data-testid="intake-main-btn"
+              onClick={() => setIntakeDropdownOpen((prev) => !prev)}
+              className="flex items-center gap-1.5"
+            >
+              <span>Tiếp nhận thiết bị</span>
+              <span className="text-xs">▾</span>
+            </Button>
+
+            {intakeDropdownOpen && (
+              <div
+                className="absolute right-0 top-full mt-1 w-64 bg-white rounded-[10px] shadow-xl border border-[#dce5e0] py-1.5 z-50 animate-in fade-in zoom-in-95 duration-100"
+                onClick={() => setIntakeDropdownOpen(false)}
+              >
+                <button
+                  type="button"
+                  data-testid="intake-dropdown-in-store"
+                  onClick={() => {
+                    setInitialIntakeType('in_store');
+                    setIntakeModalOpen(true);
+                  }}
+                  className="w-full text-left px-3.5 py-2.5 hover:bg-[#eaf4ef] flex items-center gap-2.5 transition-colors cursor-pointer group"
+                >
+                  <span className="text-lg">🏪</span>
+                  <div>
+                    <span className="block text-xs font-bold text-[#1c302b] group-hover:text-[#176b58]">
+                      Khách tại cửa hàng
+                    </span>
+                    <span className="block text-[11px] text-[#788880]">
+                      Tiếp nhận trực tiếp tại quầy CSKH
+                    </span>
+                  </div>
+                </button>
+                <div className="h-px bg-[#eef3f0] my-1" />
+                <button
+                  type="button"
+                  data-testid="intake-dropdown-cod"
+                  onClick={() => {
+                    setInitialIntakeType('cod');
+                    setIntakeModalOpen(true);
+                  }}
+                  className="w-full text-left px-3.5 py-2.5 hover:bg-[#fef3c7] flex items-center gap-2.5 transition-colors cursor-pointer group"
+                >
+                  <span className="text-lg">📦</span>
+                  <div>
+                    <span className="block text-xs font-bold text-[#1c302b] group-hover:text-[#d97706]">
+                      Đơn COD (Khách tỉnh)
+                    </span>
+                    <span className="block text-[11px] text-[#788880]">
+                      Nhận máy từ bưu cục / chuyển phát
+                    </span>
+                  </div>
+                </button>
+              </div>
+            )}
+          </div>
         </div>
 
         {/* Panel with Table and Filters */}
         <div className="bg-white rounded-[12px] border border-[#e5ece8] p-5 sm:p-6 shadow-xs">
+          {/* Quick Filter Tabs: Tất cả, Tại cửa hàng, Đơn COD */}
+          <div className="flex flex-wrap items-center gap-2 border-b border-[#e5ece8] pb-3 mb-4">
+            <button
+              type="button"
+              data-testid="tab-filter-all"
+              onClick={() => setOrderTypeFilter('all')}
+              className={`px-3.5 py-1.5 rounded-[8px] text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
+                orderTypeFilter === 'all'
+                  ? 'bg-[#176b58] text-white shadow-sm'
+                  : 'bg-[#f4f7f5] text-[#556960] hover:bg-[#eaf0ec]'
+              }`}
+            >
+              <span>📋 Tất cả đơn</span>
+              <span
+                className={`text-[10px] px-1.5 py-0.5 rounded-full font-mono ${
+                  orderTypeFilter === 'all' ? 'bg-white/25 text-white' : 'bg-[#e2e9e5] text-[#42584e]'
+                }`}
+              >
+                {orderCounts.total}
+              </span>
+            </button>
+            <button
+              type="button"
+              data-testid="tab-filter-in-store"
+              onClick={() => setOrderTypeFilter('in_store')}
+              className={`px-3.5 py-1.5 rounded-[8px] text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
+                orderTypeFilter === 'in_store'
+                  ? 'bg-[#176b58] text-white shadow-sm'
+                  : 'bg-[#f4f7f5] text-[#556960] hover:bg-[#eaf0ec]'
+              }`}
+            >
+              <span>🏪 Tại cửa hàng</span>
+              <span
+                className={`text-[10px] px-1.5 py-0.5 rounded-full font-mono ${
+                  orderTypeFilter === 'in_store' ? 'bg-white/25 text-white' : 'bg-[#e2e9e5] text-[#42584e]'
+                }`}
+              >
+                {orderCounts.inStore}
+              </span>
+            </button>
+            <button
+              type="button"
+              data-testid="tab-filter-cod"
+              onClick={() => setOrderTypeFilter('cod')}
+              className={`px-3.5 py-1.5 rounded-[8px] text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
+                orderTypeFilter === 'cod'
+                  ? 'bg-[#d97706] text-white shadow-sm'
+                  : 'bg-[#fef3c7] text-[#92400e] hover:bg-[#fde68a]'
+              }`}
+            >
+              <span>📦 Đơn COD (Khách tỉnh)</span>
+              <span
+                className={`text-[10px] px-1.5 py-0.5 rounded-full font-mono ${
+                  orderTypeFilter === 'cod' ? 'bg-white/25 text-white' : 'bg-[#fde68a] text-[#78350f]'
+                }`}
+              >
+                {orderCounts.cod}
+              </span>
+            </button>
+          </div>
+
           <FilterBar
             searchValue={search}
             onSearchChange={setSearch}
@@ -580,7 +732,26 @@ export default function RepairsPage() {
                       onClick={() => setSelectedOrder(o)}
                       className="h-14 hover:bg-[#fbfcfb] cursor-pointer transition-colors"
                     >
-                      <td className="px-4 font-mono font-bold text-[#176b58]">{o.id}</td>
+                      <td className="px-4">
+                        <div className="font-mono font-bold text-[#176b58]">{o.id}</div>
+                        <div className="mt-1">
+                          {(o.order_type === 'cod' || o.orderType === 'cod') ? (
+                            <span
+                              data-testid="badge-order-type-cod"
+                              className="inline-flex items-center gap-0.5 text-[10px] font-bold text-[#b45309] bg-[#fef3c7] px-1.5 py-0.5 rounded border border-[#fde68a]"
+                            >
+                              📦 Đơn COD
+                            </span>
+                          ) : (
+                            <span
+                              data-testid="badge-order-type-in-store"
+                              className="inline-flex items-center gap-0.5 text-[10px] font-bold text-[#176b58] bg-[#eaf4ef] px-1.5 py-0.5 rounded border border-[#b8d7c8]"
+                            >
+                              🏪 Tại quầy
+                            </span>
+                          )}
+                        </div>
+                      </td>
                       <td className="px-4">
                         <div className="flex items-center gap-2.5">
                           <Avatar initials={o.name} variant={(idx % 4) as any} size="sm" />
@@ -664,10 +835,10 @@ export default function RepairsPage() {
           maxWidth="lg"
           eyebrow={`REPAIR ORDER · ${selectedOrder.id}`}
           title={`${selectedOrder.device} · ${selectedOrder.name}`}
-          subtitle={`Số điện thoại: ${selectedOrder.phone} · Ngày tiếp nhận: ${selectedOrder.date}`}
+          subtitle={`Số điện thoại: ${selectedOrder.phone} · Ngày tiếp nhận: ${selectedOrder.date} · ${((selectedOrder.order_type === 'cod' || selectedOrder.orderType === 'cod') ? '📦 Đơn COD (Khách tỉnh)' : '🏪 Đơn tại cửa hàng')}`}
           footer={
             <div className="flex flex-wrap items-center justify-between gap-2.5 w-full">
-              <div className="flex items-center gap-2">
+              <div className="flex flex-wrap items-center gap-2">
                 <PrintButtonDropdown
                   order={selectedOrder}
                   batchOrders={selectedOrderBatchOrders}
@@ -689,6 +860,43 @@ export default function RepairsPage() {
                   size="md"
                   buttonText="In phiếu tiếp nhận"
                 />
+
+                {/* CSKH Simplified Checkout Button */}
+                {['ready_for_return', 'waiting_pickup'].includes(normalizeStatusCode(selectedOrder.status)) && (
+                  <Button
+                    variant="primary"
+                    size="md"
+                    data-testid="cskh-checkout-btn"
+                    onClick={() => setCheckoutModalOpen(true)}
+                    className="bg-[#176b58] hover:bg-[#125848] text-white font-bold text-xs sm:text-sm flex items-center gap-1.5 shadow-sm"
+                  >
+                    <span>💳 Thu tiền & Trả máy</span>
+                  </Button>
+                )}
+
+                {/* Admin Full CRUD Actions */}
+                {(role === 'admin' || role === 'super_admin') && (
+                  <>
+                    <Button
+                      variant="outline"
+                      size="md"
+                      data-testid="admin-edit-order-btn"
+                      onClick={() => setAdminEditModalOpen(true)}
+                      className="text-xs text-[#176b58] border-[#a9c9b9] hover:bg-[#eaf5ef] font-bold flex items-center gap-1"
+                    >
+                      <span>✏️ Sửa toàn diện</span>
+                    </Button>
+                    <Button
+                      variant="danger"
+                      size="md"
+                      data-testid="admin-delete-order-btn"
+                      onClick={() => setAdminDeleteModalOpen(true)}
+                      className="text-xs font-bold flex items-center gap-1"
+                    >
+                      <span>🗑️ Xóa đơn</span>
+                    </Button>
+                  </>
+                )}
               </div>
               <div className="flex gap-2">
                 <Button variant="ghost" onClick={() => setSelectedOrder(null)}>
@@ -1083,6 +1291,19 @@ export default function RepairsPage() {
                       ))
                     )}
 
+                    {/* Nút thanh toán & bàn giao nhanh cho CSKH */}
+                    {['ready_for_return', 'waiting_pickup'].includes(currentStatusCode) && (
+                      <Button
+                        variant="primary"
+                        size="sm"
+                        data-testid="cskh-checkout-btn-quick"
+                        onClick={() => setCheckoutModalOpen(true)}
+                        className="bg-[#176b58] hover:bg-[#125848] text-white font-bold text-xs flex items-center gap-1.5 shadow-sm"
+                      >
+                        <span>💳 Thu tiền & Trả máy</span>
+                      </Button>
+                    )}
+
                     {/* Nút phụ điều hướng kiểm định QC khi đơn ở trạng thái Chờ QC */}
                     {isWaitingQc && (
                       <Button
@@ -1165,9 +1386,60 @@ export default function RepairsPage() {
       {/* Intake Wizard Modal */}
       <IntakeWizardModal
         isOpen={intakeModalOpen}
+        initialIntakeType={initialIntakeType}
+        defaultOrderType={initialIntakeType}
         onClose={() => setIntakeModalOpen(false)}
-        onSuccess={() => setIntakeModalOpen(false)}
+        onSuccess={() => {
+          setIntakeModalOpen(false);
+          refetch();
+          if (invalidateOrders) invalidateOrders();
+        }}
       />
+
+      {/* CSKH Simplified Checkout Modal */}
+      {selectedOrder && (
+        <CheckoutHandoverModal
+          isOpen={checkoutModalOpen}
+          order={selectedOrder}
+          onClose={() => setCheckoutModalOpen(false)}
+          onSuccess={(updatedOrder) => {
+            setCheckoutModalOpen(false);
+            setSelectedOrder(updatedOrder);
+            refetch();
+            if (invalidateOrders) invalidateOrders();
+          }}
+        />
+      )}
+
+      {/* Admin Edit Order Modal */}
+      {selectedOrder && (role === 'admin' || role === 'super_admin') && (
+        <AdminEditOrderModal
+          isOpen={adminEditModalOpen}
+          order={selectedOrder}
+          onClose={() => setAdminEditModalOpen(false)}
+          onSuccess={(updatedOrder) => {
+            setAdminEditModalOpen(false);
+            setSelectedOrder(updatedOrder);
+            refetch();
+            if (invalidateOrders) invalidateOrders();
+          }}
+        />
+      )}
+
+      {/* Admin Confirm Delete Order Modal */}
+      {selectedOrder && (role === 'admin' || role === 'super_admin') && (
+        <ConfirmDeleteOrderModal
+          isOpen={adminDeleteModalOpen}
+          order={selectedOrder}
+          onClose={() => setAdminDeleteModalOpen(false)}
+          onSuccess={() => {
+            setAdminDeleteModalOpen(false);
+            setSelectedOrder(null);
+            refetch();
+            if (invalidateOrders) invalidateOrders();
+          }}
+        />
+      )}
 
       {/* Confirm Modal Xóa Dịch Vụ Bổ Sung */}
       {serviceToDelete && (

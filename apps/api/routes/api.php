@@ -134,6 +134,12 @@ Route::prefix('v1')->group(function () {
             Route::delete('/repairs/{id}/additional-services/{serviceId}', [OrderController::class, 'deleteAdditionalService'])->name('api.v1.repairs.additional_services.destroy');
         });
 
+        // Order Deletion (Admin & Super Admin exclusive)
+        Route::middleware('role:admin,super_admin')->group(function () {
+            Route::delete('/orders/{id}', [OrderController::class, 'destroy'])->name('api.v1.orders.destroy');
+            Route::delete('/repairs/{id}', [OrderController::class, 'destroy'])->name('api.v1.repairs.destroy');
+        });
+
         // Quotes
         Route::get('/quotes', [QuoteController::class, 'index'])->name('api.v1.quotes.index');
         Route::post('/quotes', [QuoteController::class, 'store'])->name('api.v1.quotes.store');

@@ -60,6 +60,7 @@ class PaymentController extends Controller
             'payment_method'  => 'required|in:cash,bank_transfer,card_pos,wallet',
             'transaction_ref' => 'nullable|string|max:100',
             'notes'           => 'nullable|string',
+            'auto_confirm'    => 'nullable|boolean',
         ]);
 
         return DB::transaction(function () use ($request, $validated) {
@@ -70,8 +71,9 @@ class PaymentController extends Controller
             $paymentCode = "FX{$year}-PY-{$randomNum}";
 
             $isBankTransfer = $validated['payment_method'] === 'bank_transfer';
-            $status = $isBankTransfer ? 'pending' : 'paid';
-            $paidAt = $isBankTransfer ? null : Carbon::now();
+            $isAutoConfirm = $request->boolean('auto_confirm') || $request->input('status') === 'paid';
+            $status = ($isBankTransfer && ! $isAutoConfirm) ? 'pending' : 'paid';
+            $paidAt = $status === 'paid' ? Carbon::now() : null;
 
             $payment = Payment::create([
                 'payment_code'        => $paymentCode,
@@ -85,13 +87,57 @@ class PaymentController extends Controller
                 'notes'               => $validated['notes'] ?? null,
             ]);
 
+            // Tự động hoàn tất đơn hàng, kích hoạt bảo hành điện tử và tích lũy doanh số khi thu tiền trực tiếp
+            if ($status === 'paid' && ($isAutoConfirm || $validated['payment_method'] === 'cash')) {
+                $order->status = 'completed';
+                if (! $order->handed_over_at) {
+                    $order->handed_over_at = Carbon::now();
+                }
+                if (! $order->handed_over_by_user_id) {
+                    $order->handed_over_by_user_id = $request->user()->id;
+                }
+                $order->save();
+
+                // Kích hoạt bảo hành điện tử tự động
+                if ($order->warranty_terms_days > 0 && ! $order->warranties()->exists()) {
+                    $randomWr = str_pad((string) random_int(100, 9999), 4, '0', STR_PAD_LEFT);
+                    \App\Models\Warranty::create([
+                        'warranty_code'   => "FX{$year}-WR-{$randomWr}",
+                        'repair_order_id' => $order->id,
+                        'customer_id'     => $order->customer_id,
+                        'device_model_id' => $order->device_model_id,
+                        'coverage_item'   => $order->price_note ?? 'Dịch vụ sửa chữa',
+                        'start_date'      => Carbon::now()->toDateString(),
+                        'duration_days'   => $order->warranty_terms_days,
+                        'end_date'        => Carbon::now()->addDays($order->warranty_terms_days)->toDateString(),
+                        'status'          => 'active',
+                    ]);
+                } elseif ($order->warranties()->exists()) {
+                    foreach ($order->warranties as $warranty) {
+                        $duration = $warranty->duration_days ?: ($order->warranty_terms_days ?: 90);
+                        $warranty->update([
+                            'status'     => 'active',
+                            'start_date' => Carbon::now()->toDateString(),
+                            'end_date'   => Carbon::now()->addDays($duration)->toDateString(),
+                        ]);
+                    }
+                }
+
+                // Tích lũy doanh số khách hàng
+                $customer = $order->customer;
+                if ($customer) {
+                    $customer->increment('orders_count');
+                    $customer->increment('total_spent', $order->total_price);
+                }
+            }
+
             AuditLog::create([
                 'user_id'        => $request->user()->id,
                 'user_name'      => $request->user()->name,
                 'action'         => 'Thu tiền',
                 'auditable_type' => 'Payment',
                 'auditable_id'   => $payment->id,
-                'details'        => "Thu tiền đơn {$order->order_code}: " . number_format($validated['amount']) . " ₫ qua {$validated['payment_method']}",
+                'details'        => "Thu tiền đơn {$order->order_code}: " . number_format($validated['amount']) . " ₫ qua {$validated['payment_method']}" . ($status === 'paid' ? ' (Đã xác nhận)' : ' (Chờ thanh toán)'),
                 'ip_address'     => $request->ip(),
             ]);
 

@@ -50,6 +50,8 @@ export interface IntakeWizardModalProps {
   isOpen: boolean;
   onClose: () => void;
   onSuccess?: (order: RepairOrder, shouldPrint: boolean) => void;
+  initialIntakeType?: 'in_store' | 'cod';
+  defaultOrderType?: 'in_store' | 'cod';
 }
 
 const DEFAULT_COMMON_ISSUES: Record<string, CommonIssueItem[]> = {
@@ -90,12 +92,29 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
   isOpen,
   onClose,
   onSuccess,
+  initialIntakeType,
+  defaultOrderType,
 }) => {
   const { toast } = useToast();
   const { categories, deviceProfiles, addOrder, currentUser, branch, branchId, branches } =
     usePodsCare();
   const { printReceipt, currentFormat, setFormat, isPrinting: isSilentPrinting } = useSilentPrint();
   const [printModalOpen, setPrintModalOpen] = useState(false);
+
+  // Order Type State (in_store vs cod)
+  const [orderType, setOrderType] = useState<'in_store' | 'cod'>(() => {
+    return initialIntakeType || defaultOrderType || 'in_store';
+  });
+
+  useEffect(() => {
+    if (isOpen) {
+      if (initialIntakeType) {
+        setOrderType(initialIntakeType);
+      } else if (defaultOrderType) {
+        setOrderType(defaultOrderType);
+      }
+    }
+  }, [isOpen, initialIntakeType, defaultOrderType]);
 
   const contentTopRef = useRef<HTMLDivElement>(null);
 
@@ -767,6 +786,7 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
           checklists: backendChecklists,
           intake_batch_code: batchCode,
           created_by_user_id: selectedCskhId ? Number(selectedCskhId) : undefined,
+          order_type: orderType,
         };
 
         const res = await repairService.createIntake(payload);
@@ -791,6 +811,8 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
 
         const newOrder: RepairOrder = {
           id: newId,
+          order_type: orderType,
+          orderType: orderType,
           name: name.trim(),
           phone: phone.trim(),
           deviceCategory: dev.category,
@@ -1001,6 +1023,41 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
                 </span>
                 <span>Thông tin khách hàng & Chi nhánh tiếp nhận</span>
               </h3>
+
+              {/* Loại đơn tiếp nhận: Tại quầy vs Đơn COD */}
+              <div className="mb-4 p-3 rounded-[8px] bg-[#f8faf9] border border-[#d8e3dc] flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2.5">
+                <div>
+                  <span className="text-xs font-bold text-[#1c302b] block">Hình thức tiếp nhận:</span>
+                  <span className="text-[11px] text-[#71867c]">Chọn hình thức tiếp nhận trực tiếp tại quầy hoặc nhận qua bưu cục/COD</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setOrderType('in_store')}
+                    data-testid="order-type-in-store-btn"
+                    className={`px-3 py-1.5 rounded-[6px] text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
+                      orderType === 'in_store'
+                        ? 'bg-[#176b58] text-white shadow-sm ring-2 ring-[#176b58]/30'
+                        : 'bg-white text-[#416053] hover:bg-[#eaf4ef] border border-[#d8e3dc]'
+                    }`}
+                  >
+                    <span>🏪 Khách tại cửa hàng</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setOrderType('cod')}
+                    data-testid="order-type-cod-btn"
+                    className={`px-3 py-1.5 rounded-[6px] text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
+                      orderType === 'cod'
+                        ? 'bg-[#d97706] text-white shadow-sm ring-2 ring-[#d97706]/30'
+                        : 'bg-white text-[#92400e] hover:bg-[#fef3c7] border border-[#fde68a]'
+                    }`}
+                  >
+                    <span>📦 Đơn COD (Khách tỉnh)</span>
+                  </button>
+                </div>
+              </div>
+
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
                 <Input
                   label="Họ và tên khách hàng *"

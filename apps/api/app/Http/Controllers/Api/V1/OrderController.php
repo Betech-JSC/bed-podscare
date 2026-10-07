@@ -66,6 +66,12 @@ class OrderController extends Controller
             $query->where('intake_batch_code', $batchCode);
         }
 
+        if ($orderType = $request->input('order_type')) {
+            if ($orderType !== 'all') {
+                $query->where('order_type', $orderType);
+            }
+        }
+
         if ($search = $request->input('q')) {
             $query->where(function ($q) use ($search) {
                 $q->where('order_code', 'like', "%{$search}%")
@@ -113,6 +119,7 @@ class OrderController extends Controller
             'estimated_price'       => 'required|numeric|gt:0',
             'warranty_terms_days'   => 'nullable|integer|min:0',
             'status'                => 'nullable|string',
+            'order_type'            => 'nullable|string|in:in_store,cod',
             'checklists'            => 'nullable|array',
             'checklists.*.item_name'=> 'required_with:checklists|string',
             'checklists.*.status'   => 'required_with:checklists|in:pass,fail,not_tested',
@@ -173,6 +180,7 @@ class OrderController extends Controller
                 'issue_description'     => $validated['issue_description'],
                 'appearance_notes'      => $validated['appearance_notes'] ?? null,
                 'status'                => $initialStatus,
+                'order_type'            => $validated['order_type'] ?? 'in_store',
                 'customer_approved_at'  => $initialStatus === 'waiting_tech' ? now() : null,
                 'total_price'           => $validated['estimated_price'] ?? 0.00,
                 'warranty_terms_days'   => $validated['warranty_terms_days'] ?? 90,
@@ -314,7 +322,7 @@ class OrderController extends Controller
     }
 
     /**
-     * Cập nhật thông tin cơ bản của đơn.
+     * Cập nhật thông tin đơn sửa chữa (cho phép Admin/Super Admin sửa toàn diện).
      */
     public function update(Request $request, int|string $id): JsonResponse
     {
@@ -325,6 +333,79 @@ class OrderController extends Controller
         }
 
         $this->authorizeOrderBranch($order, $request->user());
+
+        $user = $request->user();
+        $isAdmin = $user && in_array($user->role, ['admin', 'super_admin'], true);
+
+        if ($isAdmin) {
+            $validated = $request->validate([
+                'customer_name'         => 'nullable|string|max:255',
+                'customer_phone'        => 'nullable|string|max:20',
+                'device_model_id'       => 'nullable|exists:device_models,id',
+                'serial_number'         => 'nullable|string|max:100',
+                'issue_description'     => 'nullable|string',
+                'accessories'           => 'nullable|string|max:255',
+                'appearance_notes'      => 'nullable|string',
+                'price_note'            => 'nullable|string|max:255',
+                'repair_note'           => 'nullable|string',
+                'parts_used_summary'    => 'nullable|string',
+                'total_price'           => 'nullable|numeric|min:0',
+                'initial_price'         => 'nullable|numeric|min:0',
+                'order_type'            => 'nullable|string|in:in_store,cod',
+                'status'                => 'nullable|string',
+                'branch_id'             => 'nullable|exists:branches,id',
+                'technician_id'         => 'nullable|exists:users,id',
+                'warranty_terms_days'   => 'nullable|integer|min:0',
+            ]);
+
+            return DB::transaction(function () use ($order, $validated, $user, $request) {
+                // Cập nhật thông tin khách hàng nếu có
+                if (! empty($validated['customer_name']) || ! empty($validated['customer_phone'])) {
+                    if ($order->customer) {
+                        $customerUpdates = [];
+                        if (! empty($validated['customer_name'])) {
+                            $customerUpdates['name'] = $validated['customer_name'];
+                        }
+                        if (! empty($validated['customer_phone'])) {
+                            $customerUpdates['phone'] = $validated['customer_phone'];
+                        }
+                        $order->customer->update($customerUpdates);
+                    } else {
+                        $newCustomer = Customer::create([
+                            'tenant_id' => $order->tenant_id,
+                            'name'      => $validated['customer_name'] ?? 'Khách lẻ',
+                            'phone'     => $validated['customer_phone'] ?? '0900000000',
+                        ]);
+                        $order->customer_id = $newCustomer->id;
+                        $order->save();
+                    }
+                }
+
+                $orderUpdates = array_filter($validated, function ($k) {
+                    return ! in_array($k, ['customer_name', 'customer_phone'], true);
+                }, ARRAY_FILTER_USE_KEY);
+
+                if (! empty($orderUpdates)) {
+                    $order->update($orderUpdates);
+                }
+
+                AuditLog::create([
+                    'tenant_id'      => $order->tenant_id,
+                    'user_id'        => $user->id,
+                    'user_name'      => $user->name,
+                    'action'         => 'Cập nhật toàn diện đơn hàng',
+                    'auditable_type' => 'RepairOrder',
+                    'auditable_id'   => $order->id,
+                    'details'        => "Admin {$user->name} cập nhật thông tin đơn {$order->order_code}",
+                    'ip_address'     => $request->ip(),
+                ]);
+
+                return $this->success(
+                    $order->fresh(['customer', 'deviceModel', 'branch', 'technician', 'createdByUser:id,name,role']),
+                    'Admin cập nhật thông tin đơn sửa chữa thành công.'
+                );
+            });
+        }
 
         $validated = $request->validate([
             'technician_id'         => 'nullable|exists:users,id',
@@ -338,7 +419,96 @@ class OrderController extends Controller
 
         $order->update($validated);
 
-        return $this->success($order, 'Cập nhật đơn sửa chữa thành công.');
+        return $this->success($order->fresh(), 'Cập nhật đơn sửa chữa thành công.');
+    }
+
+    /**
+     * Xóa vĩnh viễn đơn sửa chữa an toàn (Chỉ Quản trị viên Store Admin / Super Admin).
+     */
+    public function destroy(Request $request, int|string $id): JsonResponse
+    {
+        $user = $request->user();
+        if (! $user || ! in_array($user->role, ['admin', 'super_admin'], true)) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Bạn không có quyền xóa đơn sửa chữa. Chỉ Quản trị viên mới có quyền thực hiện.',
+            ], 403);
+        }
+
+        $order = $this->resolveOrder($id);
+        if (! $order) {
+            return $this->empty('Không tìm thấy đơn sửa chữa cần xóa.');
+        }
+
+        $this->authorizeOrderBranch($order, $user);
+
+        return DB::transaction(function () use ($order, $user, $request) {
+            $orderCode = $order->order_code;
+            $orderId = $order->id;
+            $tenantId = $order->tenant_id;
+
+            // 1. Quotes and quote items
+            foreach ($order->quotes as $quote) {
+                $quote->items()->delete();
+                $quote->delete();
+            }
+
+            // 2. QC inspections and checklist results
+            foreach ($order->qcInspections as $qc) {
+                $qc->checklistResults()->delete();
+                $qc->delete();
+            }
+
+            // 3. Shipments and proofs
+            foreach ($order->shipments as $shipment) {
+                $shipment->proofs()->delete();
+                $shipment->delete();
+            }
+
+            // 4. Warranties and claims
+            foreach ($order->warranties as $warranty) {
+                $warranty->claims()->delete();
+                $warranty->delete();
+            }
+
+            // 5. Intake photos
+            foreach ($order->intakePhotos as $photo) {
+                if ($photo->photo_url) {
+                    $path = str_replace(url('/storage') . '/', '', $photo->photo_url);
+                    Storage::disk('public')->delete($path);
+                }
+                $photo->delete();
+            }
+
+            // 6. Checklists
+            $order->intakeChecklists()->delete();
+
+            // 7. Inventory transactions
+            $order->inventoryTransactions()->delete();
+
+            // 8. Payments
+            $order->payments()->delete();
+
+            // 9. Notifications
+            Notification::where('order_id', $orderId)->delete();
+
+            // 10. Delete the repair order
+            $order->delete();
+
+            // 11. Audit log
+            AuditLog::create([
+                'tenant_id'      => $tenantId,
+                'user_id'        => $user->id,
+                'user_name'      => $user->name,
+                'action'         => 'Xóa đơn hàng',
+                'auditable_type' => 'RepairOrder',
+                'auditable_id'   => $orderId,
+                'details'        => "Admin {$user->name} đã xóa vĩnh viễn đơn hàng {$orderCode} và toàn bộ dữ liệu phụ thuộc.",
+                'ip_address'     => $request->ip(),
+            ]);
+
+            return $this->success(null, "Đã xóa vĩnh viễn đơn hàng {$orderCode} thành công.");
+        });
     }
 
     /**

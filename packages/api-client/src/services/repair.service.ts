@@ -14,6 +14,7 @@ export class RepairService {
     status?: string;
     role?: string;
     branch_id?: string | number;
+    order_type?: 'in_store' | 'cod' | 'all' | string;
     q?: string;
     page?: number;
     per_page?: number;
@@ -26,6 +27,10 @@ export class RepairService {
     });
   }
 
+  async getOrders(params?: any): Promise<any> {
+    return this.getRepairs(params);
+  }
+
   async getRepairById(id: string | number): Promise<any> {
     return this.http.get(`/api/v1/orders/${id}`);
   }
@@ -36,6 +41,39 @@ export class RepairService {
 
   async update(id: string | number, payload: Record<string, any>): Promise<any> {
     return this.http.put(`/api/v1/orders/${id}`, payload);
+  }
+
+  async adminUpdate(id: string | number, payload: Record<string, any>): Promise<any> {
+    return this.update(id, payload);
+  }
+
+  async adminUpdateOrder(id: string | number, payload: Record<string, any>): Promise<any> {
+    return this.update(id, payload);
+  }
+
+  async delete(id: string | number): Promise<any> {
+    return this.http.delete(`/api/v1/orders/${id}`);
+  }
+
+  async deleteOrder(id: string | number): Promise<any> {
+    return this.delete(id);
+  }
+
+  async simpleCheckout(
+    id: string | number,
+    payload: {
+      payment_method: 'cash' | 'bank_transfer' | string;
+      amount?: number;
+      notes?: string;
+      transaction_ref?: string;
+      auto_confirm?: boolean;
+    }
+  ): Promise<any> {
+    return this.http.post('/api/v1/payments', {
+      repair_order_id: id,
+      auto_confirm: true,
+      ...payload,
+    });
   }
 
   async transition(
