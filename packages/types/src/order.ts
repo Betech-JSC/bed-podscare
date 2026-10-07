@@ -81,6 +81,11 @@ export interface RepairOrder {
   testNote?: string;
   priceNote?: string;
   warrantyTerm?: string;
+  warranty_terms_days?: number;
+  discount_type?: 'none' | 'percent' | 'fixed';
+  discount_value?: number;
+  discount_amount?: number;
+  warranty_months?: 3 | 6 | 9 | 12;
   repairNote?: string;
   partsUsed?: string;
   parts_needed?: string | null;
@@ -107,6 +112,19 @@ export interface RepairOrder {
   createdAt?: string;
   intake_batch_code?: string;
   batchOrders?: RepairOrder[];
+}
+
+export interface SimpleCheckoutPayload {
+  payment_method: 'cash' | 'bank_transfer' | string;
+  amount?: number;
+  notes?: string;
+  transaction_ref?: string;
+  auto_confirm?: boolean;
+  discount_type?: 'none' | 'percent' | 'fixed';
+  discount_value?: number;
+  discount_amount?: number;
+  warranty_months?: 3 | 6 | 9 | 12;
+  warranty_terms_days?: number;
 }
 
 export interface CreateIntakeDTO {

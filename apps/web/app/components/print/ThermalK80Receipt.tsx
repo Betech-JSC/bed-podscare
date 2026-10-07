@@ -52,6 +52,32 @@ const CustomerSlip: React.FC<{
 
   const checks = Array.isArray(order.checks) ? order.checks : [];
 
+  const additionalServices = (order.additional_services || (order as any).additionalServices || []) as any[];
+  const hasAdditional = Array.isArray(additionalServices) && additionalServices.length > 0;
+  const initialPriceVal = order.initial_price !== undefined && order.initial_price !== null
+    ? order.initial_price
+    : (order as any).initialPrice !== undefined && (order as any).initialPrice !== null
+    ? (order as any).initialPrice
+    : order.price;
+  const totalPriceVal = order.total_price !== undefined && order.total_price !== null ? order.total_price : order.price;
+  const discountAmount = Number(order.discount_amount || (order as any).discountAmount) || 0;
+  const finalPriceVal = discountAmount > 0 ? Math.max(0, totalPriceVal - discountAmount) : totalPriceVal;
+
+  const warrantyDays = order.warranty_terms_days
+    || (order.warranty_months ? (order.warranty_months === 12 ? 365 : order.warranty_months * 30) : null)
+    || 90;
+  const warrantyMonths = order.warranty_months
+    || (warrantyDays === 365 ? 12 : Math.round(warrantyDays / 30))
+    || 3;
+
+  const expiryDate = new Date();
+  expiryDate.setDate(expiryDate.getDate() + warrantyDays);
+  const formattedExpiryDate = new Intl.DateTimeFormat('vi-VN', {
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric',
+  }).format(expiryDate);
+
   return (
     <div className="k80-customer-copy">
       {/* Header */}
@@ -192,15 +218,46 @@ const CustomerSlip: React.FC<{
         </div>
       )}
 
+      {/* Price breakdown if additional or discount */}
+      {(hasAdditional || discountAmount > 0) && (
+        <div className="mt-2 pt-1 border-t border-dashed border-black text-[9px]">
+          <span className="font-extrabold uppercase block mb-0.5">BẢNG KÊ DỊCH VỤ & CHI PHÍ:</span>
+          <div className="flex justify-between py-0.5">
+            <span>• Tiếp nhận ban đầu:</span>
+            <span className="font-semibold">{formatMoney(initialPriceVal)}</span>
+          </div>
+          {additionalServices.map((srv: any, i: number) => (
+            <div key={i} className="flex justify-between py-0.5">
+              <span>• [Thêm] {srv.name}:</span>
+              <span className="font-semibold">+{formatMoney(srv.price)}</span>
+            </div>
+          ))}
+          {discountAmount > 0 && (
+            <div className="flex justify-between py-0.5 font-bold">
+              <span>• Giảm giá:</span>
+              <span>-{formatMoney(discountAmount)}</span>
+            </div>
+          )}
+        </div>
+      )}
+
       {/* Price */}
       <div className="mt-2 p-1.5 border border-black rounded-[4px] flex justify-between items-center bg-gray-50">
         <div>
-          <span className="text-[10px] font-bold block">GIÁ DỰ KIẾN:</span>
+          <span className="text-[10px] font-bold block">
+            {discountAmount > 0 ? 'TỔNG THỰC THU:' : (hasAdditional ? 'TỔNG CỘNG THANH TOÁN:' : 'GIÁ DỰ KIẾN:')}
+          </span>
           {order.priceNote && (
             <span className="text-[8px] text-gray-600 block">({order.priceNote})</span>
           )}
         </div>
-        <b className="text-sm font-semibold tabular-nums tracking-[0.5px]">{formatMoney(order.price)}</b>
+        <b className="text-sm font-semibold tabular-nums tracking-[0.5px]">{formatMoney(finalPriceVal)}</b>
+      </div>
+
+      {/* Warranty Badge */}
+      <div className="text-center mt-2 p-1.5 border border-dashed border-gray-600 rounded bg-gray-50">
+        <div className="text-[9.5px] font-extrabold text-black">🛡️ BẢO HÀNH ĐIỆN TỬ: {warrantyMonths} THÁNG</div>
+        <div className="text-[8.5px] text-gray-700 mt-0.5">Thời hạn bảo hành: {warrantyMonths} tháng (Đến ngày {formattedExpiryDate})</div>
       </div>
 
       {/* QR Code */}

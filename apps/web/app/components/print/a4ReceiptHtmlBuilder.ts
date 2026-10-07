@@ -117,6 +117,24 @@ export function renderA4ReceiptHTML(
       : order.price;
     const totalPriceVal = order.total_price !== undefined && order.total_price !== null ? order.total_price : order.price;
 
+    const discountAmount = Number(order.discount_amount || (order as any).discountAmount) || 0;
+    const finalPriceVal = discountAmount > 0 ? Math.max(0, totalPriceVal - discountAmount) : totalPriceVal;
+
+    const warrantyDays = order.warranty_terms_days
+      || (order.warranty_months ? (order.warranty_months === 12 ? 365 : order.warranty_months * 30) : null)
+      || 90;
+    const warrantyMonths = order.warranty_months
+      || (warrantyDays === 365 ? 12 : Math.round(warrantyDays / 30))
+      || 3;
+
+    const expiryDate = new Date();
+    expiryDate.setDate(expiryDate.getDate() + warrantyDays);
+    const formattedExpiryDate = new Intl.DateTimeFormat('vi-VN', {
+      day: '2-digit',
+      month: '2-digit',
+      year: 'numeric',
+    }).format(expiryDate);
+
     return `
     <article class="a4-copy">
       <!-- Header -->
@@ -180,7 +198,7 @@ export function renderA4ReceiptHTML(
         <div class="a4-line">${order.appearance || 'Không ghi nhận vết nứt vỡ ngoại quan'}</div>
       </div>
 
-      ${hasAdditional ? `
+      ${(hasAdditional || discountAmount > 0) ? `
       <!-- Additional Services Breakdown -->
       <div class="a4-section" style="margin-bottom: 2px; padding: 2px 4px; background: #fafdfb; border: 1px dashed #b8d0c5; border-radius: 4px;">
         <div style="font-size: 7pt; font-weight: bold; color: #176b58; margin-bottom: 1.5px;">BẢNG KÊ DỊCH VỤ & CHI PHÍ:</div>
@@ -193,13 +211,18 @@ export function renderA4ReceiptHTML(
           <span>${i + 2}. [Làm thêm] ${srv.name}:</span>
           <b style="color: #176b58; font-variant-numeric: tabular-nums;">+${formatMoney(srv.price)}</b>
         </div>`).join('')}
+        ${discountAmount > 0 ? `
+        <div style="display: flex; justify-content: space-between; font-size: 7pt; padding: 1px 0; color: #b91c1c; font-weight: bold;">
+          <span>• Giảm giá:</span>
+          <b style="font-variant-numeric: tabular-nums;">-${formatMoney(discountAmount)}</b>
+        </div>` : ''}
       </div>` : ''}
 
       <!-- Price & QR -->
       <div class="a4-price-row">
         <div class="a4-price-box">
-          <span>${hasAdditional ? 'TỔNG CỘNG THANH TOÁN:' : 'GIÁ SỬA CHỮA DỰ KIẾN:'}</span>
-          <b class="a4-price-val">${formatMoney(totalPriceVal)}</b>
+          <span>${discountAmount > 0 ? 'TỔNG THANH TOÁN THỰC THU:' : (hasAdditional ? 'TỔNG CỘNG THANH TOÁN:' : 'GIÁ SỬA CHỮA DỰ KIẾN:')}</span>
+          <b class="a4-price-val">${formatMoney(finalPriceVal)}</b>
           ${order.priceNote ? `<small class="a4-price-note">(${order.priceNote})</small>` : ''}
         </div>
         <div class="a4-qr-wrap">
@@ -210,7 +233,7 @@ export function renderA4ReceiptHTML(
 
       <!-- Terms -->
       <div class="a4-terms">
-        * Chi phí trên là dự kiến tại thời điểm tiếp nhận. FIXO sẽ chủ động liên hệ quý khách xác nhận trước khi can thiệp nếu có phát sinh linh kiện. Quý khách vui lòng giữ phiếu này để đối chiếu khi nhận lại thiết bị.
+        * Chi phí trên là dự kiến tại thời điểm tiếp nhận. <b>Thời hạn bảo hành: ${warrantyMonths} tháng (Đến ngày ${formattedExpiryDate})</b>. FIXO sẽ chủ động liên hệ quý khách xác nhận trước khi can thiệp nếu có phát sinh linh kiện. Quý khách vui lòng giữ phiếu này để đối chiếu khi nhận lại thiết bị.
       </div>
 
       <!-- Signatures -->

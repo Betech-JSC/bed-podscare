@@ -55,12 +55,17 @@ class PaymentController extends Controller
         }
 
         $validated = $request->validate([
-            'repair_order_id' => 'required|exists:repair_orders,id',
-            'amount'          => 'required|numeric|min:1',
-            'payment_method'  => 'required|in:cash,bank_transfer,card_pos,wallet',
-            'transaction_ref' => 'nullable|string|max:100',
-            'notes'           => 'nullable|string',
-            'auto_confirm'    => 'nullable|boolean',
+            'repair_order_id'     => 'required|exists:repair_orders,id',
+            'amount'              => 'required|numeric|min:0',
+            'payment_method'      => 'required|in:cash,bank_transfer,card_pos,wallet',
+            'transaction_ref'     => 'nullable|string|max:100',
+            'notes'               => 'nullable|string',
+            'auto_confirm'        => 'nullable|boolean',
+            'discount_type'       => 'nullable|in:none,percent,fixed',
+            'discount_value'      => 'nullable|numeric|min:0',
+            'discount_amount'     => 'nullable|numeric|min:0',
+            'warranty_months'     => 'nullable|integer|in:3,6,9,12',
+            'warranty_terms_days' => 'nullable|integer|min:1',
         ]);
 
         return DB::transaction(function () use ($request, $validated) {
@@ -75,6 +80,29 @@ class PaymentController extends Controller
             $status = ($isBankTransfer && ! $isAutoConfirm) ? 'pending' : 'paid';
             $paidAt = $status === 'paid' ? Carbon::now() : null;
 
+            // Xử lý thông tin chiết khấu / giảm giá
+            $discountAmount = isset($validated['discount_amount']) ? (float) $validated['discount_amount'] : 0;
+            $discountType = $validated['discount_type'] ?? null;
+            $discountValue = $validated['discount_value'] ?? null;
+
+            $paymentNotes = $validated['notes'] ?? null;
+            if ($discountAmount > 0) {
+                $discountDesc = $discountType === 'percent'
+                    ? "Chiết khấu {$discountValue}%: -" . number_format($discountAmount) . " ₫"
+                    : "Giảm giá: -" . number_format($discountAmount) . " ₫";
+                $paymentNotes = $paymentNotes
+                    ? "[{$discountDesc}] {$paymentNotes}"
+                    : "[{$discountDesc}]";
+            }
+
+            // Xử lý thời hạn bảo hành điện tử (3, 6, 9, 12 tháng hoặc số ngày cụ thể)
+            $warrantyDays = $validated['warranty_terms_days']
+                ?? (isset($validated['warranty_months']) && $validated['warranty_months'] ? ($validated['warranty_months'] == 12 ? 365 : $validated['warranty_months'] * 30) : null)
+                ?? $order->warranty_terms_days
+                ?? 90;
+
+            $order->warranty_terms_days = $warrantyDays;
+
             $payment = Payment::create([
                 'payment_code'        => $paymentCode,
                 'repair_order_id'     => $order->id,
@@ -84,7 +112,7 @@ class PaymentController extends Controller
                 'status'              => $status,
                 'paid_at'             => $paidAt,
                 'received_by_user_id' => $request->user()->id,
-                'notes'               => $validated['notes'] ?? null,
+                'notes'               => $paymentNotes,
             ]);
 
             // Tự động hoàn tất đơn hàng, kích hoạt bảo hành điện tử và tích lũy doanh số khi thu tiền trực tiếp
@@ -99,7 +127,7 @@ class PaymentController extends Controller
                 $order->save();
 
                 // Kích hoạt bảo hành điện tử tự động
-                if ($order->warranty_terms_days > 0 && ! $order->warranties()->exists()) {
+                if ($warrantyDays > 0 && ! $order->warranties()->exists()) {
                     $randomWr = str_pad((string) random_int(100, 9999), 4, '0', STR_PAD_LEFT);
                     \App\Models\Warranty::create([
                         'warranty_code'   => "FX{$year}-WR-{$randomWr}",
@@ -108,36 +136,39 @@ class PaymentController extends Controller
                         'device_model_id' => $order->device_model_id,
                         'coverage_item'   => $order->price_note ?? 'Dịch vụ sửa chữa',
                         'start_date'      => Carbon::now()->toDateString(),
-                        'duration_days'   => $order->warranty_terms_days,
-                        'end_date'        => Carbon::now()->addDays($order->warranty_terms_days)->toDateString(),
+                        'duration_days'   => $warrantyDays,
+                        'end_date'        => Carbon::now()->addDays($warrantyDays)->toDateString(),
                         'status'          => 'active',
                     ]);
                 } elseif ($order->warranties()->exists()) {
                     foreach ($order->warranties as $warranty) {
-                        $duration = $warranty->duration_days ?: ($order->warranty_terms_days ?: 90);
                         $warranty->update([
-                            'status'     => 'active',
-                            'start_date' => Carbon::now()->toDateString(),
-                            'end_date'   => Carbon::now()->addDays($duration)->toDateString(),
+                            'status'        => 'active',
+                            'start_date'    => Carbon::now()->toDateString(),
+                            'duration_days' => $warrantyDays,
+                            'end_date'      => Carbon::now()->addDays($warrantyDays)->toDateString(),
                         ]);
                     }
                 }
 
-                // Tích lũy doanh số khách hàng
+                // Tích lũy doanh số khách hàng theo số tiền thực thu
                 $customer = $order->customer;
                 if ($customer) {
                     $customer->increment('orders_count');
-                    $customer->increment('total_spent', $order->total_price);
+                    $customer->increment('total_spent', $validated['amount']);
                 }
+            } else {
+                $order->save();
             }
 
+            $discountInfo = $discountAmount > 0 ? " (Đã giảm: " . number_format($discountAmount) . " ₫)" : "";
             AuditLog::create([
                 'user_id'        => $request->user()->id,
                 'user_name'      => $request->user()->name,
                 'action'         => 'Thu tiền',
                 'auditable_type' => 'Payment',
                 'auditable_id'   => $payment->id,
-                'details'        => "Thu tiền đơn {$order->order_code}: " . number_format($validated['amount']) . " ₫ qua {$validated['payment_method']}" . ($status === 'paid' ? ' (Đã xác nhận)' : ' (Chờ thanh toán)'),
+                'details'        => "Thu tiền đơn {$order->order_code}: Thực thu " . number_format($validated['amount']) . " ₫{$discountInfo} qua {$validated['payment_method']}" . ($status === 'paid' ? ' (Đã xác nhận)' : ' (Chờ thanh toán)'),
                 'ip_address'     => $request->ip(),
             ]);
 
@@ -254,6 +285,40 @@ class PaymentController extends Controller
                     $order->handed_over_by_user_id = $user->id;
                 }
                 $order->save();
+
+                // Kích hoạt bảo hành điện tử tự động nếu chưa có
+                $warrantyDays = $order->warranty_terms_days ?: 90;
+                $year = date('y');
+                if ($warrantyDays > 0 && ! $order->warranties()->exists()) {
+                    $randomWr = str_pad((string) random_int(100, 9999), 4, '0', STR_PAD_LEFT);
+                    \App\Models\Warranty::create([
+                        'warranty_code'   => "FX{$year}-WR-{$randomWr}",
+                        'repair_order_id' => $order->id,
+                        'customer_id'     => $order->customer_id,
+                        'device_model_id' => $order->device_model_id,
+                        'coverage_item'   => $order->price_note ?? 'Dịch vụ sửa chữa',
+                        'start_date'      => Carbon::now()->toDateString(),
+                        'duration_days'   => $warrantyDays,
+                        'end_date'        => Carbon::now()->addDays($warrantyDays)->toDateString(),
+                        'status'          => 'active',
+                    ]);
+                } elseif ($order->warranties()->exists()) {
+                    foreach ($order->warranties as $warranty) {
+                        $warranty->update([
+                            'status'        => 'active',
+                            'start_date'    => Carbon::now()->toDateString(),
+                            'duration_days' => $warrantyDays,
+                            'end_date'      => Carbon::now()->addDays($warrantyDays)->toDateString(),
+                        ]);
+                    }
+                }
+
+                // Tích lũy doanh số khách hàng theo số tiền thực thu
+                $customer = $order->customer;
+                if ($customer) {
+                    $customer->increment('orders_count');
+                    $customer->increment('total_spent', $payment->amount);
+                }
             }
 
             AuditLog::create([

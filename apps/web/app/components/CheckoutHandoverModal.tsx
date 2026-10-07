@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import {
   Modal,
   Button,
@@ -18,6 +18,23 @@ export interface CheckoutHandoverModalProps {
   onSuccess?: (updatedOrder: RepairOrder) => void;
 }
 
+const WARRANTY_MONTH_DAYS_MAP: Record<number, number> = {
+  3: 90,
+  6: 180,
+  9: 270,
+  12: 365,
+};
+
+const WARRANTY_OPTIONS: Array<{ months: 3 | 6 | 9 | 12; label: string; days: number }> = [
+  { months: 3, label: '3 tháng', days: 90 },
+  { months: 6, label: '6 tháng', days: 180 },
+  { months: 9, label: '9 tháng', days: 270 },
+  { months: 12, label: '12 tháng', days: 365 },
+];
+
+const QUICK_PERCENT_OPTIONS = [5, 10, 15, 20];
+const QUICK_FIXED_OPTIONS = [20000, 50000, 100000];
+
 export const CheckoutHandoverModal: React.FC<CheckoutHandoverModalProps> = ({
   isOpen,
   onClose,
@@ -31,10 +48,73 @@ export const CheckoutHandoverModal: React.FC<CheckoutHandoverModalProps> = ({
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
 
-  const totalPrice = Number(order.total_price !== undefined ? order.total_price : order.price) || 0;
+  // 1. Warranty State (Mặc định: 3 tháng)
+  const [warrantyMonths, setWarrantyMonths] = useState<3 | 6 | 9 | 12>(3);
+
+  // 2. Discount State
+  const [discountType, setDiscountType] = useState<'none' | 'percent' | 'fixed'>('none');
+  const [discountPercent, setDiscountPercent] = useState<number | ''>('');
+  const [discountFixed, setDiscountFixed] = useState<number | ''>('');
+
+  const rawTotal = Number(order.total_price !== undefined ? order.total_price : order.price) || 0;
 
   const moneyFormatted = (n: number) =>
     n ? new Intl.NumberFormat('vi-VN').format(n) + ' ₫' : '0 ₫';
+
+  // Tính ngày hết hạn bảo hành dự kiến
+  const computedExpiryDateStr = useMemo(() => {
+    const d = new Date();
+    d.setDate(d.getDate() + WARRANTY_MONTH_DAYS_MAP[warrantyMonths]);
+    return new Intl.DateTimeFormat('vi-VN', {
+      day: '2-digit',
+      month: '2-digit',
+      year: 'numeric',
+    }).format(d);
+  }, [warrantyMonths]);
+
+  // Tính số tiền giảm giá và số tiền thực thu
+  const calculatedDiscountAmount = useMemo(() => {
+    if (discountType === 'percent') {
+      const pct = typeof discountPercent === 'number' ? discountPercent : 0;
+      return Math.min(rawTotal, Math.round((rawTotal * pct) / 100));
+    }
+    if (discountType === 'fixed') {
+      const amt = typeof discountFixed === 'number' ? discountFixed : 0;
+      return Math.min(rawTotal, Math.max(0, amt));
+    }
+    return 0;
+  }, [discountType, discountPercent, discountFixed, rawTotal]);
+
+  const finalAmount = Math.max(0, rawTotal - calculatedDiscountAmount);
+
+  // Reset giảm giá
+  const handleClearDiscount = () => {
+    setDiscountType('none');
+    setDiscountPercent('');
+    setDiscountFixed('');
+  };
+
+  const handlePercentChange = (val: string) => {
+    if (val === '') {
+      setDiscountPercent('');
+      return;
+    }
+    const num = parseFloat(val);
+    if (!isNaN(num)) {
+      setDiscountPercent(Math.min(100, Math.max(0, num)));
+    }
+  };
+
+  const handleFixedChange = (val: string) => {
+    if (val === '') {
+      setDiscountFixed('');
+      return;
+    }
+    const num = parseFloat(val.replace(/[^\d]/g, ''));
+    if (!isNaN(num)) {
+      setDiscountFixed(Math.min(rawTotal, Math.max(0, num)));
+    }
+  };
 
   const handleConfirmCheckout = async () => {
     setIsSubmitting(true);
@@ -43,10 +123,15 @@ export const CheckoutHandoverModal: React.FC<CheckoutHandoverModalProps> = ({
     try {
       await repairService.simpleCheckout(order.id, {
         payment_method: paymentMethod,
-        amount: totalPrice,
+        amount: finalAmount,
         transaction_ref: transactionRef.trim() || undefined,
         notes: notes.trim() || (paymentMethod === 'cash' ? 'Thu tiền mặt tại quầy CSKH' : 'Chuyển khoản trực tiếp ngoài quầy'),
         auto_confirm: true,
+        discount_type: discountType !== 'none' ? discountType : undefined,
+        discount_value: discountType === 'percent' ? (Number(discountPercent) || 0) : (discountType === 'fixed' ? (Number(discountFixed) || 0) : undefined),
+        discount_amount: calculatedDiscountAmount > 0 ? calculatedDiscountAmount : undefined,
+        warranty_months: warrantyMonths,
+        warranty_terms_days: WARRANTY_MONTH_DAYS_MAP[warrantyMonths],
       });
 
       // Play audio chime if sound system is active
@@ -57,12 +142,17 @@ export const CheckoutHandoverModal: React.FC<CheckoutHandoverModalProps> = ({
         // ignore audio failure
       }
 
-      toast(`✓ Đã thu ${moneyFormatted(totalPrice)} và hoàn tất giao máy cho đơn ${order.id}!`, 'success');
+      toast(`✓ Đã thu ${moneyFormatted(finalAmount)} và hoàn tất giao máy cho đơn ${order.id}!`, 'success');
 
       const updated: RepairOrder = {
         ...order,
         status: 'Hoàn tất',
         statusType: 'gray',
+        warrantyTerm: `${warrantyMonths} tháng`,
+        warranty_terms_days: WARRANTY_MONTH_DAYS_MAP[warrantyMonths],
+        warranty_months: warrantyMonths,
+        discount_type: discountType,
+        discount_amount: calculatedDiscountAmount,
         handedAt: new Intl.DateTimeFormat('vi-VN').format(new Date()),
       };
 
@@ -100,36 +190,242 @@ export const CheckoutHandoverModal: React.FC<CheckoutHandoverModalProps> = ({
             onClick={handleConfirmCheckout}
             className="bg-[#176b58] hover:bg-[#125848] text-white font-bold"
           >
-            {isSubmitting ? 'Đang ghi nhận...' : '✓ Xác nhận thu tiền & Trả máy'}
+            {isSubmitting ? 'Đang ghi nhận...' : `✓ Xác nhận thu ${moneyFormatted(finalAmount)} & Trả máy`}
           </Button>
         </div>
       }
     >
-      <div className="space-y-4 text-sm">
+      <div className="space-y-4 text-sm max-h-[75vh] overflow-y-auto pr-1">
         {errorMsg && (
           <div className="p-3 bg-[#fef2f2] border border-[#fecaca] rounded-[8px] text-xs text-[#b91c1c] font-medium">
             ⚠️ {errorMsg}
           </div>
         )}
 
-        {/* Tổng tiền cần thu nổi bật */}
-        <div className="p-4 bg-[#eaf4ef] rounded-[10px] border-2 border-[#176b58] flex items-center justify-between">
-          <div>
-            <span className="block text-xs font-bold uppercase tracking-wider text-[#176b58]">
-              TỔNG SỐ TIỀN CẦN THU
+        {/* Khối 1: Thời hạn bảo hành điện tử linh hoạt */}
+        <div className="space-y-2 p-3 bg-[#f8faf9] rounded-[10px] border border-[#dce6e0]">
+          <div className="flex items-center justify-between">
+            <label className="block text-xs font-bold text-[#1c302b] uppercase tracking-wide">
+              🛡️ Thời hạn bảo hành điện tử <span className="text-red-500">*</span>
+            </label>
+            <span className="text-[11px] font-semibold text-[#176b58] bg-[#eaf4ef] px-2 py-0.5 rounded">
+              {WARRANTY_MONTH_DAYS_MAP[warrantyMonths]} ngày
             </span>
-            <small className="text-[#556960] text-xs block mt-0.5">
-              Bao gồm công sửa ban đầu và các dịch vụ bổ sung
-            </small>
           </div>
-          <div className="text-right">
-            <b className="text-2xl font-bold text-[#176b58] font-heading font-mono">
-              {moneyFormatted(totalPrice)}
-            </b>
+
+          <div className="grid grid-cols-4 gap-2">
+            {WARRANTY_OPTIONS.map((opt) => (
+              <button
+                key={opt.months}
+                type="button"
+                onClick={() => setWarrantyMonths(opt.months)}
+                className={`py-2 px-2.5 rounded-[8px] border-2 text-xs font-bold transition-all text-center cursor-pointer ${
+                  warrantyMonths === opt.months
+                    ? 'border-[#176b58] bg-[#f0f8f4] text-[#176b58] shadow-xs'
+                    : 'border-[#e0e8e4] bg-white text-[#2d3d35] hover:bg-[#fbfcfb]'
+                }`}
+              >
+                {opt.label}
+              </button>
+            ))}
+          </div>
+
+          <div className="text-[11px] text-[#556960] flex items-center gap-1.5 pt-0.5">
+            <span>🗓️</span>
+            <span>Hạn bảo hành dự kiến: đến ngày <b>{computedExpiryDateStr}</b></span>
           </div>
         </div>
 
-        {/* Phương thức thanh toán 2 lựa chọn */}
+        {/* Khối 2: Giảm giá / Khuyến mãi */}
+        <div className="space-y-2.5 p-3 bg-white rounded-[10px] border border-[#dce6e0]">
+          <div className="flex items-center justify-between">
+            <label className="block text-xs font-bold text-[#1c302b] uppercase tracking-wide">
+              🎁 Giảm giá / Khuyến mãi (Tùy chọn)
+            </label>
+            {discountType !== 'none' && (
+              <button
+                type="button"
+                onClick={handleClearDiscount}
+                className="text-xs text-[#b91c1c] hover:underline font-semibold cursor-pointer flex items-center gap-1"
+              >
+                ✕ Bỏ giảm giá
+              </button>
+            )}
+          </div>
+
+          {/* Tab chọn chế độ giảm giá */}
+          <div className="grid grid-cols-3 gap-2 p-1 bg-[#f0f4f2] rounded-[8px] text-xs font-medium">
+            <button
+              type="button"
+              onClick={() => handleClearDiscount()}
+              className={`py-1.5 px-2 rounded-[6px] transition-all text-center cursor-pointer ${
+                discountType === 'none'
+                  ? 'bg-white font-bold text-[#176b58] shadow-xs'
+                  : 'text-[#62756d] hover:text-[#1c302b]'
+              }`}
+            >
+              Không giảm
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setDiscountType('percent');
+                if (discountPercent === '') setDiscountPercent(10);
+              }}
+              className={`py-1.5 px-2 rounded-[6px] transition-all text-center cursor-pointer ${
+                discountType === 'percent'
+                  ? 'bg-white font-bold text-[#176b58] shadow-xs'
+                  : 'text-[#62756d] hover:text-[#1c302b]'
+              }`}
+            >
+              % Theo phần trăm
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setDiscountType('fixed');
+                if (discountFixed === '') setDiscountFixed(50000);
+              }}
+              className={`py-1.5 px-2 rounded-[6px] transition-all text-center cursor-pointer ${
+                discountType === 'fixed'
+                  ? 'bg-white font-bold text-[#176b58] shadow-xs'
+                  : 'text-[#62756d] hover:text-[#1c302b]'
+              }`}
+            >
+              ₫ Theo số tiền
+            </button>
+          </div>
+
+          {/* Chi tiết chế độ % */}
+          {discountType === 'percent' && (
+            <div className="space-y-2 pt-1 animate-fadeIn">
+              <div className="flex items-center gap-2">
+                <span className="text-xs text-[#556960] font-medium">Chọn nhanh:</span>
+                <div className="flex gap-1.5 flex-wrap">
+                  {QUICK_PERCENT_OPTIONS.map((pct) => (
+                    <button
+                      key={pct}
+                      type="button"
+                      onClick={() => setDiscountPercent(pct)}
+                      className={`px-2.5 py-1 rounded-[6px] text-xs font-semibold border transition-all cursor-pointer ${
+                        discountPercent === pct
+                          ? 'bg-[#176b58] text-white border-[#176b58]'
+                          : 'bg-[#f4f8f6] text-[#176b58] border-[#c2ded3] hover:bg-[#eaf4ef]'
+                      }`}
+                    >
+                      {pct}%
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <div className="relative flex-grow">
+                  <Input
+                    type="number"
+                    min={0}
+                    max={100}
+                    placeholder="Nhập % giảm giá (0 - 100)"
+                    value={discountPercent}
+                    onChange={(e) => handlePercentChange(e.target.value)}
+                  />
+                  <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs font-bold text-[#62756d]">
+                    %
+                  </span>
+                </div>
+                <div className="text-right text-xs flex-shrink-0 text-[#176b58] font-bold">
+                  -{moneyFormatted(calculatedDiscountAmount)}
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Chi tiết chế độ số tiền cố định */}
+          {discountType === 'fixed' && (
+            <div className="space-y-2 pt-1 animate-fadeIn">
+              <div className="flex items-center gap-2">
+                <span className="text-xs text-[#556960] font-medium">Chọn nhanh:</span>
+                <div className="flex gap-1.5 flex-wrap">
+                  {QUICK_FIXED_OPTIONS.map((amt) => (
+                    <button
+                      key={amt}
+                      type="button"
+                      onClick={() => setDiscountFixed(amt)}
+                      className={`px-2.5 py-1 rounded-[6px] text-xs font-semibold border transition-all cursor-pointer ${
+                        discountFixed === amt
+                          ? 'bg-[#176b58] text-white border-[#176b58]'
+                          : 'bg-[#f4f8f6] text-[#176b58] border-[#c2ded3] hover:bg-[#eaf4ef]'
+                      }`}
+                    >
+                      -{moneyFormatted(amt)}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <div className="relative flex-grow">
+                  <Input
+                    type="text"
+                    placeholder="Nhập số tiền giảm giá (VNĐ)"
+                    value={discountFixed !== '' ? new Intl.NumberFormat('vi-VN').format(Number(discountFixed)) : ''}
+                    onChange={(e) => handleFixedChange(e.target.value)}
+                  />
+                  <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs font-bold text-[#62756d]">
+                    ₫
+                  </span>
+                </div>
+                <div className="text-right text-xs flex-shrink-0 text-[#176b58] font-bold">
+                  -{moneyFormatted(calculatedDiscountAmount)}
+                </div>
+              </div>
+
+              {Number(discountFixed) > rawTotal && (
+                <small className="text-[#b91c1c] text-[11px] block">
+                  ⚠️ Số tiền giảm vượt quá tổng đơn, hệ thống tự động khóa mức giảm tối đa {moneyFormatted(rawTotal)}.
+                </small>
+              )}
+            </div>
+          )}
+        </div>
+
+        {/* Khối 3: Bảng kê tổng kết thanh toán nổi bật */}
+        <div className="p-4 bg-[#eaf4ef] rounded-[10px] border-2 border-[#176b58] space-y-2">
+          {calculatedDiscountAmount > 0 && (
+            <div className="space-y-1 pb-2 border-b border-[#c2ded3] text-xs">
+              <div className="flex items-center justify-between text-[#556960]">
+                <span>Tổng chi phí ban đầu:</span>
+                <span className="line-through">{moneyFormatted(rawTotal)}</span>
+              </div>
+              <div className="flex items-center justify-between text-[#b91c1c] font-semibold">
+                <span>
+                  Giảm giá / Chiết khấu {discountType === 'percent' ? `(${discountPercent}%)` : '(tiền mặt)'}:
+                </span>
+                <span>-{moneyFormatted(calculatedDiscountAmount)}</span>
+              </div>
+            </div>
+          )}
+
+          <div className="flex items-center justify-between">
+            <div>
+              <span className="block text-xs font-bold uppercase tracking-wider text-[#176b58]">
+                TỔNG TIỀN THỰC THU
+              </span>
+              <small className="text-[#556960] text-xs block mt-0.5">
+                {calculatedDiscountAmount > 0
+                  ? 'Đã áp dụng giảm giá chiết khấu'
+                  : 'Bao gồm công sửa ban đầu và các dịch vụ bổ sung'}
+              </small>
+            </div>
+            <div className="text-right">
+              <b className="text-2xl font-bold text-[#176b58] font-heading font-mono">
+                {moneyFormatted(finalAmount)}
+              </b>
+            </div>
+          </div>
+        </div>
+
+        {/* Khối 4: Phương thức thanh toán 2 lựa chọn */}
         <div className="space-y-2">
           <label className="block text-xs font-bold text-[#2d3d35] uppercase tracking-wide">
             Hình thức thanh toán tại quầy <span className="text-red-500">*</span>
@@ -224,9 +520,9 @@ export const CheckoutHandoverModal: React.FC<CheckoutHandoverModalProps> = ({
             <span>✓</span> Quy trình tự động sau khi xác nhận:
           </div>
           <ul className="list-disc pl-4 space-y-0.5 text-[11px] text-[#63756d] m-0">
-            <li>Lập phiếu thu trạng thái <b>Đã thanh toán (paid)</b> không cần sinh mã QR SePay.</li>
+            <li>Lập phiếu thu trạng thái <b>Đã thanh toán (paid)</b> số tiền thực thu: <b>{moneyFormatted(finalAmount)}</b>.</li>
             <li>Chuyển trạng thái đơn sang <b>Hoàn tất (completed)</b> và ghi nhận thời gian bàn giao.</li>
-            <li>Tự động kích hoạt <b>Sổ bảo hành điện tử</b> ({order.warrantyTerm || '90 ngày'}) và tích lũy doanh số khách hàng.</li>
+            <li>Tự động kích hoạt <b>Sổ bảo hành điện tử</b> ({warrantyMonths} tháng / {WARRANTY_MONTH_DAYS_MAP[warrantyMonths]} ngày) đến <b>{computedExpiryDateStr}</b>.</li>
           </ul>
         </div>
       </div>

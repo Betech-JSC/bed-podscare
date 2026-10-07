@@ -676,6 +676,24 @@ export function buildCustomerCopyHtml(order: RepairOrder, origin?: string, brand
     : order.price;
   const totalPriceVal = order.total_price !== undefined && order.total_price !== null ? order.total_price : order.price;
 
+  const discountAmount = Number(order.discount_amount || (order as any).discountAmount) || 0;
+  const finalPriceVal = discountAmount > 0 ? Math.max(0, totalPriceVal - discountAmount) : totalPriceVal;
+
+  const warrantyDays = order.warranty_terms_days
+    || (order.warranty_months ? (order.warranty_months === 12 ? 365 : order.warranty_months * 30) : null)
+    || 90;
+  const warrantyMonths = order.warranty_months
+    || (warrantyDays === 365 ? 12 : Math.round(warrantyDays / 30))
+    || 3;
+
+  const expiryDate = new Date();
+  expiryDate.setDate(expiryDate.getDate() + warrantyDays);
+  const formattedExpiryDate = new Intl.DateTimeFormat('vi-VN', {
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric',
+  }).format(expiryDate);
+
   return `<div class="k80-wrapper k80-customer-copy">
     <div class="k80-header">
       ${effectiveLogoUrl ? `
@@ -750,7 +768,7 @@ export function buildCustomerCopyHtml(order: RepairOrder, origin?: string, brand
 
     ${checksHtml}
 
-    ${hasAdditional ? `
+    ${(hasAdditional || discountAmount > 0) ? `
     <div class="k80-section" style="margin-top: 4px; padding-top: 3px; border-top: 1px dashed #000;">
       <div class="k80-section-title" style="font-size: 9px; font-weight: 800;">BẢNG KÊ DỊCH VỤ & CHI PHÍ:</div>
       <div style="display: flex; justify-content: space-between; font-size: 9px; padding: 1.5px 0;">
@@ -762,14 +780,24 @@ export function buildCustomerCopyHtml(order: RepairOrder, origin?: string, brand
         <span>• [Thêm] ${srv.name}:</span>
         <span style="font-weight: 600;">+${formatMoney(srv.price)}</span>
       </div>`).join('')}
+      ${discountAmount > 0 ? `
+      <div style="display: flex; justify-content: space-between; font-size: 9px; padding: 1.5px 0; font-weight: 700;">
+        <span>• Giảm giá:</span>
+        <span>-${formatMoney(discountAmount)}</span>
+      </div>` : ''}
     </div>` : ''}
 
     <div class="k80-price-box">
       <div>
-        <div class="k80-price-title">${hasAdditional ? 'TỔNG CỘNG THANH TOÁN:' : 'GIÁ DỰ KIẾN:'}</div>
+        <div class="k80-price-title">${discountAmount > 0 ? 'TỔNG THỰC THU:' : (hasAdditional ? 'TỔNG CỘNG THANH TOÁN:' : 'GIÁ DỰ KIẾN:')}</div>
         ${order.priceNote ? `<div style="font-size: 8px; color: #555555;">(${order.priceNote})</div>` : ''}
       </div>
-      <div class="k80-price-amount">${formatMoney(totalPriceVal)}</div>
+      <div class="k80-price-amount">${formatMoney(finalPriceVal)}</div>
+    </div>
+
+    <div class="k80-warranty-badge" style="text-align: center; margin-top: 6px; padding: 4px 2px; border: 1px dashed #444444; border-radius: 4px; background: #fafafa;">
+      <div style="font-size: 9.5px; font-weight: 800; color: #000000;">🛡️ BẢO HÀNH ĐIỆN TỬ: ${warrantyMonths} THÁNG</div>
+      <div style="font-size: 8.5px; margin-top: 1px; color: #333333;">Thời hạn bảo hành: ${warrantyMonths} tháng (Đến ngày ${formattedExpiryDate})</div>
     </div>
 
     <div class="k80-qr-wrapper">

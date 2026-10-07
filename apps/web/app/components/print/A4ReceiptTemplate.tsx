@@ -60,6 +60,32 @@ export const A4ReceiptTemplate: React.FC<A4ReceiptTemplateProps> = ({ order: sin
     const leftChecks = checks.slice(0, mid);
     const rightChecks = checks.slice(mid);
 
+    const additionalServices = (order.additional_services || (order as any).additionalServices || []) as any[];
+    const hasAdditional = Array.isArray(additionalServices) && additionalServices.length > 0;
+    const initialPriceVal = order.initial_price !== undefined && order.initial_price !== null
+      ? order.initial_price
+      : (order as any).initialPrice !== undefined && (order as any).initialPrice !== null
+      ? (order as any).initialPrice
+      : order.price;
+    const totalPriceVal = order.total_price !== undefined && order.total_price !== null ? order.total_price : order.price;
+    const discountAmount = Number(order.discount_amount || (order as any).discountAmount) || 0;
+    const finalPriceVal = discountAmount > 0 ? Math.max(0, totalPriceVal - discountAmount) : totalPriceVal;
+
+    const warrantyDays = order.warranty_terms_days
+      || (order.warranty_months ? (order.warranty_months === 12 ? 365 : order.warranty_months * 30) : null)
+      || 90;
+    const warrantyMonths = order.warranty_months
+      || (warrantyDays === 365 ? 12 : Math.round(warrantyDays / 30))
+      || 3;
+
+    const expiryDate = new Date();
+    expiryDate.setDate(expiryDate.getDate() + warrantyDays);
+    const formattedExpiryDate = new Intl.DateTimeFormat('vi-VN', {
+      day: '2-digit',
+      month: '2-digit',
+      year: 'numeric',
+    }).format(expiryDate);
+
     return (
       <article className="a4-receipt-copy bg-white text-[#111111] p-4 sm:p-5 border border-[#c8d3cc] rounded-[8px] shadow-sm print:shadow-none print:border-[#c8d3cc] print:rounded-[6px] print:p-3 print:m-0 max-h-[132mm] overflow-hidden flex flex-col justify-between">
         <div>
@@ -209,11 +235,34 @@ export const A4ReceiptTemplate: React.FC<A4ReceiptTemplateProps> = ({ order: sin
             </div>
           )}
 
+          {/* Breakdown if additional or discount */}
+          {(hasAdditional || discountAmount > 0) && (
+            <div className="mb-1.5 p-1 bg-[#fafdfb] border border-dashed border-[#b8d0c5] rounded text-[6.5pt]">
+              <span className="font-bold text-[#176b58] block mb-0.5">BẢNG KÊ DỊCH VỤ & CHI PHÍ:</span>
+              <div className="flex justify-between py-0.5">
+                <span>1. Tiếp nhận ban đầu:</span>
+                <b>{formatMoney(initialPriceVal)}</b>
+              </div>
+              {additionalServices.map((srv: any, i: number) => (
+                <div key={i} className="flex justify-between py-0.5">
+                  <span>{i + 2}. [Làm thêm] {srv.name}:</span>
+                  <b className="text-[#176b58]">+{formatMoney(srv.price)}</b>
+                </div>
+              ))}
+              {discountAmount > 0 && (
+                <div className="flex justify-between py-0.5 text-[#b91c1c] font-bold">
+                  <span>• Giảm giá:</span>
+                  <b>-{formatMoney(discountAmount)}</b>
+                </div>
+              )}
+            </div>
+          )}
+
           {/* Price & QR Row */}
           <div className="flex justify-between items-center border border-[#176b58] p-1.5 rounded mb-1 text-[7.5pt] bg-[#f7fbf9]">
             <div>
-              <span>Giá sửa chữa dự kiến: </span>
-              <b className="text-[9.5pt] text-[#176b58] font-semibold tabular-nums tracking-[0.5px]">{formatMoney(order.price)}</b>
+              <span>{discountAmount > 0 ? 'Tổng thanh toán thực thu: ' : (hasAdditional ? 'Tổng cộng thanh toán: ' : 'Giá sửa chữa dự kiến: ')}</span>
+              <b className="text-[9.5pt] text-[#176b58] font-semibold tabular-nums tracking-[0.5px]">{formatMoney(finalPriceVal)}</b>
               {order.priceNote && <span className="text-[#666666] text-[6.5pt] ml-1">({order.priceNote})</span>}
             </div>
             <div className="flex items-center gap-1.5">
@@ -226,7 +275,7 @@ export const A4ReceiptTemplate: React.FC<A4ReceiptTemplateProps> = ({ order: sin
           </div>
 
           <p className="text-[6pt] text-[#666666] leading-tight my-0.5">
-            * Chi phí trên là dự kiến tại thời điểm tiếp nhận. FIXO sẽ chủ động liên hệ quý khách xác
+            * Chi phí trên là dự kiến tại thời điểm tiếp nhận. <b>Thời hạn bảo hành: {warrantyMonths} tháng (Đến ngày {formattedExpiryDate})</b>. FIXO sẽ chủ động liên hệ quý khách xác
             nhận trước khi can thiệp nếu có phát sinh linh kiện. Quý khách vui lòng giữ phiếu để đối chiếu.
           </p>
         </div>

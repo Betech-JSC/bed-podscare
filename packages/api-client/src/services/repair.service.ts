@@ -4,6 +4,7 @@ import type {
   UpdateOrderQuoteDTO,
   CompleteTechOrderDTO,
   AddAdditionalServiceDTO,
+  SimpleCheckoutPayload,
 } from '@podscare/types';
 
 export class RepairService {
@@ -61,12 +62,17 @@ export class RepairService {
 
   async simpleCheckout(
     id: string | number,
-    payload: {
+    payload: SimpleCheckoutPayload | {
       payment_method: 'cash' | 'bank_transfer' | string;
       amount?: number;
       notes?: string;
       transaction_ref?: string;
       auto_confirm?: boolean;
+      discount_type?: 'none' | 'percent' | 'fixed';
+      discount_value?: number;
+      discount_amount?: number;
+      warranty_months?: 3 | 6 | 9 | 12;
+      warranty_terms_days?: number;
     }
   ): Promise<any> {
     return this.http.post('/api/v1/payments', {
