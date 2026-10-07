@@ -45,7 +45,6 @@ export default function RepairsPage() {
   const [selectedOrder, setSelectedOrder] = useState<RepairOrder | null>(null);
   const [intakeModalOpen, setIntakeModalOpen] = useState(false);
   const [initialIntakeType, setInitialIntakeType] = useState<'in_store' | 'cod'>('in_store');
-  const [intakeDropdownOpen, setIntakeDropdownOpen] = useState(false);
   const [checkoutModalOpen, setCheckoutModalOpen] = useState(false);
   const [adminEditModalOpen, setAdminEditModalOpen] = useState(false);
   const [adminDeleteModalOpen, setAdminDeleteModalOpen] = useState(false);
@@ -508,70 +507,19 @@ export default function RepairsPage() {
               Theo dõi toàn bộ vòng đời tiếp nhận, kiểm định và bàn giao theo từng chi nhánh.
             </p>
           </div>
-          <div
-            className="relative inline-block"
-            onMouseEnter={() => setIntakeDropdownOpen(true)}
-            onMouseLeave={() => setIntakeDropdownOpen(false)}
+          <Button
+            variant="primary"
+            size="md"
+            icon="plus"
+            data-testid="intake-main-btn"
+            onClick={() => {
+              setInitialIntakeType('in_store');
+              setIntakeModalOpen(true);
+            }}
+            className="flex items-center gap-1.5"
           >
-            <Button
-              variant="primary"
-              size="md"
-              icon="plus"
-              data-testid="intake-main-btn"
-              onClick={() => setIntakeDropdownOpen((prev) => !prev)}
-              className="flex items-center gap-1.5"
-            >
-              <span>Tiếp nhận thiết bị</span>
-              <span className="text-xs">▾</span>
-            </Button>
-
-            {intakeDropdownOpen && (
-              <div
-                className="absolute right-0 top-full mt-1 w-64 bg-white rounded-[10px] shadow-xl border border-[#dce5e0] py-1.5 z-50 animate-in fade-in zoom-in-95 duration-100"
-                onClick={() => setIntakeDropdownOpen(false)}
-              >
-                <button
-                  type="button"
-                  data-testid="intake-dropdown-in-store"
-                  onClick={() => {
-                    setInitialIntakeType('in_store');
-                    setIntakeModalOpen(true);
-                  }}
-                  className="w-full text-left px-3.5 py-2.5 hover:bg-[#eaf4ef] flex items-center gap-2.5 transition-colors cursor-pointer group"
-                >
-                  <span className="text-lg">🏪</span>
-                  <div>
-                    <span className="block text-xs font-bold text-[#1c302b] group-hover:text-[#176b58]">
-                      Khách tại cửa hàng
-                    </span>
-                    <span className="block text-[11px] text-[#788880]">
-                      Tiếp nhận trực tiếp tại quầy CSKH
-                    </span>
-                  </div>
-                </button>
-                <div className="h-px bg-[#eef3f0] my-1" />
-                <button
-                  type="button"
-                  data-testid="intake-dropdown-cod"
-                  onClick={() => {
-                    setInitialIntakeType('cod');
-                    setIntakeModalOpen(true);
-                  }}
-                  className="w-full text-left px-3.5 py-2.5 hover:bg-[#fef3c7] flex items-center gap-2.5 transition-colors cursor-pointer group"
-                >
-                  <span className="text-lg">📦</span>
-                  <div>
-                    <span className="block text-xs font-bold text-[#1c302b] group-hover:text-[#d97706]">
-                      Đơn COD (Khách tỉnh)
-                    </span>
-                    <span className="block text-[11px] text-[#788880]">
-                      Nhận máy từ bưu cục / chuyển phát
-                    </span>
-                  </div>
-                </button>
-              </div>
-            )}
-          </div>
+            <span>Tiếp nhận thiết bị</span>
+          </Button>
         </div>
 
         {/* Panel with Table and Filters */}

@@ -83,16 +83,16 @@ test('OpenSpec: COD Order Type, Simple Checkout, and Admin Full CRUD', async (t)
     );
   });
 
-  await t.test('4. RepairsPage: Hover dropdown, Quick tabs, and Table Badges', () => {
+  await t.test('4. RepairsPage: 1-click Intake button, Quick tabs, and Table Badges', () => {
     assert.ok(fs.existsSync(repairsPagePath), 'repairs/page.tsx must exist');
     const repairsContent = fs.readFileSync(repairsPagePath, 'utf-8');
 
-    // Hover dropdown on Intake button
+    // 1-click Intake button
     assert.ok(
       repairsContent.includes('intake-main-btn') &&
-      repairsContent.includes('intake-dropdown-in-store') &&
-      repairsContent.includes('intake-dropdown-cod'),
-      'Repairs page must feature hover dropdown for intake with in_store and cod options'
+      repairsContent.includes("setInitialIntakeType('in_store')") &&
+      repairsContent.includes('setIntakeModalOpen(true)'),
+      'Repairs page must feature 1-click intake button that opens modal directly'
     );
 
     // Tab filters
