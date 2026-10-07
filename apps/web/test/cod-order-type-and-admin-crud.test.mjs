@@ -143,4 +143,49 @@ test('OpenSpec: COD Order Type, Simple Checkout, and Admin Full CRUD', async (t)
       'ConfirmDeleteOrderModal must enforce exact order code matching before deleting'
     );
   });
+
+  await t.test('6. Repairs Table: Quick Checkout Button & Paid Badge in row action cell', () => {
+    const repairsContent = fs.readFileSync(repairsPagePath, 'utf-8');
+
+    // Thao tác header column
+    assert.ok(
+      repairsContent.includes('>Thao tác</th>'),
+      'Repairs table header must have Thao tác column'
+    );
+
+    // Quick checkout button for incomplete orders
+    assert.ok(
+      repairsContent.includes('row-checkout-btn-'),
+      'Repairs table row must render quick checkout button with data-testid row-checkout-btn'
+    );
+    assert.ok(
+      repairsContent.includes('💳 Thanh toán'),
+      'Repairs table row must display 💳 Thanh toán button label'
+    );
+
+    // Paid badge for completed orders
+    assert.ok(
+      repairsContent.includes('row-paid-badge-'),
+      'Repairs table row must render paid badge with data-testid row-paid-badge'
+    );
+    assert.ok(
+      repairsContent.includes('✓ Đã thu'),
+      'Repairs table row must display ✓ Đã thu for completed orders'
+    );
+
+    // Event propagation & modal opening
+    assert.ok(
+      repairsContent.includes('e.stopPropagation()') &&
+      repairsContent.includes('setSelectedOrder(o)') &&
+      repairsContent.includes('setCheckoutModalOpen(true)'),
+      'Clicking row checkout button must stop propagation, select order, and open CheckoutHandoverModal directly'
+    );
+
+    // More action button preserved
+    assert.ok(
+      repairsContent.includes('row-action-btn-'),
+      'Repairs table row must preserve more action button with data-testid row-action-btn'
+    );
+  });
 });
+

@@ -634,7 +634,7 @@ export default function RepairsPage() {
           {isError ? (
             <ErrorFallback onRetry={() => refetch()} />
           ) : isLoading ? (
-            <TableSkeleton rows={6} cols={7} />
+            <TableSkeleton rows={6} cols={8} />
           ) : filteredOrders.length === 0 ? (
             <EmptyState
               title={`Không tìm thấy đơn sửa chữa nào tại ${
@@ -670,7 +670,7 @@ export default function RepairsPage() {
                     <th className="px-4">Chi phí</th>
                     <th className="px-4">Kỹ thuật viên</th>
                     <th className="px-4">Ngày nhận & Kho</th>
-                    <th className="px-4 text-right"></th>
+                    <th className="px-4 text-right">Thao tác</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-[#f1f3f2] text-sm text-[#3b4c44]">
@@ -741,11 +741,34 @@ export default function RepairsPage() {
                       </td>
                       <td className="px-4 text-right">
                         <div className="flex items-center justify-end gap-1.5">
+                          {normalizeStatusCode(o.status) !== 'completed' ? (
+                            <Button
+                              variant="primary"
+                              size="sm"
+                              data-testid={`row-checkout-btn-${o.id}`}
+                              className="bg-[#176b58] hover:bg-[#125848] text-white font-bold text-xs px-2.5 py-1 flex items-center gap-1 shadow-xs whitespace-nowrap cursor-pointer"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setSelectedOrder(o);
+                                setCheckoutModalOpen(true);
+                              }}
+                            >
+                              <span>💳 Thanh toán</span>
+                            </Button>
+                          ) : (
+                            <span
+                              data-testid={`row-paid-badge-${o.id}`}
+                              className="text-[11px] font-semibold text-[#667770] bg-[#edf2ef] px-2 py-0.5 rounded border border-[#d8e0dc] whitespace-nowrap"
+                            >
+                              ✓ Đã thu
+                            </span>
+                          )}
+
                           {normalizeStatusCode(o.status) === 'waiting_parts' && (
                             <Button
                               variant="outline"
                               size="sm"
-                              className="text-xs bg-[#eaf5ef] text-[#176b58] border-[#a9c9b9] hover:bg-[#d8ede1] font-bold"
+                              className="text-xs bg-[#eaf5ef] text-[#176b58] border-[#a9c9b9] hover:bg-[#d8ede1] font-bold whitespace-nowrap"
                               onClick={(e) => {
                                 e.stopPropagation();
                                 handleResumeOrder(o);
@@ -754,9 +777,11 @@ export default function RepairsPage() {
                               ▶ Đã có linh kiện
                             </Button>
                           )}
+
                           <Button
                             variant="ghost"
                             size="sm"
+                            data-testid={`row-action-btn-${o.id}`}
                             onClick={(e) => {
                               e.stopPropagation();
                               setSelectedOrder(o);
