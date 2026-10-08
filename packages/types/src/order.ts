@@ -1,5 +1,7 @@
 export type OrderStatusType = 'wait' | 'progress' | 'ready' | 'danger' | 'new' | 'gray';
 
+export type OrderDateFilter = 'today' | 'yesterday' | '7_days' | '30_days' | 'all';
+
 export type StandardOrderStatus =
   | 'Tiếp nhận mới'
   | 'Chờ kỹ thuật'

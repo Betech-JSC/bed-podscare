@@ -23,7 +23,7 @@ import { CheckoutHandoverModal } from '../components/CheckoutHandoverModal';
 import { AdminEditOrderModal } from '../components/AdminEditOrderModal';
 import { ConfirmDeleteOrderModal } from '../components/ConfirmDeleteOrderModal';
 import { usePodsCare } from '../providers';
-import type { RepairOrder, AdditionalServiceItem } from '@podscare/types';
+import type { RepairOrder, AdditionalServiceItem, OrderDateFilter } from '@podscare/types';
 import { repairService, serviceService } from '@podscare/api-client';
 import { useQuery } from '@tanstack/react-query';
 import {
@@ -39,6 +39,7 @@ export default function RepairsPage() {
   const { orders, updateOrder, branch, branchId, setBranch, branches, role, invalidateOrders } =
     usePodsCare();
 
+  const [dateFilter, setDateFilter] = useState<OrderDateFilter>('today');
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('');
   const [orderTypeFilter, setOrderTypeFilter] = useState<'all' | 'in_store' | 'cod'>('all');
@@ -77,16 +78,16 @@ export default function RepairsPage() {
     'Hoàn tất': 'completed',
   };
 
-  // Nạp đơn hàng trực tiếp qua API với bộ lọc chi nhánh, trạng thái và tìm kiếm
+  // Nạp đơn hàng trực tiếp qua API với bộ lọc chi nhánh, trạng thái, thời gian và tìm kiếm
   const {
     data: apiOrdersData,
     isLoading,
     isError,
     refetch,
   } = useQuery({
-    queryKey: ['repairs', branchId, statusFilter, search, orderTypeFilter],
+    queryKey: ['repairs', branchId, statusFilter, search, orderTypeFilter, dateFilter],
     queryFn: async () => {
-      const params: Record<string, any> = { per_page: 50 };
+      const params: Record<string, any> = { per_page: 50, date_filter: dateFilter };
       if (branchId && branchId !== 'all') {
         params.branch_id = branchId;
       }
@@ -583,6 +584,81 @@ export default function RepairsPage() {
                 {orderCounts.cod}
               </span>
             </button>
+          </div>
+
+          {/* Date Filter Pills (Shift Day & History Scope) */}
+          <div className="flex flex-wrap items-center justify-between gap-2 border-b border-[#e5ece8] pb-3 mb-4">
+            <div className="flex items-center gap-1.5 flex-wrap">
+              <span className="text-xs font-semibold text-[#667a70] mr-1 flex items-center gap-1">
+                <span>Ca làm việc:</span>
+              </span>
+              <button
+                type="button"
+                data-testid="date-filter-today"
+                onClick={() => setDateFilter('today')}
+                className={`px-3 py-1.5 rounded-[8px] text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
+                  dateFilter === 'today'
+                    ? 'bg-[#176b58] text-white shadow-xs'
+                    : 'bg-[#f4f7f5] text-[#556960] hover:bg-[#eaf0ec]'
+                }`}
+              >
+                <span>☀️ Hôm nay</span>
+              </button>
+              <button
+                type="button"
+                data-testid="date-filter-yesterday"
+                onClick={() => setDateFilter('yesterday')}
+                className={`px-3 py-1.5 rounded-[8px] text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
+                  dateFilter === 'yesterday'
+                    ? 'bg-[#176b58] text-white shadow-xs'
+                    : 'bg-[#f4f7f5] text-[#556960] hover:bg-[#eaf0ec]'
+                }`}
+              >
+                <span>Hôm qua</span>
+              </button>
+              <button
+                type="button"
+                data-testid="date-filter-7_days"
+                onClick={() => setDateFilter('7_days')}
+                className={`px-3 py-1.5 rounded-[8px] text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
+                  dateFilter === '7_days'
+                    ? 'bg-[#176b58] text-white shadow-xs'
+                    : 'bg-[#f4f7f5] text-[#556960] hover:bg-[#eaf0ec]'
+                }`}
+              >
+                <span>⏱️ 7 ngày qua</span>
+              </button>
+              <button
+                type="button"
+                data-testid="date-filter-30_days"
+                onClick={() => setDateFilter('30_days')}
+                className={`px-3 py-1.5 rounded-[8px] text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
+                  dateFilter === '30_days'
+                    ? 'bg-[#176b58] text-white shadow-xs'
+                    : 'bg-[#f4f7f5] text-[#556960] hover:bg-[#eaf0ec]'
+                }`}
+              >
+                <span>📅 30 ngày qua</span>
+              </button>
+              <button
+                type="button"
+                data-testid="date-filter-all"
+                onClick={() => setDateFilter('all')}
+                className={`px-3 py-1.5 rounded-[8px] text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
+                  dateFilter === 'all'
+                    ? 'bg-[#176b58] text-white shadow-xs'
+                    : 'bg-[#f4f7f5] text-[#556960] hover:bg-[#eaf0ec]'
+                }`}
+              >
+                <span>🗄️ Toàn bộ</span>
+              </button>
+            </div>
+            {dateFilter === 'today' && (
+              <span className="text-[11px] text-[#176b58] bg-[#eaf4ef] px-2.5 py-1 rounded-[6px] font-medium flex items-center gap-1">
+                <span className="w-1.5 h-1.5 rounded-full bg-[#176b58] animate-pulse" />
+                <span>Gom đơn hôm nay & các đơn dở dang từ ngày trước</span>
+              </span>
+            )}
           </div>
 
           <FilterBar

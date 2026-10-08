@@ -3,7 +3,7 @@
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { ToastProvider, ConfirmProvider, useToast } from '@podscare/ui';
-import type { UserRole, UserProfile, RepairOrder, DeviceProfile } from '@podscare/types';
+import type { UserRole, UserProfile, RepairOrder, DeviceProfile, OrderDateFilter } from '@podscare/types';
 import {
   repairService,
   branchService,
@@ -37,7 +37,7 @@ interface PodsCareContextType {
   orders: RepairOrder[];
   addOrder: (order: RepairOrder) => void;
   updateOrder: (order: RepairOrder) => void;
-  refreshOrders: (targetBranchId?: string | number) => Promise<void>;
+  refreshOrders: (targetBranchId?: string | number, dateFilter?: OrderDateFilter) => Promise<void>;
   invalidateOrders: () => Promise<void>;
   queryClient: QueryClient;
   deviceProfiles: DeviceProfile[];
@@ -72,6 +72,7 @@ export const invalidateOrdersQuery = async (client: QueryClient) => {
   await Promise.all([
     client.invalidateQueries({ queryKey: ['orders'] }),
     client.invalidateQueries({ queryKey: ['repairs'] }),
+    client.invalidateQueries({ queryKey: ['tech-orders'] }),
   ]);
 };
 
@@ -419,11 +420,11 @@ export const Providers: React.FC<{ children: React.ReactNode }> = ({ children })
     }
   }, [isAuthenticated, token, fetchBranches, fetchDeviceProfiles]);
 
-  const fetchOrders = useCallback(async (targetBranchId?: string | number) => {
+  const fetchOrders = useCallback(async (targetBranchId?: string | number, dateFilter: OrderDateFilter = 'today') => {
     if (!isAuthenticated || !token) return;
     try {
       const activeBranchId = targetBranchId !== undefined ? targetBranchId : branchId;
-      const params: Record<string, any> = { per_page: 50 };
+      const params: Record<string, any> = { per_page: 50, date_filter: dateFilter };
       if (activeBranchId && activeBranchId !== 'all') {
         params.branch_id = activeBranchId;
       }
@@ -549,11 +550,12 @@ export const Providers: React.FC<{ children: React.ReactNode }> = ({ children })
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ['orders'] }),
         queryClient.invalidateQueries({ queryKey: ['repairs'] }),
+        queryClient.invalidateQueries({ queryKey: ['tech-orders'] }),
       ]);
     } catch {
       // ignore
     }
-    await fetchOrders(branchId);
+    await fetchOrders(branchId, 'today');
   }, [queryClient, fetchOrders, branchId]);
 
   const setBranch = (newBranchName: string, newBranchId?: string | number) => {

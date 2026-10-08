@@ -83,6 +83,50 @@ class OrderController extends Controller
             });
         }
 
+        // Xử lý bộ lọc thời gian và phân quyền phạm vi lịch sử (Shift Scope & RBAC)
+        $tz = config('app.timezone', 'Asia/Ho_Chi_Minh');
+        $dateFilter = (string) $request->input('date_filter', 'today');
+        $isTechnician = $user && $user->role === 'technician';
+
+        if ($isTechnician) {
+            if (in_array($dateFilter, ['all', '30_days'], true) || ! in_array($dateFilter, ['today', 'yesterday', '7_days'], true)) {
+                $dateFilter = '7_days';
+            }
+        } else {
+            if (! in_array($dateFilter, ['today', 'yesterday', '7_days', '30_days', 'all'], true)) {
+                $dateFilter = 'today';
+            }
+        }
+
+        if ($dateFilter === 'today') {
+            $todayStart = Carbon::today($tz)->startOfDay();
+            $todayEnd = Carbon::today($tz)->endOfDay();
+            $terminalStatuses = ['completed', 'cancelled', 'rejected'];
+
+            $query->where(function ($sub) use ($todayStart, $todayEnd, $terminalStatuses, $isTechnician, $tz) {
+                $sub->whereBetween('created_at', [$todayStart, $todayEnd]);
+                if ($isTechnician) {
+                    $minAllowedDate = Carbon::now($tz)->subDays(7)->startOfDay();
+                    $sub->orWhere(function ($activeSub) use ($terminalStatuses, $minAllowedDate) {
+                        $activeSub->whereNotIn('status', $terminalStatuses)
+                                  ->where('created_at', '>=', $minAllowedDate);
+                    });
+                } else {
+                    $sub->orWhereNotIn('status', $terminalStatuses);
+                }
+            });
+        } elseif ($dateFilter === 'yesterday') {
+            $query->whereDate('created_at', Carbon::yesterday($tz));
+        } elseif ($dateFilter === '7_days') {
+            $query->where('created_at', '>=', Carbon::now($tz)->subDays(7)->startOfDay());
+        } elseif ($dateFilter === '30_days') {
+            $query->where('created_at', '>=', Carbon::now($tz)->subDays(30)->startOfDay());
+        } elseif ($dateFilter === 'all') {
+            if ($isTechnician) {
+                $query->where('created_at', '>=', Carbon::now($tz)->subDays(7)->startOfDay());
+            }
+        }
+
         $orders = $query->latest('id')->paginate($request->input('per_page', 15));
 
         return $this->success($orders, 'Lấy danh sách đơn sửa chữa thành công.');

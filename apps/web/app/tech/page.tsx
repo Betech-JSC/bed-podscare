@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useMemo } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import { repairService } from '@podscare/api-client';
 import {
   Button,
@@ -30,11 +31,28 @@ export default function TechnicianQueuePage() {
     updateOrder,
   } = usePodsCare();
 
+  const [dateFilter, setDateFilter] = useState<'today' | '7_days'>('today');
   const [activeTab, setActiveTab] = useState<'my_orders' | 'available' | 'completed'>('my_orders');
   const [selectedOrder, setSelectedOrder] = useState<RepairOrder | null>(null);
   const [detailModalOpen, setDetailModalOpen] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const { printReceipt, isPrinting: isSilentPrinting } = useSilentPrint();
+
+  // Nạp đơn hàng theo phạm vi thời gian (ca làm việc) của kỹ thuật viên
+  const {
+    data: apiOrdersData,
+    refetch,
+  } = useQuery({
+    queryKey: ['tech-orders', branchId, dateFilter],
+    queryFn: async () => {
+      const params: Record<string, any> = { per_page: 50, date_filter: dateFilter };
+      if (branchId && branchId !== 'all') {
+        params.branch_id = branchId;
+      }
+      const res = await repairService.getRepairs(params);
+      return res?.data || res;
+    },
+  });
 
   const handlePrintRoutingSlip = async (order: RepairOrder) => {
     toast(`Đang gửi lệnh in tem khay K80 cho đơn ${order.id}...`, 'info');
@@ -46,17 +64,93 @@ export default function TechnicianQueuePage() {
   const moneyFormatted = (n: number) =>
     n ? new Intl.NumberFormat('vi-VN').format(n) + ' ₫' : '—';
 
+  const mappedApiOrders: RepairOrder[] = useMemo(() => {
+    const raw = apiOrdersData?.data || apiOrdersData;
+    if (!Array.isArray(raw)) {
+      return orders || [];
+    }
+    const statusMap: Record<string, { label: string; type: any }> = {
+      inspecting: { label: 'Đang kiểm tra', type: 'progress' },
+      waiting_approval: { label: 'Chờ khách duyệt', type: 'wait' },
+      waiting_tech: { label: 'Chờ kỹ thuật', type: 'new' },
+      assigned: { label: 'Đã nhận đơn', type: 'wait' },
+      in_repair: { label: 'Đang sửa', type: 'progress' },
+      waiting_parts: { label: 'Chờ linh kiện', type: 'wait' },
+      rework_needed: { label: 'Cần sửa lại', type: 'danger' },
+      waiting_qc: { label: 'Chờ QC', type: 'ready' },
+      qc_pending: { label: 'Chờ QC', type: 'ready' },
+      ready_for_return: { label: 'Sẵn sàng trả', type: 'ready' },
+      waiting_pickup: { label: 'Chờ khách nhận', type: 'ready' },
+      completed: { label: 'Hoàn tất', type: 'gray' },
+      rejected: { label: 'Từ chối sửa', type: 'danger' },
+      cancelled: { label: 'Đã hủy', type: 'gray' },
+    };
+    return raw.map((o: any) => {
+      const rawStatus = o.status === 'qc_pending' ? 'waiting_qc' : o.status;
+      const mappedStatus = statusMap[rawStatus] || statusMap[o.status] || {
+        label: o.status || 'Tiếp nhận mới',
+        type: 'wait',
+      };
+      return {
+        id: o.order_code || String(o.id),
+        order_type: o.order_type || o.orderType || 'in_store',
+        orderType: o.order_type || o.orderType || 'in_store',
+        name: o.customer?.name || 'Khách lẻ',
+        phone: o.customer?.phone || '',
+        deviceCategory: o.device_model?.category || 'AirPods',
+        device: o.device_model?.name || 'AirPods',
+        serial: o.serial_number || 'Chưa cập nhật',
+        issue: o.issue_description || 'Kiểm tra',
+        status: mappedStatus.label,
+        statusType: mappedStatus.type,
+        price: Number(o.total_price) || Number(o.estimated_price) || 0,
+        total_price: Number(o.total_price) || Number(o.price) || 0,
+        initial_price: o.initial_price !== null && o.initial_price !== undefined ? Number(o.initial_price) : (Number(o.total_price) || Number(o.price) || 0),
+        initialPrice: o.initial_price !== null && o.initial_price !== undefined ? Number(o.initial_price) : (Number(o.total_price) || Number(o.price) || 0),
+        additional_services: Array.isArray(o.additional_services) ? o.additional_services : (Array.isArray(o.additionalServices) ? o.additionalServices : []),
+        additionalServices: Array.isArray(o.additional_services) ? o.additional_services : (Array.isArray(o.additionalServices) ? o.additionalServices : []),
+        device_model_id: o.device_model_id || o.device_model?.id || null,
+        tech: o.technician?.name || 'Chưa phân công',
+        technicianId: o.technician_id ?? o.technician?.id ?? null,
+        technician_id: o.technician_id ?? o.technician?.id ?? null,
+        date: o.created_at
+          ? new Intl.DateTimeFormat('vi-VN').format(new Date(o.created_at))
+          : 'Hôm nay',
+        branch: o.branch?.name || 'Chi nhánh FIXO',
+        branchId: o.branch_id || o.branch?.id || 1,
+        branchName: o.branch?.name || 'Chi nhánh FIXO',
+        accessories: o.accessories,
+        appearance: o.appearance_notes,
+        repairNote: o.repair_note,
+        partsUsed: o.parts_used_summary,
+        parts_needed: o.parts_needed,
+        partsNeeded: o.parts_needed,
+        paused_at: o.paused_at,
+        pausedAt: o.paused_at,
+        finalCheck: o.final_check_result,
+        qcIssue: o.qc_note,
+        acceptedAt: o.tech_accepted_at,
+        startedAt: o.repair_started_at,
+        completedAt: o.repair_completed_at,
+        customerApprovedAt: o.customer_approved_at,
+        createdAt: o.created_at,
+        intake_batch_code: o.intake_batch_code,
+        batchOrders: o.batch_orders || o.batchOrders,
+      };
+    });
+  }, [apiOrdersData, orders]);
+
   // Lọc danh sách đơn theo chi nhánh được phân công hoặc chi nhánh đang chọn
   const branchFilteredOrders = useMemo(() => {
     if (branchId === 'all' || branchId === undefined || branchId === null) {
-      return orders;
+      return mappedApiOrders;
     }
-    return orders.filter((o) => {
+    return mappedApiOrders.filter((o) => {
       const matchId = o.branchId !== undefined && String(o.branchId) === String(branchId);
       const matchName = o.branch ? o.branch.includes(branch) || branch.includes(o.branch) : false;
       return matchId || matchName;
     });
-  }, [orders, branch, branchId]);
+  }, [mappedApiOrders, branch, branchId]);
 
   // 1. Hàng đợi máy mới (Live Dispatch): Các đơn waiting_tech chưa có Kỹ Thuật nhận
   const availableOrders = useMemo(() => {
@@ -120,6 +214,7 @@ export default function TechnicianQueuePage() {
         technician_id: currentUser?.id,
       });
       await invalidateOrders();
+      refetch();
       toast(`⚡ Bạn đã nhận máy ${order.id} thành công! Đơn chuyển vào Đơn của tôi.`, 'success');
       setActiveTab('my_orders');
     } catch {
@@ -150,6 +245,7 @@ export default function TechnicianQueuePage() {
     try {
       await repairService.transition(order.id, { transition: 'in_repair', status: 'Đang sửa' });
       await invalidateOrders();
+      refetch();
       toast(`⚡ Đã bắt đầu sửa chữa đơn ${order.id}`, 'success');
     } catch {
       updateOrder({ ...order, status: 'Đang sửa', statusType: 'progress' });
@@ -162,6 +258,7 @@ export default function TechnicianQueuePage() {
     try {
       await repairService.transition(order.id, { transition: 'waiting_parts', status: 'Chờ linh kiện' });
       await invalidateOrders();
+      refetch();
       toast(`Đã tạm dừng đơn ${order.id} chờ linh kiện`, 'info');
     } catch {
       updateOrder({ ...order, status: 'Chờ linh kiện', statusType: 'wait' });
@@ -174,6 +271,7 @@ export default function TechnicianQueuePage() {
     try {
       await repairService.transition(order.id, { transition: 'in_repair', status: 'Đang sửa' });
       await invalidateOrders();
+      refetch();
       toast(`Đã tiếp tục sửa chữa đơn ${order.id}`, 'success');
     } catch {
       updateOrder({ ...order, status: 'Đang sửa', statusType: 'progress' });
@@ -286,6 +384,53 @@ export default function TechnicianQueuePage() {
                 : 'hover:border-[#b4d6c4]'
             }`}
           />
+        </div>
+
+        {/* Date Filter Pills (Technician Scope: Chỉ Hôm nay & 7 ngày qua) */}
+        <div className="flex flex-wrap items-center justify-between gap-3 bg-white border border-[#e5ece8] rounded-[10px] p-2.5 px-3.5 shadow-2xs">
+          <div className="flex items-center gap-2">
+            <span className="text-xs font-bold text-[#5c6e64] uppercase tracking-wider flex items-center gap-1.5">
+              <span>Phạm vi ca:</span>
+            </span>
+            <div className="flex items-center gap-1.5">
+              <button
+                type="button"
+                data-testid="tech-date-filter-today"
+                onClick={() => setDateFilter('today')}
+                className={`px-3 py-1.5 rounded-[8px] text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
+                  dateFilter === 'today'
+                    ? 'bg-[#176b58] text-white shadow-xs'
+                    : 'bg-[#f4f7f5] text-[#556960] hover:bg-[#eaf0ec]'
+                }`}
+              >
+                <span>☀️ Hôm nay</span>
+              </button>
+              <button
+                type="button"
+                data-testid="tech-date-filter-7_days"
+                onClick={() => setDateFilter('7_days')}
+                className={`px-3 py-1.5 rounded-[8px] text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
+                  dateFilter === '7_days'
+                    ? 'bg-[#176b58] text-white shadow-xs'
+                    : 'bg-[#f4f7f5] text-[#556960] hover:bg-[#eaf0ec]'
+                }`}
+              >
+                <span>⏱️ 7 ngày qua (Tối đa 1 tuần)</span>
+              </button>
+            </div>
+          </div>
+          <div className="text-[11px] text-[#6b7d74] flex items-center gap-1.5">
+            {dateFilter === 'today' ? (
+              <span className="text-[#176b58] bg-[#eaf4ef] px-2 py-0.5 rounded font-medium flex items-center gap-1">
+                <span className="w-1.5 h-1.5 rounded-full bg-[#176b58] animate-pulse" />
+                Đơn ca hôm nay & các đơn dở dang tồn lại
+              </span>
+            ) : (
+              <span className="text-[#4b6357] bg-[#f0f4f2] px-2 py-0.5 rounded font-medium">
+                Giới hạn an toàn lịch sử: Tối đa 7 ngày gần nhất
+              </span>
+            )}
+          </div>
         </div>
 
         {/* 3 Tab Navigation Bar */}

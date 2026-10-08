@@ -5,6 +5,7 @@ import type {
   CompleteTechOrderDTO,
   AddAdditionalServiceDTO,
   SimpleCheckoutPayload,
+  OrderDateFilter,
 } from '@podscare/types';
 
 export class RepairService {
@@ -16,6 +17,7 @@ export class RepairService {
     role?: string;
     branch_id?: string | number;
     order_type?: 'in_store' | 'cod' | 'all' | string;
+    date_filter?: OrderDateFilter;
     q?: string;
     page?: number;
     per_page?: number;
