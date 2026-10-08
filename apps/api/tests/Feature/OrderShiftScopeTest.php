@@ -117,18 +117,23 @@ class OrderShiftScopeTest extends TestCase
     }
 
     /**
-     * Test 1: date_filter = 'today' trả về đơn tạo hôm nay và đơn cũ chưa hoàn thành.
+     * Test 1: date_filter = 'today' CHỈ trả về đơn tạo hôm nay, ẩn toàn bộ đơn cũ (kể cả đơn dở dang từ hôm trước).
      */
-    public function test_today_filter_returns_today_orders_and_unfinished_past_orders(): void
+    public function test_today_filter_returns_only_today_orders_and_hides_all_past_orders(): void
     {
         $now = Carbon::now($this->tz);
 
-        // 1. Đơn tạo hôm nay (bất kể trạng thái, kể cả completed)
+        // 1. Đơn tạo hôm nay (bất kể trạng thái: completed hay in_repair)
         $todayCompleted = $this->createOrder('completed', $now->copy()->subHours(2));
         $todayInRepair = $this->createOrder('in_repair', $now->copy()->subMinutes(30));
 
-        // 2. Đơn tạo 3 ngày trước nhưng chưa xong (in_repair)
+        // 2. Đơn tạo hôm qua và các ngày trước nhưng chưa xong (in_repair)
+        $yesterdayUnfinished = $this->createOrder('in_repair', Carbon::yesterday($this->tz)->hour(14));
         $pastUnfinished = $this->createOrder('in_repair', $now->copy()->subDays(3));
+
+        // 3. Đơn cũ đã hoàn thành / hủy
+        $yesterdayCompleted = $this->createOrder('completed', Carbon::yesterday($this->tz)->hour(10));
+        $pastCancelled = $this->createOrder('cancelled', $now->copy()->subDays(2));
 
         $res = $this->actingAs($this->adminUser)
             ->getJson("/api/v1/orders?date_filter=today&branch_id={$this->branch->id}");
@@ -136,34 +141,39 @@ class OrderShiftScopeTest extends TestCase
         $res->assertOk();
         $orderCodes = collect($res->json('data.data'))->pluck('order_code')->all();
 
+        // Chỉ chứa đơn hôm nay
         $this->assertContains($todayCompleted->order_code, $orderCodes);
         $this->assertContains($todayInRepair->order_code, $orderCodes);
-        $this->assertContains($pastUnfinished->order_code, $orderCodes);
+
+        // Tuyệt đối không chứa bất kỳ đơn nào từ quá khứ, dù dở dang hay đã xong
+        $this->assertNotContains($yesterdayUnfinished->order_code, $orderCodes, 'Strict Today must hide yesterday unfinished orders');
+        $this->assertNotContains($pastUnfinished->order_code, $orderCodes, 'Strict Today must hide past unfinished orders');
+        $this->assertNotContains($yesterdayCompleted->order_code, $orderCodes);
+        $this->assertNotContains($pastCancelled->order_code, $orderCodes);
     }
 
     /**
-     * Test 2: date_filter = 'today' ẩn đơn đã hoàn tất (completed) hoặc hủy (cancelled) từ hôm qua / ngày cũ.
+     * Test 2: Đơn cũ dở dang có thể truy xuất qua bộ lọc 7_days hoặc all.
      */
-    public function test_today_filter_hides_completed_and_cancelled_orders_from_yesterday(): void
+    public function test_past_unfinished_orders_are_viewable_via_7_days_or_all_filters(): void
     {
         $now = Carbon::now($this->tz);
 
-        // Đơn hôm qua đã hoàn thành
-        $yesterdayCompleted = $this->createOrder('completed', $now->copy()->subDays(1)->startOfDay()->addHours(10));
-        // Đơn 2 ngày trước đã hủy
-        $pastCancelled = $this->createOrder('cancelled', $now->copy()->subDays(2));
-        // Đơn 2 ngày trước bị từ chối
-        $pastRejected = $this->createOrder('rejected', $now->copy()->subDays(2));
+        $pastUnfinished = $this->createOrder('in_repair', $now->copy()->subDays(3));
 
-        $res = $this->actingAs($this->adminUser)
-            ->getJson("/api/v1/orders?date_filter=today&branch_id={$this->branch->id}");
+        // 1. Truy vấn 7_days => Chứa đơn 3 ngày trước
+        $res7Days = $this->actingAs($this->adminUser)
+            ->getJson("/api/v1/orders?date_filter=7_days&branch_id={$this->branch->id}");
+        $res7Days->assertOk();
+        $codes7Days = collect($res7Days->json('data.data'))->pluck('order_code')->all();
+        $this->assertContains($pastUnfinished->order_code, $codes7Days);
 
-        $res->assertOk();
-        $orderCodes = collect($res->json('data.data'))->pluck('order_code')->all();
-
-        $this->assertNotContains($yesterdayCompleted->order_code, $orderCodes);
-        $this->assertNotContains($pastCancelled->order_code, $orderCodes);
-        $this->assertNotContains($pastRejected->order_code, $orderCodes);
+        // 2. Truy vấn all => Chứa đơn 3 ngày trước
+        $resAll = $this->actingAs($this->adminUser)
+            ->getJson("/api/v1/orders?date_filter=all&branch_id={$this->branch->id}");
+        $resAll->assertOk();
+        $codesAll = collect($resAll->json('data.data'))->pluck('order_code')->all();
+        $this->assertContains($pastUnfinished->order_code, $codesAll);
     }
 
     /**

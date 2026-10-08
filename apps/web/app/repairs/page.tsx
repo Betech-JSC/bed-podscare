@@ -654,9 +654,8 @@ export default function RepairsPage() {
               </button>
             </div>
             {dateFilter === 'today' && (
-              <span className="text-[11px] text-[#176b58] bg-[#eaf4ef] px-2.5 py-1 rounded-[6px] font-medium flex items-center gap-1">
-                <span className="w-1.5 h-1.5 rounded-full bg-[#176b58] animate-pulse" />
-                <span>Gom đơn hôm nay & các đơn dở dang từ ngày trước</span>
+              <span className="text-[11px] text-[#556960] bg-[#eaf4ef] px-2 py-0.5 rounded-full font-medium">
+                ☀️ Chỉ hiển thị đơn tiếp nhận trong ngày hôm nay
               </span>
             )}
           </div>

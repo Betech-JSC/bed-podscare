@@ -101,20 +101,7 @@ class OrderController extends Controller
         if ($dateFilter === 'today') {
             $todayStart = Carbon::today($tz)->startOfDay();
             $todayEnd = Carbon::today($tz)->endOfDay();
-            $terminalStatuses = ['completed', 'cancelled', 'rejected'];
-
-            $query->where(function ($sub) use ($todayStart, $todayEnd, $terminalStatuses, $isTechnician, $tz) {
-                $sub->whereBetween('created_at', [$todayStart, $todayEnd]);
-                if ($isTechnician) {
-                    $minAllowedDate = Carbon::now($tz)->subDays(7)->startOfDay();
-                    $sub->orWhere(function ($activeSub) use ($terminalStatuses, $minAllowedDate) {
-                        $activeSub->whereNotIn('status', $terminalStatuses)
-                                  ->where('created_at', '>=', $minAllowedDate);
-                    });
-                } else {
-                    $sub->orWhereNotIn('status', $terminalStatuses);
-                }
-            });
+            $query->whereBetween('created_at', [$todayStart, $todayEnd]);
         } elseif ($dateFilter === 'yesterday') {
             $query->whereDate('created_at', Carbon::yesterday($tz));
         } elseif ($dateFilter === '7_days') {

@@ -51,14 +51,14 @@ test('OpenSpec: Shift-Day View & Role History Scope', async (t) => {
       'OrderController must clamp date boundary using subDays(7)->startOfDay()'
     );
 
-    // Smart shift scope: today includes today orders + unfinished past orders
+    // Strict shift scope: today strictly includes only orders between todayStart and todayEnd
     assert.ok(
       backendContent.includes("whereBetween('created_at', [$todayStart, $todayEnd])"),
       'OrderController must query orders between todayStart and todayEnd'
     );
     assert.ok(
-      backendContent.includes("whereNotIn('status', $terminalStatuses)"),
-      'OrderController must include unfinished past orders'
+      !backendContent.includes("orWhereNotIn('status'"),
+      'OrderController must strictly exclude past unfinished orders from today filter'
     );
   });
 
@@ -88,6 +88,10 @@ test('OpenSpec: Shift-Day View & Role History Scope', async (t) => {
     assert.ok(repairsContent.includes('data-testid="date-filter-7_days"'), 'Must have 7_days pill');
     assert.ok(repairsContent.includes('data-testid="date-filter-30_days"'), 'Must have 30_days pill');
     assert.ok(repairsContent.includes('data-testid="date-filter-all"'), 'Must have all pill');
+    assert.ok(
+      repairsContent.includes('☀️ Chỉ hiển thị đơn tiếp nhận trong ngày hôm nay'),
+      'RepairsPage must display strict today badge'
+    );
   });
 
   await t.test('4. TechPage (/tech): 2 Date Filter Pills & strictly no 30_days/all for Technicians', () => {
