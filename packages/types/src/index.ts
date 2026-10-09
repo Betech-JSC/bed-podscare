@@ -7,4 +7,6 @@ export * from './inventory';
 export * from './role';
 export * from './branch';
 export * from './api';
+export * from './kpi';
+export * from './warranty';
 

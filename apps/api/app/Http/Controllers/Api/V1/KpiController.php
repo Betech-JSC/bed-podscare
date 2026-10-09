@@ -288,7 +288,29 @@ class KpiController extends Controller
             ->whereDate('created_at', $today)
             ->count();
 
-        // 3. Doanh thu tháng này từ các đơn hoàn tất
+        // 3. Doanh thu hôm nay (cho tất cả các đơn completed: tại quầy và COD)
+        $tz = config('app.timezone', 'Asia/Ho_Chi_Minh');
+        $todayStart = Carbon::today($tz)->startOfDay();
+        $todayEnd = Carbon::today($tz)->endOfDay();
+        $dailyRevenue = (float) (clone $baseQuery)
+            ->where('status', 'completed')
+            ->where(function ($q) use ($todayStart, $todayEnd) {
+                $q->whereBetween('handed_over_at', [$todayStart, $todayEnd])
+                  ->orWhere(function ($sq) use ($todayStart, $todayEnd) {
+                      $sq->whereNull('handed_over_at')
+                         ->whereBetween('updated_at', [$todayStart, $todayEnd]);
+                  });
+            })
+            ->sum('total_price');
+
+        if ($dailyRevenue >= 1000000) {
+            $dailyRevenueInMillions = round($dailyRevenue / 1000000, 1);
+            $dailyRevenueFormatted = str_replace('.', ',', (string) $dailyRevenueInMillions) . 'tr ₫';
+        } else {
+            $dailyRevenueFormatted = number_format($dailyRevenue, 0, ',', '.') . ' ₫';
+        }
+
+        // 4. Doanh thu tháng này từ các đơn hoàn tất
         $startOfMonth = Carbon::now()->startOfMonth();
         $monthlyRevenue = (float) (clone $baseQuery)
             ->where('status', 'completed')
@@ -307,7 +329,60 @@ class KpiController extends Controller
             $monthlyRevenueFormatted = number_format($monthlyRevenue, 0, ',', '.') . ' ₫';
         }
 
-        // 4. Tỷ lệ hoàn tất đơn hàng
+        // 5. Khối đối chiếu máy đã lấy vs máy chưa lấy (Reconciliation)
+        $handedOverCount = (int) (clone $baseQuery)
+            ->where('status', 'completed')
+            ->count();
+
+        $handedOverRevenue = (float) (clone $baseQuery)
+            ->where('status', 'completed')
+            ->sum('total_price');
+
+        $readyForPickupCount = (int) (clone $baseQuery)
+            ->whereIn('status', ['ready_for_return', 'waiting_pickup'])
+            ->count();
+
+        $readyForPickupAmount = (float) (clone $baseQuery)
+            ->whereIn('status', ['ready_for_return', 'waiting_pickup'])
+            ->sum('total_price');
+
+        $inWorkshopStatuses = [
+            'inspecting',
+            'waiting_approval',
+            'waiting_tech',
+            'assigned',
+            'in_repair',
+            'waiting_parts',
+            'rework_needed',
+            'waiting_qc',
+            'qc_pending',
+        ];
+
+        $inWorkshopCount = (int) (clone $baseQuery)
+            ->whereIn('status', $inWorkshopStatuses)
+            ->count();
+
+        $inWorkshopAmount = (float) (clone $baseQuery)
+            ->whereIn('status', $inWorkshopStatuses)
+            ->sum(DB::raw('COALESCE(NULLIF(total_price, 0), initial_price, 0)'));
+
+        $formatCurrency = function (float $amount): string {
+            return number_format($amount, 0, ',', '.') . ' ₫';
+        };
+
+        $reconciliation = [
+            'handed_over_count'                 => $handedOverCount,
+            'handed_over_revenue'               => $handedOverRevenue,
+            'handed_over_revenue_formatted'     => $formatCurrency($handedOverRevenue),
+            'ready_for_pickup_count'            => $readyForPickupCount,
+            'ready_for_pickup_amount'           => $readyForPickupAmount,
+            'ready_for_pickup_amount_formatted' => $formatCurrency($readyForPickupAmount),
+            'in_workshop_count'                 => $inWorkshopCount,
+            'in_workshop_amount'                => $inWorkshopAmount,
+            'in_workshop_amount_formatted'      => $formatCurrency($inWorkshopAmount),
+        ];
+
+        // 6. Tỷ lệ hoàn tất đơn hàng
         $totalOrders = (clone $baseQuery)->count();
         $completedOrders = (clone $baseQuery)->where('status', 'completed')->count();
         $completionRate = $totalOrders > 0
@@ -404,11 +479,14 @@ class KpiController extends Controller
             'active_orders'             => $activeOrders,
             'intake_today'              => $intakeToday,
             'today_orders'              => $intakeToday,
+            'daily_revenue'             => $dailyRevenue,
+            'daily_revenue_formatted'   => $dailyRevenueFormatted,
             'monthly_revenue'           => $monthlyRevenue,
             'monthly_revenue_formatted' => $monthlyRevenueFormatted,
             'completion_rate'           => $completionRate,
             'total_orders'              => $totalOrders,
             'completed_orders'          => $completedOrders,
+            'reconciliation'            => $reconciliation,
         ];
 
         return $this->success([
@@ -416,8 +494,11 @@ class KpiController extends Controller
             'active_orders'             => $activeOrders,
             'intake_today'              => $intakeToday,
             'today_orders'              => $intakeToday,
+            'daily_revenue'             => $dailyRevenue,
+            'daily_revenue_formatted'   => $dailyRevenueFormatted,
             'monthly_revenue'           => $monthlyRevenue,
             'monthly_revenue_formatted' => $monthlyRevenueFormatted,
+            'reconciliation'            => $reconciliation,
             'completion_rate'           => $completionRate,
             'status_distribution'      => $statusDistribution,
             'workload_by_status'        => $workloadByStatus,

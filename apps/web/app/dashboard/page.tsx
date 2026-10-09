@@ -215,8 +215,15 @@ export default function DashboardPage() {
   const branchRevenueDisplay =
     kpiData?.monthly_revenue_formatted ??
     (branchRevenue >= 1000000
-      ? (branchRevenue / 1000000).toFixed(1).replace('.', ',') + 'tr'
+      ? (branchRevenue / 1000000).toFixed(1).replace('.', ',') + 'tr ₫'
       : new Intl.NumberFormat('vi-VN').format(branchRevenue) + ' ₫');
+
+  const dailyRevenue = kpiData?.daily_revenue ?? 0;
+  const dailyRevenueDisplay =
+    kpiData?.daily_revenue_formatted ??
+    (dailyRevenue >= 1000000
+      ? (dailyRevenue / 1000000).toFixed(1).replace('.', ',') + 'tr ₫'
+      : new Intl.NumberFormat('vi-VN').format(dailyRevenue) + ' ₫');
 
   const completedCount =
     kpiData?.completed_orders ?? branchOrders.filter((o) => o.status === 'Hoàn tất').length;
@@ -245,6 +252,18 @@ export default function DashboardPage() {
     branchOrders.filter((o) =>
       ['Chờ QC', 'Sẵn sàng trả', 'Chờ khách nhận'].includes(o.status)
     ).length;
+
+  const reconciliation = kpiData?.reconciliation ?? {
+    handed_over_count: completedCount,
+    handed_over_revenue: branchRevenue,
+    handed_over_revenue_formatted: branchRevenueDisplay,
+    ready_for_pickup_count: readyCount,
+    ready_for_pickup_amount: 0,
+    ready_for_pickup_amount_formatted: '0 ₫',
+    in_workshop_count: inspectingCount + waitingApprovalCount + repairingCount,
+    in_workshop_amount: 0,
+    in_workshop_amount_formatted: '0 ₫',
+  };
 
   // Thuật toán sinh đồ thị doanh thu SVG động (Dynamic SVG Path Generator)
   const renderRevenueChart = () => {
@@ -393,7 +412,7 @@ export default function DashboardPage() {
       </div>
 
       {/* Stats Cards */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-3.5">
+      <div className="grid grid-cols-2 lg:grid-cols-5 gap-3.5">
         <StatCard
           label="Đơn đang xử lý"
           value={activeOrdersCount}
@@ -405,6 +424,13 @@ export default function DashboardPage() {
           value={String(todayOrdersCount).padStart(2, '0')}
           icon="plus"
           foot="Cập nhật theo ngày thực tế"
+        />
+        <StatCard
+          label="Doanh thu hôm nay"
+          value={dailyRevenueDisplay}
+          icon="payments"
+          foot="Đã thu trong ca hôm nay"
+          trend="up"
         />
         <StatCard
           label="Doanh thu tháng"
@@ -548,6 +574,136 @@ export default function DashboardPage() {
                 </div>
               </div>
               <b className="text-xs text-right text-[#1c302b]">{readyCount}</b>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Khối đối chiếu vận hành & dòng tiền (Máy khách đã lấy vs Máy khách chưa lấy) */}
+      <div className="bg-white rounded-[14px] border border-[#e5ece8] p-5 sm:p-6 shadow-xs">
+        <div className="flex flex-wrap items-center justify-between gap-3 mb-5">
+          <div>
+            <div className="text-xs font-bold text-[#819089] uppercase tracking-[1px] mb-1">
+              ĐỐI SOÁT VẬN HÀNH & DÒNG TIỀN
+            </div>
+            <h3 className="font-heading font-bold text-lg text-[#1c302b] m-0">
+              Đối chiếu máy khách đã lấy vs chưa lấy
+            </h3>
+            <p className="text-xs text-[#7e8d85] mt-0.5 mb-0">
+              Cán cân doanh thu thực thu so với dòng tiền chờ thu tại quầy và thiết bị đang xử lý trong xưởng.
+            </p>
+          </div>
+          <div className="flex items-center gap-2">
+            <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-[#eaf4ef] text-[#176b58]">
+              <span className="w-2 h-2 rounded-full bg-[#176b58]" />
+              Tổng quan toàn quầy
+            </span>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+          {/* CỘT 1: Calm Jade - Máy khách đã lấy (Đã bàn giao) */}
+          <div className="bg-[#f2f8f5] border border-[#c5e1d4] rounded-[12px] p-5 flex flex-col justify-between relative overflow-hidden">
+            <div className="absolute top-0 right-0 w-28 h-28 bg-[#176b58]/5 rounded-bl-full pointer-events-none" />
+            <div>
+              <div className="flex items-center justify-between mb-3">
+                <span className="inline-flex items-center gap-1.5 text-xs font-bold uppercase tracking-wider text-[#176b58] bg-white px-2.5 py-1 rounded-full border border-[#c5e1d4]">
+                  🟢 Máy khách đã lấy (Đã bàn giao)
+                </span>
+                <span className="text-xs text-[#627a6f] font-medium">Hoàn tất quy trình</span>
+              </div>
+
+              <div className="mt-2 mb-4">
+                <div className="flex items-baseline gap-2">
+                  <span className="text-3xl md:text-4xl font-heading font-extrabold text-[#176b58]">
+                    {reconciliation.handed_over_count}
+                  </span>
+                  <span className="text-sm font-semibold text-[#406856]">máy đã giao khách</span>
+                </div>
+                <div className="mt-3 p-3 bg-white/80 rounded-[9px] border border-[#d2e8dd]">
+                  <div className="text-xs text-[#657d72] mb-0.5 font-medium">Doanh thu thực thu:</div>
+                  <div className="text-xl md:text-2xl font-heading font-bold text-[#145747]">
+                    {reconciliation.handed_over_revenue_formatted}
+                  </div>
+                  <div className="text-[11px] text-[#718b7f] mt-1">
+                    Đã thanh toán đủ (tại quầy VietQR/tiền mặt & COD giao thành công)
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div className="pt-3 border-t border-[#d5eadf]">
+              <button
+                type="button"
+                onClick={() => router.push('/repairs?status=completed')}
+                className="w-full py-2.5 px-3 bg-[#176b58] hover:bg-[#135a4a] text-white text-xs font-bold rounded-[8px] transition-all flex items-center justify-center gap-1.5 cursor-pointer shadow-xs"
+              >
+                <span>Xem danh sách máy đã bàn giao</span>
+                <Icon name="arrow" size={14} />
+              </button>
+            </div>
+          </div>
+
+          {/* CỘT 2: Warm Ivory / Amber - Máy khách chưa lấy (Tại cửa hàng) */}
+          <div className="bg-[#fcfaf5] border border-[#ebd9bd] rounded-[12px] p-5 flex flex-col justify-between relative overflow-hidden">
+            <div className="absolute top-0 right-0 w-28 h-28 bg-[#d2a25d]/5 rounded-bl-full pointer-events-none" />
+            <div>
+              <div className="flex items-center justify-between mb-3">
+                <span className="inline-flex items-center gap-1.5 text-xs font-bold uppercase tracking-wider text-[#915e1b] bg-white px-2.5 py-1 rounded-full border border-[#ebd9bd]">
+                  🟡 Máy khách chưa lấy (Tại cửa hàng)
+                </span>
+                <span className="text-xs text-[#8c7456] font-medium">
+                  {reconciliation.ready_for_pickup_count + reconciliation.in_workshop_count} máy tồn tại shop
+                </span>
+              </div>
+
+              {/* 2 Mục phân rã */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-2 mb-4">
+                {/* Mục 1: Đã sửa xong chờ lấy */}
+                <div className="p-3.5 bg-white rounded-[9px] border border-[#eddcc4] shadow-2xs">
+                  <div className="flex items-center justify-between mb-1.5">
+                    <span className="text-xs font-bold text-[#915e1b]">Đã sửa xong chờ lấy</span>
+                    <span className="px-2 py-0.5 rounded-full text-[11px] font-bold bg-[#fbf3e5] text-[#915e1b]">
+                      {reconciliation.ready_for_pickup_count} máy
+                    </span>
+                  </div>
+                  <div className="text-xs text-[#7e8e86] mb-0.5">Tiền chờ thu tại quầy:</div>
+                  <div className="text-lg font-heading font-bold text-[#915e1b]">
+                    {reconciliation.ready_for_pickup_amount_formatted}
+                  </div>
+                  <div className="text-[11px] text-[#a48a6e] mt-1">
+                    Trạng thái: Sẵn sàng trả / Chờ nhận
+                  </div>
+                </div>
+
+                {/* Mục 2: Đang sửa trong xưởng */}
+                <div className="p-3.5 bg-white rounded-[9px] border border-[#e5ece8] shadow-2xs">
+                  <div className="flex items-center justify-between mb-1.5">
+                    <span className="text-xs font-bold text-[#2d3d35]">Đang sửa trong xưởng</span>
+                    <span className="px-2 py-0.5 rounded-full text-[11px] font-bold bg-[#edf5f0] text-[#176b58]">
+                      {reconciliation.in_workshop_count} máy
+                    </span>
+                  </div>
+                  <div className="text-xs text-[#7e8e86] mb-0.5">Giá trị tạm tính:</div>
+                  <div className="text-lg font-heading font-bold text-[#2d3d35]">
+                    {reconciliation.in_workshop_amount_formatted}
+                  </div>
+                  <div className="text-[11px] text-[#7e8e86] mt-1">
+                    Đang khám / chờ linh kiện / sửa / QC
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div className="pt-3 border-t border-[#ede2ce]">
+              <button
+                type="button"
+                onClick={() => router.push('/repairs')}
+                className="w-full py-2.5 px-3 bg-[#f5ede0] hover:bg-[#ece2d1] text-[#7a4e16] text-xs font-bold rounded-[8px] transition-all flex items-center justify-center gap-1.5 cursor-pointer border border-[#ebd9bd]"
+              >
+                <span>Xem danh sách đơn chưa giao tại shop</span>
+                <Icon name="arrow" size={14} />
+              </button>
             </div>
           </div>
         </div>

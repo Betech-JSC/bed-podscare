@@ -69,6 +69,8 @@ export class WarrantyService {
     status?: string;
     q?: string;
     search?: string;
+    phone?: string;
+    serial_number?: string;
     per_page?: number;
     page?: number;
   }): Promise<any> {
@@ -78,6 +80,16 @@ export class WarrantyService {
         q: params?.q || params?.search,
       },
     });
+  }
+
+  async getDeviceHistory(params: {
+    phone?: string;
+    customer_phone?: string;
+    serial_number?: string;
+    customer_id?: string | number;
+    order_code?: string;
+  }): Promise<any> {
+    return this.http.get('/api/v1/warranties/history', { params });
   }
 
   async lookup(params: WarrantyLookupParams): Promise<any> {

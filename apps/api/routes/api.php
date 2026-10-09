@@ -165,6 +165,7 @@ Route::prefix('v1')->group(function () {
 
         // Warranties
         Route::get('/warranties', [WarrantyController::class, 'index'])->name('api.v1.warranties.index');
+        Route::get('/warranties/history', [WarrantyController::class, 'history'])->name('api.v1.warranties.history');
         Route::get('/warranties/claims', [WarrantyController::class, 'claims'])->name('api.v1.warranties.claims.index');
         Route::post('/warranties/claims', [WarrantyController::class, 'createClaim'])->name('api.v1.warranties.claims.store');
 

@@ -49,10 +49,25 @@ export interface KpiData {
 export interface DashboardStats {
   active_orders?: number;
   today_orders?: number;
+  daily_revenue?: number;
+  daily_revenue_formatted?: string;
+  monthly_revenue?: number;
+  monthly_revenue_formatted?: string;
   total_revenue?: number;
   revenue_display?: string;
   qc_pass_rate?: number;
   completed_orders?: number;
+  reconciliation?: {
+    handed_over_count: number;
+    handed_over_revenue: number;
+    handed_over_revenue_formatted: string;
+    ready_for_pickup_count: number;
+    ready_for_pickup_amount: number;
+    ready_for_pickup_amount_formatted: string;
+    in_workshop_count: number;
+    in_workshop_amount: number;
+    in_workshop_amount_formatted: string;
+  };
   [key: string]: any;
 }
 
