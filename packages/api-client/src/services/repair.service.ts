@@ -67,6 +67,7 @@ export class RepairService {
     payload: SimpleCheckoutPayload | {
       payment_method: 'cash' | 'bank_transfer' | string;
       amount?: number;
+      service_price?: number;
       notes?: string;
       transaction_ref?: string;
       auto_confirm?: boolean;

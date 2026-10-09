@@ -1,10 +1,11 @@
 'use client';
 
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import {
   Modal,
   Button,
   Input,
+  CurrencyInput,
   Textarea,
   useToast,
 } from '@podscare/ui';
@@ -48,15 +49,22 @@ export const CheckoutHandoverModal: React.FC<CheckoutHandoverModalProps> = ({
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
 
-  // 1. Warranty State (Mặc định: 3 tháng)
+  // 1. Service Price State (Nếu đơn chưa báo giá hoặc <= 1đ thì mặc định 0đ)
+  const initialRawPrice = Number(order.total_price !== undefined ? order.total_price : order.price) || 0;
+  const [servicePrice, setServicePrice] = useState<number>(initialRawPrice <= 1 ? 0 : initialRawPrice);
+
+  useEffect(() => {
+    const raw = Number(order.total_price !== undefined ? order.total_price : order.price) || 0;
+    setServicePrice(raw <= 1 ? 0 : raw);
+  }, [order]);
+
+  // 2. Warranty State (Mặc định: 3 tháng)
   const [warrantyMonths, setWarrantyMonths] = useState<3 | 6 | 9 | 12>(3);
 
-  // 2. Discount State
+  // 3. Discount State
   const [discountType, setDiscountType] = useState<'none' | 'percent' | 'fixed'>('none');
   const [discountPercent, setDiscountPercent] = useState<number | ''>('');
   const [discountFixed, setDiscountFixed] = useState<number | ''>('');
-
-  const rawTotal = Number(order.total_price !== undefined ? order.total_price : order.price) || 0;
 
   const moneyFormatted = (n: number) =>
     n ? new Intl.NumberFormat('vi-VN').format(n) + ' ₫' : '0 ₫';
@@ -76,15 +84,16 @@ export const CheckoutHandoverModal: React.FC<CheckoutHandoverModalProps> = ({
   const calculatedDiscountAmount = useMemo(() => {
     if (discountType === 'percent') {
       const pct = typeof discountPercent === 'number' ? discountPercent : 0;
-      return Math.min(rawTotal, Math.round((rawTotal * pct) / 100));
+      return Math.min(servicePrice, Math.round((servicePrice * pct) / 100));
     }
     if (discountType === 'fixed') {
       const amt = typeof discountFixed === 'number' ? discountFixed : 0;
-      return Math.min(rawTotal, Math.max(0, amt));
+      return Math.min(servicePrice, Math.max(0, amt));
     }
     return 0;
-  }, [discountType, discountPercent, discountFixed, rawTotal]);
+  }, [discountType, discountPercent, discountFixed, servicePrice]);
 
+  const rawTotal = servicePrice;
   const finalAmount = Math.max(0, rawTotal - calculatedDiscountAmount);
 
   // Reset giảm giá
@@ -112,7 +121,7 @@ export const CheckoutHandoverModal: React.FC<CheckoutHandoverModalProps> = ({
     }
     const num = parseFloat(val.replace(/[^\d]/g, ''));
     if (!isNaN(num)) {
-      setDiscountFixed(Math.min(rawTotal, Math.max(0, num)));
+      setDiscountFixed(Math.min(servicePrice, Math.max(0, num)));
     }
   };
 
@@ -124,6 +133,7 @@ export const CheckoutHandoverModal: React.FC<CheckoutHandoverModalProps> = ({
       await repairService.simpleCheckout(order.id, {
         payment_method: paymentMethod,
         amount: finalAmount,
+        service_price: servicePrice,
         transaction_ref: transactionRef.trim() || undefined,
         notes: notes.trim() || (paymentMethod === 'cash' ? 'Thu tiền mặt tại quầy CSKH' : 'Chuyển khoản trực tiếp ngoài quầy'),
         auto_confirm: true,
@@ -144,8 +154,14 @@ export const CheckoutHandoverModal: React.FC<CheckoutHandoverModalProps> = ({
 
       toast(`✓ Đã thu ${moneyFormatted(finalAmount)} và hoàn tất giao máy cho đơn ${order.id}!`, 'success');
 
+      // Cập nhật giá thực tế lên đối tượng đơn hàng
+      order.total_price = servicePrice;
+      order.price = servicePrice;
+
       const updated: RepairOrder = {
         ...order,
+        total_price: servicePrice,
+        price: servicePrice,
         status: 'Hoàn tất',
         statusType: 'gray',
         warrantyTerm: `${warrantyMonths} tháng`,
@@ -201,6 +217,62 @@ export const CheckoutHandoverModal: React.FC<CheckoutHandoverModalProps> = ({
             ⚠️ {errorMsg}
           </div>
         )}
+
+        {/* Khối Chi phí sửa chữa / Dịch vụ thực tế (Cho phép CSKH chỉnh sửa trực tiếp) */}
+        <div className="space-y-2.5 p-3.5 bg-white rounded-[10px] border-2 border-[#176b58]/40 shadow-xs">
+          <div className="flex items-center justify-between">
+            <label className="block text-xs font-bold text-[#1c302b] uppercase tracking-wide">
+              💰 Chi phí sửa chữa / Dịch vụ thực tế <span className="text-red-500">*</span>
+            </label>
+            {initialRawPrice <= 1 ? (
+              <span className="text-[11px] font-semibold text-[#b45309] bg-[#fef3c7] px-2 py-0.5 rounded border border-[#fde68a]">
+                💡 Đơn chưa báo giá lúc tiếp nhận
+              </span>
+            ) : (
+              <span className="text-[11px] font-medium text-[#556960]">
+                Giá tiếp nhận: {moneyFormatted(initialRawPrice)}
+              </span>
+            )}
+          </div>
+
+          {initialRawPrice <= 1 && (
+            <div className="p-2 bg-[#fffbeb] border border-[#fef08a] rounded-[6px] text-xs text-[#92400e] flex items-center gap-1.5">
+              <span>💡</span>
+              <span>Đơn chưa báo giá lúc tiếp nhận — Vui lòng nhập số tiền thực thu đã báo khách (hoặc để 0 ₫).</span>
+            </div>
+          )}
+
+          <div className="space-y-2">
+            <CurrencyInput
+              label="Số tiền dịch vụ thực tế (*)"
+              value={servicePrice}
+              onChangeValue={(val) => {
+                setServicePrice(Math.max(0, val || 0));
+              }}
+              placeholder="0"
+              className="text-base font-bold text-[#176b58]"
+            />
+
+            {/* Chip gợi ý giá nhanh */}
+            <div className="flex items-center gap-1.5 flex-wrap pt-1">
+              <span className="text-[11px] text-[#556960] font-medium">Chọn nhanh:</span>
+              {[0, 150000, 250000, 350000, 500000].map((p) => (
+                <button
+                  key={p}
+                  type="button"
+                  onClick={() => setServicePrice(p)}
+                  className={`px-2.5 py-1 rounded-[6px] text-xs font-semibold border transition-all cursor-pointer ${
+                    servicePrice === p
+                      ? 'bg-[#176b58] text-white border-[#176b58]'
+                      : 'bg-[#f4f8f6] text-[#176b58] border-[#c2ded3] hover:bg-[#eaf4ef]'
+                  }`}
+                >
+                  {p === 0 ? '0 ₫' : moneyFormatted(p)}
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
 
         {/* Khối 1: Thời hạn bảo hành điện tử linh hoạt */}
         <div className="space-y-2 p-3 bg-[#f8faf9] rounded-[10px] border border-[#dce6e0]">
@@ -380,9 +452,9 @@ export const CheckoutHandoverModal: React.FC<CheckoutHandoverModalProps> = ({
                 </div>
               </div>
 
-              {Number(discountFixed) > rawTotal && (
+              {Number(discountFixed) > servicePrice && (
                 <small className="text-[#b91c1c] text-[11px] block">
-                  ⚠️ Số tiền giảm vượt quá tổng đơn, hệ thống tự động khóa mức giảm tối đa {moneyFormatted(rawTotal)}.
+                  ⚠️ Số tiền giảm vượt quá tổng đơn, hệ thống tự động khóa mức giảm tối đa {moneyFormatted(servicePrice)}.
                 </small>
               )}
             </div>
@@ -394,8 +466,8 @@ export const CheckoutHandoverModal: React.FC<CheckoutHandoverModalProps> = ({
           {calculatedDiscountAmount > 0 && (
             <div className="space-y-1 pb-2 border-b border-[#c2ded3] text-xs">
               <div className="flex items-center justify-between text-[#556960]">
-                <span>Tổng chi phí ban đầu:</span>
-                <span className="line-through">{moneyFormatted(rawTotal)}</span>
+                <span>Chi phí dịch vụ:</span>
+                <span className="line-through">{moneyFormatted(servicePrice)}</span>
               </div>
               <div className="flex items-center justify-between text-[#b91c1c] font-semibold">
                 <span>

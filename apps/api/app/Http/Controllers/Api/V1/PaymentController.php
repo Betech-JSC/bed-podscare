@@ -57,6 +57,7 @@ class PaymentController extends Controller
         $validated = $request->validate([
             'repair_order_id'     => 'required|exists:repair_orders,id',
             'amount'              => 'required|numeric|min:0',
+            'service_price'       => 'nullable|numeric|min:0',
             'payment_method'      => 'required|in:cash,bank_transfer,card_pos,wallet',
             'transaction_ref'     => 'nullable|string|max:100',
             'notes'               => 'nullable|string',
@@ -70,6 +71,14 @@ class PaymentController extends Controller
 
         return DB::transaction(function () use ($request, $validated) {
             $order = RepairOrder::findOrFail($validated['repair_order_id']);
+
+            if ($request->has('service_price')) {
+                $newPrice = (float) $request->input('service_price');
+                $order->total_price = $newPrice;
+                if (! $order->initial_price || $order->initial_price <= 0) {
+                    $order->initial_price = $newPrice;
+                }
+            }
 
             $year = date('y');
             $randomNum = str_pad((string) random_int(100, 99999), 4, '0', STR_PAD_LEFT);

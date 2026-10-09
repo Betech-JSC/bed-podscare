@@ -629,21 +629,13 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
     } else if (step === 4) {
       if (!consent) errs.consent = 'Khách hàng cần xác nhận cam kết tiếp nhận';
 
-      // Enforce price validation: if warranty, allow price === 0, require >= 0; if other, require > 0
+      // Cho phép giá >= 0 (mặc định 0đ khi chưa báo giá hoặc đơn bảo hành)
       devices.forEach((dev, idx) => {
-        const numPrice = typeof dev.price === 'number' ? dev.price : (dev.price === '' ? NaN : Number(dev.price));
-        if (orderType === 'warranty') {
-          if (dev.price === '' || isNaN(numPrice) || numPrice < 0) {
-            const msg = 'Vui lòng nhập giá sửa chữa dự kiến (>= 0đ cho đơn bảo hành)';
-            errs[`price_${dev.id}`] = msg;
-            if (idx === 0) errs.price = msg;
-          }
-        } else {
-          if (dev.price === '' || isNaN(numPrice) || numPrice <= 0) {
-            const msg = 'Vui lòng nhập giá sửa chữa dự kiến (> 0đ)';
-            errs[`price_${dev.id}`] = msg;
-            if (idx === 0) errs.price = msg;
-          }
+        const numPrice = typeof dev.price === 'number' ? dev.price : (dev.price === '' ? 0 : Number(dev.price));
+        if (isNaN(numPrice) || numPrice < 0) {
+          const msg = 'Vui lòng nhập giá sửa chữa dự kiến (>= 0đ, để 0đ nếu chưa báo giá)';
+          errs[`price_${dev.id}`] = msg;
+          if (idx === 0) errs.price = msg;
         }
       });
     }
@@ -702,19 +694,11 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
         errs[`issue_${dev.id}`] = `Thiết bị #${idx + 1}: Vui lòng nhập mô tả lỗi khách báo`;
         if (idx === 0) errs.issue = 'Vui lòng nhập mô tả lỗi khách báo';
       }
-      const numPrice = typeof dev.price === 'number' ? dev.price : (dev.price === '' ? NaN : Number(dev.price));
-      if (orderType === 'warranty') {
-        if (dev.price === '' || isNaN(numPrice) || numPrice < 0) {
-          const msg = 'Vui lòng nhập giá sửa chữa dự kiến (>= 0đ cho đơn bảo hành)';
-          errs[`price_${dev.id}`] = msg;
-          if (idx === 0) errs.price = msg;
-        }
-      } else {
-        if (dev.price === '' || isNaN(numPrice) || numPrice <= 0) {
-          const msg = 'Vui lòng nhập giá sửa chữa dự kiến (> 0đ)';
-          errs[`price_${dev.id}`] = msg;
-          if (idx === 0) errs.price = msg;
-        }
+      const numPrice = typeof dev.price === 'number' ? dev.price : (dev.price === '' ? 0 : Number(dev.price));
+      if (isNaN(numPrice) || numPrice < 0) {
+        const msg = 'Vui lòng nhập giá sửa chữa dự kiến (>= 0đ, để 0đ nếu chưa báo giá)';
+        errs[`price_${dev.id}`] = msg;
+        if (idx === 0) errs.price = msg;
       }
     });
 
@@ -762,12 +746,12 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
         if (hasDeviceErr) {
           setCurrentStepIndex(1);
         } else {
-          // If price is missing or consent not checked
+          // If price is negative or invalid
           const hasPriceErr = devices.some(
-            (d) => d.price === '' || typeof d.price !== 'number' || d.price <= 0
+            (d) => d.price !== '' && (isNaN(Number(d.price)) || Number(d.price) < 0)
           );
           if (hasPriceErr) {
-            toast('Vui lòng nhập giá sửa chữa dự kiến (> 0đ) cho tất cả thiết bị', 'error');
+            toast('Vui lòng kiểm tra lại giá sửa chữa dự kiến (>= 0đ)', 'error');
           }
           setCurrentStepIndex(4);
         }
@@ -1585,13 +1569,17 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
 
                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                         <CurrencyInput
-                          label={orderType === 'warranty' ? 'Giá sửa chữa (0 ₫: bảo hành miễn phí) *' : 'Giá sửa chữa báo khách *'}
+                          label={
+                            orderType === 'warranty'
+                              ? 'Giá sửa chữa (0 ₫: bảo hành miễn phí)'
+                              : 'Giá sửa chữa báo khách (để 0 ₫ nếu chưa báo máy)'
+                          }
                           value={dev.price}
                           onChangeValue={(val, formatted) => {
                             const numVal = formatted ? val : '';
                             updateDevice(idx, { price: numVal });
                             if (idx === 0) setPrice(numVal);
-                            const isValid = typeof numVal === 'number' && (orderType === 'warranty' ? numVal >= 0 : numVal > 0);
+                            const isValid = numVal === '' || (typeof numVal === 'number' && numVal >= 0);
                             if (isValid) {
                               setErrors((prev) => {
                                 const next = { ...prev };
@@ -1602,7 +1590,7 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
                             }
                           }}
                           error={priceError}
-                          placeholder={orderType === 'warranty' ? '0' : 'Ví dụ: 350.000'}
+                          placeholder={orderType === 'warranty' ? '0' : '0 (hoặc ví dụ 350.000)'}
                         />
                         <Input
                           label="Ghi chú báo giá"

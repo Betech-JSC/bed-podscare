@@ -1,6 +1,6 @@
 export type OrderStatusType = 'wait' | 'progress' | 'ready' | 'danger' | 'new' | 'gray';
 
-export type OrderDateFilter = 'today' | 'yesterday' | '7_days' | '30_days' | 'all';
+export type OrderDateFilter = 'today' | 'yesterday' | 'day_before' | '3_days' | '7_days' | '30_days' | 'all';
 
 export type StandardOrderStatus =
   | 'Tiếp nhận mới'
@@ -119,6 +119,7 @@ export interface RepairOrder {
 export interface SimpleCheckoutPayload {
   payment_method: 'cash' | 'bank_transfer' | string;
   amount?: number;
+  service_price?: number;
   notes?: string;
   transaction_ref?: string;
   auto_confirm?: boolean;

@@ -31,7 +31,7 @@ export default function TechnicianQueuePage() {
     updateOrder,
   } = usePodsCare();
 
-  const [dateFilter, setDateFilter] = useState<'today' | '7_days'>('today');
+  const [dateFilter, setDateFilter] = useState<'today' | '3_days'>('today');
   const [activeTab, setActiveTab] = useState<'my_orders' | 'available' | 'completed'>('my_orders');
   const [selectedOrder, setSelectedOrder] = useState<RepairOrder | null>(null);
   const [detailModalOpen, setDetailModalOpen] = useState(false);
@@ -386,7 +386,7 @@ export default function TechnicianQueuePage() {
           />
         </div>
 
-        {/* Date Filter Pills (Technician Scope: Chỉ Hôm nay & 7 ngày qua) */}
+        {/* Date Filter Pills (Technician Scope: Đúng 2 nút - Hôm nay & 3 ngày qua) */}
         <div className="flex flex-wrap items-center justify-between gap-3 bg-white border border-[#e5ece8] rounded-[10px] p-2.5 px-3.5 shadow-2xs">
           <div className="flex items-center gap-2">
             <span className="text-xs font-bold text-[#5c6e64] uppercase tracking-wider flex items-center gap-1.5">
@@ -407,15 +407,15 @@ export default function TechnicianQueuePage() {
               </button>
               <button
                 type="button"
-                data-testid="tech-date-filter-7_days"
-                onClick={() => setDateFilter('7_days')}
+                data-testid="tech-date-filter-3_days"
+                onClick={() => setDateFilter('3_days')}
                 className={`px-3 py-1.5 rounded-[8px] text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
-                  dateFilter === '7_days'
+                  dateFilter === '3_days'
                     ? 'bg-[#176b58] text-white shadow-xs'
                     : 'bg-[#f4f7f5] text-[#556960] hover:bg-[#eaf0ec]'
                 }`}
               >
-                <span>⏱️ 7 ngày qua (Tối đa 1 tuần)</span>
+                <span>⏱️ 3 ngày qua (Tối đa 3 ngày)</span>
               </button>
             </div>
           </div>
@@ -426,8 +426,9 @@ export default function TechnicianQueuePage() {
                 Đơn ca hôm nay & các đơn dở dang tồn lại
               </span>
             ) : (
-              <span className="text-[#4b6357] bg-[#f0f4f2] px-2 py-0.5 rounded font-medium">
-                Giới hạn an toàn lịch sử: Tối đa 7 ngày gần nhất
+              <span className="text-[#176b58] bg-[#eaf4ef] px-2.5 py-1 rounded font-medium flex items-center gap-1.5 border border-[#cbe3d6]">
+                <span>💡</span>
+                <span>Chọn &quot;3 ngày qua&quot; để xem lại các máy nhận từ hôm qua, hôm kia và bấm Hoàn thành sửa chữa.</span>
               </span>
             )}
           </div>

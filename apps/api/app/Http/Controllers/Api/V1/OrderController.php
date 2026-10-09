@@ -89,11 +89,11 @@ class OrderController extends Controller
         $isTechnician = $user && $user->role === 'technician';
 
         if ($isTechnician) {
-            if (in_array($dateFilter, ['all', '30_days'], true) || ! in_array($dateFilter, ['today', 'yesterday', '7_days'], true)) {
-                $dateFilter = '7_days';
+            if (in_array($dateFilter, ['all', '30_days'], true) || ! in_array($dateFilter, ['today', '3_days', 'yesterday', '7_days'], true)) {
+                $dateFilter = '3_days';
             }
         } else {
-            if (! in_array($dateFilter, ['today', 'yesterday', '7_days', '30_days', 'all'], true)) {
+            if (! in_array($dateFilter, ['today', '3_days', 'yesterday', '7_days', '30_days', 'all'], true)) {
                 $dateFilter = 'today';
             }
         }
@@ -104,13 +104,15 @@ class OrderController extends Controller
             $query->whereBetween('created_at', [$todayStart, $todayEnd]);
         } elseif ($dateFilter === 'yesterday') {
             $query->whereDate('created_at', Carbon::yesterday($tz));
+        } elseif ($dateFilter === '3_days') {
+            $query->where('created_at', '>=', Carbon::today($tz)->subDays(2)->startOfDay());
         } elseif ($dateFilter === '7_days') {
             $query->where('created_at', '>=', Carbon::now($tz)->subDays(7)->startOfDay());
         } elseif ($dateFilter === '30_days') {
             $query->where('created_at', '>=', Carbon::now($tz)->subDays(30)->startOfDay());
         } elseif ($dateFilter === 'all') {
             if ($isTechnician) {
-                $query->where('created_at', '>=', Carbon::now($tz)->subDays(7)->startOfDay());
+                $query->where('created_at', '>=', Carbon::today($tz)->subDays(2)->startOfDay());
             }
         }
 
