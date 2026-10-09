@@ -61,8 +61,8 @@ export interface RepairOrder {
   issue: string;
   status: string;
   statusType: OrderStatusType;
-  order_type?: 'in_store' | 'cod';
-  orderType?: 'in_store' | 'cod';
+  order_type?: 'in_store' | 'cod' | 'warranty';
+  orderType?: 'in_store' | 'cod' | 'warranty';
   price: number;
   total_price?: number;
   initial_price?: number;
@@ -148,8 +148,8 @@ export interface CreateIntakeDTO {
   priceNote?: string;
   consent?: boolean;
   intake_batch_code?: string;
-  order_type?: 'in_store' | 'cod';
-  orderType?: 'in_store' | 'cod';
+  order_type?: 'in_store' | 'cod' | 'warranty';
+  orderType?: 'in_store' | 'cod' | 'warranty';
   created_by_user_id?: number | string;
 }
 

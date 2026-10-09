@@ -147,10 +147,10 @@ class OrderController extends Controller
             'issue_description'     => 'required|string',
             'appearance_notes'      => 'nullable|string',
             'intake_batch_code'     => 'nullable|string|max:50',
-            'estimated_price'       => 'required|numeric|gt:0',
+            'estimated_price'       => 'required|numeric|min:0',
             'warranty_terms_days'   => 'nullable|integer|min:0',
             'status'                => 'nullable|string',
-            'order_type'            => 'nullable|string|in:in_store,cod',
+            'order_type'            => 'nullable|string|in:in_store,cod,warranty',
             'checklists'            => 'nullable|array',
             'checklists.*.item_name'=> 'required_with:checklists|string',
             'checklists.*.status'   => 'required_with:checklists|in:pass,fail,not_tested',
@@ -213,6 +213,7 @@ class OrderController extends Controller
                 'status'                => $initialStatus,
                 'order_type'            => $validated['order_type'] ?? 'in_store',
                 'customer_approved_at'  => $initialStatus === 'waiting_tech' ? now() : null,
+                'initial_price'         => $validated['estimated_price'] ?? 0.00,
                 'total_price'           => $validated['estimated_price'] ?? 0.00,
                 'warranty_terms_days'   => $validated['warranty_terms_days'] ?? 90,
                 'created_by_user_id'    => $creatorId,
@@ -380,9 +381,10 @@ class OrderController extends Controller
                 'price_note'            => 'nullable|string|max:255',
                 'repair_note'           => 'nullable|string',
                 'parts_used_summary'    => 'nullable|string',
+                'estimated_price'       => 'nullable|numeric|min:0',
                 'total_price'           => 'nullable|numeric|min:0',
                 'initial_price'         => 'nullable|numeric|min:0',
-                'order_type'            => 'nullable|string|in:in_store,cod',
+                'order_type'            => 'nullable|string|in:in_store,cod,warranty',
                 'status'                => 'nullable|string',
                 'branch_id'             => 'nullable|exists:branches,id',
                 'technician_id'         => 'nullable|exists:users,id',
@@ -415,6 +417,13 @@ class OrderController extends Controller
                 $orderUpdates = array_filter($validated, function ($k) {
                     return ! in_array($k, ['customer_name', 'customer_phone'], true);
                 }, ARRAY_FILTER_USE_KEY);
+
+                if (isset($orderUpdates['estimated_price'])) {
+                    if (! isset($orderUpdates['total_price'])) {
+                        $orderUpdates['total_price'] = $orderUpdates['estimated_price'];
+                    }
+                    unset($orderUpdates['estimated_price']);
+                }
 
                 if (! empty($orderUpdates)) {
                     $order->update($orderUpdates);

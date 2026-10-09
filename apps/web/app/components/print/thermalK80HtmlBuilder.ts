@@ -589,6 +589,38 @@ export function formatMoney(n?: number): string {
   return new Intl.NumberFormat('vi-VN').format(n) + ' ₫';
 }
 
+export function formatOrderTypeLabel(order: any, price?: number): string {
+  const type = order?.order_type || order?.orderType;
+  if (type === 'warranty') {
+    const p = price !== undefined ? price : (order?.total_price ?? order?.price ?? 0);
+    const pStr = p > 0 ? (new Intl.NumberFormat('vi-VN').format(p) + ' ₫') : '0 ₫';
+    return `LOẠI ĐƠN: TIẾP NHẬN BẢO HÀNH (${pStr})`;
+  }
+  if (type === 'cod') {
+    return 'LOẠI ĐƠN: ĐƠN COD (KHÁCH TỈNH)';
+  }
+  return 'LOẠI ĐƠN: ĐƠN TẠI CỬA HÀNG';
+}
+
+export function formatMultiOrderTypeLabel(orders: any[]): string {
+  const hasWarranty = orders.some(o => (o as any).order_type === 'warranty' || (o as any).orderType === 'warranty');
+  const hasCod = orders.some(o => (o as any).order_type === 'cod' || (o as any).orderType === 'cod');
+  if (hasWarranty) {
+    const totalWPrice = orders.reduce((sum, o) => {
+      if ((o as any).order_type === 'warranty' || (o as any).orderType === 'warranty') {
+        return sum + (Number((o as any).total_price ?? o.price) || 0);
+      }
+      return sum;
+    }, 0);
+    const pStr = totalWPrice > 0 ? (new Intl.NumberFormat('vi-VN').format(totalWPrice) + ' ₫') : '0 ₫';
+    return `LOẠI ĐƠN: TIẾP NHẬN BẢO HÀNH (${pStr})`;
+  }
+  if (hasCod) {
+    return 'LOẠI ĐƠN: ĐƠN COD (KHÁCH TỈNH)';
+  }
+  return 'LOẠI ĐƠN: ĐƠN TẠI CỬA HÀNG';
+}
+
 export type ThermalK80SlipMode = 'dual' | 'customer_only' | 'store_only' | 'routing';
 export type K80SlipMode = ThermalK80SlipMode;
 
@@ -741,7 +773,7 @@ export function buildCustomerCopyHtml(order: RepairOrder, origin?: string, brand
         <span class="k80-label">Số điện thoại:</span>
         <span class="k80-val">${order.phone || '—'}</span>
       </div>
-      <div style="font-weight: bold; font-size: 11px; margin: 4px 0;">${((order as any).order_type === 'cod' || (order as any).orderType === 'cod') ? 'LOẠI ĐƠN: ĐƠN COD (KHÁCH TỈNH)' : 'LOẠI ĐƠN: ĐƠN TẠI CỬA HÀNG'}</div>
+      <div style="font-weight: bold; font-size: 11px; margin: 4px 0;">${formatOrderTypeLabel(order, finalPriceVal)}</div>
       <div class="k80-row">
         <span class="k80-label">Thiết bị:</span>
         <span class="k80-val">${order.device || 'Thiết bị Apple'}</span>
@@ -893,7 +925,7 @@ export function buildStoreCopyHtml(order: RepairOrder): string {
         <span class="k80-label">Khách hàng:</span>
         <span class="k80-val">${order.name || 'Khách lẻ'} - ${order.phone || '—'}</span>
       </div>
-      <div style="font-weight: bold; font-size: 11px; margin: 4px 0;">${((order as any).order_type === 'cod' || (order as any).orderType === 'cod') ? 'LOẠI ĐƠN: ĐƠN COD (KHÁCH TỈNH)' : 'LOẠI ĐƠN: ĐƠN TẠI CỬA HÀNG'}</div>
+      <div style="font-weight: bold; font-size: 11px; margin: 4px 0;">${formatOrderTypeLabel(order)}</div>
       <div class="k80-row">
         <span class="k80-label">Thiết bị:</span>
         <span class="k80-val">${order.device || 'Thiết bị Apple'}</span>
@@ -1068,7 +1100,7 @@ export function buildCombinedCustomerCopyHtml(
         <span class="k80-label">Số điện thoại:</span>
         <span class="k80-val">${primaryOrder.phone || '—'}</span>
       </div>
-      <div style="font-weight: bold; font-size: 11px; margin: 4px 0;">${orders.some(o => (o as any).order_type === 'cod' || (o as any).orderType === 'cod') ? 'LOẠI ĐƠN: ĐƠN COD (KHÁCH TỈNH)' : 'LOẠI ĐƠN: ĐƠN TẠI CỬA HÀNG'}</div>
+      <div style="font-weight: bold; font-size: 11px; margin: 4px 0;">${formatMultiOrderTypeLabel(orders)}</div>
       <div class="k80-row">
         <span class="k80-label">Số lượng máy:</span>
         <span class="k80-val"><b>${orders.length} thiết bị</b></span>
@@ -1184,7 +1216,7 @@ export function buildCombinedStoreCopyHtml(orders: RepairOrder[]): string {
         <span class="k80-label">Khách hàng:</span>
         <span class="k80-val">${primaryOrder.name || 'Khách lẻ'} - ${primaryOrder.phone || '—'}</span>
       </div>
-      <div style="font-weight: bold; font-size: 11px; margin: 4px 0;">${orders.some(o => (o as any).order_type === 'cod' || (o as any).orderType === 'cod') ? 'LOẠI ĐƠN: ĐƠN COD (KHÁCH TỈNH)' : 'LOẠI ĐƠN: ĐƠN TẠI CỬA HÀNG'}</div>
+      <div style="font-weight: bold; font-size: 11px; margin: 4px 0;">${formatMultiOrderTypeLabel(orders)}</div>
       <div class="k80-row">
         <span class="k80-label">Số lượng máy:</span>
         <span class="k80-val"><b>${orders.length} thiết bị</b></span>

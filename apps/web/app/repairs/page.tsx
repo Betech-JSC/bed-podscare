@@ -42,10 +42,10 @@ export default function RepairsPage() {
   const [dateFilter, setDateFilter] = useState<OrderDateFilter>('today');
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('');
-  const [orderTypeFilter, setOrderTypeFilter] = useState<'all' | 'in_store' | 'cod'>('all');
+  const [orderTypeFilter, setOrderTypeFilter] = useState<'all' | 'in_store' | 'cod' | 'warranty'>('all');
   const [selectedOrder, setSelectedOrder] = useState<RepairOrder | null>(null);
   const [intakeModalOpen, setIntakeModalOpen] = useState(false);
-  const [initialIntakeType, setInitialIntakeType] = useState<'in_store' | 'cod'>('in_store');
+  const [initialIntakeType, setInitialIntakeType] = useState<'in_store' | 'cod' | 'warranty'>('in_store');
   const [checkoutModalOpen, setCheckoutModalOpen] = useState(false);
   const [adminEditModalOpen, setAdminEditModalOpen] = useState(false);
   const [adminDeleteModalOpen, setAdminDeleteModalOpen] = useState(false);
@@ -111,16 +111,19 @@ export default function RepairsPage() {
     let total = 0;
     let inStore = 0;
     let cod = 0;
+    let warranty = 0;
     list.forEach((o: any) => {
       total++;
       const t = o.order_type || o.orderType || 'in_store';
-      if (t === 'cod') {
+      if (t === 'warranty') {
+        warranty++;
+      } else if (t === 'cod') {
         cod++;
       } else {
         inStore++;
       }
     });
-    return { total, inStore, cod };
+    return { total, inStore, cod, warranty };
   }, [apiOrdersData, orders]);
 
   const filteredOrders: RepairOrder[] = useMemo(() => {
@@ -584,6 +587,25 @@ export default function RepairsPage() {
                 {orderCounts.cod}
               </span>
             </button>
+            <button
+              type="button"
+              data-testid="tab-filter-warranty"
+              onClick={() => setOrderTypeFilter('warranty')}
+              className={`px-3.5 py-1.5 rounded-[8px] text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
+                orderTypeFilter === 'warranty'
+                  ? 'bg-[#047857] text-white shadow-sm'
+                  : 'bg-[#ecfdf5] text-[#047857] hover:bg-[#d1fae5]'
+              }`}
+            >
+              <span>🛡️ Đơn bảo hành</span>
+              <span
+                className={`text-[10px] px-1.5 py-0.5 rounded-full font-mono ${
+                  orderTypeFilter === 'warranty' ? 'bg-white/25 text-white' : 'bg-[#a7f3d0] text-[#065f46]'
+                }`}
+              >
+                {orderCounts.warranty}
+              </span>
+            </button>
           </div>
 
           {/* Date Filter Pills (Shift Day & History Scope) */}
@@ -758,7 +780,14 @@ export default function RepairsPage() {
                       <td className="px-4">
                         <div className="font-mono font-bold text-[#176b58]">{o.id}</div>
                         <div className="mt-1">
-                          {(o.order_type === 'cod' || o.orderType === 'cod') ? (
+                          {(o.order_type === 'warranty' || o.orderType === 'warranty') ? (
+                            <span
+                              data-testid="badge-order-type-warranty"
+                              className="inline-flex items-center gap-0.5 text-[10px] font-bold text-[#047857] bg-[#ecfdf5] px-1.5 py-0.5 rounded border border-[#a7f3d0]"
+                            >
+                              🛡️ Bảo hành
+                            </span>
+                          ) : (o.order_type === 'cod' || o.orderType === 'cod') ? (
                             <span
                               data-testid="badge-order-type-cod"
                               className="inline-flex items-center gap-0.5 text-[10px] font-bold text-[#b45309] bg-[#fef3c7] px-1.5 py-0.5 rounded border border-[#fde68a]"
@@ -883,7 +912,11 @@ export default function RepairsPage() {
           maxWidth="lg"
           eyebrow={`REPAIR ORDER · ${selectedOrder.id}`}
           title={`${selectedOrder.device} · ${selectedOrder.name}`}
-          subtitle={`Số điện thoại: ${selectedOrder.phone} · Ngày tiếp nhận: ${selectedOrder.date} · ${((selectedOrder.order_type === 'cod' || selectedOrder.orderType === 'cod') ? '📦 Đơn COD (Khách tỉnh)' : '🏪 Đơn tại cửa hàng')}`}
+          subtitle={`Số điện thoại: ${selectedOrder.phone} · Ngày tiếp nhận: ${selectedOrder.date} · ${
+            (selectedOrder.order_type === 'warranty' || selectedOrder.orderType === 'warranty')
+              ? '🛡️ Đơn tiếp nhận bảo hành'
+              : ((selectedOrder.order_type === 'cod' || selectedOrder.orderType === 'cod') ? '📦 Đơn COD (Khách tỉnh)' : '🏪 Đơn tại cửa hàng')
+          }`}
           footer={
             <div className="flex flex-wrap items-center justify-between gap-2.5 w-full">
               <div className="flex flex-wrap items-center gap-2">

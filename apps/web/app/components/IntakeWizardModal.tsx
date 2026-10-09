@@ -50,8 +50,10 @@ export interface IntakeWizardModalProps {
   isOpen: boolean;
   onClose: () => void;
   onSuccess?: (order: RepairOrder, shouldPrint: boolean) => void;
-  initialIntakeType?: 'in_store' | 'cod';
-  defaultOrderType?: 'in_store' | 'cod';
+  initialIntakeType?: 'in_store' | 'cod' | 'warranty';
+  defaultOrderType?: 'in_store' | 'cod' | 'warranty';
+  initialCustomerName?: string;
+  initialCustomerPhone?: string;
 }
 
 const DEFAULT_COMMON_ISSUES: Record<string, CommonIssueItem[]> = {
@@ -94,6 +96,8 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
   onSuccess,
   initialIntakeType,
   defaultOrderType,
+  initialCustomerName,
+  initialCustomerPhone,
 }) => {
   const { toast } = useToast();
   const { categories, deviceProfiles, addOrder, currentUser, branch, branchId, branches } =
@@ -101,8 +105,8 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
   const { printReceipt, currentFormat, setFormat, isPrinting: isSilentPrinting } = useSilentPrint();
   const [printModalOpen, setPrintModalOpen] = useState(false);
 
-  // Order Type State (in_store vs cod)
-  const [orderType, setOrderType] = useState<'in_store' | 'cod'>(() => {
+  // Order Type State (in_store vs cod vs warranty)
+  const [orderType, setOrderType] = useState<'in_store' | 'cod' | 'warranty'>(() => {
     return initialIntakeType || defaultOrderType || 'in_store';
   });
 
@@ -113,8 +117,14 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
       } else if (defaultOrderType) {
         setOrderType(defaultOrderType);
       }
+      if (initialCustomerName) {
+        setName(initialCustomerName);
+      }
+      if (initialCustomerPhone) {
+        setPhone(initialCustomerPhone);
+      }
     }
-  }, [isOpen, initialIntakeType, defaultOrderType]);
+  }, [isOpen, initialIntakeType, defaultOrderType, initialCustomerName, initialCustomerPhone]);
 
   const contentTopRef = useRef<HTMLDivElement>(null);
 
@@ -232,10 +242,29 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
     setActiveDeviceIndexStep3(0);
     setActiveDeviceIndexStep4(0);
 
+    const defType = initialIntakeType || defaultOrderType || 'in_store';
+    setOrderType(defType);
+
     setCurrentStepIndex(0);
     setMaxReachedStepIndex(0);
     setCompletedSteps(new Set());
     setErrors({});
+  };
+
+  const handleSelectOrderType = (type: 'in_store' | 'cod' | 'warranty') => {
+    setOrderType(type);
+    if (type === 'warranty') {
+      setDevices((prev) =>
+        prev.map((dev) => ({
+          ...dev,
+          price: dev.price === '' || dev.price === 0 ? 0 : dev.price,
+          issue: dev.issue.trim() === '' ? 'Bảo hành thiết bị theo chính sách FIXO' : dev.issue,
+        }))
+      );
+      setPrice((prev) => (prev === '' || prev === 0 ? 0 : prev));
+      setIssue((prev) => (prev.trim() === '' ? 'Bảo hành thiết bị theo chính sách FIXO' : prev));
+      toast('Đã chọn Tiếp nhận bảo hành: Giá dự kiến mặc định 0 ₫ (Miễn phí theo chính sách)', 'info');
+    }
   };
 
   const handleModalClose = () => {
@@ -477,6 +506,10 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
 
     const newId = `dev-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
     const newDev = createDefaultDevice(newId, defaultCat, defaultModel);
+    if (orderType === 'warranty') {
+      newDev.price = 0;
+      newDev.issue = 'Bảo hành thiết bị theo chính sách FIXO';
+    }
     setDevices((prev) => [...prev, newDev]);
     toast(`Đã thêm Thiết bị #${devices.length + 1} vào phiếu tiếp nhận`, 'info');
   };
@@ -596,13 +629,21 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
     } else if (step === 4) {
       if (!consent) errs.consent = 'Khách hàng cần xác nhận cam kết tiếp nhận';
 
-      // Enforce mandatory price > 0 for every device
+      // Enforce price validation: if warranty, allow price === 0, require >= 0; if other, require > 0
       devices.forEach((dev, idx) => {
-        const numPrice = typeof dev.price === 'number' ? dev.price : 0;
-        if (dev.price === '' || isNaN(numPrice) || numPrice <= 0) {
-          const msg = 'Vui lòng nhập giá sửa chữa dự kiến (> 0đ)';
-          errs[`price_${dev.id}`] = msg;
-          if (idx === 0) errs.price = msg;
+        const numPrice = typeof dev.price === 'number' ? dev.price : (dev.price === '' ? NaN : Number(dev.price));
+        if (orderType === 'warranty') {
+          if (dev.price === '' || isNaN(numPrice) || numPrice < 0) {
+            const msg = 'Vui lòng nhập giá sửa chữa dự kiến (>= 0đ cho đơn bảo hành)';
+            errs[`price_${dev.id}`] = msg;
+            if (idx === 0) errs.price = msg;
+          }
+        } else {
+          if (dev.price === '' || isNaN(numPrice) || numPrice <= 0) {
+            const msg = 'Vui lòng nhập giá sửa chữa dự kiến (> 0đ)';
+            errs[`price_${dev.id}`] = msg;
+            if (idx === 0) errs.price = msg;
+          }
         }
       });
     }
@@ -661,11 +702,19 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
         errs[`issue_${dev.id}`] = `Thiết bị #${idx + 1}: Vui lòng nhập mô tả lỗi khách báo`;
         if (idx === 0) errs.issue = 'Vui lòng nhập mô tả lỗi khách báo';
       }
-      const numPrice = typeof dev.price === 'number' ? dev.price : 0;
-      if (dev.price === '' || isNaN(numPrice) || numPrice <= 0) {
-        const msg = 'Vui lòng nhập giá sửa chữa dự kiến (> 0đ)';
-        errs[`price_${dev.id}`] = msg;
-        if (idx === 0) errs.price = msg;
+      const numPrice = typeof dev.price === 'number' ? dev.price : (dev.price === '' ? NaN : Number(dev.price));
+      if (orderType === 'warranty') {
+        if (dev.price === '' || isNaN(numPrice) || numPrice < 0) {
+          const msg = 'Vui lòng nhập giá sửa chữa dự kiến (>= 0đ cho đơn bảo hành)';
+          errs[`price_${dev.id}`] = msg;
+          if (idx === 0) errs.price = msg;
+        }
+      } else {
+        if (dev.price === '' || isNaN(numPrice) || numPrice <= 0) {
+          const msg = 'Vui lòng nhập giá sửa chữa dự kiến (> 0đ)';
+          errs[`price_${dev.id}`] = msg;
+          if (idx === 0) errs.price = msg;
+        }
       }
     });
 
@@ -1028,12 +1077,12 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
               <div className="mb-4 p-3 rounded-[8px] bg-[#f8faf9] border border-[#d8e3dc] flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2.5">
                 <div>
                   <span className="text-xs font-bold text-[#1c302b] block">Hình thức tiếp nhận:</span>
-                  <span className="text-[11px] text-[#71867c]">Chọn hình thức tiếp nhận trực tiếp tại quầy hoặc nhận qua bưu cục/COD</span>
+                  <span className="text-[11px] text-[#71867c]">Chọn hình thức tiếp nhận trực tiếp tại quầy, qua bưu cục/COD hoặc bảo hành</span>
                 </div>
-                <div className="flex items-center gap-2">
+                <div className="flex flex-wrap items-center gap-2">
                   <button
                     type="button"
-                    onClick={() => setOrderType('in_store')}
+                    onClick={() => handleSelectOrderType('in_store')}
                     data-testid="order-type-in-store-btn"
                     className={`px-3 py-1.5 rounded-[6px] text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
                       orderType === 'in_store'
@@ -1045,7 +1094,7 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
                   </button>
                   <button
                     type="button"
-                    onClick={() => setOrderType('cod')}
+                    onClick={() => handleSelectOrderType('cod')}
                     data-testid="order-type-cod-btn"
                     className={`px-3 py-1.5 rounded-[6px] text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
                       orderType === 'cod'
@@ -1054,6 +1103,18 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
                     }`}
                   >
                     <span>📦 Đơn COD (Khách tỉnh)</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleSelectOrderType('warranty')}
+                    data-testid="order-type-warranty-btn"
+                    className={`px-3 py-1.5 rounded-[6px] text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
+                      orderType === 'warranty'
+                        ? 'bg-[#047857] text-white shadow-sm ring-2 ring-[#047857]/30'
+                        : 'bg-white text-[#047857] hover:bg-[#ecfdf5] border border-[#a7f3d0]'
+                    }`}
+                  >
+                    <span>🛡️ Tiếp nhận bảo hành</span>
                   </button>
                 </div>
               </div>
@@ -1524,13 +1585,14 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
 
                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                         <CurrencyInput
-                          label="Giá sửa chữa báo khách *"
+                          label={orderType === 'warranty' ? 'Giá sửa chữa (0 ₫: bảo hành miễn phí) *' : 'Giá sửa chữa báo khách *'}
                           value={dev.price}
                           onChangeValue={(val, formatted) => {
                             const numVal = formatted ? val : '';
                             updateDevice(idx, { price: numVal });
                             if (idx === 0) setPrice(numVal);
-                            if (typeof numVal === 'number' && numVal > 0) {
+                            const isValid = typeof numVal === 'number' && (orderType === 'warranty' ? numVal >= 0 : numVal > 0);
+                            if (isValid) {
                               setErrors((prev) => {
                                 const next = { ...prev };
                                 delete next[`price_${dev.id}`];
@@ -1540,7 +1602,7 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
                             }
                           }}
                           error={priceError}
-                          placeholder="Ví dụ: 350.000"
+                          placeholder={orderType === 'warranty' ? '0' : 'Ví dụ: 350.000'}
                         />
                         <Input
                           label="Ghi chú báo giá"

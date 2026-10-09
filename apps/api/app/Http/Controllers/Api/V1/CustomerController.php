@@ -62,8 +62,8 @@ class CustomerController extends Controller
     public function show(int $id): JsonResponse
     {
         $customer = Customer::with(['repairOrders' => function ($q) {
-            $q->latest()->limit(10)->with('deviceModel');
-        }, 'warranties'])->find($id);
+            $q->latest()->limit(50)->with(['deviceModel', 'warranties', 'branch', 'technician']);
+        }, 'warranties.deviceModel'])->find($id);
 
         if (! $customer) {
             return $this->empty('Không tìm thấy khách hàng.');
@@ -75,7 +75,7 @@ class CustomerController extends Controller
     /**
      * Lịch sử sửa chữa của khách hàng.
      */
-    public function history(int $id): JsonResponse
+    public function history(Request $request, int $id): JsonResponse
     {
         $customer = Customer::find($id);
 
@@ -84,9 +84,9 @@ class CustomerController extends Controller
         }
 
         $history = $customer->repairOrders()
-            ->with(['deviceModel', 'branch', 'technician', 'payments'])
+            ->with(['deviceModel', 'branch', 'technician', 'payments', 'warranties'])
             ->latest()
-            ->paginate(10);
+            ->paginate($request->input('per_page', 20));
 
         return $this->success($history, 'Lấy lịch sử sửa chữa của khách hàng thành công.');
     }

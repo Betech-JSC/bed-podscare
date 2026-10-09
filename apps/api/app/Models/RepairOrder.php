@@ -55,7 +55,13 @@ class RepairOrder extends Model
 
     protected $appends = [
         'delivered_at',
+        'estimated_price',
     ];
+
+    public function getEstimatedPriceAttribute()
+    {
+        return (float) ($this->total_price ?? 0);
+    }
 
     public function getDeliveredAtAttribute()
     {

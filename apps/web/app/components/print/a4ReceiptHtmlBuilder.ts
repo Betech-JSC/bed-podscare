@@ -6,7 +6,7 @@
 
 import type { RepairOrder } from '@podscare/types';
 import { generateBarcodeSVG, generateQRCodeSVG } from './BarcodeQRUtils';
-import { formatMoney, FIXO_LOGO_A4_SVG, type TenantReceiptBranding } from './thermalK80HtmlBuilder';
+import { formatMoney, formatOrderTypeLabel, formatMultiOrderTypeLabel, FIXO_LOGO_A4_SVG, type TenantReceiptBranding } from './thermalK80HtmlBuilder';
 
 /**
  * Sinh chuỗi HTML độc lập cho khổ giấy A4 (2 liên đối soát).
@@ -172,7 +172,7 @@ export function renderA4ReceiptHTML(
           <div class="a4-line"><b>Họ tên:</b> ${order.name || 'Khách lẻ'}</div>
           <div class="a4-line"><b>Số điện thoại:</b> ${order.phone || '—'}</div>
           <div class="a4-line" style="font-weight: bold; font-size: 8pt; margin-top: 2px; color: ${((order as any).order_type === 'cod' || (order as any).orderType === 'cod') ? '#b45309' : '#176b58'};">
-            ${((order as any).order_type === 'cod' || (order as any).orderType === 'cod') ? 'LOẠI ĐƠN: ĐƠN COD (KHÁCH TỈNH)' : 'LOẠI ĐƠN: ĐƠN TẠI CỬA HÀNG'}
+            ${formatOrderTypeLabel(order, finalPriceVal) /* Hỗ trợ: LOẠI ĐƠN: ĐƠN COD (KHÁCH TỈNH) · LOẠI ĐƠN: ĐƠN TẠI CỬA HÀNG · LOẠI ĐƠN: TIẾP NHẬN BẢO HÀNH */}
           </div>
         </div>
         <div>
@@ -636,7 +636,7 @@ export function renderCombinedA4ReceiptHTML(
           <div><b>Số lượng:</b> ${orders.length} thiết bị · <b>Mã phiếu:</b> ${allOrderCodes}</div>
         </div>
         <div style="font-weight: bold; font-size: 8pt; margin-top: 2px; color: ${((primaryOrder as any).order_type === 'cod' || (primaryOrder as any).orderType === 'cod') ? '#b45309' : '#176b58'};">
-          ${((primaryOrder as any).order_type === 'cod' || (primaryOrder as any).orderType === 'cod') ? 'LOẠI ĐƠN: ĐƠN COD (KHÁCH TỈNH)' : 'LOẠI ĐƠN: ĐƠN TẠI CỬA HÀNG'}
+          ${formatMultiOrderTypeLabel(orders)}
         </div>
       </div>
 
