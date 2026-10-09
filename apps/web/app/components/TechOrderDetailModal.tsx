@@ -492,10 +492,10 @@ export const TechOrderDetailModal: React.FC<TechOrderDetailModalProps> = ({
           </div>
 
           {/* Ghi chú test nếu có */}
-          {order.testNote && (
-            <div className="p-3 bg-[#f7faf8] rounded-[8px] border border-[#e5ece8] text-xs">
-              <span className="font-bold text-[#55665d] block mb-1">Ghi chú test từ CSKH:</span>
-              <p className="text-[#2b3b33] m-0">{order.testNote}</p>
+          {(order.testNote || (order as any).test_note) && (
+            <div data-testid="tech-order-detail-test-note" className="p-3 bg-[#eaf5ef] rounded-[8px] border border-[#a9c9b9] text-xs">
+              <span className="font-bold text-[#176b58] block mb-1">Ghi chú test từ CSKH:</span>
+              <p className="text-[#176b58] font-medium m-0 whitespace-pre-wrap">{order.testNote || (order as any).test_note}</p>
             </div>
           )}
 

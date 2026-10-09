@@ -80,7 +80,8 @@ export interface RepairOrder {
   appearance?: string;
   checks?: IntakeCheckItem[];
   photos?: DevicePhoto[];
-  testNote?: string;
+  testNote?: string | null;
+  test_note?: string | null;
   priceNote?: string;
   warrantyTerm?: string;
   warranty_terms_days?: number;

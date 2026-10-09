@@ -51,15 +51,17 @@ export function renderA4ReceiptHTML(
 
   const renderSingleCopyHtml = (copyTitle: string) => {
     const checks = Array.isArray(order.checks) ? order.checks : [];
+    const testNoteText = ((order.testNote || (order as any).test_note || '') as string).trim();
     const mid = Math.ceil(checks.length / 2);
     const leftChecks = checks.slice(0, mid);
     const rightChecks = checks.slice(mid);
 
     const checksTableHtml =
-      checks.length > 0
+      (checks.length > 0 || Boolean(testNoteText))
         ? `
       <div class="a4-section a4-checks-section">
         <div class="a4-section-title">KẾT QUẢ KIỂM TRA TÍNH NĂNG TẠI QUẦY</div>
+        ${checks.length > 0 ? `
         <div class="a4-grid-2">
           <table class="a4-table">
             <tbody>
@@ -99,10 +101,10 @@ export function renderA4ReceiptHTML(
                 .join('')}
             </tbody>
           </table>
-        </div>
+        </div>` : ''}
         ${
-          order.testNote
-            ? `<div class="a4-test-note"><b>Ghi chú test:</b> ${order.testNote}</div>`
+          testNoteText
+            ? `<div class="a4-test-note"><b>Ghi chú test tại quầy:</b> ${testNoteText}</div>`
             : ''
         }
       </div>`
@@ -667,6 +669,7 @@ export function renderCombinedA4ReceiptHTML(
                 <td style="padding: 2px 4px;">
                   <div>${dev.issue || 'Kiểm tra tổng quát'}</div>
                   ${dev.appearance ? `<div style="font-size: 6.5pt; color: #666;">Ngoại hình: ${dev.appearance}</div>` : ''}
+                  ${((dev.testNote || (dev as any).test_note)) ? `<div style="font-size: 6.5pt; color: #176b58; font-weight: 600;">Ghi chú test tại quầy: ${dev.testNote || (dev as any).test_note}</div>` : ''}
                 </td>
                 <td style="padding: 2px 4px; text-align: right; font-weight: bold; font-variant-numeric: tabular-nums;">
                   ${formatMoney((dev as any).total_price || dev.price)}

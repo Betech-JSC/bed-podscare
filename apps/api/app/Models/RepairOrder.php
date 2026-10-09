@@ -24,6 +24,7 @@ class RepairOrder extends Model
         'accessories',
         'issue_description',
         'appearance_notes',
+        'test_note',
         'status',
         'order_type',
         'total_price',

@@ -673,11 +673,13 @@ export function buildCustomerCopyHtml(order: RepairOrder, origin?: string, brand
   });
 
   const checks = Array.isArray(order.checks) ? order.checks : [];
+  const testNoteVal = ((order.testNote || (order as any).test_note || '') as string).trim();
   const checksHtml =
-    checks.length > 0
+    (checks.length > 0 || Boolean(testNoteVal))
       ? `
       <div class="k80-section">
         <div class="k80-section-title">KIỂM TRA CHỨC NĂNG TẠI QUẦY</div>
+        ${checks.length > 0 ? `
         <table class="k80-table">
           ${checks
             .map(
@@ -694,8 +696,8 @@ export function buildCustomerCopyHtml(order: RepairOrder, origin?: string, brand
             </tr>`
             )
             .join('')}
-        </table>
-        ${order.testNote ? `<div class="k80-test-note"><b>Ghi chú:</b> ${order.testNote}</div>` : ''}
+        </table>` : ''}
+        ${testNoteVal ? `<div class="k80-test-note"><b>Ghi chú test tại quầy:</b> ${testNoteVal}</div>` : ''}
       </div>`
       : '';
 
@@ -881,11 +883,13 @@ export function buildStoreCopyHtml(order: RepairOrder): string {
   });
 
   const checks = Array.isArray(order.checks) ? order.checks : [];
+  const testNoteVal = ((order.testNote || (order as any).test_note || '') as string).trim();
   const checksHtml =
-    checks.length > 0
+    (checks.length > 0 || Boolean(testNoteVal))
       ? `
       <div class="k80-section">
         <div class="k80-section-title">TEST TẠI QUẦY</div>
+        ${checks.length > 0 ? `
         <table class="k80-table">
           ${checks
             .map(
@@ -902,8 +906,8 @@ export function buildStoreCopyHtml(order: RepairOrder): string {
             </tr>`
             )
             .join('')}
-        </table>
-        ${order.testNote ? `<div class="k80-test-note"><b>Ghi chú:</b> ${order.testNote}</div>` : ''}
+        </table>` : ''}
+        ${testNoteVal ? `<div class="k80-test-note"><b>Ghi chú test tại quầy:</b> ${testNoteVal}</div>` : ''}
       </div>`
       : '';
 
@@ -1030,7 +1034,7 @@ export function buildCombinedCustomerCopyHtml(
         <div style="font-size: 9px; margin-top: 2px; color: #444444;">
           Test quầy: ${failChecks.length > 0 ? `<b style="color: #000; text-decoration: underline;">Lỗi (${failChecks.length}): ${failChecks.map((f) => f.label).join(', ')}</b>` : 'Tất cả chức năng cơ bản đạt'}
         </div>` : ''}
-        ${dev.testNote ? `<div class="k80-test-note" style="margin-top: 2px;"><b>Ghi chú test:</b> ${dev.testNote}</div>` : ''}
+        ${(dev.testNote || (dev as any).test_note) ? `<div class="k80-test-note" style="margin-top: 2px;"><b>Ghi chú test tại quầy:</b> ${dev.testNote || (dev as any).test_note}</div>` : ''}
         ${((dev as any).additional_services?.length || (dev as any).additionalServices?.length) ? `
         <div style="font-size: 8.5px; color: #444; margin-top: 2px; padding: 2px 0; border-top: 1px dotted #ddd;">
           <span style="font-weight: 700;">Dịch vụ làm thêm:</span>

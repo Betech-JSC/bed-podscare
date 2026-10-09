@@ -183,36 +183,38 @@ const CustomerSlip: React.FC<{
       </div>
 
       {/* Checks at counter */}
-      {checks.length > 0 && (
+      {(checks.length > 0 || !!(order.testNote || (order as any).test_note)) && (
         <div className="mt-2 pt-1.5 border-t border-dashed border-gray-400">
           <span className="text-[10px] font-extrabold uppercase block mb-0.5">
             Kiểm tra chức năng tại quầy
           </span>
-          <table className="w-full border-collapse text-[9.5px]">
-            <tbody>
-              {checks.map((c, i) => (
-                <tr key={i} className="border-b border-dotted border-gray-200">
-                  <td className="py-0.5 text-gray-800">{c.label}</td>
-                  <td className="py-0.5 text-right font-bold">
-                    <span
-                      className={
-                        c.status === 'Hoạt động'
-                          ? 'text-black'
-                          : c.status === 'Lỗi'
-                          ? 'text-black underline'
-                          : 'text-gray-600'
-                      }
-                    >
-                      {c.status}
-                    </span>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-          {order.testNote && (
-            <p className="text-[9px] italic text-gray-600 mt-1 m-0">
-              <b>Ghi chú:</b> {order.testNote}
+          {checks.length > 0 && (
+            <table className="w-full border-collapse text-[9.5px]">
+              <tbody>
+                {checks.map((c, i) => (
+                  <tr key={i} className="border-b border-dotted border-gray-200">
+                    <td className="py-0.5 text-gray-800">{c.label}</td>
+                    <td className="py-0.5 text-right font-bold">
+                      <span
+                        className={
+                          c.status === 'Hoạt động'
+                            ? 'text-black'
+                            : c.status === 'Lỗi'
+                            ? 'text-black underline'
+                            : 'text-gray-600'
+                        }
+                      >
+                        {c.status}
+                      </span>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+          {(order.testNote || (order as any).test_note) && (
+            <p className="text-[9px] italic text-gray-700 mt-1 m-0">
+              <b>Ghi chú test tại quầy:</b> {order.testNote || (order as any).test_note}
             </p>
           )}
         </div>
@@ -384,36 +386,38 @@ const StoreSlip: React.FC<{ order: RepairOrder }> = ({ order }) => {
       </div>
 
       {/* Checks at counter */}
-      {checks.length > 0 && (
+      {(checks.length > 0 || !!(order.testNote || (order as any).test_note)) && (
         <div className="mt-2 pt-1.5 border-t border-dashed border-gray-400">
           <span className="text-[10px] font-extrabold uppercase block mb-0.5">
             Test chức năng tại quầy
           </span>
-          <table className="w-full border-collapse text-[9.5px]">
-            <tbody>
-              {checks.map((c, i) => (
-                <tr key={i} className="border-b border-dotted border-gray-200">
-                  <td className="py-0.5 text-gray-800">{c.label}</td>
-                  <td className="py-0.5 text-right font-bold">
-                    <span
-                      className={
-                        c.status === 'Hoạt động'
-                          ? 'text-black'
-                          : c.status === 'Lỗi'
-                          ? 'text-black underline'
-                          : 'text-gray-600'
-                      }
-                    >
-                      {c.status}
-                    </span>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-          {order.testNote && (
-            <p className="text-[9px] italic text-gray-600 mt-1 m-0">
-              <b>Ghi chú:</b> {order.testNote}
+          {checks.length > 0 && (
+            <table className="w-full border-collapse text-[9.5px]">
+              <tbody>
+                {checks.map((c, i) => (
+                  <tr key={i} className="border-b border-dotted border-gray-200">
+                    <td className="py-0.5 text-gray-800">{c.label}</td>
+                    <td className="py-0.5 text-right font-bold">
+                      <span
+                        className={
+                          c.status === 'Hoạt động'
+                            ? 'text-black'
+                            : c.status === 'Lỗi'
+                            ? 'text-black underline'
+                            : 'text-gray-600'
+                        }
+                      >
+                        {c.status}
+                      </span>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+          {(order.testNote || (order as any).test_note) && (
+            <p className="text-[9px] italic text-gray-700 mt-1 m-0">
+              <b>Ghi chú test tại quầy:</b> {order.testNote || (order as any).test_note}
             </p>
           )}
         </div>

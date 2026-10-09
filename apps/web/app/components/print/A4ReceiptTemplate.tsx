@@ -176,60 +176,62 @@ export const A4ReceiptTemplate: React.FC<A4ReceiptTemplateProps> = ({ order: sin
           </div>
 
           {/* Test checklist */}
-          {checks.length > 0 && (
+          {(checks.length > 0 || !!(order.testNote || (order as any).test_note)) && (
             <div className="mb-1.5 text-[7pt]">
               <h3 className="font-bold text-[7pt] text-[#176b58] uppercase mb-0.5">
                 Kết quả kiểm tra tính năng tại quầy
               </h3>
-              <div className="grid grid-cols-2 gap-2">
-                <table className="w-full border-collapse border border-[#e3e8e5]">
-                  <tbody>
-                    {leftChecks.map((c, i) => (
-                      <tr key={i} className="border-b border-[#e3e8e5] last:border-b-0">
-                        <td className="p-0.5 px-1 text-[#333333]">{c.label}</td>
-                        <td className="p-0.5 px-1 font-bold text-right w-[35%]">
-                          <span
-                            className={
-                              c.status === 'Hoạt động'
-                                ? 'text-[#176b58]'
-                                : c.status === 'Lỗi'
-                                ? 'text-[#c0392b]'
-                                : 'text-[#777777]'
-                            }
-                          >
-                            {c.status}
-                          </span>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-                <table className="w-full border-collapse border border-[#e3e8e5]">
-                  <tbody>
-                    {rightChecks.map((c, i) => (
-                      <tr key={i} className="border-b border-[#e3e8e5] last:border-b-0">
-                        <td className="p-0.5 px-1 text-[#333333]">{c.label}</td>
-                        <td className="p-0.5 px-1 font-bold text-right w-[35%]">
-                          <span
-                            className={
-                              c.status === 'Hoạt động'
-                                ? 'text-[#176b58]'
-                                : c.status === 'Lỗi'
-                                ? 'text-[#c0392b]'
-                                : 'text-[#777777]'
-                            }
-                          >
-                            {c.status}
-                          </span>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-              {order.testNote && (
+              {checks.length > 0 && (
+                <div className="grid grid-cols-2 gap-2">
+                  <table className="w-full border-collapse border border-[#e3e8e5]">
+                    <tbody>
+                      {leftChecks.map((c, i) => (
+                        <tr key={i} className="border-b border-[#e3e8e5] last:border-b-0">
+                          <td className="p-0.5 px-1 text-[#333333]">{c.label}</td>
+                          <td className="p-0.5 px-1 font-bold text-right w-[35%]">
+                            <span
+                              className={
+                                c.status === 'Hoạt động'
+                                  ? 'text-[#176b58]'
+                                  : c.status === 'Lỗi'
+                                  ? 'text-[#c0392b]'
+                                  : 'text-[#777777]'
+                              }
+                            >
+                              {c.status}
+                            </span>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                  <table className="w-full border-collapse border border-[#e3e8e5]">
+                    <tbody>
+                      {rightChecks.map((c, i) => (
+                        <tr key={i} className="border-b border-[#e3e8e5] last:border-b-0">
+                          <td className="p-0.5 px-1 text-[#333333]">{c.label}</td>
+                          <td className="p-0.5 px-1 font-bold text-right w-[35%]">
+                            <span
+                              className={
+                                c.status === 'Hoạt động'
+                                  ? 'text-[#176b58]'
+                                  : c.status === 'Lỗi'
+                                  ? 'text-[#c0392b]'
+                                  : 'text-[#777777]'
+                              }
+                            >
+                              {c.status}
+                            </span>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+              {(order.testNote || (order as any).test_note) && (
                 <p className="text-[6.5pt] text-[#555555] mt-0.5 italic">
-                  <b>Ghi chú test:</b> {order.testNote}
+                  <b>Ghi chú test tại quầy:</b> {order.testNote || (order as any).test_note}
                 </p>
               )}
             </div>

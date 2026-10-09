@@ -244,6 +244,18 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
 
     const defType = initialIntakeType || defaultOrderType || 'in_store';
     setOrderType(defType);
+    if (defType === 'warranty') {
+      const defaultWarrantyIssue = 'Bảo hành thiết bị theo chính sách FIXO';
+      setPrice(0);
+      setIssue(defaultWarrantyIssue);
+      setDevices([
+        {
+          ...createDefaultDevice('dev-1', 'AirPods', firstModel),
+          price: 0,
+          issue: defaultWarrantyIssue,
+        },
+      ]);
+    }
 
     setCurrentStepIndex(0);
     setMaxReachedStepIndex(0);
@@ -815,6 +827,7 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
           accessories: dev.accessories.trim() || undefined,
           issue_description: dev.issue.trim(),
           appearance_notes: dev.appearance.trim() || undefined,
+          test_note: dev.testNote.trim() || undefined,
           estimated_price: devPrice,
           checklists: backendChecklists,
           intake_batch_code: batchCode,
@@ -866,6 +879,7 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
           photos: dev.photos,
           appearance: dev.appearance.trim() || 'Không ghi chú',
           testNote: dev.testNote.trim(),
+          test_note: dev.testNote.trim(),
           createdBy: creatorName,
           created_by_user_id: selectedCskhId ? Number(selectedCskhId) : (currentUser?.id ? Number(currentUser.id) : undefined),
           created_by_user: selectedCskhUser

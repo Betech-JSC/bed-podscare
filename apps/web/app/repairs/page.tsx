@@ -187,6 +187,8 @@ export default function RepairsPage() {
         branchName: o.branch?.name || 'Chi nhánh FIXO',
         accessories: o.accessories,
         appearance: o.appearance_notes,
+        testNote: o.test_note || o.testNote || (Array.isArray(o.intake_checklists) ? o.intake_checklists.find((c: any) => c.note)?.note : '') || '',
+        test_note: o.test_note || o.testNote || '',
         repairNote: o.repair_note,
         partsUsed: o.parts_used_summary,
         parts_needed: o.parts_needed,
@@ -511,19 +513,33 @@ export default function RepairsPage() {
               Theo dõi toàn bộ vòng đời tiếp nhận, kiểm định và bàn giao theo từng chi nhánh.
             </p>
           </div>
-          <Button
-            variant="primary"
-            size="md"
-            icon="plus"
-            data-testid="intake-main-btn"
-            onClick={() => {
-              setInitialIntakeType('in_store');
-              setIntakeModalOpen(true);
-            }}
-            className="flex items-center gap-1.5"
-          >
-            <span>Tiếp nhận thiết bị</span>
-          </Button>
+          <div className="flex items-center gap-2">
+            <Button
+              variant="outline"
+              size="md"
+              data-testid="repairs-warranty-intake-btn"
+              onClick={() => {
+                setInitialIntakeType('warranty');
+                setIntakeModalOpen(true);
+              }}
+              className="bg-[#eaf5ef] text-[#176b58] border-[#a9c9b9] hover:bg-[#d8ede1] font-bold flex items-center gap-1.5"
+            >
+              <span>🛡️ Tiếp nhận bảo hành</span>
+            </Button>
+            <Button
+              variant="primary"
+              size="md"
+              icon="plus"
+              data-testid="intake-main-btn"
+              onClick={() => {
+                setInitialIntakeType('in_store');
+                setIntakeModalOpen(true);
+              }}
+              className="flex items-center gap-1.5"
+            >
+              <span>Tiếp nhận thiết bị</span>
+            </Button>
+          </div>
         </div>
 
         {/* Panel with Table and Filters */}
@@ -1432,6 +1448,18 @@ export default function RepairsPage() {
                   {selectedOrder.issue}
                 </p>
               </div>
+
+              {/* Ghi chú kết quả test tại quầy */}
+              {(selectedOrder.testNote || (selectedOrder as any).test_note) && (
+                <div className="py-1.5" data-testid="order-detail-test-note-box">
+                  <span className="text-[#176b58] font-bold block mb-1 text-xs uppercase tracking-wide">
+                    Ghi chú kết quả test tại quầy:
+                  </span>
+                  <p className="bg-[#eaf5ef] p-3 rounded-[8px] border border-[#a9c9b9] text-[#176b58] m-0 text-sm whitespace-pre-wrap font-medium">
+                    {selectedOrder.testNote || (selectedOrder as any).test_note}
+                  </p>
+                </div>
+              )}
 
               {/* Checklist at counter */}
               {selectedOrder.checks && selectedOrder.checks.length > 0 && (

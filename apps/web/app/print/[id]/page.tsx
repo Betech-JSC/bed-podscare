@@ -141,6 +141,8 @@ export default function PrintReceiptPage() {
         branch: o.branch?.name || 'Chi nhánh FIXO',
         appearance: o.appearance_notes || 'Không ghi chú',
         accessories: o.accessories || 'Không gửi kèm',
+        testNote: o.test_note || o.testNote || (Array.isArray(o.intake_checklists) ? o.intake_checklists.find((c: any) => c.note)?.note : '') || '',
+        test_note: o.test_note || o.testNote || '',
         checks: mappedChecks,
         photos: mappedPhotos,
         createdBy: o.created_by_user?.name || o.createdBy || 'FIXO',

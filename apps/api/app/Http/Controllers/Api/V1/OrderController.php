@@ -101,7 +101,19 @@ class OrderController extends Controller
         if ($dateFilter === 'today') {
             $todayStart = Carbon::today($tz)->startOfDay();
             $todayEnd = Carbon::today($tz)->endOfDay();
-            $query->whereBetween('created_at', [$todayStart, $todayEnd]);
+            if ($isTechnician) {
+                // KTV xem ca hôm nay: Bao gồm các đơn hôm nay HOẶC các đơn dở dang từ 3 ngày gần nhất (hôm nay, hôm qua, hôm kia)
+                $threeDaysAgoStart = Carbon::today($tz)->subDays(2)->startOfDay();
+                $query->where(function ($q) use ($todayStart, $todayEnd, $threeDaysAgoStart) {
+                    $q->whereBetween('created_at', [$todayStart, $todayEnd])
+                      ->orWhere(function ($sub) use ($threeDaysAgoStart) {
+                          $sub->where('created_at', '>=', $threeDaysAgoStart)
+                              ->whereNotIn('status', ['completed', 'cancelled', 'rejected']);
+                      });
+                });
+            } else {
+                $query->whereBetween('created_at', [$todayStart, $todayEnd]);
+            }
         } elseif ($dateFilter === 'yesterday') {
             $query->whereDate('created_at', Carbon::yesterday($tz));
         } elseif ($dateFilter === '3_days') {
@@ -148,6 +160,7 @@ class OrderController extends Controller
             'accessories'           => 'nullable|string|max:255',
             'issue_description'     => 'required|string',
             'appearance_notes'      => 'nullable|string',
+            'test_note'             => 'nullable|string',
             'intake_batch_code'     => 'nullable|string|max:50',
             'estimated_price'       => 'required|numeric|min:0',
             'warranty_terms_days'   => 'nullable|integer|min:0',
@@ -212,6 +225,7 @@ class OrderController extends Controller
                 'accessories'           => $validated['accessories'] ?? null,
                 'issue_description'     => $validated['issue_description'],
                 'appearance_notes'      => $validated['appearance_notes'] ?? null,
+                'test_note'             => $validated['test_note'] ?? null,
                 'status'                => $initialStatus,
                 'order_type'            => $validated['order_type'] ?? 'in_store',
                 'customer_approved_at'  => $initialStatus === 'waiting_tech' ? now() : null,
@@ -380,6 +394,7 @@ class OrderController extends Controller
                 'issue_description'     => 'nullable|string',
                 'accessories'           => 'nullable|string|max:255',
                 'appearance_notes'      => 'nullable|string',
+                'test_note'             => 'nullable|string',
                 'price_note'            => 'nullable|string|max:255',
                 'repair_note'           => 'nullable|string',
                 'parts_used_summary'    => 'nullable|string',
@@ -454,6 +469,7 @@ class OrderController extends Controller
             'serial_number'         => 'nullable|string|max:100',
             'accessories'           => 'nullable|string|max:255',
             'appearance_notes'      => 'nullable|string',
+            'test_note'             => 'nullable|string',
             'price_note'            => 'nullable|string|max:255',
             'repair_note'           => 'nullable|string',
             'parts_used_summary'    => 'nullable|string',

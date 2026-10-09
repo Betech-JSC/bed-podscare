@@ -509,6 +509,8 @@ export const Providers: React.FC<{ children: React.ReactNode }> = ({ children })
             branchName: o.branch?.name || 'Chi nhánh FIXO',
             accessories: o.accessories,
             appearance: o.appearance_notes,
+            testNote: o.test_note || o.testNote || (Array.isArray(o.intake_checklists) ? o.intake_checklists.find((c: any) => c.note)?.note : '') || '',
+            test_note: o.test_note || o.testNote || '',
             repairNote: o.repair_note,
             partsUsed: o.parts_used_summary,
             parts_needed: o.parts_needed,

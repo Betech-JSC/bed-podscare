@@ -28,6 +28,7 @@ export default function DashboardPage() {
   const { role, currentUser, orders, updateOrder, branchId, branch, invalidateOrders } = usePodsCare();
 
   const [intakeModalOpen, setIntakeModalOpen] = useState(false);
+  const [initialIntakeType, setInitialIntakeType] = useState<'in_store' | 'cod' | 'warranty'>('in_store');
   const [cskhPendingModalOpen, setCskhPendingModalOpen] = useState(false);
   const [period, setPeriod] = useState<'7_days' | '14_days' | '30_days'>('14_days');
 
@@ -401,10 +402,25 @@ export default function DashboardPage() {
             Xuất báo cáo
           </Button>
           <Button
+            variant="outline"
+            size="md"
+            data-testid="admin-warranty-intake-btn"
+            onClick={() => {
+              setInitialIntakeType('warranty');
+              setIntakeModalOpen(true);
+            }}
+            className="bg-[#eaf5ef] text-[#176b58] border-[#a9c9b9] hover:bg-[#d8ede1] font-bold flex items-center gap-1.5"
+          >
+            <span>🛡️ Tiếp nhận bảo hành</span>
+          </Button>
+          <Button
             variant="primary"
             size="md"
             icon="plus"
-            onClick={() => setIntakeModalOpen(true)}
+            onClick={() => {
+              setInitialIntakeType('in_store');
+              setIntakeModalOpen(true);
+            }}
           >
             Tạo đơn mới
           </Button>
@@ -844,14 +860,31 @@ export default function DashboardPage() {
             Bảng công việc CSKH · Tập trung tiếp nhận, báo giá và chăm sóc khách hàng.
           </p>
         </div>
-        <Button
-          variant="primary"
-          size="md"
-          icon="plus"
-          onClick={() => setIntakeModalOpen(true)}
-        >
-          Tiếp nhận khách mới
-        </Button>
+        <div className="flex items-center gap-2">
+          <Button
+            variant="outline"
+            size="md"
+            data-testid="cskh-warranty-intake-btn"
+            onClick={() => {
+              setInitialIntakeType('warranty');
+              setIntakeModalOpen(true);
+            }}
+            className="bg-[#eaf5ef] text-[#176b58] border-[#a9c9b9] hover:bg-[#d8ede1] font-bold flex items-center gap-1.5"
+          >
+            <span>🛡️ Tiếp nhận bảo hành</span>
+          </Button>
+          <Button
+            variant="primary"
+            size="md"
+            icon="plus"
+            onClick={() => {
+              setInitialIntakeType('in_store');
+              setIntakeModalOpen(true);
+            }}
+          >
+            Tiếp nhận khách mới
+          </Button>
+        </div>
       </div>
 
       {/* CSKH Stats */}
@@ -1458,6 +1491,8 @@ export default function DashboardPage() {
       {/* Intake Wizard Modal */}
       <IntakeWizardModal
         isOpen={intakeModalOpen}
+        initialIntakeType={initialIntakeType}
+        defaultOrderType={initialIntakeType}
         onClose={() => setIntakeModalOpen(false)}
         onSuccess={() => setIntakeModalOpen(false)}
       />
