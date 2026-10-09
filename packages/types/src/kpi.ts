@@ -8,6 +8,8 @@ export interface OperationalReconciliation {
   in_workshop_count: number;
   in_workshop_amount: number;
   in_workshop_amount_formatted: string;
+  total_uncollected_amount: number;
+  total_uncollected_amount_formatted: string;
 }
 
 export interface DashboardSummary {
@@ -16,6 +18,10 @@ export interface DashboardSummary {
   today_orders: number;
   daily_revenue?: number;
   daily_revenue_formatted?: string;
+  selected_date?: string;
+  selected_date_revenue?: number;
+  selected_date_revenue_formatted?: string;
+  selected_date_completed_orders?: number;
   monthly_revenue: number;
   monthly_revenue_formatted: string;
   completion_rate: number;
@@ -31,6 +37,10 @@ export interface DashboardKpiResponse {
   today_orders: number;
   daily_revenue: number;
   daily_revenue_formatted: string;
+  selected_date?: string;
+  selected_date_revenue?: number;
+  selected_date_revenue_formatted?: string;
+  selected_date_completed_orders?: number;
   monthly_revenue: number;
   monthly_revenue_formatted: string;
   reconciliation: OperationalReconciliation;

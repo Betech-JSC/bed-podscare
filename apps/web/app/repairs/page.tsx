@@ -776,6 +776,7 @@ export default function RepairsPage() {
               <table className="w-full text-left border-collapse min-w-[760px]">
                 <thead>
                   <tr className="border-y border-[#f0f3f1] bg-[#fafbfa] text-xs font-bold text-[#809088] uppercase tracking-wider h-10">
+                    <th className="px-3 py-2 text-center w-12 text-xs font-bold text-[#809088] uppercase tracking-wider">STT</th>
                     <th className="px-4">Mã đơn</th>
                     <th className="px-4">Khách hàng</th>
                     <th className="px-4">Thiết bị & lỗi</th>
@@ -793,6 +794,7 @@ export default function RepairsPage() {
                       onClick={() => setSelectedOrder(o)}
                       className="h-14 hover:bg-[#fbfcfb] cursor-pointer transition-colors"
                     >
+                      <td className="px-3 py-3 text-center text-xs font-semibold text-[#809088]">{idx + 1}</td>
                       <td className="px-4">
                         <div className="font-mono font-bold text-[#176b58]">{o.id}</div>
                         <div className="mt-1">

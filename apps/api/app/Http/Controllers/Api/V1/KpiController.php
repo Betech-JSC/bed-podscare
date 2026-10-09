@@ -283,13 +283,35 @@ class KpiController extends Controller
             ->count();
 
         // 2. Tiếp nhận hôm nay
-        $today = Carbon::today();
+        $tz = config('app.timezone', 'Asia/Ho_Chi_Minh');
+        $today = Carbon::today($tz);
         $intakeToday = (clone $baseQuery)
             ->whereDate('created_at', $today)
             ->count();
 
+        // Xử lý tham số ngày tra cứu (date hoặc target_date)
+        $targetDateInput = $request->input('date', $request->input('target_date'));
+        $targetDateStr = null;
+
+        if ($targetDateInput && is_string($targetDateInput) && preg_match('/^\d{4}-\d{2}-\d{2}$/', $targetDateInput)) {
+            try {
+                $parsedDate = Carbon::createFromFormat('Y-m-d', $targetDateInput, $tz);
+                if ($parsedDate && $parsedDate->format('Y-m-d') === $targetDateInput) {
+                    $targetDateStr = $targetDateInput;
+                }
+            } catch (\Throwable $e) {
+                $targetDateStr = null;
+            }
+        }
+
+        if (! $targetDateStr) {
+            $targetDateStr = $today->toDateString();
+        }
+
+        $targetDateStart = Carbon::parse($targetDateStr, $tz)->startOfDay();
+        $targetDateEnd = Carbon::parse($targetDateStr, $tz)->endOfDay();
+
         // 3. Doanh thu hôm nay (cho tất cả các đơn completed: tại quầy và COD)
-        $tz = config('app.timezone', 'Asia/Ho_Chi_Minh');
         $todayStart = Carbon::today($tz)->startOfDay();
         $todayEnd = Carbon::today($tz)->endOfDay();
         $dailyRevenue = (float) (clone $baseQuery)
@@ -308,6 +330,27 @@ class KpiController extends Controller
             $dailyRevenueFormatted = str_replace('.', ',', (string) $dailyRevenueInMillions) . 'tr ₫';
         } else {
             $dailyRevenueFormatted = number_format($dailyRevenue, 0, ',', '.') . ' ₫';
+        }
+
+        // 3b. Doanh thu ngày được chọn (selected_date)
+        $selectedDateOrdersQuery = (clone $baseQuery)
+            ->where('status', 'completed')
+            ->where(function ($q) use ($targetDateStart, $targetDateEnd) {
+                $q->whereBetween('handed_over_at', [$targetDateStart, $targetDateEnd])
+                  ->orWhere(function ($sq) use ($targetDateStart, $targetDateEnd) {
+                      $sq->whereNull('handed_over_at')
+                         ->whereBetween('updated_at', [$targetDateStart, $targetDateEnd]);
+                  });
+            });
+
+        $selectedDateRevenue = (float) (clone $selectedDateOrdersQuery)->sum('total_price');
+        $selectedDateCompletedOrders = (int) (clone $selectedDateOrdersQuery)->count();
+
+        if ($selectedDateRevenue >= 1000000) {
+            $selectedRevenueInMillions = round($selectedDateRevenue / 1000000, 1);
+            $selectedDateRevenueFormatted = str_replace('.', ',', (string) $selectedRevenueInMillions) . 'tr ₫';
+        } else {
+            $selectedDateRevenueFormatted = number_format($selectedDateRevenue, 0, ',', '.') . ' ₫';
         }
 
         // 4. Doanh thu tháng này từ các đơn hoàn tất
@@ -370,6 +413,9 @@ class KpiController extends Controller
             return number_format($amount, 0, ',', '.') . ' ₫';
         };
 
+        $totalUncollectedAmount = $readyForPickupAmount + $inWorkshopAmount;
+        $totalUncollectedAmountFormatted = $formatCurrency($totalUncollectedAmount);
+
         $reconciliation = [
             'handed_over_count'                 => $handedOverCount,
             'handed_over_revenue'               => $handedOverRevenue,
@@ -380,6 +426,8 @@ class KpiController extends Controller
             'in_workshop_count'                 => $inWorkshopCount,
             'in_workshop_amount'                => $inWorkshopAmount,
             'in_workshop_amount_formatted'      => $formatCurrency($inWorkshopAmount),
+            'total_uncollected_amount'          => $totalUncollectedAmount,
+            'total_uncollected_amount_formatted'=> $totalUncollectedAmountFormatted,
         ];
 
         // 6. Tỷ lệ hoàn tất đơn hàng
@@ -476,33 +524,41 @@ class KpiController extends Controller
         }
 
         $summary = [
-            'active_orders'             => $activeOrders,
-            'intake_today'              => $intakeToday,
-            'today_orders'              => $intakeToday,
-            'daily_revenue'             => $dailyRevenue,
-            'daily_revenue_formatted'   => $dailyRevenueFormatted,
-            'monthly_revenue'           => $monthlyRevenue,
-            'monthly_revenue_formatted' => $monthlyRevenueFormatted,
-            'completion_rate'           => $completionRate,
-            'total_orders'              => $totalOrders,
-            'completed_orders'          => $completedOrders,
-            'reconciliation'            => $reconciliation,
+            'active_orders'                   => $activeOrders,
+            'intake_today'                    => $intakeToday,
+            'today_orders'                    => $intakeToday,
+            'daily_revenue'                   => $dailyRevenue,
+            'daily_revenue_formatted'         => $dailyRevenueFormatted,
+            'selected_date'                   => $targetDateStr,
+            'selected_date_revenue'           => $selectedDateRevenue,
+            'selected_date_revenue_formatted' => $selectedDateRevenueFormatted,
+            'selected_date_completed_orders'  => $selectedDateCompletedOrders,
+            'monthly_revenue'                 => $monthlyRevenue,
+            'monthly_revenue_formatted'       => $monthlyRevenueFormatted,
+            'completion_rate'                 => $completionRate,
+            'total_orders'                    => $totalOrders,
+            'completed_orders'                => $completedOrders,
+            'reconciliation'                  => $reconciliation,
         ];
 
         return $this->success([
-            'summary'                   => $summary,
-            'active_orders'             => $activeOrders,
-            'intake_today'              => $intakeToday,
-            'today_orders'              => $intakeToday,
-            'daily_revenue'             => $dailyRevenue,
-            'daily_revenue_formatted'   => $dailyRevenueFormatted,
-            'monthly_revenue'           => $monthlyRevenue,
-            'monthly_revenue_formatted' => $monthlyRevenueFormatted,
-            'reconciliation'            => $reconciliation,
-            'completion_rate'           => $completionRate,
-            'status_distribution'      => $statusDistribution,
-            'workload_by_status'        => $workloadByStatus,
-            'revenue_chart'             => $revenueChart,
+            'summary'                         => $summary,
+            'active_orders'                   => $activeOrders,
+            'intake_today'                    => $intakeToday,
+            'today_orders'                    => $intakeToday,
+            'daily_revenue'                   => $dailyRevenue,
+            'daily_revenue_formatted'         => $dailyRevenueFormatted,
+            'selected_date'                   => $targetDateStr,
+            'selected_date_revenue'           => $selectedDateRevenue,
+            'selected_date_revenue_formatted' => $selectedDateRevenueFormatted,
+            'selected_date_completed_orders'  => $selectedDateCompletedOrders,
+            'monthly_revenue'                 => $monthlyRevenue,
+            'monthly_revenue_formatted'       => $monthlyRevenueFormatted,
+            'reconciliation'                  => $reconciliation,
+            'completion_rate'                 => $completionRate,
+            'status_distribution'            => $statusDistribution,
+            'workload_by_status'              => $workloadByStatus,
+            'revenue_chart'                   => $revenueChart,
         ], 'Lấy số liệu tổng quan KPI thành công.');
     }
 }

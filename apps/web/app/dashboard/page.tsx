@@ -32,6 +32,22 @@ export default function DashboardPage() {
   const [cskhPendingModalOpen, setCskhPendingModalOpen] = useState(false);
   const [period, setPeriod] = useState<'7_days' | '14_days' | '30_days'>('14_days');
 
+  const todayStr = React.useMemo(() => {
+    const d = new Date();
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    return `${y}-${m}-${day}`;
+  }, []);
+
+  const [selectedDate, setSelectedDate] = useState<string>(() => {
+    const d = new Date();
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    return `${y}-${m}-${day}`;
+  });
+
   // Technician Workspace State
   const [techTab, setTechTab] = useState<'my_orders' | 'available' | 'completed'>('my_orders');
   const [selectedTechOrder, setSelectedTechOrder] = useState<RepairOrder | null>(null);
@@ -41,11 +57,12 @@ export default function DashboardPage() {
 
   // Đấu nối KPI Dashboard API
   const { data: kpiData } = useQuery({
-    queryKey: ['kpi-dashboard', branchId, period],
+    queryKey: ['kpi-dashboard', branchId, period, selectedDate],
     queryFn: async () => {
       const res = await kpiService.getDashboardKpi({
         branch_id: branchId && branchId !== 'all' ? branchId : undefined,
         period,
+        date: selectedDate,
       });
       return res?.data || res;
     },
@@ -264,6 +281,8 @@ export default function DashboardPage() {
     in_workshop_count: inspectingCount + waitingApprovalCount + repairingCount,
     in_workshop_amount: 0,
     in_workshop_amount_formatted: '0 ₫',
+    total_uncollected_amount: 0,
+    total_uncollected_amount_formatted: '0 ₫',
   };
 
   // Thuật toán sinh đồ thị doanh thu SVG động (Dynamic SVG Path Generator)
@@ -427,8 +446,43 @@ export default function DashboardPage() {
         </div>
       </div>
 
+      {/* Thanh điều khiển chọn ngày tra cứu doanh thu */}
+      <div className="flex flex-wrap items-center justify-between gap-3 bg-white rounded-[12px] border border-[#e5ece8] p-3.5 sm:px-5 sm:py-3.5 shadow-xs">
+        <div className="flex flex-wrap items-center gap-3">
+          <span className="text-xs font-bold text-[#1c302b] flex items-center gap-1.5">
+            <span className="w-2 h-2 rounded-full bg-[#176b58]" />
+            Tra cứu doanh thu theo ngày:
+          </span>
+          <div className="flex items-center gap-2">
+            <input
+              type="date"
+              value={selectedDate}
+              onChange={(e) => setSelectedDate(e.target.value)}
+              className="text-xs border border-[#e4eae6] bg-[#fafbfa] text-[#2d3d35] rounded-[8px] px-3 py-1.5 outline-none focus:border-[#176b58] focus:bg-white transition-all cursor-pointer font-medium"
+            />
+            {selectedDate !== todayStr && (
+              <button
+                type="button"
+                onClick={() => setSelectedDate(todayStr)}
+                className="text-xs font-bold text-[#176b58] hover:text-[#125848] bg-[#eaf4ef] hover:bg-[#d8ede1] border border-[#a9c9b9] px-2.5 py-1.5 rounded-[8px] transition-colors cursor-pointer flex items-center gap-1"
+              >
+                <span>Hôm nay</span>
+              </button>
+            )}
+          </div>
+        </div>
+        <div className="text-xs text-[#7e8d85]">
+          Ngày đang chọn: <b className="text-[#176b58] font-mono">{selectedDate === todayStr ? `Hôm nay (${selectedDate})` : selectedDate}</b>
+          {kpiData?.selected_date_completed_orders !== undefined && (
+            <span className="ml-2 px-2 py-0.5 rounded-full bg-[#edf5f0] text-[#176b58] font-semibold text-[11px]">
+              {kpiData.selected_date_completed_orders} đơn hoàn tất
+            </span>
+          )}
+        </div>
+      </div>
+
       {/* Stats Cards */}
-      <div className="grid grid-cols-2 lg:grid-cols-5 gap-3.5">
+      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3.5">
         <StatCard
           label="Đơn đang xử lý"
           value={activeOrdersCount}
@@ -442,11 +496,20 @@ export default function DashboardPage() {
           foot="Cập nhật theo ngày thực tế"
         />
         <StatCard
-          label="Doanh thu hôm nay"
-          value={dailyRevenueDisplay}
+          label="Tổng doanh thu hôm nay"
+          value={kpiData?.daily_revenue_formatted || dailyRevenueDisplay}
           icon="payments"
-          foot="Đã thu trong ca hôm nay"
+          foot="Cố định theo ca hôm nay"
           trend="up"
+        />
+        <StatCard
+          label="Doanh thu ngày chọn"
+          value={
+            kpiData?.selected_date_revenue_formatted ||
+            moneyFormatted(kpiData?.selected_date_revenue || 0)
+          }
+          icon="payments"
+          foot={`${kpiData?.selected_date_completed_orders ?? 0} đơn hoàn tất`}
         />
         <StatCard
           label="Doanh thu tháng"
@@ -660,52 +723,83 @@ export default function DashboardPage() {
             </div>
           </div>
 
-          {/* CỘT 2: Warm Ivory / Amber - Máy khách chưa lấy (Tại cửa hàng) */}
+          {/* CỘT 2: Warm Ivory / Amber - Máy khách chưa lấy / dòng tiền chưa thu */}
           <div className="bg-[#fcfaf5] border border-[#ebd9bd] rounded-[12px] p-5 flex flex-col justify-between relative overflow-hidden">
             <div className="absolute top-0 right-0 w-28 h-28 bg-[#d2a25d]/5 rounded-bl-full pointer-events-none" />
             <div>
               <div className="flex items-center justify-between mb-3">
                 <span className="inline-flex items-center gap-1.5 text-xs font-bold uppercase tracking-wider text-[#915e1b] bg-white px-2.5 py-1 rounded-full border border-[#ebd9bd]">
-                  🟡 Máy khách chưa lấy (Tại cửa hàng)
+                  🟡 Máy khách chưa lấy / dòng tiền chưa thu
                 </span>
                 <span className="text-xs text-[#8c7456] font-medium">
                   {reconciliation.ready_for_pickup_count + reconciliation.in_workshop_count} máy tồn tại shop
                 </span>
               </div>
 
-              {/* 2 Mục phân rã */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-2 mb-4">
-                {/* Mục 1: Đã sửa xong chờ lấy */}
-                <div className="p-3.5 bg-white rounded-[9px] border border-[#eddcc4] shadow-2xs">
-                  <div className="flex items-center justify-between mb-1.5">
-                    <span className="text-xs font-bold text-[#915e1b]">Đã sửa xong chờ lấy</span>
-                    <span className="px-2 py-0.5 rounded-full text-[11px] font-bold bg-[#fbf3e5] text-[#915e1b]">
-                      {reconciliation.ready_for_pickup_count} máy
+              <div className="mt-2 mb-4">
+                <div className="flex items-baseline gap-2">
+                  <span className="text-3xl md:text-4xl font-heading font-extrabold text-[#915e1b]">
+                    {reconciliation.ready_for_pickup_count + reconciliation.in_workshop_count}
+                  </span>
+                  <span className="text-sm font-semibold text-[#8c7456]">máy chưa bàn giao</span>
+                </div>
+
+                {/* Card tổng kết nổi bật: TỔNG TIỀN CHƯA THU */}
+                <div className="mt-3 p-3 bg-white/90 rounded-[9px] border border-[#ecdac1] shadow-2xs">
+                  <div className="flex items-center justify-between mb-0.5">
+                    <span className="text-xs font-bold uppercase tracking-wider text-[#915e1b]">
+                      Tổng tiền chưa thu:
+                    </span>
+                    <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-[#fbf3e5] text-[#915e1b] border border-[#ebd9bd]">
+                      Chờ thu & dở dang
                     </span>
                   </div>
-                  <div className="text-xs text-[#7e8e86] mb-0.5">Tiền chờ thu tại quầy:</div>
-                  <div className="text-lg font-heading font-bold text-[#915e1b]">
-                    {reconciliation.ready_for_pickup_amount_formatted}
+                  <div className="text-xl md:text-2xl font-heading font-bold text-[#915e1b]">
+                    {reconciliation.total_uncollected_amount_formatted ||
+                      moneyFormatted(
+                        (reconciliation.ready_for_pickup_amount || 0) +
+                          (reconciliation.in_workshop_amount || 0)
+                      )}
                   </div>
                   <div className="text-[11px] text-[#a48a6e] mt-1">
-                    Trạng thái: Sẵn sàng trả / Chờ nhận
+                    Bao gồm tiền chắc chắn thu khi giao và giá trị công dở dang trong xưởng
                   </div>
                 </div>
 
-                {/* Mục 2: Đang sửa trong xưởng */}
-                <div className="p-3.5 bg-white rounded-[9px] border border-[#e5ece8] shadow-2xs">
-                  <div className="flex items-center justify-between mb-1.5">
-                    <span className="text-xs font-bold text-[#2d3d35]">Đang sửa trong xưởng</span>
-                    <span className="px-2 py-0.5 rounded-full text-[11px] font-bold bg-[#edf5f0] text-[#176b58]">
-                      {reconciliation.in_workshop_count} máy
-                    </span>
+                {/* 2 dòng phân rã chi tiết theo Phương án A */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-3">
+                  {/* Dòng 1: Đã sửa xong chờ lấy / Chờ giao */}
+                  <div className="p-3.5 bg-white rounded-[9px] border border-[#eddcc4] shadow-2xs">
+                    <div className="flex items-center justify-between mb-1.5">
+                      <span className="text-xs font-bold text-[#915e1b]">Đã sửa xong chờ lấy / Chờ giao</span>
+                      <span className="px-2 py-0.5 rounded-full text-[11px] font-bold bg-[#fbf3e5] text-[#915e1b]">
+                        {reconciliation.ready_for_pickup_count} máy
+                      </span>
+                    </div>
+                    <div className="text-xs text-[#7e8e86] mb-0.5">Tiền chắc chắn thu khi giao:</div>
+                    <div className="text-lg font-heading font-bold text-[#915e1b]">
+                      {reconciliation.ready_for_pickup_amount_formatted}
+                    </div>
+                    <div className="text-[11px] text-[#a48a6e] mt-1">
+                      Trạng thái: Sẵn sàng trả / Chờ nhận
+                    </div>
                   </div>
-                  <div className="text-xs text-[#7e8e86] mb-0.5">Giá trị tạm tính:</div>
-                  <div className="text-lg font-heading font-bold text-[#2d3d35]">
-                    {reconciliation.in_workshop_amount_formatted}
-                  </div>
-                  <div className="text-[11px] text-[#7e8e86] mt-1">
-                    Đang khám / chờ linh kiện / sửa / QC
+
+                  {/* Dòng 2: Đang sửa trong xưởng */}
+                  <div className="p-3.5 bg-white rounded-[9px] border border-[#e5ece8] shadow-2xs">
+                    <div className="flex items-center justify-between mb-1.5">
+                      <span className="text-xs font-bold text-[#2d3d35]">Đang sửa trong xưởng</span>
+                      <span className="px-2 py-0.5 rounded-full text-[11px] font-bold bg-[#edf5f0] text-[#176b58]">
+                        {reconciliation.in_workshop_count} máy
+                      </span>
+                    </div>
+                    <div className="text-xs text-[#7e8e86] mb-0.5">Giá trị tạm tính dở dang:</div>
+                    <div className="text-lg font-heading font-bold text-[#2d3d35]">
+                      {reconciliation.in_workshop_amount_formatted}
+                    </div>
+                    <div className="text-[11px] text-[#7e8e86] mt-1">
+                      Đang khám / chờ linh kiện / sửa / QC
+                    </div>
                   </div>
                 </div>
               </div>
