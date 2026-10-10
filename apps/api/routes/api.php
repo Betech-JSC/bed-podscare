@@ -78,8 +78,11 @@ Route::prefix('v1')->group(function () {
         });
 
         // Users & Role Management
-        Route::middleware('role:admin')->group(function () {
+        Route::middleware('role:admin,super_admin,technician,tech,cskh')->group(function () {
             Route::get('/users', [UserController::class, 'index'])->name('api.v1.users.index');
+        });
+
+        Route::middleware('role:admin,super_admin')->group(function () {
             Route::post('/users', [UserController::class, 'store'])->name('api.v1.users.store');
             Route::put('/users/{id}', [UserController::class, 'update'])->name('api.v1.users.update');
             Route::post('/users/{id}/toggle-status', [UserController::class, 'toggleStatus'])->name('api.v1.users.toggle_status');
@@ -119,6 +122,8 @@ Route::prefix('v1')->group(function () {
         Route::patch('/repairs/{id}/parts-note', [OrderController::class, 'updatePartsNote'])->name('api.v1.repairs.parts_note');
         Route::post('/orders/{id}/assign-technician', [OrderController::class, 'assignTechnician'])->name('api.v1.orders.assign_technician');
         Route::post('/repairs/{id}/assign-technician', [OrderController::class, 'assignTechnician'])->name('api.v1.repairs.assign_technician');
+        Route::post('/orders/{id}/handover', [OrderController::class, 'handover'])->name('api.v1.orders.handover');
+        Route::post('/repairs/{id}/handover', [OrderController::class, 'handover'])->name('api.v1.repairs.handover');
         Route::get('/orders/{id}/allowed-transitions', [OrderController::class, 'allowedTransitions'])->name('api.v1.orders.allowed_transitions');
         Route::get('/repairs/{id}/allowed-transitions', [OrderController::class, 'allowedTransitions'])->name('api.v1.repairs.allowed_transitions');
         Route::post('/orders/{id}/checklists', [OrderController::class, 'storeChecklist'])->name('api.v1.orders.checklists');

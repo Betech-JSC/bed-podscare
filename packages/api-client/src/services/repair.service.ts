@@ -6,6 +6,7 @@ import type {
   AddAdditionalServiceDTO,
   SimpleCheckoutPayload,
   OrderDateFilter,
+  HandoverPayload,
 } from '@podscare/types';
 
 export class RepairService {
@@ -142,6 +143,10 @@ export class RepairService {
 
   async handover(id: string | number): Promise<any> {
     return this.transition(id, { transition: 'completed' });
+  }
+
+  async handoverOrder(id: string | number, payload: HandoverPayload): Promise<any> {
+    return this.http.post(`/api/v1/orders/${id}/handover`, payload);
   }
 
   async trackOrder(code: string | number, phone?: string): Promise<any> {

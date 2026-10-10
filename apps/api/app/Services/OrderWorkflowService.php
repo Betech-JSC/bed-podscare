@@ -22,10 +22,10 @@ class OrderWorkflowService extends BaseWorkflowService
         'quote_pending'    => ['waiting_tech', 'rejected', 'cancelled'],
         'rejected'         => ['inspecting', 'waiting_pickup', 'completed', 'cancelled'],
         'waiting_tech'     => ['assigned', 'in_repair'],
-        'assigned'         => ['in_repair', 'ready_for_return', 'waiting_parts'],
-        'in_repair'        => ['waiting_parts', 'waiting_qc', 'qc_pending', 'qc_inspecting', 'ready_for_return'],
-        'waiting_parts'    => ['in_repair'],
-        'rework_needed'    => ['in_repair', 'ready_for_return', 'waiting_parts'],
+        'assigned'         => ['in_repair', 'ready_for_return', 'waiting_parts', 'waiting_tech', 'assigned'],
+        'in_repair'        => ['waiting_parts', 'waiting_qc', 'qc_pending', 'qc_inspecting', 'ready_for_return', 'waiting_tech', 'assigned'],
+        'waiting_parts'    => ['in_repair', 'waiting_tech', 'assigned'],
+        'rework_needed'    => ['in_repair', 'ready_for_return', 'waiting_parts', 'waiting_tech', 'assigned'],
         'waiting_qc'       => ['ready_for_return', 'rework_needed'],
         'qc_pending'       => ['ready_for_return', 'rework_needed'],
         'qc_inspecting'    => ['ready_for_return', 'rework_needed'],
@@ -78,6 +78,14 @@ class OrderWorkflowService extends BaseWorkflowService
 
         if ($model->status === 'quote_pending') {
             $model->status = 'waiting_approval';
+        }
+
+        // Tái phân công trong trạng thái assigned (KTV bàn giao cho KTV khác)
+        if ($model->status === 'assigned' && $newStatus === 'assigned' && ! empty($options['technician_id'])) {
+            $model->technician_id = $options['technician_id'];
+            $model->tech_accepted_at = Carbon::now();
+            $model->save();
+            return $model->fresh();
         }
 
         return parent::transition($model, $newStatus, $options);
@@ -146,6 +154,8 @@ class OrderWorkflowService extends BaseWorkflowService
                 break;
             case 'waiting_tech':
                 $updates['customer_approved_at'] = $now;
+                $updates['technician_id'] = null;
+                $updates['tech_accepted_at'] = null;
                 break;
             case 'rejected':
                 $updates['customer_declined_at'] = $now;
@@ -153,8 +163,13 @@ class OrderWorkflowService extends BaseWorkflowService
                 break;
             case 'assigned':
                 $user = $options['user'] ?? auth()->user();
-                $updates['technician_id'] = $options['technician_id'] ?? ($user?->id ?? $model->technician_id);
-                $updates['tech_accepted_at'] = $now;
+                if (! empty($options['technician_id'])) {
+                    $updates['technician_id'] = $options['technician_id'];
+                    $updates['tech_accepted_at'] = $now;
+                } else {
+                    $updates['technician_id'] = $user?->id ?? $model->technician_id;
+                    $updates['tech_accepted_at'] = $now;
+                }
                 break;
             case 'in_repair':
                 if (! $model->repair_started_at) {

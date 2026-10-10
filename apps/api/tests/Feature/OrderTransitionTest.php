@@ -469,7 +469,7 @@ class OrderTransitionTest extends TestCase
             ->assertJsonPath('success', false)
             ->assertJsonPath(
                 'message',
-                "Không thể chuyển trạng thái từ 'Đang sửa' sang 'Hoàn tất'. Các trạng thái hợp lệ tiếp theo: Chờ linh kiện, Chờ QC, Sẵn sàng trả."
+                "Không thể chuyển trạng thái từ 'Đang sửa' sang 'Hoàn tất'. Các trạng thái hợp lệ tiếp theo: Chờ linh kiện, Chờ QC, Sẵn sàng trả, Chờ kỹ thuật, KTV đã nhận."
             );
 
         // Case B: Đang kiểm tra (inspecting) không thể nhảy sang Hoàn tất (completed)

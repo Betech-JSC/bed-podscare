@@ -18,6 +18,18 @@ class UserController extends Controller
     {
         $query = User::with('branch');
 
+        if ($request->user() && ! in_array($request->user()->role, ['admin', 'super_admin'], true)) {
+            $query->where('branch_id', $request->user()->branch_id)->where('is_active', true);
+        } else {
+            if ($branchId = $request->input('branch_id')) {
+                $query->where('branch_id', $branchId);
+            }
+
+            if ($request->has('is_active')) {
+                $query->where('is_active', filter_var($request->input('is_active'), FILTER_VALIDATE_BOOLEAN));
+            }
+        }
+
         if ($search = $request->input('q')) {
             $query->where(function ($q) use ($search) {
                 $q->where('name', 'like', "%{$search}%")
@@ -28,14 +40,6 @@ class UserController extends Controller
 
         if ($role = $request->input('role')) {
             $query->where('role', $role);
-        }
-
-        if ($branchId = $request->input('branch_id')) {
-            $query->where('branch_id', $branchId);
-        }
-
-        if ($request->has('is_active')) {
-            $query->where('is_active', filter_var($request->input('is_active'), FILTER_VALIDATE_BOOLEAN));
         }
 
         $users = $query->orderBy('id', 'desc')->paginate($request->input('per_page', 20));

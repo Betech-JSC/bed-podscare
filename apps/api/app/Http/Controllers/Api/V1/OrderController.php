@@ -689,6 +689,141 @@ class OrderController extends Controller
     }
 
     /**
+     * Bàn giao đơn sửa chữa cho KTV khác hoặc hoàn trả về hàng đợi tiếp nhận chung.
+     */
+    public function handover(Request $request, int|string $id): JsonResponse
+    {
+        $order = $this->resolveOrder($id);
+
+        if (! $order) {
+            return $this->empty('Không tìm thấy đơn sửa chữa.');
+        }
+
+        $this->authorizeOrderBranch($order, $request->user());
+
+        $user = $request->user();
+        if (! in_array($user->role, ['admin', 'super_admin'], true) && (int) $order->technician_id !== (int) $user->id) {
+            return $this->failure('Bạn không có quyền bàn giao đơn hàng của kỹ thuật viên khác.', 403);
+        }
+
+        if (! in_array($order->status, ['assigned', 'in_repair', 'waiting_parts', 'rework_needed'], true)) {
+            return $this->failure('Chỉ có thể bàn giao đơn hàng đang trong ca kỹ thuật xử lý.', 422);
+        }
+
+        $validated = $request->validate([
+            'target'         => 'required|string|in:queue,technician',
+            'technician_id'  => 'required_if:target,technician|nullable|exists:users,id',
+            'reason_tag'     => 'required|string|in:wrong_order,complex_repair,shift_change,missing_parts_tools',
+            'handover_notes' => 'nullable|string',
+        ]);
+
+        $notes = trim((string) ($validated['handover_notes'] ?? ''));
+        if ($validated['reason_tag'] === 'complex_repair' && mb_strlen($notes) < 3) {
+            return $this->failure('Vui lòng nhập ghi chú chi tiết (tối thiểu 3 ký tự) khi bàn giao ca máy khó để hỗ trợ thợ sau.', 422);
+        }
+
+        if ($validated['target'] === 'technician') {
+            $targetUser = User::find($validated['technician_id']);
+            if (! $targetUser || (int) $targetUser->branch_id !== (int) $order->branch_id) {
+                return $this->failure('Kỹ thuật viên tiếp nhận phải thuộc cùng chi nhánh với đơn hàng.', 422);
+            }
+            if ((int) $targetUser->id === (int) $user->id) {
+                return $this->failure('Không thể bàn giao đơn hàng cho chính bản thân.', 422);
+            }
+            if (! $targetUser->is_active) {
+                return $this->failure('Kỹ thuật viên tiếp nhận hiện không ở trạng thái hoạt động.', 422);
+            }
+        }
+
+        $reasonLabels = [
+            'wrong_order'         => 'Nhận nhầm đơn',
+            'complex_repair'      => 'Máy khó / Cần thợ chuyên',
+            'shift_change'        => 'Đổi ca / Hết giờ làm',
+            'missing_parts_tools' => 'Thiếu linh kiện / Dụng cụ',
+        ];
+        $reasonLabel = $reasonLabels[$validated['reason_tag']] ?? $validated['reason_tag'];
+
+        return DB::transaction(function () use ($order, $user, $validated, $reasonLabel, $notes, $request) {
+            $lockedOrder = RepairOrder::where('id', $order->id)->lockForUpdate()->firstOrFail();
+            $now = Carbon::now();
+
+            if ($validated['target'] === 'queue') {
+                $newStatus = 'waiting_tech';
+                $newTechId = null;
+                $targetName = 'Hàng đợi chung';
+            } else {
+                $newStatus = 'assigned';
+                $newTechId = (int) $validated['technician_id'];
+                $targetUser = User::find($newTechId);
+                $targetName = $targetUser?->name ?? 'KTV #' . $newTechId;
+            }
+
+            $this->workflowService->transition($lockedOrder, $newStatus, [
+                'technician_id' => $newTechId,
+                'user'          => $user,
+            ]);
+
+            $lockedOrder->status = $newStatus;
+            $lockedOrder->technician_id = $newTechId;
+            $lockedOrder->tech_accepted_at = $newTechId ? $now : null;
+
+            $effectiveNotes = ! empty($notes) ? $notes : "Lý do: {$reasonLabel}";
+            $handoverEntry = "[" . $now->format('H:i d/m') . " Bàn giao từ {$user->name}]: {$effectiveNotes}";
+            $lockedOrder->repair_note = trim(($lockedOrder->repair_note ? $lockedOrder->repair_note . "\n" : '') . $handoverEntry);
+            $lockedOrder->save();
+
+            AuditLog::create([
+                'tenant_id'      => $lockedOrder->tenant_id,
+                'user_id'        => $user->id,
+                'user_name'      => $user->name,
+                'action'         => 'Bàn giao kỹ thuật',
+                'auditable_type' => 'RepairOrder',
+                'auditable_id'   => $lockedOrder->id,
+                'details'        => "KTV {$user->name} đã bàn giao đơn {$lockedOrder->order_code} cho {$targetName}. Lý do: {$reasonLabel}." . (! empty($notes) ? " Ghi chú: {$notes}" : ''),
+                'ip_address'     => $request->ip(),
+            ]);
+
+            $notificationTitle = $validated['target'] === 'queue'
+                ? 'Đơn hàng mới trong hàng đợi chờ nhận'
+                : 'Bạn nhận được đơn bàn giao mới';
+            $notificationMsg = $validated['target'] === 'queue'
+                ? "Đơn {$lockedOrder->order_code} đã được KTV {$user->name} bàn giao trả về hàng đợi chung: {$reasonLabel}"
+                : "KTV {$user->name} đã bàn giao đơn {$lockedOrder->order_code} cho {$targetName}: {$reasonLabel}";
+
+            $notification = Notification::create([
+                'branch_id'  => $lockedOrder->branch_id,
+                'order_id'   => $lockedOrder->id,
+                'user_id'    => $newTechId,
+                'type'       => 'order_handover',
+                'title'      => $notificationTitle,
+                'message'    => $notificationMsg,
+                'severity'   => 'info',
+            ]);
+
+            OrderOperationalEvent::dispatch(
+                $notification->id,
+                $lockedOrder->id,
+                $lockedOrder->order_code ?? (string) $lockedOrder->id,
+                $notificationTitle,
+                $notificationMsg,
+                'info',
+                $now->toIso8601String(),
+                "/repairs?id={$lockedOrder->id}",
+                $lockedOrder->branch_id,
+                'technician',
+                $newTechId,
+                'order_handover',
+                'order.handover'
+            );
+
+            return $this->success(
+                $lockedOrder->fresh(['customer', 'technician', 'branch', 'deviceModel', 'createdByUser:id,name,role']),
+                'Bàn giao đơn sửa chữa thành công.'
+            );
+        });
+    }
+
+    /**
      * Lấy danh sách các trạng thái tiếp theo được phép chuyển kèm nhãn tiếng Việt cho đơn hàng.
      */
     public function allowedTransitions(Request $request, int|string $id): JsonResponse

@@ -16,6 +16,7 @@ import type { RepairOrder } from '@podscare/types';
 import { repairService, inventoryService } from '@podscare/api-client';
 import { normalizeStatusCode } from '../repairs/fsm';
 import { useSilentPrint } from './print';
+import { HandoverTechModal } from './HandoverTechModal';
 
 export interface TechOrderDetailModalProps {
   isOpen: boolean;
@@ -48,6 +49,7 @@ export const TechOrderDetailModal: React.FC<TechOrderDetailModalProps> = ({
   const [consentCheck, setConsentCheck] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [formError, setFormError] = useState('');
+  const [isHandoverOpen, setIsHandoverOpen] = useState(false);
 
   // Parts Request State
   const [partsNeeded, setPartsNeeded] = useState('');
@@ -313,7 +315,8 @@ export const TechOrderDetailModal: React.FC<TechOrderDetailModalProps> = ({
   };
 
   return (
-    <Modal
+    <>
+      <Modal
       isOpen={isOpen}
       onClose={onClose}
       maxWidth="xl"
@@ -344,6 +347,17 @@ export const TechOrderDetailModal: React.FC<TechOrderDetailModalProps> = ({
             <Button variant="secondary" size="md" onClick={onClose}>
               Đóng
             </Button>
+
+            {isActive && (
+              <Button
+                variant="outline"
+                size="md"
+                onClick={() => setIsHandoverOpen(true)}
+                className="flex items-center gap-1.5 text-xs text-[#176b58] border-[#b8d0c5] hover:bg-[#f0f8f4] font-semibold"
+              >
+                <span>🔄 Bàn giao KTV khác</span>
+              </Button>
+            )}
 
             {isAvailable && (
               <Button
@@ -817,5 +831,22 @@ export const TechOrderDetailModal: React.FC<TechOrderDetailModalProps> = ({
         </div>
       </div>
     </Modal>
+
+    {isHandoverOpen && (
+      <HandoverTechModal
+        isOpen={isHandoverOpen}
+        onClose={() => setIsHandoverOpen(false)}
+        order={order}
+        currentUser={currentUser}
+        onSuccess={(updatedOrder) => {
+          setIsHandoverOpen(false);
+          if (updateOrder) updateOrder(updatedOrder);
+          if (onCompleteSuccess) onCompleteSuccess(updatedOrder);
+          onClose();
+        }}
+        invalidateOrders={invalidateOrders}
+      />
+    )}
+  </>
   );
 };

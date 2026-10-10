@@ -12,6 +12,7 @@ import {
 } from '@podscare/ui';
 import { AppShell } from '../components/AppShell';
 import { TechOrderDetailModal } from '../components/TechOrderDetailModal';
+import { HandoverTechModal } from '../components/HandoverTechModal';
 import { usePodsCare } from '../providers';
 import type { RepairOrder } from '@podscare/types';
 import { normalizeStatusCode } from '../repairs/fsm';
@@ -35,6 +36,8 @@ export default function TechnicianQueuePage() {
   const [activeTab, setActiveTab] = useState<'my_orders' | 'available' | 'completed'>('my_orders');
   const [selectedOrder, setSelectedOrder] = useState<RepairOrder | null>(null);
   const [detailModalOpen, setDetailModalOpen] = useState(false);
+  const [handoverModalOpen, setHandoverModalOpen] = useState(false);
+  const [handoverOrderTarget, setHandoverOrderTarget] = useState<RepairOrder | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const { printReceipt, isPrinting: isSilentPrinting } = useSilentPrint();
 
@@ -57,6 +60,11 @@ export default function TechnicianQueuePage() {
   const handlePrintRoutingSlip = async (order: RepairOrder) => {
     toast(`Đang gửi lệnh in tem khay K80 cho đơn ${order.id}...`, 'info');
     await printReceipt(order, 'k80', true);
+  };
+
+  const handleOpenHandoverModal = (order: RepairOrder) => {
+    setHandoverOrderTarget(order);
+    setHandoverModalOpen(true);
   };
 
   const techName = currentUser?.name || 'Kỹ thuật viên';
@@ -589,6 +597,16 @@ export default function TechnicianQueuePage() {
                           🖨️ Tem K80
                         </Button>
 
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => handleOpenHandoverModal(order)}
+                          className="px-2.5 text-xs text-[#176b58] border-[#b8d0c5] hover:bg-[#eef6f2] font-semibold"
+                          title="Bàn giao đơn cho KTV khác hoặc trả về hàng đợi chung"
+                        >
+                          🔄 Bàn giao
+                        </Button>
+
                         {isWaitingParts ? (
                           <Button
                             variant="primary"
@@ -889,6 +907,29 @@ export default function TechnicianQueuePage() {
           setActiveTab('my_orders');
         }}
       />
+
+      {/* Handover & Reassignment Modal */}
+      {handoverModalOpen && (
+        <HandoverTechModal
+          isOpen={handoverModalOpen}
+          onClose={() => {
+            setHandoverModalOpen(false);
+            setHandoverOrderTarget(null);
+          }}
+          order={handoverOrderTarget}
+          currentUser={currentUser}
+          invalidateOrders={async () => {
+            if (invalidateOrders) await invalidateOrders();
+            refetch();
+          }}
+          onSuccess={(updated) => {
+            if (updateOrder) updateOrder(updated);
+            refetch();
+            setHandoverModalOpen(false);
+            setHandoverOrderTarget(null);
+          }}
+        />
+      )}
     </AppShell>
   );
 }

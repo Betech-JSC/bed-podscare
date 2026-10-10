@@ -2,6 +2,16 @@ export type OrderStatusType = 'wait' | 'progress' | 'ready' | 'danger' | 'new' |
 
 export type OrderDateFilter = 'today' | 'yesterday' | 'day_before' | '3_days' | '7_days' | '30_days' | 'all';
 
+export type HandoverReasonTag = 'wrong_order' | 'complex_repair' | 'shift_change' | 'missing_parts_tools';
+
+export interface HandoverPayload {
+  target: 'queue' | 'technician';
+  technician_id?: number | null;
+  reason_tag: HandoverReasonTag;
+  handover_notes?: string;
+  expected_updated_at?: string;
+}
+
 export type StandardOrderStatus =
   | 'Tiếp nhận mới'
   | 'Chờ kỹ thuật'
