@@ -368,12 +368,20 @@ export const Providers: React.FC<{ children: React.ReactNode }> = ({ children })
           setRoleState(effectiveRole);
           setIsAuthenticated(true);
         } catch {
-          // ignore
+          defaultHttpClient.setToken(null);
+          setToken(null);
+          setIsAuthenticated(false);
+          if (typeof document !== 'undefined') {
+            document.cookie = 'podscare_session_token=; path=/; max-age=0; SameSite=Lax';
+          }
         }
       } else {
         defaultHttpClient.setToken(null);
         setToken(null);
         setIsAuthenticated(false);
+        if (typeof document !== 'undefined') {
+          document.cookie = 'podscare_session_token=; path=/; max-age=0; SameSite=Lax';
+        }
       }
 
       // Bảo vệ hydration: Nếu role !== 'admin' và !== 'super_admin', luôn luôn ép buộc branchId = user.branch_id và branch = user.branch
@@ -407,6 +415,9 @@ export const Providers: React.FC<{ children: React.ReactNode }> = ({ children })
       defaultHttpClient.setToken(null);
       setToken(null);
       setIsAuthenticated(false);
+      if (typeof document !== 'undefined') {
+        document.cookie = 'podscare_session_token=; path=/; max-age=0; SameSite=Lax';
+      }
     } finally {
       setIsLoadingAuth(false);
     }

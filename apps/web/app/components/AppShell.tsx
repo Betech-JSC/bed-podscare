@@ -189,6 +189,9 @@ export const AppShell: React.FC<AppShellProps> = ({ children, crumbName = 'Tổn
   useEffect(() => {
     if (!isLoadingAuth) {
       if (!isAuthenticated) {
+        if (typeof document !== 'undefined') {
+          document.cookie = 'podscare_session_token=; path=/; max-age=0; SameSite=Lax';
+        }
         router.replace('/login');
       } else {
         const isPlatformRoute = pathname.startsWith('/platform');
@@ -246,7 +249,14 @@ export const AppShell: React.FC<AppShellProps> = ({ children, crumbName = 'Tổn
   }
 
   if (!isAuthenticated) {
-    return null;
+    return (
+      <div className="min-h-screen bg-[#f7faf8] flex items-center justify-center p-4">
+        <div className="flex flex-col items-center gap-3">
+          <div className="w-8 h-8 border-3 border-[#176b58] border-t-transparent rounded-full animate-spin" />
+          <p className="text-sm font-medium text-[#4a5e52]">Đang chuyển hướng đến trang đăng nhập...</p>
+        </div>
+      </div>
+    );
   }
 
   return (

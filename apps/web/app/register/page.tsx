@@ -1,11 +1,11 @@
 'use client';
 
 import React, { useState, Suspense } from 'react';
-import { useRouter, useSearchParams } from 'next/navigation';
+import { useSearchParams } from 'next/navigation';
+import Link from 'next/link';
 import { Button, Input, Icon } from '@podscare/ui';
 
 function RegisterStoreForm() {
-  const router = useRouter();
   const searchParams = useSearchParams();
 
   // Đọc query parameter `plan` ('trial' | 'standard' | 'pro', mặc định 'trial')
@@ -146,13 +146,12 @@ function RegisterStoreForm() {
       <div className="w-full max-w-[660px] bg-white rounded-[16px] border border-[#e5ece8] shadow-[0_24px_90px_rgba(18,37,27,0.08)] p-6 sm:p-8 md:p-10 animate-in fade-in zoom-in-95 duration-200">
         {/* Navigation Bar */}
         <div className="flex items-center justify-between mb-6 pb-3 border-b border-[#f0f3f1]">
-          <button
-            type="button"
-            onClick={() => router.push('/login')}
+          <Link
+            href="/login"
             className="inline-flex items-center gap-1.5 text-xs font-semibold text-[#176b51] hover:text-[#10583f] transition-colors cursor-pointer"
           >
             ← Quay lại Đăng nhập
-          </button>
+          </Link>
           <span className="text-[11px] text-[#819089] font-medium">FIXO Multi-Tenant Platform</span>
         </div>
 
@@ -277,15 +276,12 @@ function RegisterStoreForm() {
                 <span className="font-semibold text-[#176b58]">14 ngày kể từ hôm nay</span>
               </div>
             </div>
-            <Button
-              type="button"
-              variant="primary"
-              size="lg"
-              className="w-full font-bold"
-              onClick={() => router.push('/login')}
+            <Link
+              href="/login"
+              className="w-full inline-flex items-center justify-center py-3 px-4 rounded-[10px] bg-[#176b58] text-white font-bold text-sm hover:bg-[#10583f] transition-all text-center shadow-sm cursor-pointer"
             >
               Đăng nhập vào gian hàng ngay →
-            </Button>
+            </Link>
           </div>
         ) : (
           <>
@@ -410,13 +406,12 @@ function RegisterStoreForm() {
 
               <div className="text-center pt-2">
                 <span className="text-xs text-[#6e7d75]">Đã có tài khoản gian hàng? </span>
-                <button
-                  type="button"
-                  onClick={() => router.push('/login')}
+                <Link
+                  href="/login"
                   className="text-xs font-bold text-[#176b58] hover:underline cursor-pointer"
                 >
                   Đăng nhập ngay →
-                </button>
+                </Link>
               </div>
             </form>
           </>

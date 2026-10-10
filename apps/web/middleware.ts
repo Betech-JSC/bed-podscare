@@ -7,11 +7,9 @@ export function middleware(request: NextRequest) {
 
   const isLoginPage = pathname === '/login';
 
-  // Nếu người dùng đã có token hợp lệ mà truy cập /login -> Chuyển hướng ngay vào dashboard
+  // Bỏ việc ép redirect cứng sang /dashboard chỉ dựa vào cookie thô!
+  // Trang /login phải luôn được phép tải để người dùng xem form và chủ động đăng nhập.
   if (isLoginPage) {
-    if (sessionToken && sessionToken.trim() !== '') {
-      return NextResponse.redirect(new URL('/dashboard', request.url));
-    }
     return NextResponse.next();
   }
 

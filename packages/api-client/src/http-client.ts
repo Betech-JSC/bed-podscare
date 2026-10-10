@@ -38,7 +38,12 @@ export class HttpClient {
         localStorage.setItem('podscare_token', token);
       } else {
         localStorage.removeItem('podscare_token');
+        if (typeof document !== 'undefined') {
+          document.cookie = 'podscare_session_token=; path=/; max-age=0; SameSite=Lax';
+        }
       }
+    } else if (!token && typeof document !== 'undefined') {
+      document.cookie = 'podscare_session_token=; path=/; max-age=0; SameSite=Lax';
     }
   }
 
@@ -56,6 +61,9 @@ export class HttpClient {
     }
     this.isLoggingOut = true;
     this.setToken(null);
+    if (typeof document !== 'undefined') {
+      document.cookie = 'podscare_session_token=; path=/; max-age=0; SameSite=Lax';
+    }
     if (typeof window !== 'undefined' && window.location.pathname !== '/login') {
       window.location.href = '/login';
     }
