@@ -794,7 +794,12 @@ export default function RepairsPage() {
                       onClick={() => setSelectedOrder(o)}
                       className="h-14 hover:bg-[#fbfcfb] cursor-pointer transition-colors"
                     >
-                      <td className="px-3 py-3 text-center text-xs font-semibold text-[#809088]">{idx + 1}</td>
+                      <td
+                        data-testid="order-row-stt"
+                        className="px-3 py-3 text-center text-xs font-semibold text-[#809088]"
+                      >
+                        {filteredOrders.length - idx}
+                      </td>
                       <td className="px-4">
                         <div className="font-mono font-bold text-[#176b58]">{o.id}</div>
                         <div className="mt-1">
