@@ -68,6 +68,8 @@ export default function TechnicianQueuePage() {
   };
 
   const techName = currentUser?.name || 'Kỹ thuật viên';
+  const branchString = typeof branch === 'string' ? branch : ((branch as any)?.name || 'Chi nhánh FIXO');
+  const displayBranchText = branchString.startsWith('FIXO') ? branchString : `FIXO · ${branchString}`;
 
   const moneyFormatted = (n: number) =>
     n ? new Intl.NumberFormat('vi-VN').format(n) + ' ₫' : '—';
@@ -155,9 +157,10 @@ export default function TechnicianQueuePage() {
     if (branchId === 'all' || branchId === undefined || branchId === null) {
       return mappedApiOrders;
     }
+    const branchString = typeof branch === 'string' ? branch : ((branch as any)?.name || '');
     return mappedApiOrders.filter((o) => {
       const matchId = o.branchId !== undefined && String(o.branchId) === String(branchId);
-      const matchName = o.branch ? o.branch.includes(branch) || branch.includes(o.branch) : false;
+      const matchName = o.branch && branchString ? o.branch.includes(branchString) || branchString.includes(o.branch) : false;
       return matchId || matchName;
     });
   }, [mappedApiOrders, branch, branchId]);
@@ -299,14 +302,14 @@ export default function TechnicianQueuePage() {
               <span>TECHNICIAN WORKSPACE</span>
               <span className="w-1.5 h-1.5 rounded-full bg-[#176b58]" />
               <span className="text-[#176b58] font-bold">
-                {branchId === 'all' ? 'Toàn bộ chi nhánh' : branch}
+                {branchId === 'all' ? 'Toàn bộ chi nhánh' : branchString}
               </span>
             </div>
             <h1 className="font-heading font-bold text-2xl md:text-3xl text-[#1c302b] m-0">
               Không gian Kỹ thuật viên
             </h1>
             <p className="text-sm text-[#7e8d85] mt-1 mb-0">
-              Xin chào {techName} · Tiếp nhận máy từ quầy CSKH {branchId === 'all' ? 'toàn chuỗi' : branch}, sửa chữa và hoàn tất bàn giao tức thì.
+              Xin chào {techName} · Tiếp nhận máy từ quầy CSKH {branchId === 'all' ? 'toàn chuỗi' : branchString}, sửa chữa và hoàn tất bàn giao tức thì.
             </p>
           </div>
           {role === 'admin' ? (
@@ -334,7 +337,7 @@ export default function TechnicianQueuePage() {
             <div className="flex items-center gap-2">
               <div className="h-9 border border-[#d6dfda] rounded-[8px] px-3 text-xs text-[#176b58] bg-[#eaf4ef] font-semibold flex items-center gap-1.5 cursor-default select-none pointer-events-none">
                 <span>
-                  Chi nhánh trực: {branch.startsWith('FIXO') ? branch : `FIXO · ${branch}`}
+                  Chi nhánh trực: {displayBranchText}
                 </span>
               </div>
             </div>
