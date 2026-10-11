@@ -86,45 +86,97 @@ class OrderController extends Controller
         // Xử lý bộ lọc thời gian và phân quyền phạm vi lịch sử (Shift Scope & RBAC)
         $tz = config('app.timezone', 'Asia/Ho_Chi_Minh');
         $dateFilter = (string) $request->input('date_filter', 'today');
+        $dateType = (string) $request->input('date_type', 'created_at');
+        $isCompletedDate = in_array($dateType, ['completed_at', 'handed_over_at'], true);
         $isTechnician = $user && $user->role === 'technician';
 
-        if ($isTechnician) {
-            if (in_array($dateFilter, ['all', '30_days'], true) || ! in_array($dateFilter, ['today', '3_days', 'yesterday', '7_days'], true)) {
-                $dateFilter = '3_days';
+        $filterDateRange = function ($q, $start, $end) use ($isCompletedDate) {
+            if ($isCompletedDate) {
+                $q->where(function ($sq) use ($start, $end) {
+                    $sq->whereBetween('handed_over_at', [$start, $end])
+                       ->orWhere(function ($sub) use ($start, $end) {
+                           $sub->whereNull('handed_over_at')
+                               ->whereBetween('updated_at', [$start, $end]);
+                       });
+                });
+            } else {
+                $q->whereBetween('created_at', [$start, $end]);
             }
-        } else {
-            if (! in_array($dateFilter, ['today', '3_days', 'yesterday', '7_days', '30_days', 'all'], true)) {
-                $dateFilter = 'today';
+        };
+
+        $filterDateFrom = function ($q, $start) use ($isCompletedDate) {
+            if ($isCompletedDate) {
+                $q->where(function ($sq) use ($start) {
+                    $sq->where('handed_over_at', '>=', $start)
+                       ->orWhere(function ($sub) use ($start) {
+                           $sub->whereNull('handed_over_at')
+                               ->where('updated_at', '>=', $start);
+                       });
+                });
+            } else {
+                $q->where('created_at', '>=', $start);
+            }
+        };
+
+        // Nếu có date cụ thể (YYYY-MM-DD), ưu tiên lọc theo ngày đó thay vì preset
+        $specificDate = $request->input('date');
+        $hasSpecificDate = false;
+
+        if ($specificDate && is_string($specificDate) && preg_match('/^\d{4}-\d{2}-\d{2}$/', $specificDate)) {
+            try {
+                $parsed = Carbon::createFromFormat('Y-m-d', $specificDate, $tz);
+                if ($parsed && $parsed->format('Y-m-d') === $specificDate) {
+                    $dayStart = $parsed->copy()->startOfDay();
+                    $dayEnd = $parsed->copy()->endOfDay();
+                    $filterDateRange($query, $dayStart, $dayEnd);
+                    $hasSpecificDate = true;
+                }
+            } catch (\Throwable $e) {
+                $hasSpecificDate = false;
             }
         }
 
-        if ($dateFilter === 'today') {
-            $todayStart = Carbon::today($tz)->startOfDay();
-            $todayEnd = Carbon::today($tz)->endOfDay();
+        if (! $hasSpecificDate) {
             if ($isTechnician) {
-                // KTV xem ca hôm nay: Bao gồm các đơn hôm nay HOẶC các đơn dở dang từ 3 ngày gần nhất (hôm nay, hôm qua, hôm kia)
-                $threeDaysAgoStart = Carbon::today($tz)->subDays(2)->startOfDay();
-                $query->where(function ($q) use ($todayStart, $todayEnd, $threeDaysAgoStart) {
-                    $q->whereBetween('created_at', [$todayStart, $todayEnd])
-                      ->orWhere(function ($sub) use ($threeDaysAgoStart) {
-                          $sub->where('created_at', '>=', $threeDaysAgoStart)
-                              ->whereNotIn('status', ['completed', 'cancelled', 'rejected']);
-                      });
-                });
+                if (in_array($dateFilter, ['all', '30_days'], true) || ! in_array($dateFilter, ['today', '3_days', 'yesterday', '7_days'], true)) {
+                    $dateFilter = '3_days';
+                }
             } else {
-                $query->whereBetween('created_at', [$todayStart, $todayEnd]);
+                if (! in_array($dateFilter, ['today', '3_days', 'yesterday', '7_days', '30_days', 'all'], true)) {
+                    $dateFilter = 'today';
+                }
             }
-        } elseif ($dateFilter === 'yesterday') {
-            $query->whereDate('created_at', Carbon::yesterday($tz));
-        } elseif ($dateFilter === '3_days') {
-            $query->where('created_at', '>=', Carbon::today($tz)->subDays(2)->startOfDay());
-        } elseif ($dateFilter === '7_days') {
-            $query->where('created_at', '>=', Carbon::now($tz)->subDays(7)->startOfDay());
-        } elseif ($dateFilter === '30_days') {
-            $query->where('created_at', '>=', Carbon::now($tz)->subDays(30)->startOfDay());
-        } elseif ($dateFilter === 'all') {
-            if ($isTechnician) {
-                $query->where('created_at', '>=', Carbon::today($tz)->subDays(2)->startOfDay());
+
+            if ($dateFilter === 'today') {
+                $todayStart = Carbon::today($tz)->startOfDay();
+                $todayEnd = Carbon::today($tz)->endOfDay();
+                if ($isTechnician && ! $isCompletedDate) {
+                    // KTV xem ca hôm nay: Bao gồm các đơn hôm nay HOẶC các đơn dở dang từ 3 ngày gần nhất (hôm nay, hôm qua, hôm kia)
+                    $threeDaysAgoStart = Carbon::today($tz)->subDays(2)->startOfDay();
+                    $query->where(function ($q) use ($todayStart, $todayEnd, $threeDaysAgoStart) {
+                        $q->whereBetween('created_at', [$todayStart, $todayEnd])
+                          ->orWhere(function ($sub) use ($threeDaysAgoStart) {
+                              $sub->where('created_at', '>=', $threeDaysAgoStart)
+                                  ->whereNotIn('status', ['completed', 'cancelled', 'rejected']);
+                          });
+                    });
+                } else {
+                    $filterDateRange($query, $todayStart, $todayEnd);
+                }
+            } elseif ($dateFilter === 'yesterday') {
+                $yesterdayStart = Carbon::yesterday($tz)->startOfDay();
+                $yesterdayEnd = Carbon::yesterday($tz)->endOfDay();
+                $filterDateRange($query, $yesterdayStart, $yesterdayEnd);
+            } elseif ($dateFilter === '3_days') {
+                $filterDateFrom($query, Carbon::today($tz)->subDays(2)->startOfDay());
+            } elseif ($dateFilter === '7_days') {
+                $filterDateFrom($query, Carbon::now($tz)->subDays(7)->startOfDay());
+            } elseif ($dateFilter === '30_days') {
+                $filterDateFrom($query, Carbon::now($tz)->subDays(30)->startOfDay());
+            } elseif ($dateFilter === 'all') {
+                if ($isTechnician && ! $isCompletedDate) {
+                    $query->where('created_at', '>=', Carbon::today($tz)->subDays(2)->startOfDay());
+                }
             }
         }
 

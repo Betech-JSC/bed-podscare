@@ -1,7 +1,7 @@
 'use client';
 
-import React, { useState, useMemo } from 'react';
-import { useRouter } from 'next/navigation';
+import React, { useState, useMemo, Suspense } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
 import {
   Button,
   StatusTag,
@@ -34,16 +34,51 @@ import {
 } from './fsm';
 import { useSilentPrint, PrintButtonDropdown } from '../components/print';
 
-export default function RepairsPage() {
+function RepairsPageContent() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const { toast } = useToast();
   const { orders, updateOrder, branch, branchId, setBranch, branches, role, invalidateOrders } =
     usePodsCare();
 
+  const initialDate = searchParams.get('date') || '';
+  const initialDateTypeParam = searchParams.get('date_type');
+  const initialDateType =
+    initialDateTypeParam === 'completed_at' || initialDateTypeParam === 'handed_over_at'
+      ? 'completed_at'
+      : 'created_at';
+  const initialStatusParam = searchParams.get('status') || '';
+  const initialOrderTypeParam = (searchParams.get('order_type') as any) || 'all';
+  const initialBranchParam = searchParams.get('branch_id');
+
+  const backendToStatusLabelMap: Record<string, string> = {
+    inspecting: 'Đang kiểm tra',
+    waiting_tech: 'Chờ kỹ thuật',
+    assigned: 'Đã nhận đơn',
+    waiting_approval: 'Chờ khách duyệt',
+    in_repair: 'Đang sửa',
+    waiting_parts: 'Chờ linh kiện',
+    waiting_qc: 'Chờ QC',
+    qc_pending: 'Chờ QC',
+    ready_for_return: 'Sẵn sàng trả',
+    waiting_pickup: 'Chờ khách nhận',
+    completed: 'Hoàn tất',
+    rejected: 'Từ chối sửa',
+    cancelled: 'Đã hủy',
+  };
+
   const [dateFilter, setDateFilter] = useState<OrderDateFilter>('today');
+  const [selectedDate, setSelectedDate] = useState<string>(initialDate);
+  const [dateType, setDateType] = useState<'created_at' | 'completed_at'>(initialDateType);
   const [search, setSearch] = useState('');
-  const [statusFilter, setStatusFilter] = useState('');
-  const [orderTypeFilter, setOrderTypeFilter] = useState<'all' | 'in_store' | 'cod' | 'warranty'>('all');
+  const [statusFilter, setStatusFilter] = useState(
+    backendToStatusLabelMap[initialStatusParam] || initialStatusParam
+  );
+  const [orderTypeFilter, setOrderTypeFilter] = useState<'all' | 'in_store' | 'cod' | 'warranty'>(
+    ['all', 'in_store', 'cod', 'warranty'].includes(initialOrderTypeParam)
+      ? initialOrderTypeParam
+      : 'all'
+  );
   const [selectedOrder, setSelectedOrder] = useState<RepairOrder | null>(null);
   const [intakeModalOpen, setIntakeModalOpen] = useState(false);
   const [initialIntakeType, setInitialIntakeType] = useState<'in_store' | 'cod' | 'warranty'>('in_store');
@@ -84,6 +119,14 @@ export default function RepairsPage() {
     'Hoàn tất': 'completed',
   };
 
+  // Khởi tạo branch_id từ URL nếu có
+  React.useEffect(() => {
+    if (initialBranchParam && branches && branches.length > 0) {
+      const b = branches.find((item) => String(item.id) === initialBranchParam);
+      if (b) setBranch(b.name, b.id);
+    }
+  }, [initialBranchParam, branches, setBranch]);
+
   // Nạp đơn hàng trực tiếp qua API với bộ lọc chi nhánh, trạng thái, thời gian và tìm kiếm
   const {
     data: apiOrdersData,
@@ -91,9 +134,16 @@ export default function RepairsPage() {
     isError,
     refetch,
   } = useQuery({
-    queryKey: ['repairs', branchId, statusFilter, search, orderTypeFilter, dateFilter],
+    queryKey: ['repairs', branchId, statusFilter, search, orderTypeFilter, dateFilter, selectedDate, dateType],
     queryFn: async () => {
-      const params: Record<string, any> = { per_page: 50, date_filter: dateFilter };
+      const params: Record<string, any> = { per_page: 50 };
+      if (selectedDate) {
+        params.date = selectedDate;
+      } else {
+        params.date_filter = dateFilter;
+      }
+      params.date_type = dateType;
+
       if (branchId && branchId !== 'all') {
         params.branch_id = branchId;
       }
@@ -185,9 +235,15 @@ export default function RepairsPage() {
         tech: o.technician?.name || 'Chưa phân công',
         technicianId: o.technician_id ?? o.technician?.id ?? null,
         technician_id: o.technician_id ?? o.technician?.id ?? null,
-        date: o.created_at
-          ? new Intl.DateTimeFormat('vi-VN').format(new Date(o.created_at))
-          : 'Hôm nay',
+        date: (() => {
+          const dateVal =
+            dateType === 'completed_at'
+              ? o.handed_over_at || o.updated_at || o.created_at
+              : o.created_at;
+          return dateVal
+            ? new Intl.DateTimeFormat('vi-VN').format(new Date(dateVal))
+            : 'Hôm nay';
+        })(),
         branch: o.branch?.name || 'Chi nhánh FIXO',
         branchId: o.branch_id || o.branch?.id || 1,
         branchName: o.branch?.name || 'Chi nhánh FIXO',
@@ -212,7 +268,7 @@ export default function RepairsPage() {
         batchOrders: o.batch_orders || o.batchOrders,
       };
     });
-  }, [apiOrdersData, orders, search, statusFilter, orderTypeFilter]);
+  }, [apiOrdersData, orders, search, statusFilter, orderTypeFilter, dateType]);
 
   // Lắng nghe sự kiện realtime cập nhật trạng thái đơn (kèm chuông Audio Chime)
   React.useEffect(() => {
@@ -671,77 +727,152 @@ export default function RepairsPage() {
           </div>
 
           {/* Date Filter Pills (Shift Day & History Scope) */}
-          <div className="flex flex-wrap items-center justify-between gap-2 border-b border-[#e5ece8] pb-3 mb-4">
-            <div className="flex items-center gap-1.5 flex-wrap">
-              <span className="text-xs font-semibold text-[#667a70] mr-1 flex items-center gap-1">
-                <span>Ca làm việc:</span>
-              </span>
-              <button
-                type="button"
-                data-testid="date-filter-today"
-                onClick={() => setDateFilter('today')}
-                className={`px-3 py-1.5 rounded-[8px] text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
-                  dateFilter === 'today'
-                    ? 'bg-[#176b58] text-white shadow-xs'
-                    : 'bg-[#f4f7f5] text-[#556960] hover:bg-[#eaf0ec]'
-                }`}
-              >
-                <span>Hôm nay</span>
-              </button>
-              <button
-                type="button"
-                data-testid="date-filter-yesterday"
-                onClick={() => setDateFilter('yesterday')}
-                className={`px-3 py-1.5 rounded-[8px] text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
-                  dateFilter === 'yesterday'
-                    ? 'bg-[#176b58] text-white shadow-xs'
-                    : 'bg-[#f4f7f5] text-[#556960] hover:bg-[#eaf0ec]'
-                }`}
-              >
-                <span>Hôm qua</span>
-              </button>
-              <button
-                type="button"
-                data-testid="date-filter-7_days"
-                onClick={() => setDateFilter('7_days')}
-                className={`px-3 py-1.5 rounded-[8px] text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
-                  dateFilter === '7_days'
-                    ? 'bg-[#176b58] text-white shadow-xs'
-                    : 'bg-[#f4f7f5] text-[#556960] hover:bg-[#eaf0ec]'
-                }`}
-              >
-                <span>7 ngày qua</span>
-              </button>
-              <button
-                type="button"
-                data-testid="date-filter-30_days"
-                onClick={() => setDateFilter('30_days')}
-                className={`px-3 py-1.5 rounded-[8px] text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
-                  dateFilter === '30_days'
-                    ? 'bg-[#176b58] text-white shadow-xs'
-                    : 'bg-[#f4f7f5] text-[#556960] hover:bg-[#eaf0ec]'
-                }`}
-              >
-                <span>30 ngày qua</span>
-              </button>
-              <button
-                type="button"
-                data-testid="date-filter-all"
-                onClick={() => setDateFilter('all')}
-                className={`px-3 py-1.5 rounded-[8px] text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
-                  dateFilter === 'all'
-                    ? 'bg-[#176b58] text-white shadow-xs'
-                    : 'bg-[#f4f7f5] text-[#556960] hover:bg-[#eaf0ec]'
-                }`}
-              >
-                <span>Toàn bộ</span>
-              </button>
+          <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[#e5ece8] pb-3 mb-4">
+            <div className="flex items-center gap-3 flex-wrap">
+              {/* Tiêu chí thời gian: Theo ngày tiếp nhận vs Theo ngày hoàn tất */}
+              <div className="flex items-center gap-1 bg-[#f4f7f5] p-0.5 rounded-[8px] border border-[#e5ece8]">
+                <button
+                  type="button"
+                  data-testid="date-type-created"
+                  onClick={() => setDateType('created_at')}
+                  className={`px-2.5 py-1 rounded-[6px] text-xs font-bold transition-all cursor-pointer ${
+                    dateType === 'created_at'
+                      ? 'bg-white text-[#176b58] shadow-xs'
+                      : 'text-[#667a70] hover:text-[#1c302b]'
+                  }`}
+                >
+                  Theo ngày tiếp nhận
+                </button>
+                <button
+                  type="button"
+                  data-testid="date-type-completed"
+                  onClick={() => setDateType('completed_at')}
+                  className={`px-2.5 py-1 rounded-[6px] text-xs font-bold transition-all cursor-pointer ${
+                    dateType === 'completed_at'
+                      ? 'bg-white text-[#176b58] shadow-xs'
+                      : 'text-[#667a70] hover:text-[#1c302b]'
+                  }`}
+                >
+                  Theo ngày hoàn tất
+                </button>
+              </div>
+
+              {/* Ô chọn ngày cụ thể */}
+              <div className="flex items-center gap-1.5">
+                <span className="text-xs font-semibold text-[#667a70]">Ngày:</span>
+                <input
+                  type="date"
+                  data-testid="date-picker-input"
+                  value={selectedDate}
+                  onChange={(e) => {
+                    setSelectedDate(e.target.value);
+                  }}
+                  className="h-8 px-2 text-xs border border-[#d6dfda] rounded-[8px] bg-white text-[#1c302b] outline-none focus:border-[#176b58]"
+                />
+                {selectedDate && (
+                  <button
+                    type="button"
+                    data-testid="clear-date-picker-btn"
+                    onClick={() => setSelectedDate('')}
+                    className="text-xs text-[#819089] hover:text-[#e05252] font-semibold underline px-1 cursor-pointer"
+                  >
+                    Xóa lọc ngày
+                  </button>
+                )}
+              </div>
+
+              {/* Các nút lọc nhanh ca làm việc */}
+              <div className="flex items-center gap-1 flex-wrap">
+                <span className="text-xs font-semibold text-[#667a70] mr-0.5">Ca:</span>
+                <button
+                  type="button"
+                  data-testid="date-filter-today"
+                  onClick={() => {
+                    setSelectedDate('');
+                    setDateFilter('today');
+                  }}
+                  className={`px-2.5 py-1 rounded-[8px] text-xs font-bold transition-all cursor-pointer flex items-center ${
+                    !selectedDate && dateFilter === 'today'
+                      ? 'bg-[#176b58] text-white shadow-xs'
+                      : 'bg-[#f4f7f5] text-[#556960] hover:bg-[#eaf0ec]'
+                  }`}
+                >
+                  Hôm nay
+                </button>
+                <button
+                  type="button"
+                  data-testid="date-filter-yesterday"
+                  onClick={() => {
+                    setSelectedDate('');
+                    setDateFilter('yesterday');
+                  }}
+                  className={`px-2.5 py-1 rounded-[8px] text-xs font-bold transition-all cursor-pointer flex items-center ${
+                    !selectedDate && dateFilter === 'yesterday'
+                      ? 'bg-[#176b58] text-white shadow-xs'
+                      : 'bg-[#f4f7f5] text-[#556960] hover:bg-[#eaf0ec]'
+                  }`}
+                >
+                  Hôm qua
+                </button>
+                <button
+                  type="button"
+                  data-testid="date-filter-7_days"
+                  onClick={() => {
+                    setSelectedDate('');
+                    setDateFilter('7_days');
+                  }}
+                  className={`px-2.5 py-1 rounded-[8px] text-xs font-bold transition-all cursor-pointer flex items-center ${
+                    !selectedDate && dateFilter === '7_days'
+                      ? 'bg-[#176b58] text-white shadow-xs'
+                      : 'bg-[#f4f7f5] text-[#556960] hover:bg-[#eaf0ec]'
+                  }`}
+                >
+                  7 ngày qua
+                </button>
+                <button
+                  type="button"
+                  data-testid="date-filter-30_days"
+                  onClick={() => {
+                    setSelectedDate('');
+                    setDateFilter('30_days');
+                  }}
+                  className={`px-2.5 py-1 rounded-[8px] text-xs font-bold transition-all cursor-pointer flex items-center ${
+                    !selectedDate && dateFilter === '30_days'
+                      ? 'bg-[#176b58] text-white shadow-xs'
+                      : 'bg-[#f4f7f5] text-[#556960] hover:bg-[#eaf0ec]'
+                  }`}
+                >
+                  30 ngày qua
+                </button>
+                <button
+                  type="button"
+                  data-testid="date-filter-all"
+                  onClick={() => {
+                    setSelectedDate('');
+                    setDateFilter('all');
+                  }}
+                  className={`px-2.5 py-1 rounded-[8px] text-xs font-bold transition-all cursor-pointer flex items-center ${
+                    !selectedDate && dateFilter === 'all'
+                      ? 'bg-[#176b58] text-white shadow-xs'
+                      : 'bg-[#f4f7f5] text-[#556960] hover:bg-[#eaf0ec]'
+                  }`}
+                >
+                  Toàn bộ
+                </button>
+              </div>
             </div>
-            {dateFilter === 'today' && (
-              <span className="text-[11px] text-[#556960] bg-[#eaf4ef] px-2 py-0.5 rounded-full font-medium">
-                Chỉ hiển thị đơn tiếp nhận trong ngày hôm nay
+
+            {selectedDate ? (
+              <span className="text-[11px] text-[#176b58] bg-[#eaf4ef] px-2 py-0.5 rounded-full font-medium">
+                Đang lọc ngày {selectedDate} ({dateType === 'completed_at' ? 'ngày hoàn tất' : 'ngày tiếp nhận'})
               </span>
-            )}
+            ) : dateFilter === 'today' ? (
+              <span className="text-[11px] text-[#556960] bg-[#eaf4ef] px-2 py-0.5 rounded-full font-medium">
+                {dateType === 'completed_at'
+                  ? 'Chỉ hiển thị đơn hoàn tất/bàn giao trong ngày hôm nay'
+                  : 'Chỉ hiển thị đơn tiếp nhận trong ngày hôm nay'}
+              </span>
+            ) : null}
           </div>
 
           <FilterBar
@@ -1719,5 +1850,13 @@ export default function RepairsPage() {
         />
       )}
     </AppShell>
+  );
+}
+
+export default function RepairsPage() {
+  return (
+    <Suspense fallback={<TableSkeleton />}>
+      <RepairsPageContent />
+    </Suspense>
   );
 }

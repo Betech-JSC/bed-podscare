@@ -511,6 +511,11 @@ export default function DashboardPage() {
           }
           icon="payments"
           foot={`${kpiData?.selected_date_completed_orders ?? 0} đơn hoàn tất`}
+          onClick={() =>
+            router.push(
+              `/repairs?date=${selectedDate}&date_type=completed_at&status=completed`
+            )
+          }
         />
         <StatCard
           label="Doanh thu tháng"
@@ -716,7 +721,11 @@ export default function DashboardPage() {
             <div className="pt-3 border-t border-[#d5eadf]">
               <button
                 type="button"
-                onClick={() => router.push('/repairs?status=completed')}
+                onClick={() =>
+                  router.push(
+                    `/repairs?date=${selectedDate}&date_type=completed_at&status=completed`
+                  )
+                }
                 className="w-full py-2.5 px-3 bg-[#176b58] hover:bg-[#135a4a] text-white text-xs font-bold rounded-[8px] transition-all flex items-center justify-center gap-1.5 cursor-pointer shadow-xs"
               >
                 <span>Xem danh sách máy đã bàn giao</span>

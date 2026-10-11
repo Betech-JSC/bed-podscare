@@ -32,6 +32,12 @@ class PaymentController extends Controller
             $query->where('payment_method', $method);
         }
 
+        if ($date = $request->input('date')) {
+            if (is_string($date) && preg_match('/^\d{4}-\d{2}-\d{2}$/', $date)) {
+                $query->whereDate(DB::raw('COALESCE(paid_at, created_at)'), $date);
+            }
+        }
+
         $payments = $query->latest('id')->paginate($request->input('per_page', 15));
 
         return $this->success($payments, 'Lấy danh sách phiếu thanh toán thành công.');

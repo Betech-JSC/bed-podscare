@@ -51,6 +51,7 @@ export default function PaymentsPage() {
     amount: number;
   } | null>(null);
   const [search, setSearch] = useState('');
+  const [selectedDate, setSelectedDate] = useState('');
   const [confirmingId, setConfirmingId] = useState<number | string | null>(null);
   const [storeBank, setStoreBank] = useState<{
     bankCode?: string;
@@ -101,7 +102,11 @@ export default function PaymentsPage() {
   const loadPayments = useCallback(async () => {
     setIsLoading(true);
     try {
-      const res = await paymentService.getPayments({ per_page: 50 });
+      const params: Record<string, any> = { per_page: 50 };
+      if (selectedDate) {
+        params.date = selectedDate;
+      }
+      const res = await paymentService.getPayments(params);
       const raw = res?.data;
       const list: PaymentItem[] = Array.isArray(raw) ? raw : (raw?.data || []);
 
@@ -143,7 +148,7 @@ export default function PaymentsPage() {
     } finally {
       setIsLoading(false);
     }
-  }, []);
+  }, [selectedDate]);
 
   const handleConfirmPayment = async (paymentId: number | string, orderCode?: string) => {
     setConfirmingId(paymentId);
@@ -408,12 +413,34 @@ export default function PaymentsPage() {
 
         {/* Payments Table Card */}
         <div className="bg-white rounded-[10px] border border-[#e5ece8] p-4 sm:p-5 shadow-xs">
-          <div className="mb-4">
-            <FilterBar
-              searchValue={search}
-              onSearchChange={setSearch}
-              searchPlaceholder="Tìm theo mã phiếu thu, mã đơn sửa, tên khách hoặc phương thức..."
-            />
+          <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+            <div className="flex-1 min-w-[280px]">
+              <FilterBar
+                searchValue={search}
+                onSearchChange={setSearch}
+                searchPlaceholder="Tìm theo mã phiếu thu, mã đơn sửa, tên khách hoặc phương thức..."
+              />
+            </div>
+            <div className="flex items-center gap-2">
+              <span className="text-xs font-semibold text-[#667a70]">Lọc theo ngày:</span>
+              <input
+                type="date"
+                data-testid="payment-date-picker"
+                value={selectedDate}
+                onChange={(e) => setSelectedDate(e.target.value)}
+                className="h-9 px-2 text-xs border border-[#d6dfda] rounded-[8px] bg-white text-[#1c302b] outline-none focus:border-[#176b58]"
+              />
+              {selectedDate && (
+                <button
+                  type="button"
+                  data-testid="payment-clear-date-btn"
+                  onClick={() => setSelectedDate('')}
+                  className="text-xs text-[#819089] hover:text-[#e05252] font-semibold underline px-1 cursor-pointer"
+                >
+                  Xóa lọc ngày
+                </button>
+              )}
+            </div>
           </div>
 
           {isLoading ? (
@@ -423,17 +450,21 @@ export default function PaymentsPage() {
             </div>
           ) : filtered.length === 0 ? (
             <EmptyState
-              title={search ? 'Không tìm thấy phiếu thu nào' : 'Chưa có phiếu thu nào'}
+              title={search || selectedDate ? 'Không tìm thấy phiếu thu nào' : 'Chưa có phiếu thu nào'}
               description={
-                search
-                  ? 'Không có bản ghi thanh toán nào khớp với từ khóa tìm kiếm.'
+                search || selectedDate
+                  ? 'Không có bản ghi thanh toán nào khớp với bộ lọc ngày hoặc từ khóa tìm kiếm.'
                   : 'Hiện tại chưa có dữ liệu giao dịch hoặc phiếu thu nào được ghi nhận.'
               }
               icon="receipt"
-              actionLabel={search ? 'Xóa bộ lọc' : 'Làm mới'}
+              actionLabel={search || selectedDate ? 'Xóa bộ lọc' : 'Làm mới'}
               onAction={() => {
-                if (search) setSearch('');
-                else loadPayments();
+                if (search || selectedDate) {
+                  setSearch('');
+                  setSelectedDate('');
+                } else {
+                  loadPayments();
+                }
               }}
             />
           ) : (

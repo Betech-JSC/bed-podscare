@@ -1,4 +1,7 @@
 import { HttpClient, defaultHttpClient } from '../http-client';
+import type { PaymentFilterDTO } from '@podscare/types';
+
+export type { PaymentFilterDTO };
 
 export interface PaymentItem {
   id: number;
@@ -38,12 +41,7 @@ export interface CreatePaymentDTO {
 export class PaymentService {
   constructor(private http: HttpClient = defaultHttpClient) {}
 
-  async getPayments(params?: {
-    repair_order_id?: number | string;
-    payment_method?: string;
-    per_page?: number;
-    page?: number;
-  }): Promise<any> {
+  async getPayments(params?: PaymentFilterDTO): Promise<any> {
     return this.http.get('/api/v1/payments', { params });
   }
 

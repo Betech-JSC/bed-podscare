@@ -2,6 +2,23 @@ export type OrderStatusType = 'wait' | 'progress' | 'ready' | 'danger' | 'new' |
 
 export type OrderDateFilter = 'today' | 'yesterday' | 'day_before' | '3_days' | '7_days' | '30_days' | 'all';
 
+export interface OrderFilterDTO {
+  search?: string;
+  status?: string;
+  role?: string;
+  branch_id?: string | number;
+  order_type?: 'in_store' | 'cod' | 'all' | string;
+  date_filter?: OrderDateFilter;
+  date?: string;
+  date_type?: 'created_at' | 'completed_at' | 'handed_over_at';
+  q?: string;
+  page?: number;
+  per_page?: number;
+  technician_id?: string | number;
+  intake_batch_code?: string;
+  [key: string]: any;
+}
+
 export type HandoverReasonTag = 'wrong_order' | 'complex_repair' | 'shift_change' | 'missing_parts_tools';
 
 export interface HandoverPayload {

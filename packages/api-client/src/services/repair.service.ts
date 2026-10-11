@@ -6,24 +6,14 @@ import type {
   CompleteTechOrderDTO,
   AddAdditionalServiceDTO,
   SimpleCheckoutPayload,
-  OrderDateFilter,
   HandoverPayload,
+  OrderFilterDTO,
 } from '@podscare/types';
 
 export class RepairService {
   constructor(private http: HttpClient = defaultHttpClient) {}
 
-  async getRepairs(params?: {
-    search?: string;
-    status?: string;
-    role?: string;
-    branch_id?: string | number;
-    order_type?: 'in_store' | 'cod' | 'all' | string;
-    date_filter?: OrderDateFilter;
-    q?: string;
-    page?: number;
-    per_page?: number;
-  }): Promise<any> {
+  async getRepairs(params?: OrderFilterDTO): Promise<any> {
     return this.http.get('/api/v1/orders', {
       params: {
         ...params,

@@ -479,8 +479,8 @@ class KpiController extends Controller
         ];
 
         // 7. Biểu đồ doanh thu chuỗi ngày gần nhất qua SQL Aggregation trực tiếp
-        $startDate = Carbon::today()->subDays($daysCount - 1)->startOfDay();
-        $endDate = Carbon::today()->endOfDay();
+        $startDate = Carbon::today($tz)->subDays($daysCount - 1)->startOfDay();
+        $endDate = Carbon::today($tz)->endOfDay();
 
         $dailyStats = (clone $baseQuery)
             ->where('status', 'completed')
@@ -488,10 +488,10 @@ class KpiController extends Controller
                 $q->whereBetween('handed_over_at', [$startDate, $endDate])
                   ->orWhere(function ($sq) use ($startDate, $endDate) {
                       $sq->whereNull('handed_over_at')
-                         ->whereBetween('created_at', [$startDate, $endDate]);
+                         ->whereBetween('updated_at', [$startDate, $endDate]);
                   });
             })
-            ->selectRaw("DATE(COALESCE(handed_over_at, created_at)) as day_date, COUNT(*) as order_count, SUM(total_price) as total_revenue")
+            ->selectRaw("DATE(COALESCE(handed_over_at, updated_at)) as day_date, COUNT(*) as order_count, SUM(total_price) as total_revenue")
             ->groupBy('day_date')
             ->get()
             ->keyBy('day_date');
@@ -508,7 +508,7 @@ class KpiController extends Controller
 
         $revenueChart = [];
         for ($i = $daysCount - 1; $i >= 0; $i--) {
-            $date = Carbon::today()->subDays($i);
+            $date = Carbon::today($tz)->subDays($i);
             $dateStr = $date->toDateString();
             $dayOfWeek = $date->dayOfWeek;
             $label = $dayNames[$dayOfWeek] ?? ('T' . ($dayOfWeek + 1));
