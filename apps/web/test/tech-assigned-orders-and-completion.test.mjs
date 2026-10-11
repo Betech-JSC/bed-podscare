@@ -46,9 +46,9 @@ describe('OpenSpec: tech-assigned-orders-and-completion Test Suite', () => {
     );
 
     // 1.3 Tab Bar 3 tabs with counters
-    assert.ok(content.includes('🔧 Đơn của tôi'), 'Tab Bar phải có tab "🔧 Đơn của tôi"');
-    assert.ok(content.includes('⚡ Đơn chờ nhận'), 'Tab Bar phải có tab "⚡ Đơn chờ nhận"');
-    assert.ok(content.includes('✓ Đã sửa xong'), 'Tab Bar phải có tab "✓ Đã sửa xong"');
+    assert.ok(content.includes('Đơn của tôi'), 'Tab Bar phải có tab "Đơn của tôi"');
+    assert.ok(content.includes('Đơn chờ nhận'), 'Tab Bar phải có tab "Đơn chờ nhận"');
+    assert.ok(content.includes('Đã sửa xong'), 'Tab Bar phải có tab "Đã sửa xong"');
     assert.ok(content.includes('{techActiveOrders.length}'), 'Tab Đơn của tôi phải có badge đếm số lượng');
     assert.ok(content.includes('{techAvailableOrders.length}'), 'Tab Đơn chờ nhận phải có badge đếm số lượng');
     assert.ok(content.includes('{techCompletedOrders.length}'), 'Tab Đã sửa xong phải có badge đếm số lượng');
@@ -91,9 +91,9 @@ describe('OpenSpec: tech-assigned-orders-and-completion Test Suite', () => {
     );
 
     // 2.3 3 Tabs with counters
-    assert.ok(content.includes('🔧 Đơn của tôi'), 'Tab bar phải có "🔧 Đơn của tôi"');
-    assert.ok(content.includes('⚡ Đơn chờ nhận'), 'Tab bar phải có "⚡ Đơn chờ nhận"');
-    assert.ok(content.includes('✓ Đã sửa xong hôm nay'), 'Tab bar phải có "✓ Đã sửa xong hôm nay"');
+    assert.ok(content.includes('Đơn của tôi'), 'Tab bar phải có "Đơn của tôi"');
+    assert.ok(content.includes('Đơn chờ nhận'), 'Tab bar phải có "Đơn chờ nhận"');
+    assert.ok(content.includes('Đã sửa xong hôm nay'), 'Tab bar phải có "Đã sửa xong hôm nay"');
     assert.ok(content.includes('{myActiveOrders.length}'), 'Tab Đơn của tôi phải có số đếm myActiveOrders');
     assert.ok(content.includes('{availableOrders.length}'), 'Tab Đơn chờ nhận phải có số đếm availableOrders');
     assert.ok(content.includes('{myCompletedTodayOrders.length}'), 'Tab Đã sửa xong phải có số đếm myCompletedTodayOrders');

@@ -168,7 +168,7 @@ export const VideoModal: React.FC<VideoModalProps> = ({ isOpen, onClose }) => {
                 </span>
               </div>
               <p className="text-[11px] sm:text-[12px] text-[#71817b] mt-0.5">
-                Mô phỏng chu trình khép kín: Tiếp nhận ➔ Kỹ Thuật Nhận sản phẩm ➔ Nghiệm thu QC ➔ Tem QR & VietQR
+                Mô phỏng chu trình khép kín: Tiếp nhận → Kỹ Thuật Nhận sản phẩm → Nghiệm thu QC → Tem QR & VietQR
               </p>
             </div>
           </div>
@@ -359,7 +359,7 @@ export const VideoModal: React.FC<VideoModalProps> = ({ isOpen, onClose }) => {
                       <div className="flex items-center gap-2 mb-1">
                         <span className="text-[12px] font-mono text-[#b8ccc4]">Tiếp nhận sản phẩm mới</span>
                         <span className="px-2 py-0.5 rounded bg-[#f59e0b] text-[#102d35] text-[10px] font-black uppercase">
-                          ⚡ Cần xử lý ngay
+                          Cần xử lý ngay
                         </span>
                       </div>
                       <h4 className="font-heading font-extrabold text-[16px] text-white">
@@ -369,8 +369,8 @@ export const VideoModal: React.FC<VideoModalProps> = ({ isOpen, onClose }) => {
                         Định mức thời gian: 25 phút | Bàn giao hẹn: 14:45
                       </p>
                     </div>
-                    <div className="w-10 h-10 rounded-full bg-[#176b58] text-white flex items-center justify-center text-lg animate-bounce">
-                      ⚡
+                    <div className="w-10 h-10 rounded-full bg-[#176b58] text-white flex items-center justify-center animate-bounce">
+                      <Icon name="alert" size={20} className="text-white" />
                     </div>
                   </div>
 
@@ -387,13 +387,13 @@ export const VideoModal: React.FC<VideoModalProps> = ({ isOpen, onClose }) => {
                           onClick={() => setCurrentTime(Math.floor(currentTime / 30) * 30 + 13)}
                           className="px-4 py-2 rounded-lg bg-[#10b981] hover:bg-[#059669] text-white text-[12px] font-extrabold shadow-lg transition-transform active:scale-95 flex items-center gap-1.5 cursor-pointer"
                         >
-                          <span>⚡ Nhận máy ngay</span>
+                          <span>Nhận máy ngay</span>
                         </button>
                       </div>
                     ) : (
                       <div className="flex items-center gap-3 bg-[#176b58]/80 p-2.5 rounded-lg border border-[#34d399]/30 text-[12px]">
                         <div className="w-6 h-6 rounded-full bg-[#34d399] text-[#102d35] flex items-center justify-center font-bold text-xs">
-                          ✓
+                          <Icon name="check" size={14} className="text-[#102d35]" />
                         </div>
                         <div>
                           <strong className="text-white block font-heading">
@@ -446,8 +446,8 @@ export const VideoModal: React.FC<VideoModalProps> = ({ isOpen, onClose }) => {
                       <span className="font-bold text-[#102d35] block">1. Dung lượng Pin 100%</span>
                       <span className="text-[#71817b] text-[10px]">Chu kỳ sạc 0 lần, IC ổn định</span>
                     </div>
-                    <span className="text-[#176b58] font-bold bg-[#e7f3ee] px-2 py-0.5 rounded">
-                      ✓ ĐẠT
+                    <span className="text-[#176b58] font-bold bg-[#e7f3ee] px-2 py-0.5 rounded flex items-center gap-1">
+                      <Icon name="check" size={12} /> ĐẠT
                     </span>
                   </div>
 
@@ -456,8 +456,8 @@ export const VideoModal: React.FC<VideoModalProps> = ({ isOpen, onClose }) => {
                       <span className="font-bold text-[#102d35] block">2. Face ID & Camera</span>
                       <span className="text-[#71817b] text-[10px]">Nhận diện nhanh, kính sạch</span>
                     </div>
-                    <span className="text-[#176b58] font-bold bg-[#e7f3ee] px-2 py-0.5 rounded">
-                      ✓ ĐẠT
+                    <span className="text-[#176b58] font-bold bg-[#e7f3ee] px-2 py-0.5 rounded flex items-center gap-1">
+                      <Icon name="check" size={12} /> ĐẠT
                     </span>
                   </div>
 
@@ -466,8 +466,8 @@ export const VideoModal: React.FC<VideoModalProps> = ({ isOpen, onClose }) => {
                       <span className="font-bold text-[#102d35] block">3. Cảm ứng & TrueTone</span>
                       <span className="text-[#71817b] text-[10px]">Đã sao chép mã hiển thị Zin</span>
                     </div>
-                    <span className="text-[#176b58] font-bold bg-[#e7f3ee] px-2 py-0.5 rounded">
-                      ✓ ĐẠT
+                    <span className="text-[#176b58] font-bold bg-[#e7f3ee] px-2 py-0.5 rounded flex items-center gap-1">
+                      <Icon name="check" size={12} /> ĐẠT
                     </span>
                   </div>
 
@@ -476,8 +476,8 @@ export const VideoModal: React.FC<VideoModalProps> = ({ isOpen, onClose }) => {
                       <span className="font-bold text-[#102d35] block">4. Ron kháng nước</span>
                       <span className="text-[#71817b] text-[10px]">Ép nhiệt kín 100% theo chuẩn</span>
                     </div>
-                    <span className="text-[#176b58] font-bold bg-[#e7f3ee] px-2 py-0.5 rounded">
-                      ✓ ĐẠT
+                    <span className="text-[#176b58] font-bold bg-[#e7f3ee] px-2 py-0.5 rounded flex items-center gap-1">
+                      <Icon name="check" size={12} /> ĐẠT
                     </span>
                   </div>
                 </div>
@@ -493,7 +493,7 @@ export const VideoModal: React.FC<VideoModalProps> = ({ isOpen, onClose }) => {
                   {/* Stamp Graphic */}
                   <div className="inline-flex flex-col items-center justify-center border-2 border-[#176b58] text-[#176b58] px-3.5 py-1.5 rounded-lg rotate-[-6deg] bg-[#eaf5ef]/90 shadow-sm animate-in zoom-in-75 duration-300">
                     <span className="text-[9px] font-black tracking-widest uppercase">
-                      ★ FIXO VERIFIED ★
+                      FIXO VERIFIED
                     </span>
                     <span className="text-[13px] font-heading font-black tracking-tight">
                       QC PASSED
@@ -610,7 +610,7 @@ export const VideoModal: React.FC<VideoModalProps> = ({ isOpen, onClose }) => {
                   onClick={() => setIsPlaying(!isPlaying)}
                   className="px-3 py-1 rounded-md bg-white/10 hover:bg-white/20 text-white font-bold transition-colors flex items-center gap-1.5 cursor-pointer"
                 >
-                  {isPlaying ? '⏸ Tạm dừng' : '▶ Tiếp tục phát'}
+                  {isPlaying ? 'Tạm dừng' : 'Tiếp tục phát'}
                 </button>
 
                 <button
@@ -619,7 +619,8 @@ export const VideoModal: React.FC<VideoModalProps> = ({ isOpen, onClose }) => {
                   className="text-[#b8ccc4] hover:text-white transition-colors flex items-center gap-1 cursor-pointer"
                   title="Xem lại từ đầu"
                 >
-                  <span>↺ Xem lại từ đầu</span>
+                  <Icon name="refresh" size={14} />
+                  <span>Xem lại từ đầu</span>
                 </button>
 
                 <span className="font-mono text-[11px] text-[#8ea79e] hidden sm:inline">

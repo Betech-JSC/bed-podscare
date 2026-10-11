@@ -305,7 +305,7 @@ export default function WarrantyPage() {
             <FilterBar
               searchValue={search}
               onSearchChange={setSearch}
-              searchPlaceholder="🔍 Nhập Số điện thoại khách hàng, Số Serial hoặc Mã BH..."
+              searchPlaceholder="Nhập số điện thoại khách hàng, số serial hoặc mã BH..."
             />
           </div>
 
@@ -477,7 +477,7 @@ export default function WarrantyPage() {
                       {deviceHistoryData?.customer?.name || selectedWarranty.customerName}
                     </strong>
                     <span className="text-xs font-mono font-bold text-[#176b58]">
-                      📞 {deviceHistoryData?.customer?.phone || selectedWarranty.phone}
+                      {deviceHistoryData?.customer?.phone || selectedWarranty.phone}
                     </span>
                   </div>
 
@@ -518,7 +518,7 @@ export default function WarrantyPage() {
                 <div className="flex flex-wrap items-center justify-between gap-2 pb-3 mb-3 border-b border-[#edf3f0]">
                   <div className="flex items-center gap-2">
                     <span className="w-7 h-7 rounded-[7px] bg-[#eaf4ef] text-[#176b58] grid place-items-center">
-                      <Icon name="device" size={15} />
+                      <Icon name="headphones" size={14} />
                     </span>
                     <div>
                       <h4 className="font-heading font-bold text-sm text-[#1c302b] m-0">
@@ -542,7 +542,7 @@ export default function WarrantyPage() {
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                       <div className="p-3 bg-[#fbfdfc] border border-[#e8f0ec] rounded-[8px]">
                         <span className="font-bold text-[#45574f] block mb-1">
-                          ⚠️ Lỗi khách báo lúc nhận:
+                          Lỗi khách báo lúc nhận:
                         </span>
                         <p className="text-[#1c302b] m-0 font-medium">
                           {selectedHistoryOrder.issue_description || 'Không ghi nhận'}
@@ -551,7 +551,7 @@ export default function WarrantyPage() {
 
                       <div className="p-3 bg-[#fbfdfc] border border-[#e8f0ec] rounded-[8px]">
                         <span className="font-bold text-[#45574f] block mb-1">
-                          🔍 Ngoại quan & tình trạng ban đầu:
+                          Ngoại quan & tình trạng ban đầu:
                         </span>
                         <p className="text-[#1c302b] m-0 font-medium">
                           {selectedHistoryOrder.appearance_notes || 'Ngoại quan bình thường, không trầy xước nặng'}
@@ -563,7 +563,7 @@ export default function WarrantyPage() {
                     <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
                       <div className="p-3 bg-[#f5f9f7] border border-[#d6e8dd] rounded-[8px]">
                         <span className="font-bold text-[#176b58] block mb-1">
-                          👨‍🔧 Kỹ thuật viên sửa:
+                          Kỹ thuật viên sửa:
                         </span>
                         <b className="text-sm text-[#1c302b] block">
                           {selectedHistoryOrder.technician_name}
@@ -575,7 +575,7 @@ export default function WarrantyPage() {
 
                       <div className="md:col-span-2 p-3 bg-[#fcfaf5] border border-[#ebd9bd] rounded-[8px]">
                         <span className="font-bold text-[#915e1b] block mb-1">
-                          🛠️ Nội dung kỹ thuật đã kiểm tra & can thiệp:
+                          Nội dung kỹ thuật đã kiểm tra & can thiệp:
                         </span>
                         <p className="text-[#2d3d35] m-0">
                           {selectedHistoryOrder.repair_note || 'Đã kiểm tra bo mạch, thay thế linh kiện và đo dòng sạc ổn định.'}
@@ -587,7 +587,7 @@ export default function WarrantyPage() {
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                       <div className="p-3 bg-white border border-[#e2ece6] rounded-[8px]">
                         <span className="font-bold text-[#2d3d35] block mb-1.5">
-                          🔩 Linh kiện đã thay thế:
+                          Linh kiện đã thay thế:
                         </span>
                         {selectedHistoryOrder.parts_used_summary ? (
                           <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-[6px] bg-[#edf6f1] text-[#176b58] font-semibold text-xs border border-[#cbe5d6]">
@@ -600,7 +600,7 @@ export default function WarrantyPage() {
 
                       <div className="p-3 bg-white border border-[#e2ece6] rounded-[8px]">
                         <span className="font-bold text-[#2d3d35] block mb-1.5">
-                          ✨ Dịch vụ sửa thêm (nếu có):
+                          Dịch vụ sửa thêm (nếu có):
                         </span>
                         {Array.isArray(selectedHistoryOrder.additional_services) && selectedHistoryOrder.additional_services.length > 0 ? (
                           <div className="space-y-1">
@@ -627,7 +627,7 @@ export default function WarrantyPage() {
                             ? 'bg-[#176b58] text-white'
                             : 'bg-[#b83b3b] text-white'
                         }`}>
-                          ✓
+                          <Icon name={selectedHistoryOrder.qc_result?.passed !== false ? 'check' : 'alert'} size={12} />
                         </span>
                         <div>
                           <strong className="text-xs text-[#1c302b] block">
@@ -711,7 +711,7 @@ export default function WarrantyPage() {
                               {ord.status === 'completed' ? 'Hoàn tất' : ord.status}
                             </span>
                             <span className="text-xs text-[#95a59c]">
-                              {isSelected ? '✓ Đang xem' : 'Xem chi tiết ↗'}
+                              {isSelected ? 'Đang xem' : 'Xem chi tiết ↗'}
                             </span>
                           </div>
                         </div>
@@ -816,7 +816,7 @@ export default function WarrantyPage() {
                 </div>
 
                 <div className="p-2.5 bg-white rounded border border-[#edf2ef] text-xs text-[#52635a]">
-                  📌 <b>Chính sách bảo hành:</b> Bảo hành đổi mới linh kiện tương đương nếu phát sinh lỗi kỹ thuật do linh kiện (không bao gồm rơi vỡ, vô nước, can thiệp bên thứ 3).
+                  <b>Chính sách bảo hành:</b> Bảo hành đổi mới linh kiện tương đương nếu phát sinh lỗi kỹ thuật do linh kiện (không bao gồm rơi vỡ, vô nước, can thiệp bên thứ 3).
                 </div>
               </div>
             )}

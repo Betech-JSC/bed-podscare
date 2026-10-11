@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect, useCallback } from 'react';
 import { auditService, type AuditLogItem } from '@podscare/api-client';
-import { Button, FilterBar, EmptyState, useToast } from '@podscare/ui';
+import { Button, FilterBar, EmptyState, useToast, Icon } from '@podscare/ui';
 import { AppShell } from '../components/AppShell';
 
 interface FormattedEvent {
@@ -172,7 +172,13 @@ export default function TimelinePage() {
                     <div
                       className={`w-[34px] h-[34px] rounded-full border-2 font-bold grid place-items-center text-xs flex-none shadow-xs ${badgeColor}`}
                     >
-                      {ev.type === 'success' ? '✓' : ev.type === 'progress' ? '⚙' : '•'}
+                      {ev.type === 'success' ? (
+                        <Icon name="check" size={14} />
+                      ) : ev.type === 'progress' ? (
+                        <Icon name="refresh" size={14} />
+                      ) : (
+                        <span className="w-1.5 h-1.5 rounded-full bg-current" />
+                      )}
                     </div>
                     <div className="min-w-0 flex-1">
                       <time className="text-xs text-[#9aa59f] font-semibold">{ev.time}</time>

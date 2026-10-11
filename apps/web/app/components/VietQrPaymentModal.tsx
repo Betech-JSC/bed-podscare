@@ -410,7 +410,7 @@ export const VietQrPaymentModal: React.FC<VietQrPaymentModalProps> = ({
                       }
                       className="px-2.5 py-1 rounded-[5px] bg-[#176b58] hover:bg-[#10583f] text-white text-[10px] font-extrabold transition-colors cursor-pointer shadow-xs"
                     >
-                      {copiedKey === 'content' ? '✓ Đã sao chép' : 'Sao chép mã'}
+                      {copiedKey === 'content' ? 'Đã sao chép' : 'Sao chép mã'}
                     </button>
                   </div>
                   <div className="font-mono font-extrabold text-sm text-[#1c302b] tracking-wider py-0.5">

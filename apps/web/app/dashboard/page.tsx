@@ -173,7 +173,7 @@ export default function DashboardPage() {
         technician_id: currentUser?.id,
       });
       if (invalidateOrders) await invalidateOrders();
-      toast(`⚡ Bạn đã nhận đơn ${order.id} vào bàn sửa chữa!`, 'success');
+      toast(`Bạn đã nhận đơn ${order.id} vào bàn sửa chữa!`, 'success');
       setTechTab('my_orders');
     } catch {
       const updated: RepairOrder = {
@@ -185,7 +185,7 @@ export default function DashboardPage() {
         statusType: 'progress',
       };
       updateOrder(updated);
-      toast(`⚡ Bạn đã nhận đơn ${order.id} vào bàn sửa chữa!`, 'success');
+      toast(`Bạn đã nhận đơn ${order.id} vào bàn sửa chữa!`, 'success');
       setTechTab('my_orders');
     } finally {
       setIsTechSubmitting(false);
@@ -405,7 +405,7 @@ export default function DashboardPage() {
             FIXO · TỔNG QUAN
           </div>
           <h1 className="font-heading font-bold text-2xl md:text-3xl text-[#1c302b] m-0">
-            Chào buổi sáng, {currentUser?.name || 'Nhân viên'} 👋
+            Chào buổi sáng, {currentUser?.name || 'Nhân viên'}
           </h1>
           <p className="text-sm text-[#7e8d85] mt-1 mb-0">
             Đây là tình hình vận hành FIXO hôm nay tại {branch || currentUser?.branch}.
@@ -423,14 +423,15 @@ export default function DashboardPage() {
           <Button
             variant="outline"
             size="md"
+            icon="shield"
             data-testid="admin-warranty-intake-btn"
             onClick={() => {
               setInitialIntakeType('warranty');
               setIntakeModalOpen(true);
             }}
-            className="bg-[#eaf5ef] text-[#176b58] border-[#a9c9b9] hover:bg-[#d8ede1] font-bold flex items-center gap-1.5"
+            className="bg-[#eaf5ef] text-[#176b58] border-[#a9c9b9] hover:bg-[#d8ede1] font-bold"
           >
-            <span>🛡️ Tiếp nhận bảo hành</span>
+            Tiếp nhận bảo hành
           </Button>
           <Button
             variant="primary"
@@ -687,7 +688,8 @@ export default function DashboardPage() {
             <div>
               <div className="flex items-center justify-between mb-3">
                 <span className="inline-flex items-center gap-1.5 text-xs font-bold uppercase tracking-wider text-[#176b58] bg-white px-2.5 py-1 rounded-full border border-[#c5e1d4]">
-                  🟢 Máy khách đã lấy (Đã bàn giao)
+                  <span className="w-2 h-2 rounded-full bg-[#176b58]" />
+                  <span>Máy khách đã lấy (Đã bàn giao)</span>
                 </span>
                 <span className="text-xs text-[#627a6f] font-medium">Hoàn tất quy trình</span>
               </div>
@@ -729,7 +731,8 @@ export default function DashboardPage() {
             <div>
               <div className="flex items-center justify-between mb-3">
                 <span className="inline-flex items-center gap-1.5 text-xs font-bold uppercase tracking-wider text-[#915e1b] bg-white px-2.5 py-1 rounded-full border border-[#ebd9bd]">
-                  🟡 Máy khách chưa lấy / dòng tiền chưa thu
+                  <span className="w-2 h-2 rounded-full bg-[#d97706]" />
+                  <span>Máy khách chưa lấy (Tại cửa hàng)</span>
                 </span>
                 <span className="text-xs text-[#8c7456] font-medium">
                   {reconciliation.ready_for_pickup_count + reconciliation.in_workshop_count} máy tồn tại shop
@@ -924,7 +927,7 @@ export default function DashboardPage() {
             className="p-3.5 rounded-[10px] border border-[#edf1ee] bg-white hover:bg-[#f7faf8] hover:border-[#b4d6c4] flex items-center gap-3 text-left transition-all"
           >
             <div className="w-9 h-9 rounded-[8px] bg-[#eaf4ef] text-[#176b58] grid place-items-center flex-none">
-              <Icon name="device" size={18} />
+              <Icon name="headphones" size={18} />
             </div>
             <div>
               <b className="text-sm text-[#1c302b] block font-bold">Cấu hình máy</b>
@@ -948,7 +951,7 @@ export default function DashboardPage() {
             CSKH · WORKSPACE
           </div>
           <h1 className="font-heading font-bold text-2xl md:text-3xl text-[#1c302b] m-0">
-            Chào buổi sáng, {currentUser?.name || 'Nhân viên'} 👋
+            Chào buổi sáng, {currentUser?.name || 'Nhân viên'}
           </h1>
           <p className="text-sm text-[#7e8d85] mt-1 mb-0">
             Bảng công việc CSKH · Tập trung tiếp nhận, báo giá và chăm sóc khách hàng.
@@ -958,14 +961,15 @@ export default function DashboardPage() {
           <Button
             variant="outline"
             size="md"
+            icon="shield"
             data-testid="cskh-warranty-intake-btn"
             onClick={() => {
               setInitialIntakeType('warranty');
               setIntakeModalOpen(true);
             }}
-            className="bg-[#eaf5ef] text-[#176b58] border-[#a9c9b9] hover:bg-[#d8ede1] font-bold flex items-center gap-1.5"
+            className="bg-[#eaf5ef] text-[#176b58] border-[#a9c9b9] hover:bg-[#d8ede1] font-bold"
           >
-            <span>🛡️ Tiếp nhận bảo hành</span>
+            Tiếp nhận bảo hành
           </Button>
           <Button
             variant="primary"
@@ -1037,7 +1041,7 @@ export default function DashboardPage() {
             >
               <div className="flex items-center gap-3">
                 <div className="w-10 h-10 rounded-[10px] bg-[#eaf4ef] text-[#176b58] grid place-items-center flex-none">
-                  <Icon name="device" size={19} />
+                  <Icon name="headphones" size={18} />
                 </div>
                 <div>
                   <div className="flex items-center gap-2">
@@ -1160,7 +1164,7 @@ export default function DashboardPage() {
               : 'bg-white text-[#52635a] hover:bg-[#f0f4f2] border border-[#e5ece8]'
           }`}
         >
-          <span>🔧 Đơn của tôi</span>
+          <span>Đơn của tôi</span>
           <span
             className={`px-2 py-0.5 rounded-full text-xs font-bold ${
               techTab === 'my_orders'
@@ -1181,7 +1185,7 @@ export default function DashboardPage() {
               : 'bg-white text-[#52635a] hover:bg-[#f0f4f2] border border-[#e5ece8]'
           }`}
         >
-          <span>⚡ Đơn chờ nhận</span>
+          <span>Đơn chờ nhận</span>
           <span
             className={`px-2 py-0.5 rounded-full text-xs font-bold ${
               techTab === 'available'
@@ -1202,7 +1206,7 @@ export default function DashboardPage() {
               : 'bg-white text-[#52635a] hover:bg-[#f0f4f2] border border-[#e5ece8]'
           }`}
         >
-          <span>✓ Đã sửa xong</span>
+          <span>Đã sửa xong</span>
           <span
             className={`px-2 py-0.5 rounded-full text-xs font-bold ${
               techTab === 'completed'
@@ -1296,12 +1300,13 @@ export default function DashboardPage() {
                       <Button
                         variant="outline"
                         size="sm"
+                        icon="printer"
                         disabled={isSilentPrinting}
                         onClick={() => handlePrintRoutingSlip(order)}
                         className="px-2.5 text-xs text-[#176b58] border-[#c4ded0] hover:bg-[#eef6f2]"
                         title="In nhanh tem dán khay K80"
                       >
-                        🖨️ Tem
+                        Tem
                       </Button>
 
                       {isWaitingParts ? (
@@ -1311,7 +1316,7 @@ export default function DashboardPage() {
                           onClick={() => handleResumeRepair(order)}
                           className="text-xs font-semibold"
                         >
-                          ▶ Tiếp tục
+                          Tiếp tục
                         </Button>
                       ) : (
                         <Button
@@ -1321,7 +1326,7 @@ export default function DashboardPage() {
                           className="text-xs text-[#708078] border-[#d6dfda]"
                           title="Tạm dừng chờ linh kiện"
                         >
-                          ⏸ Linh kiện
+                          Linh kiện
                         </Button>
                       )}
 
@@ -1347,7 +1352,7 @@ export default function DashboardPage() {
                         }}
                         className="flex-1 text-xs font-bold bg-[#176b58] hover:bg-[#125848] text-white shadow-xs cursor-pointer"
                       >
-                        ✓ Hoàn thành
+                        Hoàn thành
                       </Button>
                     </div>
                   </article>
@@ -1360,7 +1365,7 @@ export default function DashboardPage() {
                 title="Hiện chưa có đơn nào đang phụ trách"
                 description="Bạn chưa nhận máy nào vào bàn sửa chữa trong ca này. Hãy chuyển sang Tab 'Đơn chờ nhận' để tiếp nhận máy từ quầy tiếp tân."
                 icon="wrench"
-                actionLabel={`⚡ Xem đơn chờ nhận ngay (${techAvailableOrders.length})`}
+                actionLabel={`Xem đơn chờ nhận ngay (${techAvailableOrders.length})`}
                 onAction={() => setTechTab('available')}
               />
             </div>
@@ -1458,7 +1463,7 @@ export default function DashboardPage() {
                       onClick={() => handleGrabTechOrder(order)}
                       className="flex-1 font-bold text-xs bg-[#176b58] hover:bg-[#125848] text-white shadow-xs"
                     >
-                      ⚡ Nhận đơn →
+                      Nhận đơn →
                     </Button>
                   </div>
                 </article>
@@ -1519,7 +1524,7 @@ export default function DashboardPage() {
                     </div>
 
                     <div className="bg-[#f2f8f5] border border-[#d2e8dd] rounded-[8px] p-3 text-xs text-[#1e583f] leading-relaxed">
-                      <span className="font-bold text-[#176b58] block mb-0.5">✓ Nghiệm thu hoàn tất:</span>
+                      <span className="font-bold text-[#176b58] block mb-0.5">Nghiệm thu hoàn tất:</span>
                       {order.repairNote || 'Đã sửa chữa và kiểm tra hoàn chỉnh theo tiêu chuẩn xuất xưởng.'}
                     </div>
 
@@ -1539,11 +1544,12 @@ export default function DashboardPage() {
                     <Button
                       variant="outline"
                       size="sm"
+                      icon="printer"
                       disabled={isSilentPrinting}
                       onClick={() => handlePrintRoutingSlip(order)}
                       className="px-2.5 text-xs text-[#176b58] border-[#c4ded0] hover:bg-[#eef6f2]"
                     >
-                      🖨️ In tem K80
+                      In tem K80
                     </Button>
                     <Button
                       variant="secondary"

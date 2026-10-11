@@ -6,6 +6,7 @@ import {
   Button,
   StatusTag,
   Textarea,
+  Icon,
   useToast,
 } from '@podscare/ui';
 import type { RepairOrder, HandoverReasonTag, HandoverPayload } from '@podscare/types';
@@ -24,25 +25,25 @@ const REASON_TAGS: Array<{ tag: HandoverReasonTag; label: string; icon: string; 
   {
     tag: 'wrong_order',
     label: 'Nhận nhầm đơn',
-    icon: '🏷️',
+    icon: 'close',
     description: 'Bấm nhầm nút tiếp nhận hoặc dòng máy không thuộc chuyên môn',
   },
   {
     tag: 'complex_repair',
     label: 'Máy khó / Cần thợ chuyên',
-    icon: '🔬',
+    icon: 'wrench',
     description: 'Chập vi mạch, socket sâu, cần thợ tay nghề cao xử lý',
   },
   {
     tag: 'shift_change',
     label: 'Đổi ca / Hết giờ làm',
-    icon: '⏰',
+    icon: 'clock',
     description: 'Hết ca làm việc hoặc cần di chuyển công tác đột xuất',
   },
   {
     tag: 'missing_parts_tools',
     label: 'Thiếu linh kiện / Dụng cụ',
-    icon: '🧰',
+    icon: 'package',
     description: 'Hết linh kiện tại bàn hoặc thiếu thiết bị đo kiểm chuyên dụng',
   },
 ];
@@ -160,7 +161,7 @@ export const HandoverTechModal: React.FC<HandoverTechModalProps> = ({
         ? 'Hàng đợi chung'
         : peerTechnicians.find((t) => String(t.id) === String(target))?.name || `KTV #${target}`;
 
-      toast(`✓ Đã bàn giao đơn ${order.id} cho [${targetLabel}] thành công!`, 'success');
+      toast(`Đã bàn giao đơn ${order.id} cho [${targetLabel}] thành công!`, 'success');
 
       if (invalidateOrders) {
         await invalidateOrders();
@@ -206,15 +207,16 @@ export const HandoverTechModal: React.FC<HandoverTechModalProps> = ({
             onClick={handleSubmit}
             className="bg-[#176b58] hover:bg-[#125848] text-white font-bold flex items-center gap-1.5 shadow-xs px-5"
           >
-            <span>{isSubmitting ? 'Đang chuyển giao...' : '🔄 Xác nhận bàn giao'}</span>
+            <span>{isSubmitting ? 'Đang chuyển giao...' : 'Xác nhận bàn giao'}</span>
           </Button>
         </div>
       }
     >
       <form onSubmit={handleSubmit} className="space-y-5 text-xs text-[#2d3d35]">
         {errorMsg && (
-          <div className="p-3 bg-[#fdf2f2] border border-[#f5c6cb] rounded-[8px] text-xs text-[#b83b3b] font-semibold">
-            ⚠️ {errorMsg}
+          <div className="p-3 bg-[#fdf2f2] border border-[#f5c6cb] rounded-[8px] text-xs text-[#b83b3b] font-semibold flex items-center gap-1.5">
+            <Icon name="alert" size={14} />
+            <span>{errorMsg}</span>
           </div>
         )}
 
@@ -250,13 +252,13 @@ export const HandoverTechModal: React.FC<HandoverTechModalProps> = ({
               className="w-full h-10 px-3.5 pr-8 bg-white border border-[#b8d0c5] focus:border-[#176b58] focus:ring-1 focus:ring-[#176b58] rounded-[8px] text-xs font-medium text-[#1c302b] outline-hidden cursor-pointer"
             >
               <option value="queue">
-                ⚡ Trả về hàng đợi chung (Đơn chờ nhận) — Bấm nhầm đơn / Chờ thợ khác nhận
+                Trả về hàng đợi chung (Đơn chờ nhận) — Bấm nhầm đơn / Chờ thợ khác nhận
               </option>
               {peerTechnicians.length > 0 && (
                 <optgroup label="── Kỹ thuật viên đồng nghiệp cùng chi nhánh ──">
                   {peerTechnicians.map((tech) => (
                     <option key={tech.id} value={String(tech.id)}>
-                      👨‍🔧 KTV {tech.name} {tech.phone ? `(${tech.phone})` : ''}
+                      KTV {tech.name} {tech.phone ? `(${tech.phone})` : ''}
                     </option>
                   ))}
                 </optgroup>
@@ -296,7 +298,11 @@ export const HandoverTechModal: React.FC<HandoverTechModalProps> = ({
                       : 'border-[#e0e8e4] bg-white hover:bg-[#fbfcfb] hover:border-[#b8d0c5]'
                   }`}
                 >
-                  <span className="text-base select-none mt-0.5">{item.icon}</span>
+                  <Icon
+                    name={item.icon}
+                    size={16}
+                    className={`shrink-0 mt-0.5 ${isSelected ? 'text-[#176b58]' : 'text-[#6b7c74]'}`}
+                  />
                   <div className="flex-1 min-w-0">
                     <span
                       className={`block font-bold text-xs ${
@@ -310,7 +316,7 @@ export const HandoverTechModal: React.FC<HandoverTechModalProps> = ({
                     </span>
                   </div>
                   {isSelected && (
-                    <span className="text-[#176b58] font-bold text-xs select-none">✓</span>
+                    <Icon name="check" size={14} className="text-[#176b58] shrink-0" />
                   )}
                 </div>
               );
@@ -355,7 +361,7 @@ export const HandoverTechModal: React.FC<HandoverTechModalProps> = ({
           />
           {isComplexRepair && notesLength < 3 && (
             <p className="text-[11px] text-[#b91c1c] mt-1 mb-0 font-medium">
-              ⚠️ Ca máy khó bắt buộc phải nhập ghi chú rõ ràng (tối thiểu 3 ký tự) để thợ sau nắm bắt thông tin.
+              Ca máy khó bắt buộc phải nhập ghi chú rõ ràng (tối thiểu 3 ký tự) để thợ sau nắm bắt thông tin.
             </p>
           )}
         </div>

@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useRef, useEffect } from 'react';
-import { Modal, Button } from '@podscare/ui';
+import { Modal, Button, Icon } from '@podscare/ui';
 import {
   type PrintFormat,
   getStoredPrintFormat,
@@ -65,11 +65,7 @@ export const PrintFormatModal: React.FC<PrintFormatModalProps> = ({
           }`}
         >
           <div className="w-10 h-10 rounded-[8px] bg-[#176b58] text-white flex items-center justify-center flex-none">
-            <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <polyline points="6 9 6 2 18 2 18 9" />
-              <path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2" />
-              <rect x="6" y="14" width="12" height="8" />
-            </svg>
+            <Icon name="printer" size={22} />
           </div>
           <div className="flex-1">
             <div className="flex items-center justify-between mb-0.5">
@@ -98,13 +94,7 @@ export const PrintFormatModal: React.FC<PrintFormatModalProps> = ({
           }`}
         >
           <div className="w-10 h-10 rounded-[8px] bg-[#3a524a] text-white flex items-center justify-center flex-none">
-            <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
-              <polyline points="14 2 14 8 20 8" />
-              <line x1="16" y1="13" x2="8" y2="13" />
-              <line x1="16" y1="17" x2="8" y2="17" />
-              <polyline points="10 9 9 9 8 9" />
-            </svg>
+            <Icon name="receipt" size={22} />
           </div>
           <div className="flex-1">
             <div className="flex items-center justify-between mb-0.5">
@@ -206,11 +196,7 @@ export const PrintButtonDropdown: React.FC<PrintButtonDropdownProps> = ({
         onClick={handlePrintDefault}
         className="rounded-r-none border-r-0 flex items-center gap-1.5"
       >
-        <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-          <polyline points="6 9 6 2 18 2 18 9" />
-          <path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2" />
-          <rect x="6" y="14" width="12" height="8" />
-        </svg>
+        <Icon name="printer" size={14} />
         <span>{isPrinting ? 'Đang in...' : buttonText}</span>
         <span className="text-[10px] uppercase font-mono px-1 py-0.2 bg-black/10 rounded ml-1 font-bold">
           {currentFormat}
@@ -267,10 +253,11 @@ export const PrintButtonDropdown: React.FC<PrintButtonDropdownProps> = ({
             className="w-full text-left px-2.5 py-1.5 rounded-[6px] text-xs hover:bg-[#f0f7f3] text-[#1c302b] flex items-center justify-between"
           >
             <span className="flex items-center gap-1.5 font-medium">
-              <span>🧾</span> In nhiệt cuộn K80 (80mm)
+              <Icon name="printer" size={14} className="text-[#176b58]" />
+              <span>In nhiệt cuộn K80 (80mm)</span>
             </span>
             {currentFormat === 'k80' && (
-              <span className="text-[9px] text-[#176b58] font-bold">★ Mặc định</span>
+              <span className="text-[9px] text-[#176b58] font-bold bg-[#eaf4ef] px-1.5 py-0.5 rounded">Mặc định</span>
             )}
           </button>
           <button
@@ -279,10 +266,11 @@ export const PrintButtonDropdown: React.FC<PrintButtonDropdownProps> = ({
             className="w-full text-left px-2.5 py-1.5 rounded-[6px] text-xs hover:bg-[#f0f7f3] text-[#1c302b] flex items-center justify-between"
           >
             <span className="flex items-center gap-1.5 font-medium">
-              <span>📄</span> In A4 (2 liên đối soát)
+              <Icon name="receipt" size={14} className="text-[#556960]" />
+              <span>In A4 (2 liên đối soát)</span>
             </span>
             {currentFormat === 'a4' && (
-              <span className="text-[9px] text-[#176b58] font-bold">★ Mặc định</span>
+              <span className="text-[9px] text-[#176b58] font-bold bg-[#eaf4ef] px-1.5 py-0.5 rounded">Mặc định</span>
             )}
           </button>
 
@@ -306,7 +294,8 @@ export const PrintButtonDropdown: React.FC<PrintButtonDropdownProps> = ({
                 className="w-full text-left px-2.5 py-1.5 rounded-[6px] text-xs bg-[#eaf4ef] hover:bg-[#deede4] text-[#176b58] font-bold flex items-center justify-between transition-colors cursor-pointer"
               >
                 <span className="flex items-center gap-1.5">
-                  <span>📑</span> In bill gộp ({effectiveBatchOrders.length} thiết bị)
+                  <Icon name="package" size={14} />
+                  <span>In bill gộp ({effectiveBatchOrders.length} thiết bị)</span>
                 </span>
                 <span className="text-[9px] uppercase font-mono font-bold bg-[#176b58] text-white px-1.5 py-0.5 rounded">
                   {currentFormat}
@@ -326,7 +315,8 @@ export const PrintButtonDropdown: React.FC<PrintButtonDropdownProps> = ({
             className="w-full text-left px-2.5 py-1.5 rounded-[6px] text-xs text-[#1c302b] hover:bg-[#f0f7f3] flex items-center justify-between"
           >
             <span className="flex items-center gap-1.5 font-medium">
-              <span>👁</span> Xem trước mẫu in
+              <Icon name="search" size={14} className="text-[#556960]" />
+              <span>Xem trước mẫu in</span>
             </span>
             <span className="text-[10px] text-[#6e7f77]">↗</span>
           </button>
@@ -341,7 +331,8 @@ export const PrintButtonDropdown: React.FC<PrintButtonDropdownProps> = ({
             }}
             className="w-full text-left px-2.5 py-1.5 rounded-[6px] text-xs text-[#5c6e66] hover:bg-[#f2f5f3] flex items-center gap-1.5"
           >
-            <span>⚙️</span> Cài đặt khổ in mặc định...
+            <Icon name="wrench" size={14} className="text-[#556960]" />
+            <span>Cài đặt khổ in mặc định...</span>
           </button>
 
           <a
@@ -350,7 +341,8 @@ export const PrintButtonDropdown: React.FC<PrintButtonDropdownProps> = ({
             className="w-full text-left px-2.5 py-1.5 rounded-[6px] text-xs text-[#5c6e66] hover:bg-[#f2f5f3] flex items-center justify-between no-underline"
           >
             <span className="flex items-center gap-1.5 font-medium">
-              <span>🎨</span> Thiết lập Logo cửa hàng
+              <Icon name="edit" size={14} className="text-[#556960]" />
+              <span>Thiết lập Logo cửa hàng</span>
             </span>
             <span className="text-[10px] text-[#6e7f77]">↗</span>
           </a>

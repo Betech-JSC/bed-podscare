@@ -28,7 +28,7 @@ export const LandingHero: React.FC<LandingHeroProps> = ({
           <div className="lg:col-span-6 xl:col-span-5 flex flex-col items-start text-left">
             {/* Eyebrow Badge */}
             <div className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-[#e7f3ee] text-[#176b58] text-[12px] font-extrabold uppercase tracking-wider mb-5">
-              <span>✦</span>
+              <Icon name="spark" size={14} className="text-[#176b58]" />
               <span>Giải pháp quản lý cửa hàng sửa chữa thiết bị công nghệ</span>
             </div>
 
@@ -66,7 +66,7 @@ export const LandingHero: React.FC<LandingHeroProps> = ({
                 onClick={onOpenVideo}
                 className="w-full sm:w-auto inline-flex items-center justify-center gap-2 h-[48px] px-5 rounded-[9px] border border-[#ccd5d1] bg-white text-[#263631] text-[14px] font-bold hover:bg-[#f6f8f6] hover:border-[#176b58] transition-all shadow-xs"
               >
-                <span className="text-[#176b58]">▶</span>
+                <svg className="w-3.5 h-3.5 fill-[#176b58]" viewBox="0 0 24 24"><polygon points="5 3 19 12 5 21 5 3"/></svg>
                 <span>Xem video giới thiệu</span>
               </button>
             </div>

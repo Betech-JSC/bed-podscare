@@ -298,7 +298,7 @@ export const A4ReceiptTemplate: React.FC<A4ReceiptTemplateProps> = ({ order: sin
           </div>
           <footer className="mt-1 pt-0.5 border-t border-[#e3e8e5] text-center text-[5.5pt] text-[#777777]">
             {effectiveFooterNote && <div className="mb-0.5 text-[#555555]">{effectiveFooterNote}</div>}
-            <div>⚡ Powered by FIXO Repair OS · fixo.vn · Phiếu được lập thành 02 liên có giá trị ghi nhận như nhau · {order.id}</div>
+            <div>Powered by FIXO Repair OS · fixo.vn · Phiếu được lập thành 02 liên có giá trị ghi nhận như nhau · {order.id}</div>
           </footer>
         </div>
       </article>

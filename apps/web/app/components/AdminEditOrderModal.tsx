@@ -8,6 +8,7 @@ import {
   CurrencyInput,
   Textarea,
   useToast,
+  Icon,
 } from '@podscare/ui';
 import type { RepairOrder } from '@podscare/types';
 import { repairService, userService, type UserRecord } from '@podscare/api-client';
@@ -124,7 +125,7 @@ export const AdminEditOrderModal: React.FC<AdminEditOrderModalProps> = ({
 
       await repairService.adminUpdate(order.id, payload);
 
-      toast(`✓ Admin đã cập nhật toàn diện thông tin đơn ${order.id}!`, 'success');
+      toast(`Admin đã cập nhật toàn diện thông tin đơn ${order.id}!`, 'success');
 
       const updatedOrder: RepairOrder = {
         ...order,
@@ -176,15 +177,16 @@ export const AdminEditOrderModal: React.FC<AdminEditOrderModalProps> = ({
             onClick={handleSave}
             className="bg-[#176b58] hover:bg-[#125848] text-white font-bold"
           >
-            {isSubmitting ? 'Đang lưu...' : '✓ Lưu thay đổi thông tin đơn'}
+            {isSubmitting ? 'Đang lưu...' : 'Lưu thay đổi thông tin đơn'}
           </Button>
         </div>
       }
     >
       <div className="space-y-4 text-sm">
         {errorMsg && (
-          <div className="p-3 bg-[#fef2f2] border border-[#fecaca] rounded-[8px] text-xs text-[#b91c1c] font-medium">
-            ⚠️ {errorMsg}
+          <div className="p-3 bg-[#fef2f2] border border-[#fecaca] rounded-[8px] text-xs text-[#b91c1c] font-medium flex items-center gap-1.5">
+            <Icon name="alert" size={14} />
+            <span>{errorMsg}</span>
           </div>
         )}
 
@@ -211,8 +213,9 @@ export const AdminEditOrderModal: React.FC<AdminEditOrderModalProps> = ({
                 className="text-[#176b58] focus:ring-[#176b58]"
               />
               <div>
-                <span className="font-bold text-xs text-[#1c302b] block">
-                  🏪 Khách tại cửa hàng
+                <span className="font-bold text-xs text-[#1c302b] flex items-center gap-1">
+                  <Icon name="building" size={13} className="text-[#176b58]" />
+                  <span>Khách tại cửa hàng</span>
                 </span>
                 <span className="text-[11px] text-[#6b7c74]">Khách mang máy đến quầy</span>
               </div>
@@ -235,8 +238,9 @@ export const AdminEditOrderModal: React.FC<AdminEditOrderModalProps> = ({
                 className="text-[#d97706] focus:ring-[#d97706]"
               />
               <div>
-                <span className="font-bold text-xs text-[#92400e] block">
-                  📦 Đơn COD (Khách tỉnh)
+                <span className="font-bold text-xs text-[#92400e] flex items-center gap-1">
+                  <Icon name="truck" size={13} className="text-[#92400e]" />
+                  <span>Đơn COD (Khách tỉnh)</span>
                 </span>
                 <span className="text-[11px] text-[#b45309]">Gửi bưu điện, chuyển phát nhanh</span>
               </div>

@@ -300,7 +300,7 @@ export default function TenantBrandingPage() {
                 Cấu hình Logo Cửa hàng &amp; Mẫu phiếu in
               </h1>
               <p className="text-xs sm:text-sm text-[#5c6e66] mt-1 max-w-2xl leading-relaxed mb-0">
-                Tùy biến Logo riêng của tiệm, Hotline liên hệ và Lời dặn bảo hành chân trang trên toàn bộ hóa đơn K80 nhiệt &amp; khổ A4. Mọi phiếu in luôn được bảo chứng bởi <strong>⚡ Powered by FIXO Repair OS</strong>.
+                Tùy biến Logo riêng của tiệm, Hotline liên hệ và Lời dặn bảo hành chân trang trên toàn bộ hóa đơn K80 nhiệt &amp; khổ A4. Mọi phiếu in luôn được bảo chứng bởi <strong>Powered by FIXO Repair OS</strong>.
               </p>
             </div>
 
@@ -311,9 +311,9 @@ export default function TenantBrandingPage() {
                 size="sm"
                 onClick={handleTestPrint}
                 disabled={isPrinting}
-                className="text-xs font-bold border-[#b8d0c5] hover:bg-[#f0f8f4] text-[#176b58]"
+                className="text-xs font-bold border-[#b8d0c5] hover:bg-[#f0f8f4] text-[#176b58] flex items-center gap-1.5"
               >
-                <span>🖨️</span>
+                <Icon name="printer" size={14} />
                 <span>{isPrinting ? 'Đang gửi lệnh in...' : `In thử mẫu ${previewFormat.toUpperCase()}`}</span>
               </Button>
             </div>
@@ -339,7 +339,7 @@ export default function TenantBrandingPage() {
               <div className="flex items-center justify-between pb-3 border-b border-[#eef3f0] mb-4">
                 <div>
                   <h2 className="text-sm font-heading font-bold text-[#1c302b] m-0 flex items-center gap-2">
-                    <span className="text-base">🖼️</span>
+                    <Icon name="spark" size={16} />
                     <span>Logo Cửa hàng (Store Brand Logo)</span>
                   </h2>
                   <p className="text-xs text-[#5c6e66] m-0 mt-0.5">
@@ -430,7 +430,7 @@ export default function TenantBrandingPage() {
                 />
 
                 <div className="text-[11px] text-[#718279] bg-[#f0f5f2] p-2.5 rounded-[8px] flex items-start gap-2">
-                  <span className="text-xs">💡</span>
+                  <Icon name="alert" size={14} className="text-[#718279] shrink-0 mt-0.5" />
                   <span>
                     Nếu không tải logo riêng, hệ thống sẽ tự động dùng biểu tượng <strong>FIXO REPAIR OS</strong> tiêu chuẩn làm logo mặc định.
                   </span>
@@ -442,7 +442,7 @@ export default function TenantBrandingPage() {
             <form onSubmit={handleSaveSettings} className="rounded-[16px] bg-white border border-[#e5ece8] p-6 shadow-xs space-y-4">
               <div className="pb-3 border-b border-[#eef3f0]">
                 <h2 className="text-sm font-heading font-bold text-[#1c302b] m-0 flex items-center gap-2">
-                  <span className="text-base">📝</span>
+                  <Icon name="edit" size={16} />
                   <span>Thông tin hiển thị trên mẫu phiếu</span>
                 </h2>
                 <p className="text-xs text-[#5c6e66] m-0 mt-0.5">
@@ -515,7 +515,7 @@ export default function TenantBrandingPage() {
                 <div className="flex items-center justify-between">
                   <div>
                     <h3 className="text-sm font-heading font-bold text-[#1c302b] m-0 flex items-center gap-2">
-                      <span className="text-base">🏦</span>
+                      <Icon name="building" size={16} />
                       <span>Tài khoản Ngân hàng nhận thanh toán (VietQR Cửa hàng)</span>
                     </h3>
                     <p className="text-xs text-[#5c6e66] m-0 mt-0.5">
@@ -606,9 +606,9 @@ export default function TenantBrandingPage() {
 
               {/* Co-branding info banner */}
               <div className="p-3 rounded-[10px] bg-[#f7faf8] border border-[#dce7e1] text-[11px] text-[#4d6359] flex items-center gap-2.5">
-                <span className="text-base">⚡</span>
+                <Icon name="spark" size={16} className="text-[#176b58] shrink-0" />
                 <div>
-                  <strong>Nhận diện Co-branding nền tảng:</strong> Dòng chữ <em>&ldquo;⚡ Powered by FIXO Repair OS · fixo.vn&rdquo;</em> được tự động in ở đáy trang để định danh công nghệ quản lý chuẩn mực.
+                  <strong>Nhận diện Co-branding nền tảng:</strong> Dòng chữ <em>&ldquo;Powered by FIXO Repair OS · fixo.vn&rdquo;</em> được tự động in ở đáy trang để định danh công nghệ quản lý chuẩn mực.
                 </div>
               </div>
 
@@ -634,7 +634,6 @@ export default function TenantBrandingPage() {
             <div className="rounded-[16px] bg-white border border-[#e5ece8] p-4 sm:p-5 shadow-xs">
               <div className="flex items-center justify-between mb-3 pb-2 border-b border-[#eef3f0]">
                 <div className="flex items-center gap-1.5">
-                  <span className="text-sm">👁️</span>
                   <span className="text-xs font-heading font-bold text-[#1c302b]">
                     Xem trước trực quan Realtime
                   </span>

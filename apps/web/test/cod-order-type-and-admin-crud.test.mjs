@@ -159,8 +159,8 @@ test('OpenSpec: COD Order Type, Simple Checkout, and Admin Full CRUD', async (t)
       'Repairs table row must render quick checkout button with data-testid row-checkout-btn'
     );
     assert.ok(
-      repairsContent.includes('💳 Thanh toán'),
-      'Repairs table row must display 💳 Thanh toán button label'
+      repairsContent.includes('Thanh toán'),
+      'Repairs table row must display Thanh toán button label'
     );
 
     // Paid badge for completed orders
@@ -169,8 +169,8 @@ test('OpenSpec: COD Order Type, Simple Checkout, and Admin Full CRUD', async (t)
       'Repairs table row must render paid badge with data-testid row-paid-badge'
     );
     assert.ok(
-      repairsContent.includes('✓ Đã thu'),
-      'Repairs table row must display ✓ Đã thu for completed orders'
+      repairsContent.includes('Đã thu'),
+      'Repairs table row must display Đã thu for completed orders'
     );
 
     // Event propagation & modal opening

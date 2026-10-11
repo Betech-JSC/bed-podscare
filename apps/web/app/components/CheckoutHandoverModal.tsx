@@ -7,6 +7,7 @@ import {
   Input,
   CurrencyInput,
   Textarea,
+  Icon,
   useToast,
 } from '@podscare/ui';
 import type { RepairOrder } from '@podscare/types';
@@ -152,7 +153,7 @@ export const CheckoutHandoverModal: React.FC<CheckoutHandoverModalProps> = ({
         // ignore audio failure
       }
 
-      toast(`✓ Đã thu ${moneyFormatted(finalAmount)} và hoàn tất giao máy cho đơn ${order.id}!`, 'success');
+      toast(`Đã thu ${moneyFormatted(finalAmount)} và hoàn tất giao máy cho đơn ${order.id}!`, 'success');
 
       // Cập nhật giá thực tế lên đối tượng đơn hàng
       order.total_price = servicePrice;
@@ -206,15 +207,16 @@ export const CheckoutHandoverModal: React.FC<CheckoutHandoverModalProps> = ({
             onClick={handleConfirmCheckout}
             className="bg-[#176b58] hover:bg-[#125848] text-white font-bold"
           >
-            {isSubmitting ? 'Đang ghi nhận...' : `✓ Xác nhận thu ${moneyFormatted(finalAmount)} & Trả máy`}
+            {isSubmitting ? 'Đang ghi nhận...' : `Xác nhận thu ${moneyFormatted(finalAmount)} & Trả máy`}
           </Button>
         </div>
       }
     >
       <div className="space-y-4 text-sm max-h-[75vh] overflow-y-auto pr-1">
         {errorMsg && (
-          <div className="p-3 bg-[#fef2f2] border border-[#fecaca] rounded-[8px] text-xs text-[#b91c1c] font-medium">
-            ⚠️ {errorMsg}
+          <div className="p-3 bg-[#fef2f2] border border-[#fecaca] rounded-[8px] text-xs text-[#b91c1c] font-medium flex items-center gap-1.5">
+            <Icon name="alert" size={14} />
+            <span>{errorMsg}</span>
           </div>
         )}
 
@@ -222,11 +224,11 @@ export const CheckoutHandoverModal: React.FC<CheckoutHandoverModalProps> = ({
         <div className="space-y-2.5 p-3.5 bg-white rounded-[10px] border-2 border-[#176b58]/40 shadow-xs">
           <div className="flex items-center justify-between">
             <label className="block text-xs font-bold text-[#1c302b] uppercase tracking-wide">
-              💰 Chi phí sửa chữa / Dịch vụ thực tế <span className="text-red-500">*</span>
+              Chi phí sửa chữa / Dịch vụ thực tế <span className="text-red-500">*</span>
             </label>
             {initialRawPrice <= 1 ? (
               <span className="text-[11px] font-semibold text-[#b45309] bg-[#fef3c7] px-2 py-0.5 rounded border border-[#fde68a]">
-                💡 Đơn chưa báo giá lúc tiếp nhận
+                Đơn chưa báo giá lúc tiếp nhận
               </span>
             ) : (
               <span className="text-[11px] font-medium text-[#556960]">
@@ -237,7 +239,7 @@ export const CheckoutHandoverModal: React.FC<CheckoutHandoverModalProps> = ({
 
           {initialRawPrice <= 1 && (
             <div className="p-2 bg-[#fffbeb] border border-[#fef08a] rounded-[6px] text-xs text-[#92400e] flex items-center gap-1.5">
-              <span>💡</span>
+              <Icon name="alert" size={14} className="text-[#92400e]" />
               <span>Đơn chưa báo giá lúc tiếp nhận — Vui lòng nhập số tiền thực thu đã báo khách (hoặc để 0 ₫).</span>
             </div>
           )}
@@ -278,7 +280,7 @@ export const CheckoutHandoverModal: React.FC<CheckoutHandoverModalProps> = ({
         <div className="space-y-2 p-3 bg-[#f8faf9] rounded-[10px] border border-[#dce6e0]">
           <div className="flex items-center justify-between">
             <label className="block text-xs font-bold text-[#1c302b] uppercase tracking-wide">
-              🛡️ Thời hạn bảo hành điện tử <span className="text-red-500">*</span>
+              Thời hạn bảo hành điện tử <span className="text-red-500">*</span>
             </label>
             <span className="text-[11px] font-semibold text-[#176b58] bg-[#eaf4ef] px-2 py-0.5 rounded">
               {WARRANTY_MONTH_DAYS_MAP[warrantyMonths]} ngày
@@ -303,7 +305,6 @@ export const CheckoutHandoverModal: React.FC<CheckoutHandoverModalProps> = ({
           </div>
 
           <div className="text-[11px] text-[#556960] flex items-center gap-1.5 pt-0.5">
-            <span>🗓️</span>
             <span>Hạn bảo hành dự kiến: đến ngày <b>{computedExpiryDateStr}</b></span>
           </div>
         </div>
@@ -312,7 +313,7 @@ export const CheckoutHandoverModal: React.FC<CheckoutHandoverModalProps> = ({
         <div className="space-y-2.5 p-3 bg-white rounded-[10px] border border-[#dce6e0]">
           <div className="flex items-center justify-between">
             <label className="block text-xs font-bold text-[#1c302b] uppercase tracking-wide">
-              🎁 Giảm giá / Khuyến mãi (Tùy chọn)
+              Giảm giá / Khuyến mãi (Tùy chọn)
             </label>
             {discountType !== 'none' && (
               <button
@@ -320,7 +321,7 @@ export const CheckoutHandoverModal: React.FC<CheckoutHandoverModalProps> = ({
                 onClick={handleClearDiscount}
                 className="text-xs text-[#b91c1c] hover:underline font-semibold cursor-pointer flex items-center gap-1"
               >
-                ✕ Bỏ giảm giá
+                Bỏ giảm giá
               </button>
             )}
           </div>
@@ -454,7 +455,7 @@ export const CheckoutHandoverModal: React.FC<CheckoutHandoverModalProps> = ({
 
               {Number(discountFixed) > servicePrice && (
                 <small className="text-[#b91c1c] text-[11px] block">
-                  ⚠️ Số tiền giảm vượt quá tổng đơn, hệ thống tự động khóa mức giảm tối đa {moneyFormatted(servicePrice)}.
+                  Số tiền giảm vượt quá tổng đơn, hệ thống tự động khóa mức giảm tối đa {moneyFormatted(servicePrice)}.
                 </small>
               )}
             </div>
@@ -522,7 +523,7 @@ export const CheckoutHandoverModal: React.FC<CheckoutHandoverModalProps> = ({
               />
               <div>
                 <span className="font-bold text-sm text-[#1c302b] block">
-                  💵 Tiền mặt
+                  Tiền mặt
                 </span>
                 <small className="text-xs text-[#62756d] block mt-0.5">
                   Khách thanh toán tiền mặt trực tiếp tại quầy CSKH
@@ -549,7 +550,7 @@ export const CheckoutHandoverModal: React.FC<CheckoutHandoverModalProps> = ({
               />
               <div>
                 <span className="font-bold text-sm text-[#1c302b] block">
-                  💳 Chuyển khoản ngoài
+                  Chuyển khoản ngoài
                 </span>
                 <small className="text-xs text-[#62756d] block mt-0.5">
                   Khách tự quét mã QR cá nhân của tiệm hoặc chuyển ngoài
@@ -589,7 +590,8 @@ export const CheckoutHandoverModal: React.FC<CheckoutHandoverModalProps> = ({
         {/* Hộp thông tin nghiệp vụ tự động */}
         <div className="p-3 bg-[#f8faf9] rounded-[8px] border border-[#dce6e0] text-xs text-[#4e6057] space-y-1">
           <div className="flex items-center gap-1.5 font-semibold text-[#176b58]">
-            <span>✓</span> Quy trình tự động sau khi xác nhận:
+            <Icon name="check" size={14} />
+            <span>Quy trình tự động sau khi xác nhận:</span>
           </div>
           <ul className="list-disc pl-4 space-y-0.5 text-[11px] text-[#63756d] m-0">
             <li>Lập phiếu thu trạng thái <b>Đã thanh toán (paid)</b> số tiền thực thu: <b>{moneyFormatted(finalAmount)}</b>.</li>

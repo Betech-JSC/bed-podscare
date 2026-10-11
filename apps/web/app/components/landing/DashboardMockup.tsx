@@ -1,6 +1,7 @@
 'use client';
 
 import React from 'react';
+import { Icon } from '@podscare/ui';
 
 export const DashboardMockup: React.FC = () => {
   return (
@@ -45,35 +46,35 @@ export const DashboardMockup: React.FC = () => {
 
               <div className="space-y-1 text-[11px]">
                 <div className="flex items-center gap-2 px-2.5 py-1.5 rounded-md bg-[#176b58] text-white font-semibold shadow-xs">
-                  <span>◈</span>
+                  <Icon name="dashboard" size={12} />
                   <span>Tổng quan</span>
                 </div>
                 <div className="flex items-center gap-2 px-2.5 py-1.5 rounded-md text-[#b7c8c2] hover:text-white transition-colors">
-                  <span>▣</span>
+                  <Icon name="repairs" size={12} />
                   <span>Đơn sửa chữa</span>
                 </div>
                 <div className="flex items-center gap-2 px-2.5 py-1.5 rounded-md text-[#b7c8c2] hover:text-white transition-colors">
-                  <span>♙</span>
+                  <Icon name="customers" size={12} />
                   <span>Khách hàng</span>
                 </div>
                 <div className="flex items-center gap-2 px-2.5 py-1.5 rounded-md text-[#b7c8c2] hover:text-white transition-colors">
-                  <span>◉</span>
+                  <Icon name="headphones" size={12} />
                   <span>Sản phẩm</span>
                 </div>
                 <div className="flex items-center gap-2 px-2.5 py-1.5 rounded-md text-[#b7c8c2] hover:text-white transition-colors">
-                  <span>◇</span>
+                  <Icon name="inventory" size={12} />
                   <span>Linh kiện kho</span>
                 </div>
                 <div className="flex items-center gap-2 px-2.5 py-1.5 rounded-md text-[#b7c8c2] hover:text-white transition-colors">
-                  <span>✓</span>
+                  <Icon name="warranty" size={12} />
                   <span>Bảo hành</span>
                 </div>
                 <div className="flex items-center gap-2 px-2.5 py-1.5 rounded-md text-[#b7c8c2] hover:text-white transition-colors">
-                  <span>₫</span>
+                  <Icon name="payments" size={12} />
                   <span>Thu chi</span>
                 </div>
                 <div className="flex items-center gap-2 px-2.5 py-1.5 rounded-md text-[#b7c8c2] hover:text-white transition-colors">
-                  <span>▥</span>
+                  <Icon name="kpi" size={12} />
                   <span>Báo cáo</span>
                 </div>
               </div>
@@ -232,7 +233,7 @@ export const DashboardMockup: React.FC = () => {
 
           {/* Search Box */}
           <div className="m-2 px-2 py-1 bg-[#f4f7f5] rounded-md border border-[#e6ebe8] text-[8px] text-[#84918d] flex items-center gap-1">
-            <span>🔍</span>
+            <Icon name="search" size={10} />
             <span className="truncate">Tìm mã đơn, tên khách...</span>
           </div>
 

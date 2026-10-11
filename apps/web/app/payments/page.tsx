@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect, useCallback } from 'react';
 import { paymentService, repairService, tenantService, type PaymentItem } from '@podscare/api-client';
-import { Button, StatusTag, FilterBar, EmptyState, Modal, useToast, StatCard, CurrencyInput } from '@podscare/ui';
+import { Button, StatusTag, FilterBar, EmptyState, Modal, useToast, StatCard, CurrencyInput, Icon } from '@podscare/ui';
 import { AppShell } from '../components/AppShell';
 import { usePodsCare } from '../providers';
 import { VietQrPaymentModal } from '../components/VietQrPaymentModal';
@@ -241,7 +241,7 @@ export default function PaymentsPage() {
         console.warn('Could not transition order to completed automatically:', transErr);
       }
 
-      toast(`⚡ Đã giả lập thanh toán thành công cho đơn ${orderRef}!`, 'success');
+      toast(`Đã giả lập thanh toán thành công cho đơn ${orderRef}!`, 'success');
       setQrModalOpen(false);
       await loadPayments();
       await loadPendingOrders();
@@ -512,7 +512,7 @@ export default function PaymentsPage() {
                 onClick={handleSimulatePayment}
                 title="Giả lập thanh toán tiền mặt và hoàn tất đơn hàng"
               >
-                ⚡ Giả lập thanh toán thành công
+                Giả lập thanh toán thành công
               </Button>
               <div className="flex gap-2">
                 <Button variant="secondary" size="md" onClick={() => setQrModalOpen(false)}>
@@ -596,7 +596,8 @@ export default function PaymentsPage() {
               !isBankConfigured ? (
                 <div className="p-4 bg-[#fff8eb] border border-[#fde68a] rounded-[10px] text-xs text-[#92400e] space-y-1">
                   <div className="font-bold flex items-center gap-1.5 text-sm text-[#b45309]">
-                    ⚠️ Chưa cấu hình thông tin ngân hàng VietQR của tiệm
+                    <Icon name="alert" size={16} />
+                    <span>Chưa cấu hình thông tin ngân hàng VietQR của tiệm</span>
                   </div>
                   <p>
                     Vui lòng truy cập trang <strong>Cài đặt Thương hiệu & Mẫu in</strong> để cập nhật thông tin ngân hàng (Mã NH, STK, Chủ TK) của cửa hàng để tạo mã VietQR tự động.
@@ -632,7 +633,7 @@ export default function PaymentsPage() {
                       Nội dung CK: <b className="font-mono bg-[#eaf4ef] text-[#176b58] px-1.5 py-0.5 rounded">{qrOrderCode}</b>
                     </div>
                     <div className="text-xs text-[#7e8d85] pt-1">
-                      ⚡ Tiền chuyển trực tiếp vào tài khoản tiệm. CSKH bấm Duyệt đã nhận tiền để hoàn tất.
+                      Tiền chuyển trực tiếp vào tài khoản tiệm. CSKH bấm Duyệt đã nhận tiền để hoàn tất.
                     </div>
                   </div>
                 </div>

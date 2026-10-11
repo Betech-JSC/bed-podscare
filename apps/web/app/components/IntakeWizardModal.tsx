@@ -4,6 +4,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import {
   Modal,
   Button,
+  Icon,
   Input,
   CurrencyInput,
   Select,
@@ -1022,10 +1023,11 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
                 <button
                   type="button"
                   onClick={() => setPrintModalOpen(true)}
-                  className="flex items-center gap-1 px-2.5 py-1.5 rounded-[8px] bg-[#f0f5f2] hover:bg-[#e4ede7] border border-[#d8e3dc] text-xs text-[#176b58] font-semibold transition-colors cursor-pointer"
+                  className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-[8px] bg-[#f0f5f2] hover:bg-[#e4ede7] border border-[#d8e3dc] text-xs text-[#176b58] font-semibold transition-colors cursor-pointer"
                   title="Nhấn để đổi khổ in mặc định"
                 >
-                  <span>🖨️ Khổ:</span>
+                  <Icon name="printer" size={14} className="text-[#176b58]" />
+                  <span>Khổ in:</span>
                   <span className="font-bold uppercase font-mono">{currentFormat}</span>
                   <span className="text-[10px] text-[#71867c]">▾</span>
                 </button>
@@ -1046,11 +1048,7 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
                   onClick={() => handleSave(true)}
                   className="min-h-[44px] h-11 sm:h-9 flex-1 sm:flex-initial px-3 sm:px-5 text-xs sm:text-sm font-bold shadow-md active:scale-[0.98] transition-transform justify-center touch-manipulation cursor-pointer flex items-center gap-1.5"
                 >
-                  <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                    <polyline points="6 9 6 2 18 2 18 9" />
-                    <path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2" />
-                    <rect x="6" y="14" width="12" height="8" />
-                  </svg>
+                  <Icon name="printer" size={14} />
                   <span>{isSubmitting ? 'Đang lưu...' : 'Lưu & In phiếu'}</span>
                 </Button>
               </div>
@@ -1088,7 +1086,7 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
                         : 'bg-white text-[#416053] hover:bg-[#eaf4ef] border border-[#d8e3dc]'
                     }`}
                   >
-                    <span>🏪 Khách tại cửa hàng</span>
+                    <span>Khách tại cửa hàng</span>
                   </button>
                   <button
                     type="button"
@@ -1100,7 +1098,7 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
                         : 'bg-white text-[#92400e] hover:bg-[#fef3c7] border border-[#fde68a]'
                     }`}
                   >
-                    <span>📦 Đơn COD (Khách tỉnh)</span>
+                    <span>Đơn COD (Khách tỉnh)</span>
                   </button>
                   <button
                     type="button"
@@ -1112,7 +1110,7 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
                         : 'bg-white text-[#047857] hover:bg-[#ecfdf5] border border-[#a7f3d0]'
                     }`}
                   >
-                    <span>🛡️ Tiếp nhận bảo hành</span>
+                    <span>Tiếp nhận bảo hành</span>
                   </button>
                 </div>
               </div>
@@ -1189,7 +1187,7 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
                       <div className="flex items-center justify-between p-3 rounded-[8px] bg-[#f7f9f7] border border-[#d6dfda] cursor-default select-none">
                         <div className="flex items-center gap-2.5">
                           <span className="w-8 h-8 rounded-[8px] bg-[#e4eee8] text-[#176b58] grid place-items-center flex-none font-bold text-sm">
-                            📍
+                            <Icon name="building" size={16} />
                           </span>
                           <div>
                             <strong className="block text-sm text-[#1c302b] font-semibold">
@@ -1206,8 +1204,9 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
                             </small>
                           </div>
                         </div>
-                        <span className="text-xs font-semibold text-[#176b58] bg-[#eaf4ef] px-2.5 py-1 rounded-[6px] border border-[#d2e8dd] flex items-center gap-1">
-                          🔒 Cố định
+                        <span className="text-xs font-semibold text-[#176b58] bg-[#eaf4ef] px-2.5 py-1 rounded-[6px] border border-[#d2e8dd] flex items-center gap-1.5">
+                          <Icon name="lock" size={12} />
+                          <span>Cố định</span>
                         </span>
                       </div>
                     </div>
@@ -1263,10 +1262,11 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
                         <button
                           type="button"
                           onClick={() => handleRemoveDevice(devIdx)}
-                          className="flex items-center gap-1 px-2.5 py-1 rounded-[6px] text-xs font-medium text-[#c0392b] bg-[#fdf2f2] hover:bg-[#fae1e1] border border-[#f5c6cb] transition-colors cursor-pointer"
+                          className="flex items-center gap-1.5 px-2.5 py-1 rounded-[6px] text-xs font-medium text-[#c0392b] bg-[#fdf2f2] hover:bg-[#fae1e1] border border-[#f5c6cb] transition-colors cursor-pointer"
                           title="Xóa thiết bị này khỏi danh sách tiếp nhận"
                         >
-                          <span>✕ Xóa thiết bị này</span>
+                          <Icon name="close" size={12} />
+                          <span>Xóa thiết bị này</span>
                         </button>
                       )}
                     </div>
@@ -1347,7 +1347,7 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
                         {issuesForDev.length > 0 && (
                           <div className="mt-2.5">
                             <div className="text-[11px] font-semibold text-[#6d7e75] mb-1.5 flex items-center gap-1.5">
-                              <span>⚡ Lỗi thường gặp ({dev.category}):</span>
+                              <span>Lỗi thường gặp ({dev.category}):</span>
                               <span className="text-[10px] text-[#91a098] font-normal">
                                 (Bấm để chèn nhanh vào mô tả lỗi)
                               </span>
@@ -1408,7 +1408,7 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
                 onClick={handleAddDevice}
                 className="w-full py-3.5 px-4 rounded-[10px] border-2 border-dashed border-[#a3c9b8] bg-[#f5faf7] hover:bg-[#eaf4ef] hover:border-[#176b58] text-[#176b58] font-bold text-sm flex items-center justify-center gap-2 transition-all cursor-pointer active:scale-[0.99]"
               >
-                <span className="text-base font-bold">➕</span>
+                <Icon name="plus" size={16} />
                 <span>Thêm thiết bị khác</span>
               </button>
             </div>
@@ -1422,8 +1422,8 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
                 <div className="flex items-center gap-2 overflow-x-auto pb-2 mb-4 border-b border-[#eef2f0] scrollbar-thin">
                   {devices.map((dev, idx) => {
                     const isActive = idx === activeDeviceIndexStep3;
-                    const icon =
-                      dev.category === 'Apple Watch' ? '⌚' : dev.category === 'Apple Pencil' ? '✏️' : '📱';
+                    const iconName =
+                      dev.category === 'Apple Watch' ? 'watch' : dev.category === 'Apple Pencil' ? 'edit' : 'headphones';
                     return (
                       <button
                         key={dev.id}
@@ -1435,7 +1435,7 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
                             : 'bg-[#f4f7f5] text-[#42524a] hover:bg-[#eaf2ed] border border-[#dbe4df]'
                         }`}
                       >
-                        <span>{icon}</span>
+                        <Icon name={iconName} size={14} />
                         <span>Máy #{idx + 1}: {dev.device || dev.category}</span>
                       </button>
                     );
@@ -1495,8 +1495,8 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
                 <div className="flex items-center gap-2 overflow-x-auto pb-2 mb-4 border-b border-[#eef2f0] scrollbar-thin">
                   {devices.map((dev, idx) => {
                     const isActive = idx === activeDeviceIndexStep4;
-                    const icon =
-                      dev.category === 'Apple Watch' ? '⌚' : dev.category === 'Apple Pencil' ? '✏️' : '📱';
+                    const iconName =
+                      dev.category === 'Apple Watch' ? 'watch' : dev.category === 'Apple Pencil' ? 'edit' : 'headphones';
                     return (
                       <button
                         key={dev.id}
@@ -1508,7 +1508,7 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
                             : 'bg-[#f4f7f5] text-[#42524a] hover:bg-[#eaf2ed] border border-[#dbe4df]'
                         }`}
                       >
-                        <span>{icon}</span>
+                        <Icon name={iconName} size={14} />
                         <span>Máy #{idx + 1}: {dev.device || dev.category}</span>
                       </button>
                     );
@@ -1559,8 +1559,8 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
               {/* Per-Device Price Inputs */}
               <div className="space-y-3.5 mb-4">
                 {devices.map((dev, idx) => {
-                  const icon =
-                    dev.category === 'Apple Watch' ? '⌚' : dev.category === 'Apple Pencil' ? '✏️' : '📱';
+                  const iconName =
+                    dev.category === 'Apple Watch' ? 'watch' : dev.category === 'Apple Pencil' ? 'edit' : 'headphones';
                   const priceError =
                     errors[`price_${dev.id}`] || (idx === 0 ? errors.price : undefined);
 
@@ -1571,7 +1571,7 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
                     >
                       <div className="flex items-center justify-between mb-2">
                         <span className="text-xs font-bold text-[#1c302b] flex items-center gap-1.5">
-                          <span>{icon}</span>
+                          <Icon name={iconName} size={14} />
                           <span>Thiết bị #{idx + 1}: {dev.device || dev.category}</span>
                         </span>
                         {dev.serial && (

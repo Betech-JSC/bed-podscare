@@ -16,6 +16,7 @@ import {
   Textarea,
   CurrencyInput,
   ConfirmModal,
+  Icon,
 } from '@podscare/ui';
 import { AppShell } from '../components/AppShell';
 import { IntakeWizardModal } from '../components/IntakeWizardModal';
@@ -330,7 +331,7 @@ export default function RepairsPage() {
       });
 
       const updatedRaw = res?.data?.data || res?.data || res;
-      toast(`✓ Đã thêm dịch vụ "${newServiceName.trim()}" cho đơn ${selectedOrder.id}!`, 'success');
+      toast(`Đã thêm dịch vụ "${newServiceName.trim()}" cho đơn ${selectedOrder.id}!`, 'success');
 
       const newAdditional = Array.isArray(updatedRaw.additional_services)
         ? updatedRaw.additional_services
@@ -386,7 +387,7 @@ export default function RepairsPage() {
     try {
       const res = await repairService.deleteAdditionalService(selectedOrder.id, serviceToDelete.id);
       const updatedRaw = res?.data?.data || res?.data || res;
-      toast(`✓ Đã hủy dịch vụ "${serviceToDelete.name}" thành công!`, 'success');
+      toast(`Đã hủy dịch vụ "${serviceToDelete.name}" thành công!`, 'success');
 
       const newAdditional = Array.isArray(updatedRaw.additional_services)
         ? updatedRaw.additional_services
@@ -524,7 +525,8 @@ export default function RepairsPage() {
               }}
               className="bg-[#eaf5ef] text-[#176b58] border-[#a9c9b9] hover:bg-[#d8ede1] font-bold flex items-center gap-1.5"
             >
-              <span>🛡️ Tiếp nhận bảo hành</span>
+              <Icon name="shield" size={14} />
+              <span>Tiếp nhận bảo hành</span>
             </Button>
             <Button
               variant="primary"
@@ -556,7 +558,7 @@ export default function RepairsPage() {
                   : 'bg-[#f4f7f5] text-[#556960] hover:bg-[#eaf0ec]'
               }`}
             >
-              <span>📋 Tất cả đơn</span>
+              <span>Tất cả đơn</span>
               <span
                 className={`text-[10px] px-1.5 py-0.5 rounded-full font-mono ${
                   orderTypeFilter === 'all' ? 'bg-white/25 text-white' : 'bg-[#e2e9e5] text-[#42584e]'
@@ -575,7 +577,7 @@ export default function RepairsPage() {
                   : 'bg-[#f4f7f5] text-[#556960] hover:bg-[#eaf0ec]'
               }`}
             >
-              <span>🏪 Tại cửa hàng</span>
+              <span>Tại cửa hàng</span>
               <span
                 className={`text-[10px] px-1.5 py-0.5 rounded-full font-mono ${
                   orderTypeFilter === 'in_store' ? 'bg-white/25 text-white' : 'bg-[#e2e9e5] text-[#42584e]'
@@ -594,7 +596,7 @@ export default function RepairsPage() {
                   : 'bg-[#fef3c7] text-[#92400e] hover:bg-[#fde68a]'
               }`}
             >
-              <span>📦 Đơn COD (Khách tỉnh)</span>
+              <span>Đơn COD (Khách tỉnh)</span>
               <span
                 className={`text-[10px] px-1.5 py-0.5 rounded-full font-mono ${
                   orderTypeFilter === 'cod' ? 'bg-white/25 text-white' : 'bg-[#fde68a] text-[#78350f]'
@@ -613,7 +615,7 @@ export default function RepairsPage() {
                   : 'bg-[#ecfdf5] text-[#047857] hover:bg-[#d1fae5]'
               }`}
             >
-              <span>🛡️ Đơn bảo hành</span>
+              <span>Đơn bảo hành</span>
               <span
                 className={`text-[10px] px-1.5 py-0.5 rounded-full font-mono ${
                   orderTypeFilter === 'warranty' ? 'bg-white/25 text-white' : 'bg-[#a7f3d0] text-[#065f46]'
@@ -640,7 +642,7 @@ export default function RepairsPage() {
                     : 'bg-[#f4f7f5] text-[#556960] hover:bg-[#eaf0ec]'
                 }`}
               >
-                <span>☀️ Hôm nay</span>
+                <span>Hôm nay</span>
               </button>
               <button
                 type="button"
@@ -664,7 +666,7 @@ export default function RepairsPage() {
                     : 'bg-[#f4f7f5] text-[#556960] hover:bg-[#eaf0ec]'
                 }`}
               >
-                <span>⏱️ 7 ngày qua</span>
+                <span>7 ngày qua</span>
               </button>
               <button
                 type="button"
@@ -676,7 +678,7 @@ export default function RepairsPage() {
                     : 'bg-[#f4f7f5] text-[#556960] hover:bg-[#eaf0ec]'
                 }`}
               >
-                <span>📅 30 ngày qua</span>
+                <span>30 ngày qua</span>
               </button>
               <button
                 type="button"
@@ -688,12 +690,12 @@ export default function RepairsPage() {
                     : 'bg-[#f4f7f5] text-[#556960] hover:bg-[#eaf0ec]'
                 }`}
               >
-                <span>🗄️ Toàn bộ</span>
+                <span>Toàn bộ</span>
               </button>
             </div>
             {dateFilter === 'today' && (
               <span className="text-[11px] text-[#556960] bg-[#eaf4ef] px-2 py-0.5 rounded-full font-medium">
-                ☀️ Chỉ hiển thị đơn tiếp nhận trong ngày hôm nay
+                Chỉ hiển thị đơn tiếp nhận trong ngày hôm nay
               </span>
             )}
           </div>
@@ -716,18 +718,19 @@ export default function RepairsPage() {
                     }}
                     className="h-9 border border-[#d6dfda] rounded-[8px] px-2.5 text-xs text-[#1c302b] bg-[#f9fbf9] font-medium outline-none focus:border-[#75a994] cursor-pointer"
                   >
-                    <option value="all">🏢 Tất cả chi nhánh</option>
+                    <option value="all">Tất cả chi nhánh</option>
                     {branches
                       .filter((b) => b.id !== 'all')
                       .map((b) => (
                         <option key={b.id} value={String(b.id)}>
-                          📍 {b.name} ({b.code})
+                          {b.name} ({b.code})
                         </option>
                       ))}
                   </select>
                 ) : (
                   <div className="h-9 border border-[#d6dfda] rounded-[8px] px-2.5 text-xs text-[#176b58] bg-[#eaf4ef] font-semibold flex items-center gap-1.5 cursor-default select-none pointer-events-none">
-                    <span>📍 {branch}</span>
+                    <Icon name="building" size={14} className="text-[#176b58]" />
+                    <span>{branch}</span>
                   </div>
                 )}
                 <Button
@@ -808,21 +811,21 @@ export default function RepairsPage() {
                               data-testid="badge-order-type-warranty"
                               className="inline-flex items-center gap-0.5 text-[10px] font-bold text-[#047857] bg-[#ecfdf5] px-1.5 py-0.5 rounded border border-[#a7f3d0]"
                             >
-                              🛡️ Bảo hành
+                              Bảo hành
                             </span>
                           ) : (o.order_type === 'cod' || o.orderType === 'cod') ? (
                             <span
                               data-testid="badge-order-type-cod"
                               className="inline-flex items-center gap-0.5 text-[10px] font-bold text-[#b45309] bg-[#fef3c7] px-1.5 py-0.5 rounded border border-[#fde68a]"
                             >
-                              📦 Đơn COD
+                              Đơn COD
                             </span>
                           ) : (
                             <span
                               data-testid="badge-order-type-in-store"
                               className="inline-flex items-center gap-0.5 text-[10px] font-bold text-[#176b58] bg-[#eaf4ef] px-1.5 py-0.5 rounded border border-[#b8d7c8]"
                             >
-                              🏪 Tại quầy
+                              Tại quầy
                             </span>
                           )}
                         </div>
@@ -850,7 +853,7 @@ export default function RepairsPage() {
                               className="inline-flex items-center gap-1 text-[11px] font-semibold text-[#b45309] bg-[#fef3c7] px-2 py-0.5 rounded border border-[#fde68a] max-w-[190px] truncate"
                               title={`Linh kiện yêu cầu: ${o.parts_needed || o.partsNeeded || 'Chưa cập nhật'}`}
                             >
-                              <span>📦</span>
+                              <Icon name="package" size={12} />
                               <span className="truncate">Cần: {o.parts_needed || o.partsNeeded || 'Chờ linh kiện'}</span>
                             </div>
                           )}
@@ -880,14 +883,15 @@ export default function RepairsPage() {
                                 setCheckoutModalOpen(true);
                               }}
                             >
-                              <span>💳 Thanh toán</span>
+                              <Icon name="payments" size={12} />
+                              <span>Thanh toán</span>
                             </Button>
                           ) : (
                             <span
                               data-testid={`row-paid-badge-${o.id}`}
                               className="text-[11px] font-semibold text-[#667770] bg-[#edf2ef] px-2 py-0.5 rounded border border-[#d8e0dc] whitespace-nowrap"
                             >
-                              ✓ Đã thu
+                              Đã thu
                             </span>
                           )}
 
@@ -901,7 +905,7 @@ export default function RepairsPage() {
                                 handleResumeOrder(o);
                               }}
                             >
-                              ▶ Đã có linh kiện
+                              Đã có linh kiện
                             </Button>
                           )}
 
@@ -937,8 +941,8 @@ export default function RepairsPage() {
           title={`${selectedOrder.device} · ${selectedOrder.name}`}
           subtitle={`Số điện thoại: ${selectedOrder.phone} · Ngày tiếp nhận: ${selectedOrder.date} · ${
             (selectedOrder.order_type === 'warranty' || selectedOrder.orderType === 'warranty')
-              ? '🛡️ Đơn tiếp nhận bảo hành'
-              : ((selectedOrder.order_type === 'cod' || selectedOrder.orderType === 'cod') ? '📦 Đơn COD (Khách tỉnh)' : '🏪 Đơn tại cửa hàng')
+              ? 'Đơn tiếp nhận bảo hành'
+              : ((selectedOrder.order_type === 'cod' || selectedOrder.orderType === 'cod') ? 'Đơn COD (Khách tỉnh)' : 'Đơn tại cửa hàng')
           }`}
           footer={
             <div className="flex flex-wrap items-center justify-between gap-2.5 w-full">
@@ -970,11 +974,12 @@ export default function RepairsPage() {
                   <Button
                     variant="primary"
                     size="md"
+                    icon="payments"
                     data-testid="cskh-checkout-btn"
                     onClick={() => setCheckoutModalOpen(true)}
-                    className="bg-[#176b58] hover:bg-[#125848] text-white font-bold text-xs sm:text-sm flex items-center gap-1.5 shadow-sm"
+                    className="bg-[#176b58] hover:bg-[#125848] text-white font-bold text-xs sm:text-sm shadow-sm"
                   >
-                    <span>💳 Thu tiền & Trả máy</span>
+                    Thu tiền & Trả máy
                   </Button>
                 )}
 
@@ -984,20 +989,22 @@ export default function RepairsPage() {
                     <Button
                       variant="outline"
                       size="md"
+                      icon="edit"
                       data-testid="admin-edit-order-btn"
                       onClick={() => setAdminEditModalOpen(true)}
-                      className="text-xs text-[#176b58] border-[#a9c9b9] hover:bg-[#eaf5ef] font-bold flex items-center gap-1"
+                      className="text-xs text-[#176b58] border-[#a9c9b9] hover:bg-[#eaf5ef] font-bold"
                     >
-                      <span>✏️ Sửa toàn diện</span>
+                      Sửa toàn diện
                     </Button>
                     <Button
                       variant="danger"
                       size="md"
+                      icon="trash"
                       data-testid="admin-delete-order-btn"
                       onClick={() => setAdminDeleteModalOpen(true)}
-                      className="text-xs font-bold flex items-center gap-1"
+                      className="text-xs font-bold"
                     >
-                      <span>🗑️ Xóa đơn</span>
+                      Xóa đơn
                     </Button>
                   </>
                 )}
@@ -1021,7 +1028,7 @@ export default function RepairsPage() {
             {selectedOrder.intake_batch_code && selectedOrderBatchOrders && selectedOrderBatchOrders.length > 1 && (
               <div className="p-3 bg-[#f0f8f4] rounded-[10px] border border-[#d0e5d9] flex flex-wrap items-center justify-between gap-2">
                 <div className="flex items-center gap-2">
-                  <span className="text-sm">📦</span>
+                  <Icon name="package" size={16} className="text-[#176b58]" />
                   <div className="text-xs">
                     <span className="text-[#556960]">Đợt tiếp nhận: </span>
                     <strong className="font-mono text-[#176b58] font-bold">{selectedOrder.intake_batch_code}</strong>
@@ -1052,7 +1059,7 @@ export default function RepairsPage() {
               <div className="p-4 bg-[#fffbeb] rounded-[10px] border border-[#fde68a] space-y-2.5 shadow-xs">
                 <div className="flex items-center justify-between">
                   <h4 className="text-xs font-bold text-[#b45309] uppercase tracking-wide m-0 flex items-center gap-1.5">
-                    <span>⚠️</span> YÊU CẦU LINH KIỆN TỪ PHÒNG KỸ THUẬT
+                    <Icon name="alert" size={14} className="text-[#b45309]" /> YÊU CẦU LINH KIỆN TỪ PHÒNG KỸ THUẬT
                   </h4>
                   {selectedOrder.paused_at && (
                     <span className="text-[11px] text-[#92400e] font-medium">
@@ -1094,7 +1101,7 @@ export default function RepairsPage() {
                       onClick={() => handleResumeOrder(selectedOrder)}
                       className="bg-[#176b58] hover:bg-[#125848] text-white font-bold text-xs"
                     >
-                      ▶ Đã có linh kiện - Báo KTV tiếp tục sửa
+                      Đã có linh kiện - Báo KTV tiếp tục sửa
                     </Button>
                   </div>
                 )}
@@ -1119,13 +1126,11 @@ export default function RepairsPage() {
               </div>
             </div>
 
-            {/* ========================================================================= */}
-            {/* 📋 BẢNG KÊ DỊCH VỤ SỬA CHỮA & CHI PHÍ                                      */}
-            {/* ========================================================================= */}
+            {/* BẢNG KÊ DỊCH VỤ SỬA CHỮA & CHI PHÍ */}
             <div className="p-4 bg-[#fbfdfc] rounded-[10px] border border-[#dce8e1] space-y-3.5 shadow-xs">
               <div className="flex items-center justify-between pb-2 border-b border-[#e8f1ec]">
                 <h4 className="text-xs font-bold text-[#176b58] uppercase tracking-[0.8px] m-0 flex items-center gap-1.5">
-                  <span>📋</span> BẢNG KÊ DỊCH VỤ SỬA CHỮA & CHI PHÍ
+                  <Icon name="receipt" size={14} className="text-[#176b58]" /> BẢNG KÊ DỊCH VỤ SỬA CHỮA & CHI PHÍ
                 </h4>
                 {canManageAdditionalServices && !['completed', 'cancelled'].includes(normalizeStatusCode(selectedOrder.status)) && !showAddServiceForm && (
                   <Button
@@ -1141,7 +1146,8 @@ export default function RepairsPage() {
                     }}
                     className="text-xs text-[#176b58] border-[#b8d0c5] hover:bg-[#eaf4ef] font-semibold py-1 px-2.5 h-auto flex items-center gap-1"
                   >
-                    <span>➕</span> Thêm dịch vụ sửa thêm
+                    <Icon name="plus" size={12} />
+                    <span>Thêm dịch vụ sửa thêm</span>
                   </Button>
                 )}
               </div>
@@ -1158,13 +1164,14 @@ export default function RepairsPage() {
                       onClick={() => setShowAddServiceForm(false)}
                       className="text-[#71857c] hover:text-[#2d3d35] text-xs font-bold cursor-pointer"
                     >
-                      ✕ Đóng
+                      Đóng
                     </button>
                   </div>
 
                   {serviceError && (
-                    <div className="p-2 rounded bg-[#fef2f2] border border-[#fecaca] text-[#b91c1c] text-xs font-medium">
-                      ⚠️ {serviceError}
+                    <div className="p-2 rounded bg-[#fef2f2] border border-[#fecaca] text-[#b91c1c] text-xs font-medium flex items-center gap-1.5">
+                      <Icon name="alert" size={14} />
+                      <span>{serviceError}</span>
                     </div>
                   )}
 
@@ -1249,7 +1256,7 @@ export default function RepairsPage() {
                         onClick={handleAddAdditionalService}
                         className="bg-[#176b58] hover:bg-[#125848] text-white font-bold"
                       >
-                        {isSubmittingService ? 'Đang lưu...' : '✓ Xác nhận thêm dịch vụ'}
+                        {isSubmittingService ? 'Đang lưu...' : 'Xác nhận thêm dịch vụ'}
                       </Button>
                     </div>
                   </div>
@@ -1304,8 +1311,9 @@ export default function RepairsPage() {
                             </span>
                           </div>
                           {srv.note && (
-                            <p className="text-[#556960] italic m-0 text-xs">
-                              💬 Dặn dò: {srv.note}
+                            <p className="text-[#556960] italic m-0 text-xs flex items-center gap-1">
+                              <Icon name="comment" size={12} />
+                              <span>Dặn dò: {srv.note}</span>
                             </p>
                           )}
                           <div className="text-[11px] text-[#788c82]">
@@ -1323,7 +1331,8 @@ export default function RepairsPage() {
                             className="text-[#b91c1c] hover:bg-[#fee2e2] px-2 py-1 rounded text-xs font-semibold transition-colors flex items-center gap-1 flex-none cursor-pointer"
                             title="Hủy dịch vụ này"
                           >
-                            <span>🗑️</span> Xóa
+                            <Icon name="trash" size={12} />
+                            <span>Xóa</span>
                           </button>
                         )}
                       </div>
@@ -1400,11 +1409,12 @@ export default function RepairsPage() {
                       <Button
                         variant="primary"
                         size="sm"
+                        icon="payments"
                         data-testid="cskh-checkout-btn-quick"
                         onClick={() => setCheckoutModalOpen(true)}
-                        className="bg-[#176b58] hover:bg-[#125848] text-white font-bold text-xs flex items-center gap-1.5 shadow-sm"
+                        className="bg-[#176b58] hover:bg-[#125848] text-white font-bold text-xs shadow-sm"
                       >
-                        <span>💳 Thu tiền & Trả máy</span>
+                        Thu tiền & Trả máy
                       </Button>
                     )}
 

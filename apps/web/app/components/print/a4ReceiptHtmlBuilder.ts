@@ -257,7 +257,7 @@ export function renderA4ReceiptHTML(
       <!-- Footer -->
       <div class="a4-footer">
         ${effectiveFooterNote ? `<div style="margin-bottom: 2px;">${effectiveFooterNote}</div>` : ''}
-        <div>⚡ Powered by FIXO Repair OS · fixo.vn · Phiếu tiếp nhận được lập thành 02 liên có giá trị pháp lý đối chiếu như nhau · Mã: ${order.id}</div>
+        <div>Powered by FIXO Repair OS · fixo.vn · Phiếu tiếp nhận được lập thành 02 liên có giá trị pháp lý đối chiếu như nhau · Mã: ${order.id}</div>
       </div>
     </article>`;
   };
@@ -731,7 +731,7 @@ export function renderCombinedA4ReceiptHTML(
       <!-- Footer -->
       <div class="a4-footer">
         ${effectiveFooterNote ? `<div style="margin-bottom: 2px;">${effectiveFooterNote}</div>` : ''}
-        <div>⚡ Powered by FIXO Repair OS · fixo.vn · Phiếu tiếp nhận được lập thành 02 liên có giá trị pháp lý đối chiếu như nhau · Mã đợt: ${batchCode}</div>
+        <div>Powered by FIXO Repair OS · fixo.vn · Phiếu tiếp nhận được lập thành 02 liên có giá trị pháp lý đối chiếu như nhau · Mã đợt: ${batchCode}</div>
       </div>
     </article>`;
   };

@@ -9,6 +9,7 @@ import {
   StatCard,
   useToast,
   EmptyState,
+  Icon,
 } from '@podscare/ui';
 import { AppShell } from '../components/AppShell';
 import { TechOrderDetailModal } from '../components/TechOrderDetailModal';
@@ -228,7 +229,7 @@ export default function TechnicianQueuePage() {
       });
       await invalidateOrders();
       refetch();
-      toast(`⚡ Bạn đã nhận máy ${order.id} thành công! Đơn chuyển vào Đơn của tôi.`, 'success');
+      toast(`Bạn đã nhận máy ${order.id} thành công! Đơn chuyển vào Đơn của tôi.`, 'success');
       setActiveTab('my_orders');
     } catch {
       const updated: RepairOrder = {
@@ -240,7 +241,7 @@ export default function TechnicianQueuePage() {
         statusType: 'progress',
       };
       updateOrder(updated);
-      toast(`⚡ Bạn đã nhận máy ${order.id} thành công! Đơn chuyển vào Đơn của tôi.`, 'success');
+      toast(`Bạn đã nhận máy ${order.id} thành công! Đơn chuyển vào Đơn của tôi.`, 'success');
       setActiveTab('my_orders');
     } finally {
       setIsSubmitting(false);
@@ -259,10 +260,10 @@ export default function TechnicianQueuePage() {
       await repairService.transition(order.id, { transition: 'in_repair', status: 'Đang sửa' });
       await invalidateOrders();
       refetch();
-      toast(`⚡ Đã bắt đầu sửa chữa đơn ${order.id}`, 'success');
+      toast(`Đã bắt đầu sửa chữa đơn ${order.id}`, 'success');
     } catch {
       updateOrder({ ...order, status: 'Đang sửa', statusType: 'progress' });
-      toast(`⚡ Đã bắt đầu sửa chữa đơn ${order.id}`, 'success');
+      toast(`Đã bắt đầu sửa chữa đơn ${order.id}`, 'success');
     }
   };
 
@@ -323,12 +324,12 @@ export default function TechnicianQueuePage() {
                 }}
                 className="h-9 border border-[#d6dfda] rounded-[8px] px-2.5 text-xs text-[#1c302b] bg-[#f9fbf9] font-medium outline-none focus:border-[#75a994] cursor-pointer"
               >
-                <option value="all">🏢 Tất cả chi nhánh</option>
+                <option value="all">Tất cả chi nhánh</option>
                 {branches
                   .filter((b) => b.id !== 'all')
                   .map((b) => (
                     <option key={b.id} value={String(b.id)}>
-                      📍 {b.name} ({b.code})
+                      {b.name} ({b.code})
                     </option>
                   ))}
               </select>
@@ -416,7 +417,7 @@ export default function TechnicianQueuePage() {
                     : 'bg-[#f4f7f5] text-[#556960] hover:bg-[#eaf0ec]'
                 }`}
               >
-                <span>☀️ Hôm nay</span>
+                <span>Hôm nay</span>
               </button>
               <button
                 type="button"
@@ -428,7 +429,7 @@ export default function TechnicianQueuePage() {
                     : 'bg-[#f4f7f5] text-[#556960] hover:bg-[#eaf0ec]'
                 }`}
               >
-                <span>⏱️ 3 ngày qua (Tối đa 3 ngày)</span>
+                <span>3 ngày qua (Tối đa 3 ngày)</span>
               </button>
             </div>
           </div>
@@ -440,7 +441,7 @@ export default function TechnicianQueuePage() {
               </span>
             ) : (
               <span className="text-[#176b58] bg-[#eaf4ef] px-2.5 py-1 rounded font-medium flex items-center gap-1.5 border border-[#cbe3d6]">
-                <span>💡</span>
+                <Icon name="alert" size={14} className="text-[#176b58]" />
                 <span>Chọn &quot;3 ngày qua&quot; để xem lại các máy nhận từ hôm qua, hôm kia và bấm Hoàn thành sửa chữa.</span>
               </span>
             )}
@@ -458,7 +459,7 @@ export default function TechnicianQueuePage() {
                 : 'bg-white text-[#52635a] hover:bg-[#f0f4f2] border border-[#e5ece8]'
             }`}
           >
-            <span>🔧 Đơn của tôi</span>
+            <span>Đơn của tôi</span>
             <span
               className={`px-2 py-0.5 rounded-full text-xs font-bold ${
                 activeTab === 'my_orders'
@@ -479,7 +480,7 @@ export default function TechnicianQueuePage() {
                 : 'bg-white text-[#52635a] hover:bg-[#f0f4f2] border border-[#e5ece8]'
             }`}
           >
-            <span>⚡ Đơn chờ nhận</span>
+            <span>Đơn chờ nhận</span>
             <span
               className={`px-2 py-0.5 rounded-full text-xs font-bold ${
                 activeTab === 'available'
@@ -500,7 +501,7 @@ export default function TechnicianQueuePage() {
                 : 'bg-white text-[#52635a] hover:bg-[#f0f4f2] border border-[#e5ece8]'
             }`}
           >
-            <span>✓ Đã sửa xong hôm nay</span>
+            <span>Đã sửa xong hôm nay</span>
             <span
               className={`px-2 py-0.5 rounded-full text-xs font-bold ${
                 activeTab === 'completed'
@@ -522,7 +523,7 @@ export default function TechnicianQueuePage() {
                   Máy tôi đang phụ trách ({myActiveOrders.length})
                 </h2>
                 <p className="text-xs text-[#809088] mt-0.5 mb-0">
-                  Các đơn máy bạn đang trực tiếp phụ trách. Bấm vào đơn hoặc nút [✓ Hoàn tất] để mở biểu mẫu nghiệm thu bàn giao CSKH.
+                  Các đơn máy bạn đang trực tiếp phụ trách. Bấm vào đơn hoặc nút [Hoàn tất] để mở biểu mẫu nghiệm thu bàn giao CSKH.
                 </p>
               </div>
               <span className="text-xs font-bold text-[#176b58] bg-[#eaf4ef] px-3 py-1 rounded-[10px]">
@@ -592,22 +593,24 @@ export default function TechnicianQueuePage() {
                         <Button
                           variant="outline"
                           size="sm"
+                          icon="printer"
                           disabled={isSilentPrinting}
                           onClick={() => handlePrintRoutingSlip(order)}
                           className="px-2.5 text-xs text-[#176b58] border-[#c4ded0] hover:bg-[#eef6f2]"
                           title="In nhanh tem dán khay linh kiện khổ nhiệt K80"
                         >
-                          🖨️ Tem K80
+                          Tem K80
                         </Button>
 
                         <Button
                           variant="outline"
                           size="sm"
+                          icon="refresh"
                           onClick={() => handleOpenHandoverModal(order)}
                           className="px-2.5 text-xs text-[#176b58] border-[#b8d0c5] hover:bg-[#eef6f2] font-semibold"
                           title="Bàn giao đơn cho KTV khác hoặc trả về hàng đợi chung"
                         >
-                          🔄 Bàn giao
+                          Bàn giao
                         </Button>
 
                         {isWaitingParts ? (
@@ -617,17 +620,18 @@ export default function TechnicianQueuePage() {
                             onClick={() => handleResumeRepair(order)}
                             className="text-xs font-bold"
                           >
-                            ▶ Tiếp tục sửa
+                            Tiếp tục sửa
                           </Button>
                         ) : isAssignedOrRework ? (
                           <>
                             <Button
                               variant="outline"
                               size="sm"
+                              icon="wrench"
                               onClick={() => handleStartRepair(order)}
                               className="text-xs text-[#176b58] border-[#c4ded0] hover:bg-[#eef6f2] font-semibold"
                             >
-                              ⚡ Bắt đầu sửa
+                              Bắt đầu sửa
                             </Button>
                             <Button
                               variant="primary"
@@ -636,7 +640,7 @@ export default function TechnicianQueuePage() {
                               onClick={() => handleOpenDetailModal(order)}
                               className="flex-1 font-bold text-xs bg-[#176b58] hover:bg-[#125848] text-white shadow-xs cursor-pointer"
                             >
-                              ✓ Hoàn tất
+                              Hoàn tất
                             </Button>
                           </>
                         ) : (
@@ -648,7 +652,7 @@ export default function TechnicianQueuePage() {
                               className="text-xs text-[#708078] border-[#d6dfda]"
                               title="Tạm dừng chờ linh kiện"
                             >
-                              ⏸ Chờ linh kiện
+                              Chờ linh kiện
                             </Button>
                             <Button
                               variant="primary"
@@ -657,7 +661,7 @@ export default function TechnicianQueuePage() {
                               onClick={() => handleOpenDetailModal(order)}
                               className="flex-1 font-bold text-xs bg-[#176b58] hover:bg-[#125848] text-white shadow-xs cursor-pointer"
                             >
-                              ✓ Hoàn tất sửa chữa
+                              Hoàn tất sửa chữa
                             </Button>
                           </>
                         )}
@@ -681,7 +685,7 @@ export default function TechnicianQueuePage() {
                   title="Hiện chưa có đơn nào đang phụ trách"
                   description="Bạn chưa nhận máy nào vào bàn sửa chữa trong ca này. Hãy chuyển sang Tab 'Đơn chờ nhận' để nhận máy từ quầy tiếp tân."
                   icon="wrench"
-                  actionLabel={`⚡ Xem đơn chờ nhận (${availableOrders.length})`}
+                  actionLabel={`Xem đơn chờ nhận (${availableOrders.length})`}
                   onAction={() => setActiveTab('available')}
                 />
               </div>
@@ -777,7 +781,7 @@ export default function TechnicianQueuePage() {
                         onClick={() => handleGrabOrder(order)}
                         className="flex-1 h-10 font-bold text-sm bg-[#176b58] hover:bg-[#125848] text-white shadow-xs cursor-pointer active:scale-[0.98] transition-transform"
                       >
-                        ⚡ Nhận máy ngay
+                        Nhận máy ngay
                       </Button>
                     </div>
                   </article>
@@ -807,7 +811,7 @@ export default function TechnicianQueuePage() {
                   Danh sách các thiết bị bạn đã nghiệm thu xong, sẵn sàng chuyển trả cho CSKH hoặc kiểm định QC.
                 </p>
               </div>
-              <span className="text-xs font-bold text-[#28805e] bg-[#eaf5ef] px-3 py-1 rounded-[10px]">
+              <span className="text-xs font-bold text-[#28805e] bg-[#eaf4ef] px-3 py-1 rounded-[10px]">
                 {myCompletedTodayOrders.length} máy đã bàn giao
               </span>
             </div>
@@ -839,7 +843,7 @@ export default function TechnicianQueuePage() {
                       </div>
 
                       <div className="bg-[#f2f8f5] border border-[#d2e8dd] rounded-[8px] p-3 text-xs text-[#1e583f] leading-relaxed">
-                        <span className="font-bold text-[#176b58] block mb-1">✓ Nghiệm thu hoàn tất:</span>
+                        <span className="font-bold text-[#176b58] block mb-1">Nghiệm thu hoàn tất:</span>
                         {order.repairNote || 'Đã sửa chữa và kiểm tra hoàn chỉnh theo tiêu chuẩn xuất xưởng.'}
                       </div>
 
@@ -859,11 +863,12 @@ export default function TechnicianQueuePage() {
                       <Button
                         variant="outline"
                         size="sm"
+                        icon="printer"
                         disabled={isSilentPrinting}
                         onClick={() => handlePrintRoutingSlip(order)}
                         className="px-2.5 text-xs text-[#176b58] border-[#c4ded0] hover:bg-[#eef6f2]"
                       >
-                        🖨️ In tem K80
+                        In tem K80
                       </Button>
                       <Button
                         variant="secondary"

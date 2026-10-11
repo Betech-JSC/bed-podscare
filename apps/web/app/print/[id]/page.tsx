@@ -4,7 +4,7 @@ import React, { useState, useEffect } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { useQuery } from '@tanstack/react-query';
 import { repairService } from '@podscare/api-client';
-import { Button } from '@podscare/ui';
+import { Button, Icon } from '@podscare/ui';
 import { usePodsCare } from '../../providers';
 import type { RepairOrder } from '@podscare/types';
 import {
@@ -204,7 +204,7 @@ export default function PrintReceiptPage() {
                 : 'text-[#62746b] hover:text-[#1c302b]'
             }`}
           >
-            🧾 In nhiệt K80
+            In nhiệt K80
           </button>
           <button
             type="button"
@@ -215,7 +215,7 @@ export default function PrintReceiptPage() {
                 : 'text-[#62746b] hover:text-[#1c302b]'
             }`}
           >
-            📄 In A4 (2 liên)
+            In A4 (2 liên)
           </button>
         </div>
 
@@ -227,12 +227,8 @@ export default function PrintReceiptPage() {
             onClick={handlePrint}
             className="flex items-center gap-1.5"
           >
-            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <polyline points="6 9 6 2 18 2 18 9" />
-              <path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2" />
-              <rect x="6" y="14" width="12" height="8" />
-            </svg>
-            <span>{isPrinting ? 'Đang in...' : 'In phiếu (Ctrl+P / ⌘P)'}</span>
+            <Icon name="printer" size={16} />
+            <span>{isPrinting ? 'Đang in...' : 'In phiếu (Ctrl+P / Cmd+P)'}</span>
           </Button>
         </div>
       </div>

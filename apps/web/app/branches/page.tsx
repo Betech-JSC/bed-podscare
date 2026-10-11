@@ -499,7 +499,7 @@ export default function BranchesPage() {
                         {/* Address */}
                         <td className="py-3.5 px-4">
                           <div className="text-xs text-[#3b4c44] flex items-center gap-1.5 max-w-[280px]">
-                            <span className="text-[#819089] flex-none">📍</span>
+                            <Icon name="building" size={13} className="text-[#819089] flex-none" />
                             <span className="truncate" title={branch.address}>
                               {branch.address || 'Chưa cập nhật'}
                             </span>

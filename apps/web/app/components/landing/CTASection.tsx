@@ -2,6 +2,7 @@
 
 import React from 'react';
 import Link from 'next/link';
+import { Icon } from '@podscare/ui';
 
 export const CTASection: React.FC = () => {
   return (
@@ -46,20 +47,20 @@ export const CTASection: React.FC = () => {
                 href="tel:02873001234"
                 className="w-full sm:w-auto inline-flex items-center justify-center gap-2 h-[50px] px-6 rounded-[9px] border border-white/20 hover:border-white/40 bg-white/5 hover:bg-white/10 text-white text-[15px] font-bold transition-all"
               >
-                <span>📞 Hotline: 028 7300 1234</span>
+                <span>Hotline: 028 7300 1234</span>
               </a>
             </div>
 
             {/* 3 Reassurances */}
             <div className="flex flex-wrap items-center justify-center gap-6 text-[12px] sm:text-[13px] text-[#91a29d]">
               <span className="flex items-center gap-1.5">
-                <span className="text-[#10b981]">✓</span> Không cần thẻ tín dụng
+                <Icon name="check" size={14} className="text-[#10b981]" /> Không cần thẻ tín dụng
               </span>
               <span className="flex items-center gap-1.5">
-                <span className="text-[#10b981]">✓</span> Khởi tạo xong trong 2 phút
+                <Icon name="check" size={14} className="text-[#10b981]" /> Khởi tạo xong trong 2 phút
               </span>
               <span className="flex items-center gap-1.5">
-                <span className="text-[#10b981]">✓</span> Hỗ trợ chuyển dữ liệu miễn phí
+                <Icon name="check" size={14} className="text-[#10b981]" /> Hỗ trợ chuyển dữ liệu miễn phí
               </span>
             </div>
           </div>

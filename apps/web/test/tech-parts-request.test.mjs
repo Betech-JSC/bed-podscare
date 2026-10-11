@@ -120,7 +120,7 @@ test('OpenSpec: tech-parts-request-and-admin-resume Test Suite', async (t) => {
 
     // Nút Đã có linh kiện trên bảng danh sách
     assert.ok(
-      pageContent.includes('▶ Đã có linh kiện') && pageContent.includes('handleResumeOrder(o)'),
+      pageContent.includes('Đã có linh kiện') && pageContent.includes('handleResumeOrder(o)'),
       'Cột thao tác của bảng danh sách phải có nút Đã có linh kiện gọi handleResumeOrder'
     );
 
@@ -130,8 +130,8 @@ test('OpenSpec: tech-parts-request-and-admin-resume Test Suite', async (t) => {
       'Modal chi tiết CSKH phải có khung cảnh báo YÊU CẦU LINH KIỆN TỪ PHÒNG KỸ THUẬT'
     );
     assert.ok(
-      pageContent.includes('▶ Đã có linh kiện - Báo KTV tiếp tục sửa'),
-      'Modal chi tiết CSKH phải có nút ▶ Đã có linh kiện - Báo KTV tiếp tục sửa'
+      pageContent.includes('Đã có linh kiện - Báo KTV tiếp tục sửa'),
+      'Modal chi tiết CSKH phải có nút Đã có linh kiện - Báo KTV tiếp tục sửa'
     );
   });
 

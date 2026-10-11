@@ -258,7 +258,7 @@ const CustomerSlip: React.FC<{
 
       {/* Warranty Badge */}
       <div className="text-center mt-2 p-1.5 border border-dashed border-gray-600 rounded bg-gray-50">
-        <div className="text-[9.5px] font-extrabold text-black">🛡️ BẢO HÀNH ĐIỆN TỬ: {warrantyMonths} THÁNG</div>
+        <div className="text-[9.5px] font-extrabold text-black">BẢO HÀNH ĐIỆN TỬ: {warrantyMonths} THÁNG</div>
         <div className="text-[8.5px] text-gray-700 mt-0.5">Thời hạn bảo hành: {warrantyMonths} tháng (Đến ngày {formattedExpiryDate})</div>
       </div>
 
@@ -292,7 +292,7 @@ const CustomerSlip: React.FC<{
         dangerouslySetInnerHTML={{ __html: effectiveFooterNote }}
       />
       <div className="k80-powered-by text-center text-[8px] text-gray-500 mt-1">
-        ⚡ Powered by FIXO Repair OS · fixo.vn
+        Powered by FIXO Repair OS · fixo.vn
       </div>
 
       {/* Cut feed spacer */}

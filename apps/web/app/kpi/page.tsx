@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { kpiService, type StaffKpiItem } from '@podscare/api-client';
-import { StatCard, Button, TableSkeleton, EmptyState } from '@podscare/ui';
+import { StatCard, Button, TableSkeleton, EmptyState, Icon } from '@podscare/ui';
 import { AppShell } from '../components/AppShell';
 import { usePodsCare } from '../providers';
 
@@ -130,7 +130,12 @@ export default function KPIPage() {
                       <td className="px-3 text-[#708078]">{s.role}</td>
                       <td className="px-3 font-semibold text-[#176b58]">{s.count}</td>
                       <td className="px-3 font-mono">{s.qcPass}</td>
-                      <td className="px-3 text-[#b77a21] font-bold">★ {s.rating}</td>
+                      <td className="px-3 text-[#b77a21] font-bold">
+                        <div className="flex items-center gap-1">
+                          <Icon name="star" size={14} className="text-[#b77a21]" />
+                          <span>{s.rating}</span>
+                        </div>
+                      </td>
                       <td className="px-3 text-right">
                         <span
                           className={`font-bold ${

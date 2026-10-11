@@ -11,6 +11,7 @@ import {
   CurrencyInput,
   Textarea,
   useToast,
+  Icon,
 } from '@podscare/ui';
 import { AppShell } from '../components/AppShell';
 import { usePodsCare } from '../providers';
@@ -333,7 +334,7 @@ export default function InventoryPage() {
                   type="text"
                   value={search}
                   onChange={(e) => setSearch(e.target.value)}
-                  placeholder="⌕  Tìm mã SKU, tên, vị trí..."
+                  placeholder="Tìm mã SKU, tên, vị trí..."
                   className="w-full h-9 pl-3 pr-3 border border-[#e4eae6] rounded-[8px] text-xs text-[#2b3a32] bg-white outline-none focus:border-[#75a994] focus:ring-2 focus:ring-[#176b58]/10 transition-all placeholder:text-[#9aa59f]"
                 />
               </div>
@@ -347,18 +348,19 @@ export default function InventoryPage() {
                     onChange={(e) => handleWarehouseFilterChange(e.target.value)}
                     className="h-9 border border-[#d6dfda] rounded-[8px] px-2.5 text-xs text-[#1c302b] bg-[#f9fbf9] font-medium outline-none focus:border-[#75a994] cursor-pointer"
                   >
-                    <option value="all">🏢 Tất cả chi nhánh / kho</option>
+                    <option value="all">Tất cả chi nhánh / kho</option>
                     {branches
                       .filter((b) => b.id !== 'all')
                       .map((b) => (
                         <option key={b.id} value={String(b.id)}>
-                          📍 {b.name} ({b.code})
+                          {b.name} ({b.code})
                         </option>
                       ))}
                   </select>
                 ) : (
                   <div className="h-9 border border-[#d6dfda] rounded-[8px] px-2.5 text-xs text-[#176b58] bg-[#eaf4ef] font-semibold flex items-center gap-1.5 cursor-default select-none pointer-events-none">
-                    <span>📍 {branch}</span>
+                    <Icon name="building" size={14} className="text-[#176b58]" />
+                    <span>{branch}</span>
                   </div>
                 )}
               </div>
@@ -474,11 +476,11 @@ export default function InventoryPage() {
                         <td className="px-3 text-right">
                           {isLow ? (
                             <span className="inline-block px-2 py-0.5 rounded-[10px] text-xs font-bold bg-[#fbefed] text-[#bc5b52] border border-[#f5d5d0]">
-                              ⚠ Cần nhập kho
+                              Cần nhập kho
                             </span>
                           ) : (
                             <span className="inline-block px-2 py-0.5 rounded-[10px] text-xs font-bold bg-[#eaf4ef] text-[#28805e]">
-                              ✓ Đủ tồn kho
+                              Đủ tồn kho
                             </span>
                           )}
                         </td>
@@ -527,11 +529,14 @@ export default function InventoryPage() {
               Kho chi nhánh thực hiện giao dịch
             </label>
             <div className="h-10 border border-[#d6dfda] rounded-[8px] px-3 bg-[#f7f9f7] text-xs font-semibold text-[#176b58] flex items-center justify-between">
-              <span>📍 {
-                branches.find((b) => String(b.id) === (role === 'admin' ? String(selectedWarehouse === 'all' ? 1 : selectedWarehouse) : String((currentUser as any)?.branch_id || branchId || 1)))?.name || branch
-              }</span>
+              <span className="flex items-center gap-1.5">
+                <Icon name="building" size={14} className="text-[#176b58]" />
+                <span>{
+                  branches.find((b) => String(b.id) === (role === 'admin' ? String(selectedWarehouse === 'all' ? 1 : selectedWarehouse) : String((currentUser as any)?.branch_id || branchId || 1)))?.name || branch
+                }</span>
+              </span>
               <span className="text-[11px] text-[#788880] font-normal">
-                {role === 'admin' ? '(Theo bộ lọc đang chọn)' : '🔒 Gán tự động theo kho của bạn'}
+                {role === 'admin' ? '(Theo bộ lọc đang chọn)' : 'Gán tự động theo kho của bạn'}
               </span>
             </div>
           </div>

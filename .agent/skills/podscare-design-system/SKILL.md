@@ -76,7 +76,41 @@ Mỗi trạng thái đơn hàng đều có cặp màu (Chữ đậm + Nền nh�
 
 ---
 
-## 4. Shared Tailwind Preset (`packages/config-tailwind/tailwind.preset.js`)
+## 4. Quy Chuẩn Iconography: Minimalist & Purpose-Driven
+
+### 4.1. Chính sách Zero-Emoji Tuyệt Đối (Zero-Emoji Policy)
+- **Tuyệt đối cấm sử dụng Unicode Emojis**: Không được sử dụng bất kỳ emoji nào (`🛡️`, `📦`, `🏪`, `📋`, `⚡`, `🖨️`, `⌚`, `📱`, `☀️`, `⏱️`, `📅`, `💳`, `✏️`, `🗑️`, `⚠️`, `➕`, `💬`, `👋`, `🟢`, `🟡`, `🔧`, `✓`, `★`...) trong giao diện điều hành, tiêu đề tab, nút bấm, thông báo toast, hoặc thẻ trạng thái.
+- **Lý do**: Emojis hiển thị không nhất quán trên các hệ điều hành (macOS, Windows, iOS, Android), làm phá vỡ bảng màu kỹ thuật chuẩn xác và mang lại cảm giác thiếu chuyên nghiệp.
+- **Thay thế bằng Typography-First & StatusTag**:
+  - Trạng thái quy trình: Dùng `<StatusTag type="wait|progress|ready|danger|new|gray" label="..." />` với dot tròn 5px đồng màu.
+  - Phân loại đơn (Tại quầy, Giao nhận, Bảo hành): Dùng text pill hoặc badge chữ rõ ràng.
+  - Thông báo/Toast: Dùng thông điệp chữ mạch lạc, phân cấp tiêu đề và nội dung thay vì chèn emoji đầu dòng.
+
+### 4.2. Triết lý Typography-First & Action-Driven
+- **Icon chỉ dùng cho hành động hoặc điều hướng chính**: Chỉ dùng icon khi cần hỗ trợ nhận diện thao tác (như in ấn, chỉnh sửa, xóa, tìm kiếm, điều hướng menu chính).
+- **Tuyệt đối không dùng icon để trang trí lặp lại**: Nếu một khối thông tin đã có tiêu đề hoặc văn bản mô tả đầy đủ, không chèn thêm icon minh họa chỉ để lấp chỗ trống.
+
+### 4.3. Quy Tắc Dọn Dẹp Ô Nhiễm Layout (Forms & Tables)
+- **Form Inputs có nhãn (Labeled Inputs)**: Khi trường nhập liệu đã có `<label>` rõ ràng (ví dụ: *Tên khách hàng*, *Số điện thoại*, *Loại thiết bị*), **nghiêm cấm** chèn icon trang trí bên trong ô input (prefix icon). Giữ ô input sạch sẽ với placeholder súc tích.
+- **Data Table Rows**: **Nghiêm cấm** chèn icon tiền tố lặp đi lặp lại ở từng hàng dữ liệu (ví dụ: icon tai nghe trước tên máy, icon hộp trước mã đơn, icon điện thoại trước số khách). Tiêu đề cột (Table Header) đã mang đầy đủ ngữ nghĩa.
+
+### 4.4. Thang Đo Kích Thước Icon Chuẩn (5-Tier Scale)
+Bắt buộc sử dụng 1 trong 5 mốc kích thước sau từ kiểu `IconSize`:
+| Mốc kích thước | Tên gọi | Ngữ cảnh sử dụng |
+| :--- | :--- | :--- |
+| `12px` | Micro | Inline badge, micro indicator, tooltip indicator |
+| `14px` | Small | Nút phụ/nhỏ (`size="sm"`), table action, compact helper |
+| `16px` | Base *(Mặc định)* | Nút tiêu chuẩn (`size="md"`), modal actions, list items |
+| `18px` | Medium | Header actions, sidebar menu navigation, panel titles |
+| `24px` | Large | Header hero banner, empty state illustration |
+
+### 4.5. Nguồn Icon Duy Nhất (@podscare/ui/src/atoms/Icons.tsx)
+- 100% icon trong dự án phải được gọi thông qua `<Icon name="..." size={...} />`.
+- Nghiêm cấm cài đặt thêm thư viện icon bên ngoài. Mọi icon đều là Pure SVG đồng nhất strokeWidth={1.7}, viewBox="0 0 24 24".
+
+---
+
+## 5. Shared Tailwind Preset (`packages/config-tailwind/tailwind.preset.js`)
 
 ```javascript
 module.exports = {
@@ -134,9 +168,9 @@ module.exports = {
 
 ---
 
-## 5. Mẫu React Component Chuẩn
+## 6. Mẫu React Component Chuẩn
 
-### 5.1. Status Badge Component
+### 6.1. Status Badge Component
 ```tsx
 import React from 'react';
 
@@ -166,7 +200,7 @@ export const StatusTag: React.FC<StatusTagProps> = ({ label, type }) => {
 };
 ```
 
-### 5.2. Primary & Ghost Button Component
+### 6.2. Primary & Ghost Button Component
 ```tsx
 import React from 'react';
 
@@ -204,7 +238,7 @@ export const Button: React.FC<ButtonProps> = ({
 
 ---
 
-## 6. Quy Định In Ấn A4 2 Liên (Print Stylesheet)
+## 7. Quy Định In Ấn A4 2 Liên (Print Stylesheet)
 Khi xuất phiếu tiếp nhận cho khách hàng, tuân thủ cấu trúc print:
 ```css
 @media print {

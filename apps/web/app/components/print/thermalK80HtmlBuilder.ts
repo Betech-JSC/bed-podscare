@@ -830,7 +830,7 @@ export function buildCustomerCopyHtml(order: RepairOrder, origin?: string, brand
     </div>
 
     <div class="k80-warranty-badge" style="text-align: center; margin-top: 6px; padding: 4px 2px; border: 1px dashed #444444; border-radius: 4px; background: #fafafa;">
-      <div style="font-size: 9.5px; font-weight: 800; color: #000000;">🛡️ BẢO HÀNH ĐIỆN TỬ: ${warrantyMonths} THÁNG</div>
+      <div style="font-size: 9.5px; font-weight: 800; color: #000000;">BẢO HÀNH ĐIỆN TỬ: ${warrantyMonths} THÁNG</div>
       <div style="font-size: 8.5px; margin-top: 1px; color: #333333;">Thời hạn bảo hành: ${warrantyMonths} tháng (Đến ngày ${formattedExpiryDate})</div>
     </div>
 
@@ -857,7 +857,7 @@ export function buildCustomerCopyHtml(order: RepairOrder, origin?: string, brand
     <div class="k80-footer-note">
       ${effectiveFooterNote}
     </div>
-    <div class="k80-powered-by" style="font-size: 8px; color: #666; margin-top: 4px; text-align: center;">⚡ Powered by FIXO Repair OS · fixo.vn</div>
+    <div class="k80-powered-by" style="font-size: 8px; color: #666; margin-top: 4px; text-align: center;">Powered by FIXO Repair OS · fixo.vn</div>
 
     <div class="k80-feed-spacer"></div>
     <div class="k80-cut-line">✂ - - - - - CẮT GIẤY - - - - - ✂</div>
@@ -1147,7 +1147,7 @@ export function buildCombinedCustomerCopyHtml(
     <div class="k80-footer-note">
       ${effectiveFooterNote}
     </div>
-    <div class="k80-powered-by" style="font-size: 8px; color: #666; margin-top: 4px; text-align: center;">⚡ Powered by FIXO Repair OS · fixo.vn</div>
+    <div class="k80-powered-by" style="font-size: 8px; color: #666; margin-top: 4px; text-align: center;">Powered by FIXO Repair OS · fixo.vn</div>
 
     <div class="k80-feed-spacer"></div>
     <div class="k80-cut-line">✂ - - - - - CẮT GIẤY - - - - - ✂</div>

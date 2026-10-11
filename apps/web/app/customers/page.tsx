@@ -353,7 +353,7 @@ export default function CustomersPage() {
                         className="text-[11px] px-1.5 py-0.5 rounded bg-white border border-[#d1ded7] text-[#416053] hover:bg-[#eaf4ef] transition-colors cursor-pointer"
                         title="Sao chép số điện thoại"
                       >
-                        📋 Copy
+                        Sao chép
                       </button>
                     )}
                     {activeCustomer?.phone && (
@@ -363,7 +363,7 @@ export default function CustomersPage() {
                         className="text-[11px] px-1.5 py-0.5 rounded bg-[#176b58] text-white hover:bg-[#135646] transition-colors cursor-pointer flex items-center gap-1"
                         title="Gọi điện ngay"
                       >
-                        📞 Gọi
+                        Gọi điện
                       </a>
                     )}
                   </div>
@@ -480,15 +480,15 @@ export default function CustomersPage() {
                             )}
                             {isWarrantyOrder ? (
                               <span className="text-[10px] font-bold text-[#047857] bg-[#ecfdf5] px-1.5 py-0.5 rounded border border-[#a7f3d0]">
-                                🛡️ Đơn bảo hành
+                                Đơn bảo hành
                               </span>
                             ) : isCodOrder ? (
                               <span className="text-[10px] font-bold text-[#b45309] bg-[#fef3c7] px-1.5 py-0.5 rounded border border-[#fde68a]">
-                                📦 Đơn COD
+                                Đơn COD
                               </span>
                             ) : (
                               <span className="text-[10px] font-bold text-[#176b58] bg-[#eaf4ef] px-1.5 py-0.5 rounded border border-[#b8d7c8]">
-                                🏪 Tại quầy
+                                Tại quầy
                               </span>
                             )}
                           </div>

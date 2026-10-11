@@ -2,6 +2,7 @@
 
 import React, { useState } from 'react';
 import Link from 'next/link';
+import { Icon } from '@podscare/ui';
 import { VideoModal } from './components/landing/VideoModal';
 import './landing-preview.css';
 
@@ -81,7 +82,7 @@ export function LandingPreview() {
               </Link>
 
               <button className="btn video-btn" onClick={() => setIsVideoOpen(true)}>
-                ▶ Xem video giới thiệu
+                <span>Xem video giới thiệu</span>
               </button>
 
             </div>
@@ -89,7 +90,7 @@ export function LandingPreview() {
             <div className="hero-benefits">
 
               <div className="benefit">
-                <div className="benefit-icon">⚡</div>
+                <div className="benefit-icon"><Icon name="spark" size={16} /></div>
                 <div className="benefit-text">
                   <strong>Dễ sử dụng</strong>
                   <span>Bắt đầu ngay</span>
@@ -97,7 +98,7 @@ export function LandingPreview() {
               </div>
 
               <div className="benefit">
-                <div className="benefit-icon">☁</div>
+                <div className="benefit-icon"><Icon name="refresh" size={16} /></div>
                 <div className="benefit-text">
                   <strong>Quản lý mọi lúc</strong>
                   <span>Máy tính, điện thoại</span>
@@ -105,7 +106,7 @@ export function LandingPreview() {
               </div>
 
               <div className="benefit">
-                <div className="benefit-icon">✓</div>
+                <div className="benefit-icon"><Icon name="check" size={16} /></div>
                 <div className="benefit-text">
                   <strong>An toàn dữ liệu</strong>
                   <span>Sao lưu tự động</span>
@@ -113,7 +114,7 @@ export function LandingPreview() {
               </div>
 
               <div className="benefit">
-                <div className="benefit-icon">♧</div>
+                <div className="benefit-icon"><Icon name="customers" size={16} /></div>
                 <div className="benefit-text">
                   <strong>Hỗ trợ tận tâm</strong>
                   <span>7 ngày/tuần</span>
@@ -150,31 +151,31 @@ export function LandingPreview() {
                   </div>
 
                   <div className="sidebar-item">
-                    ▣ Đơn sửa chữa
+                    <Icon name="repairs" size={14} /> <span>Đơn sửa chữa</span>
                   </div>
 
                   <div className="sidebar-item">
-                    ♙ Khách hàng
+                    <Icon name="customers" size={14} /> <span>Khách hàng</span>
                   </div>
 
                   <div className="sidebar-item">
-                    ◉ Sản phẩm
+                    <Icon name="headphones" size={14} /> <span>Sản phẩm</span>
                   </div>
 
                   <div className="sidebar-item">
-                    ◇ Linh kiện
+                    <Icon name="inventory" size={14} /> <span>Linh kiện</span>
                   </div>
 
                   <div className="sidebar-item">
-                    ✓ Bảo hành
+                    <Icon name="warranty" size={14} /> <span>Bảo hành</span>
                   </div>
 
                   <div className="sidebar-item">
-                    ₫ Thu chi
+                    <Icon name="payments" size={14} /> <span>Thu chi</span>
                   </div>
 
                   <div className="sidebar-item">
-                    ▥ Báo cáo
+                    <Icon name="kpi" size={14} /> <span>Báo cáo</span>
                   </div>
 
                 </aside>
@@ -460,7 +461,7 @@ export function LandingPreview() {
               </div>
 
               <div className="feature-card">
-                <div className="feature-icon">♙</div>
+                <div className="feature-icon"><Icon name="customers" size={20} /></div>
                 <h4>Quản lý khách hàng</h4>
                 <p>
                   Lưu thông tin, lịch sử sửa chữa
@@ -469,7 +470,7 @@ export function LandingPreview() {
               </div>
 
               <div className="feature-card">
-                <div className="feature-icon">◈</div>
+                <div className="feature-icon"><Icon name="inventory" size={20} /></div>
                 <h4>Quản lý linh kiện</h4>
                 <p>
                   Theo dõi tồn kho, cảnh báo hết hàng
@@ -478,7 +479,7 @@ export function LandingPreview() {
               </div>
 
               <div className="feature-card">
-                <div className="feature-icon">♧</div>
+                <div className="feature-icon"><Icon name="warranty" size={20} /></div>
                 <h4>Quản lý bảo hành</h4>
                 <p>
                   Tạo phiếu bảo hành, tra cứu nhanh
@@ -487,7 +488,7 @@ export function LandingPreview() {
               </div>
 
               <div className="feature-card">
-                <div className="feature-icon">₫</div>
+                <div className="feature-icon"><Icon name="payments" size={20} /></div>
                 <h4>Thu chi & công nợ</h4>
                 <p>
                   Quản lý doanh thu, chi phí
@@ -496,7 +497,7 @@ export function LandingPreview() {
               </div>
 
               <div className="feature-card">
-                <div className="feature-icon">▥</div>
+                <div className="feature-icon"><Icon name="kpi" size={20} /></div>
                 <h4>Báo cáo doanh thu</h4>
                 <p>
                   Thống kê theo ngày, tháng,
@@ -505,7 +506,7 @@ export function LandingPreview() {
               </div>
 
               <div className="feature-card">
-                <div className="feature-icon">♙</div>
+                <div className="feature-icon"><Icon name="users" size={20} /></div>
                 <h4>Quản lý nhân viên</h4>
                 <p>
                   Phân quyền, theo dõi hiệu suất
@@ -514,7 +515,7 @@ export function LandingPreview() {
               </div>
 
               <div className="feature-card">
-                <div className="feature-icon">⚙</div>
+                <div className="feature-icon"><Icon name="wrench" size={20} /></div>
                 <h4>Tùy chỉnh linh hoạt</h4>
                 <p>
                   Thiết lập dịch vụ, giá và quy trình
@@ -561,37 +562,37 @@ export function LandingPreview() {
           <div className="industry-grid">
 
             <div className="industry-card">
-              <div className="industry-icon">📱</div>
+              <div className="industry-icon"><Icon name="headphones" size={24} /></div>
               <strong>Điện thoại</strong>
               <span>iPhone, Samsung...</span>
             </div>
 
             <div className="industry-card">
-              <div className="industry-icon">💻</div>
+              <div className="industry-icon"><Icon name="dashboard" size={24} /></div>
               <strong>Laptop</strong>
               <span>MacBook, Windows...</span>
             </div>
 
             <div className="industry-card">
-              <div className="industry-icon">🎧</div>
+              <div className="industry-icon"><Icon name="headphones" size={24} /></div>
               <strong>Tai nghe</strong>
               <span>AirPods, Sony...</span>
             </div>
 
             <div className="industry-card">
-              <div className="industry-icon">⌚</div>
+              <div className="industry-icon"><Icon name="watch" size={24} /></div>
               <strong>Đồng hồ</strong>
               <span>Apple Watch...</span>
             </div>
 
             <div className="industry-card">
-              <div className="industry-icon">📲</div>
+              <div className="industry-icon"><Icon name="headphones" size={24} /></div>
               <strong>Máy tính bảng</strong>
               <span>iPad...</span>
             </div>
 
             <div className="industry-card">
-              <div className="industry-icon">🔌</div>
+              <div className="industry-icon"><Icon name="package" size={24} /></div>
               <strong>Phụ kiện</strong>
               <span>Sạc, Cáp...</span>
             </div>

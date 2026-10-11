@@ -5,6 +5,7 @@ import {
   Modal,
   Button,
   Input,
+  Icon,
   useToast,
 } from '@podscare/ui';
 import type { RepairOrder } from '@podscare/types';
@@ -42,7 +43,7 @@ export const ConfirmDeleteOrderModal: React.FC<ConfirmDeleteOrderModalProps> = (
 
     try {
       await repairService.deleteOrder(order.id);
-      toast(`✓ Đã xóa vĩnh viễn đơn hàng ${order.id} khỏi hệ thống!`, 'success');
+      toast(`Đã xóa vĩnh viễn đơn hàng ${order.id} khỏi hệ thống!`, 'success');
       if (onSuccess) {
         onSuccess();
       }
@@ -77,22 +78,23 @@ export const ConfirmDeleteOrderModal: React.FC<ConfirmDeleteOrderModalProps> = (
             onClick={handleDelete}
             className="bg-[#dc2626] hover:bg-[#b91c1c] text-white font-bold disabled:opacity-50 disabled:cursor-not-allowed"
           >
-            {isDeleting ? 'Đang xóa sạch dữ liệu...' : '🗑️ Xóa vĩnh viễn đơn này'}
+            {isDeleting ? 'Đang xóa sạch dữ liệu...' : 'Xóa vĩnh viễn đơn này'}
           </Button>
         </div>
       }
     >
       <div className="space-y-4 text-sm">
         {errorMsg && (
-          <div className="p-3 bg-[#fef2f2] border border-[#fecaca] rounded-[8px] text-xs text-[#b91c1c] font-medium">
-            ⚠️ {errorMsg}
+          <div className="p-3 bg-[#fef2f2] border border-[#fecaca] rounded-[8px] text-xs text-[#b91c1c] font-medium flex items-center gap-1.5">
+            <Icon name="alert" size={14} />
+            <span>{errorMsg}</span>
           </div>
         )}
 
         {/* Khối cảnh báo màu đỏ */}
         <div className="p-4 bg-[#fef2f2] rounded-[10px] border border-[#fca5a5] space-y-2">
           <div className="flex items-center gap-2 text-[#991b1b] font-bold text-sm">
-            <span>🚨</span>
+            <Icon name="alert" size={16} />
             <span>HÀNH ĐỘNG KHÔNG THỂ HOÀN TÁC</span>
           </div>
           <p className="text-xs text-[#b91c1c] leading-relaxed m-0">
