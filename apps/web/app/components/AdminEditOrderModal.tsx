@@ -37,6 +37,9 @@ export const AdminEditOrderModal: React.FC<AdminEditOrderModalProps> = ({
   const [accessories, setAccessories] = useState(order.accessories === 'Không gửi kèm' ? '' : order.accessories || '');
   const [appearanceNotes, setAppearanceNotes] = useState(order.appearance || '');
   const [orderType, setOrderType] = useState<'in_store' | 'cod'>((order.order_type as any) || (order.orderType as any) || 'in_store');
+  const [shippingAddress, setShippingAddress] = useState(
+    order.shipping_address || (order as any).shippingAddress || ''
+  );
   const [totalPrice, setTotalPrice] = useState<number | string>(
     order.total_price !== undefined ? order.total_price : order.price || 0
   );
@@ -64,6 +67,7 @@ export const AdminEditOrderModal: React.FC<AdminEditOrderModalProps> = ({
       setAccessories(order.accessories === 'Không gửi kèm' ? '' : order.accessories || '');
       setAppearanceNotes(order.appearance || '');
       setOrderType((order.order_type as any) || (order.orderType as any) || 'in_store');
+      setShippingAddress(order.shipping_address || (order as any).shippingAddress || '');
       setTotalPrice(order.total_price !== undefined ? order.total_price : order.price || 0);
       setSelectedBranchId((order as any).branch_id || (order as any).branchId || 1);
       setSelectedTechId((order as any).technician_id ? String((order as any).technician_id) : '');
@@ -117,6 +121,7 @@ export const AdminEditOrderModal: React.FC<AdminEditOrderModalProps> = ({
         accessories: accessories.trim() || null,
         appearance_notes: appearanceNotes.trim() || null,
         order_type: orderType,
+        shipping_address: orderType === 'cod' ? (shippingAddress.trim() || null) : null,
         total_price: priceNum,
         branch_id: selectedBranchId,
         technician_id: selectedTechId ? Number(selectedTechId) : null,
@@ -137,6 +142,8 @@ export const AdminEditOrderModal: React.FC<AdminEditOrderModalProps> = ({
         appearance: appearanceNotes.trim() || 'Không ghi chú',
         order_type: orderType,
         orderType: orderType,
+        shipping_address: orderType === 'cod' ? (shippingAddress.trim() || null) : null,
+        shippingAddress: orderType === 'cod' ? (shippingAddress.trim() || null) : null,
         price: priceNum,
         total_price: priceNum,
         technician_id: selectedTechId ? Number(selectedTechId) : null,
@@ -246,6 +253,20 @@ export const AdminEditOrderModal: React.FC<AdminEditOrderModalProps> = ({
               </div>
             </div>
           </div>
+
+          {orderType === 'cod' && (
+            <div className="pt-2 border-t border-[#fde68a]">
+              <label className="block text-xs font-bold text-[#92400e] mb-1">
+                <span>Địa chỉ giao hàng COD (Khách tỉnh):</span>
+              </label>
+              <Input
+                value={shippingAddress}
+                onChange={(e) => setShippingAddress(e.target.value)}
+                placeholder="Ví dụ: Số 12 ngõ 45 đường Giải Phóng, P. Đồng Tâm, Q. Hai Bà Trưng, Hà Nội..."
+                data-testid="admin-shipping-address-input"
+              />
+            </div>
+          )}
         </div>
 
         {/* Thông tin khách hàng */}

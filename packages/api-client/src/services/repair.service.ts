@@ -1,6 +1,7 @@
 import { HttpClient, defaultHttpClient } from '../http-client';
 import type {
   CreateIntakeDTO,
+  UpdateOrderDTO,
   UpdateOrderQuoteDTO,
   CompleteTechOrderDTO,
   AddAdditionalServiceDTO,
@@ -43,15 +44,19 @@ export class RepairService {
     return this.http.post('/api/v1/orders', dto);
   }
 
-  async update(id: string | number, payload: Record<string, any>): Promise<any> {
+  async update(id: string | number, payload: UpdateOrderDTO | Record<string, any>): Promise<any> {
     return this.http.put(`/api/v1/orders/${id}`, payload);
   }
 
-  async adminUpdate(id: string | number, payload: Record<string, any>): Promise<any> {
+  async updateOrder(id: string | number, payload: UpdateOrderDTO | Record<string, any>): Promise<any> {
     return this.update(id, payload);
   }
 
-  async adminUpdateOrder(id: string | number, payload: Record<string, any>): Promise<any> {
+  async adminUpdate(id: string | number, payload: UpdateOrderDTO | Record<string, any>): Promise<any> {
+    return this.update(id, payload);
+  }
+
+  async adminUpdateOrder(id: string | number, payload: UpdateOrderDTO | Record<string, any>): Promise<any> {
     return this.update(id, payload);
   }
 

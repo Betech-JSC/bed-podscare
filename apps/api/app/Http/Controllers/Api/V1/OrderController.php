@@ -166,6 +166,7 @@ class OrderController extends Controller
             'warranty_terms_days'   => 'nullable|integer|min:0',
             'status'                => 'nullable|string',
             'order_type'            => 'nullable|string|in:in_store,cod,warranty',
+            'shipping_address'      => 'nullable|string|max:500',
             'checklists'            => 'nullable|array',
             'checklists.*.item_name'=> 'required_with:checklists|string',
             'checklists.*.status'   => 'required_with:checklists|in:pass,fail,not_tested',
@@ -228,6 +229,7 @@ class OrderController extends Controller
                 'test_note'             => $validated['test_note'] ?? null,
                 'status'                => $initialStatus,
                 'order_type'            => $validated['order_type'] ?? 'in_store',
+                'shipping_address'      => $validated['shipping_address'] ?? null,
                 'customer_approved_at'  => $initialStatus === 'waiting_tech' ? now() : null,
                 'initial_price'         => $validated['estimated_price'] ?? 0.00,
                 'total_price'           => $validated['estimated_price'] ?? 0.00,
@@ -402,6 +404,7 @@ class OrderController extends Controller
                 'total_price'           => 'nullable|numeric|min:0',
                 'initial_price'         => 'nullable|numeric|min:0',
                 'order_type'            => 'nullable|string|in:in_store,cod,warranty',
+                'shipping_address'      => 'nullable|string|max:500',
                 'status'                => 'nullable|string',
                 'branch_id'             => 'nullable|exists:branches,id',
                 'technician_id'         => 'nullable|exists:users,id',
@@ -464,7 +467,11 @@ class OrderController extends Controller
             });
         }
 
-        $validated = $request->validate([
+        if ($request->has('shipping_address') && (! $user || ! in_array($user->role, ['cskh', 'admin', 'super_admin'], true))) {
+            return $this->failure('Bạn không có quyền cập nhật địa chỉ giao hàng.', 403);
+        }
+
+        $rules = [
             'technician_id'         => 'nullable|exists:users,id',
             'serial_number'         => 'nullable|string|max:100',
             'accessories'           => 'nullable|string|max:255',
@@ -473,11 +480,20 @@ class OrderController extends Controller
             'price_note'            => 'nullable|string|max:255',
             'repair_note'           => 'nullable|string',
             'parts_used_summary'    => 'nullable|string',
-        ]);
+        ];
+
+        if ($user && $user->role === 'cskh') {
+            $rules['shipping_address'] = 'nullable|string|max:500';
+        }
+
+        $validated = $request->validate($rules);
 
         $order->update($validated);
 
-        return $this->success($order->fresh(), 'Cập nhật đơn sửa chữa thành công.');
+        return $this->success(
+            $order->fresh(['customer', 'deviceModel', 'branch', 'technician', 'createdByUser:id,name,role']),
+            'Cập nhật đơn sửa chữa thành công.'
+        );
     }
 
     /**

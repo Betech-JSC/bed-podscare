@@ -78,6 +78,12 @@ Mỗi trạng thái đơn hàng đều có cặp màu (Chữ đậm + Nền nh�
 
 ## 4. Quy Chuẩn Iconography: Minimalist & Purpose-Driven
 
+> ### 🛑 QUY TẮC BẮT BUỘC: NGHIÊM CẤM TỰ Ý THÊM ICON / EMOJI VÀO GIAO DIỆN (ZERO UNWANTED ICONS & ZERO EMOJIS)
+> - **Mặc định 100% tiêu đề (heading), nhãn trường (form label), thẻ thông tin (card), và nút bấm (button) BẮT BUỘC dùng Typography-First (Text thuần).**
+> - **Tuyệt đối KHÔNG tự ý chèn thêm `<Icon />` trang trí hoặc Unicode Emoji vào bất kỳ thành phần UI mới nào.**
+> - **Chỉ được dùng `<Icon />` khi và chỉ khi đó là action icon đã được thiết kế sẵn trong bộ core (như search bar, close modal X) hoặc khi có yêu cầu đích danh từ người dùng.**
+> - **Mọi hành vi tự ý nhồi icon vào label input hoặc tiêu đề card đều bị coi là vi phạm tiêu chuẩn thiết kế.**
+
 ### 4.1. Chính sách Zero-Emoji Tuyệt Đối (Zero-Emoji Policy)
 - **Tuyệt đối cấm sử dụng Unicode Emojis**: Không được sử dụng bất kỳ emoji nào (`🛡️`, `📦`, `🏪`, `📋`, `⚡`, `🖨️`, `⌚`, `📱`, `☀️`, `⏱️`, `📅`, `💳`, `✏️`, `🗑️`, `⚠️`, `➕`, `💬`, `👋`, `🟢`, `🟡`, `🔧`, `✓`, `★`...) trong giao diện điều hành, tiêu đề tab, nút bấm, thông báo toast, hoặc thẻ trạng thái.
 - **Lý do**: Emojis hiển thị không nhất quán trên các hệ điều hành (macOS, Windows, iOS, Android), làm phá vỡ bảng màu kỹ thuật chuẩn xác và mang lại cảm giác thiếu chuyên nghiệp.

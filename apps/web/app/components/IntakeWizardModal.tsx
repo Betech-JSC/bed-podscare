@@ -144,6 +144,7 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
   // Customer & Branch Form State
   const [name, setName] = useState('');
   const [phone, setPhone] = useState('');
+  const [shippingAddress, setShippingAddress] = useState('');
   const [selectedBranchId, setSelectedBranchId] = useState<string | number>(() => {
     const userBranchId = (currentUser as any)?.branch_id || (currentUser as any)?.branchId;
     if (userBranchId) return userBranchId;
@@ -237,6 +238,7 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
     setPrice('');
     setPriceNote('');
     setConsent(true);
+    setShippingAddress('');
 
     // Reset multi-device array
     setDevices([createDefaultDevice('dev-1', 'AirPods', firstModel)]);
@@ -266,6 +268,9 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
 
   const handleSelectOrderType = (type: 'in_store' | 'cod' | 'warranty') => {
     setOrderType(type);
+    if (type !== 'cod') {
+      setShippingAddress('');
+    }
     if (type === 'warranty') {
       setDevices((prev) =>
         prev.map((dev) => ({
@@ -834,6 +839,7 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
           intake_batch_code: batchCode,
           created_by_user_id: selectedCskhId ? Number(selectedCskhId) : undefined,
           order_type: orderType,
+          shipping_address: orderType === 'cod' && shippingAddress.trim() ? shippingAddress.trim() : undefined,
         };
 
         const res = await repairService.createIntake(payload);
@@ -860,6 +866,8 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
           id: newId,
           order_type: orderType,
           orderType: orderType,
+          shipping_address: orderType === 'cod' && shippingAddress.trim() ? shippingAddress.trim() : null,
+          shippingAddress: orderType === 'cod' && shippingAddress.trim() ? shippingAddress.trim() : null,
           name: name.trim(),
           phone: phone.trim(),
           deviceCategory: dev.category,
@@ -1234,6 +1242,27 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
                     Ghi nhận nhân viên CSKH phụ trách tiếp nhận và tư vấn đơn hàng này
                   </p>
                 </div>
+
+                {/* 01.b Địa chỉ giao hàng COD (Tùy chọn cho đơn COD, ẩn khi tại quầy/bảo hành) */}
+                {orderType === 'cod' && (
+                  <div className="sm:col-span-2 p-3.5 rounded-[8px] bg-[#fffdf7] border border-[#fde68a] space-y-1.5 transition-all">
+                    <label className="block text-xs font-bold text-[#92400e]">
+                      <span>Địa chỉ nhận lại máy (Giao hàng COD)</span>
+                      <span className="text-[11px] font-normal text-[#b45309] ml-1">
+                        (Tùy chọn — có thể cập nhật sau)
+                      </span>
+                    </label>
+                    <Input
+                      value={shippingAddress}
+                      onChange={(e) => setShippingAddress(e.target.value)}
+                      placeholder="Ví dụ: Số 12 ngõ 45 đường Giải Phóng, P. Đồng Tâm, Q. Hai Bà Trưng, Hà Nội"
+                      data-testid="cod-shipping-address-input"
+                    />
+                    <p className="text-[11px] text-[#92400e]">
+                      Không bắt buộc — CSKH có thể nhận máy trước rồi liên hệ khách bổ sung sau.
+                    </p>
+                  </div>
+                )}
               </div>
             </section>
           )}

@@ -27,6 +27,7 @@ class RepairOrder extends Model
         'test_note',
         'status',
         'order_type',
+        'shipping_address',
         'total_price',
         'initial_price',
         'price_note',

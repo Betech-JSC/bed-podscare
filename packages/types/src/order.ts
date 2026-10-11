@@ -73,6 +73,8 @@ export interface RepairOrder {
   statusType: OrderStatusType;
   order_type?: 'in_store' | 'cod' | 'warranty';
   orderType?: 'in_store' | 'cod' | 'warranty';
+  shipping_address?: string | null;
+  shippingAddress?: string | null;
   price: number;
   total_price?: number;
   initial_price?: number;
@@ -162,7 +164,33 @@ export interface CreateIntakeDTO {
   intake_batch_code?: string;
   order_type?: 'in_store' | 'cod' | 'warranty';
   orderType?: 'in_store' | 'cod' | 'warranty';
+  shipping_address?: string | null;
+  shippingAddress?: string | null;
   created_by_user_id?: number | string;
+}
+
+export interface UpdateOrderDTO {
+  customer_name?: string;
+  customer_phone?: string;
+  device_model_id?: number;
+  serial_number?: string | null;
+  issue_description?: string;
+  accessories?: string | null;
+  appearance_notes?: string | null;
+  test_note?: string | null;
+  price_note?: string | null;
+  repair_note?: string | null;
+  parts_used_summary?: string | null;
+  estimated_price?: number;
+  total_price?: number;
+  initial_price?: number;
+  order_type?: 'in_store' | 'cod' | 'warranty';
+  shipping_address?: string | null;
+  status?: string;
+  branch_id?: number | string;
+  technician_id?: number | null;
+  warranty_terms_days?: number;
+  [key: string]: any;
 }
 
 export interface UpdateOrderQuoteDTO {
