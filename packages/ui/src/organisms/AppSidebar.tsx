@@ -129,6 +129,7 @@ export const AppSidebar: React.FC<AppSidebarProps> = ({
       'branding',
       'users',
       'payments',
+      'shifts',
       'subscription',
       'kpi',
       'audit',
@@ -143,6 +144,7 @@ export const AppSidebar: React.FC<AppSidebarProps> = ({
       'timeline',
       'shipments',
       'warranty',
+      'shifts',
     ],
     tech: [
       'tech',
@@ -177,7 +179,7 @@ export const AppSidebar: React.FC<AppSidebarProps> = ({
   const operationsNav: NavItemDef[] = [
     { id: 'tech', label: 'Không gian Kỹ thuật', icon: 'wrench', href: '/tech' },
     { id: 'qc', label: 'Kiểm định QC', icon: 'qc', badge: qcCount },
-    { id: 'inventory', label: 'Kho linh kiện', icon: 'inventory' },
+    { id: 'inventory', label: 'Kho & Mua hàng', icon: 'inventory', href: '/inventory' },
     { id: 'shipments', label: 'Giao nhận', icon: 'shipments' },
     { id: 'partners', label: 'Đối tác', icon: 'partners' },
     { id: 'warranty', label: 'Bảo hành', icon: 'warranty' },
@@ -188,6 +190,7 @@ export const AppSidebar: React.FC<AppSidebarProps> = ({
     { id: 'branding', label: 'Thương hiệu & Mẫu in', icon: 'spark', href: '/branding' },
     { id: 'users', label: 'Tài khoản & Phân quyền', icon: 'customers' },
     { id: 'payments', label: 'Thanh toán', icon: 'payments' },
+    { id: 'shifts', label: 'Sổ quỹ & Ca trực', icon: 'payments', href: '/shifts' },
     { id: 'subscription', label: 'Gói cước & Bản quyền', icon: 'shield', href: '/subscription' },
     { id: 'kpi', label: 'Hiệu suất KPI', icon: 'kpi' },
     { id: 'audit', label: 'Nhật ký hoạt động', icon: 'audit' },
@@ -291,7 +294,11 @@ export const AppSidebar: React.FC<AppSidebarProps> = ({
         </div>
         <div className="space-y-1">
           {filteredItems.map((item) => {
+            const cleanPath = currentPath.split('?')[0].replace(/^\//, '');
+            const itemPath = item.href ? item.href.split('?')[0].replace(/^\//, '') : item.id;
             const isActive =
+              cleanPath === itemPath ||
+              cleanPath === item.id ||
               currentPath === item.id ||
               currentPath === `/${item.id}` ||
               (item.href ? currentPath === item.href.replace(/^\//, '') : false);

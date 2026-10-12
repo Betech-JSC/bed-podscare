@@ -13,8 +13,10 @@ import {
 } from '@podscare/api-client';
 
 import { NotificationProvider } from './providers/NotificationProvider';
+import { ShiftProvider } from './providers/ShiftProvider';
 
 export * from './providers/NotificationProvider';
+export * from './providers/ShiftProvider';
 
 export interface BranchItem {
   id: string | number;
@@ -799,7 +801,9 @@ export const Providers: React.FC<{ children: React.ReactNode }> = ({ children })
         >
           <ToastProvider>
             <ChunkLoadErrorHandler />
-            <ConfirmProvider>{children}</ConfirmProvider>
+            <ShiftProvider>
+              <ConfirmProvider>{children}</ConfirmProvider>
+            </ShiftProvider>
           </ToastProvider>
         </NotificationProvider>
       </PodsCareContext.Provider>

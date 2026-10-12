@@ -102,7 +102,7 @@ class CriticalFlawsRemediationTest extends TestCase
     public function test_check_role_middleware_blocks_non_admin_from_user_routes(): void
     {
         $branch = $this->getBranch('Q1');
-        $staff = $this->getStaff($branch, 'technician');
+        $staff = $this->getStaff($branch, 'receptionist');
 
         $response = $this->actingAs($staff, 'sanctum')->getJson('/api/v1/users');
         $response->assertStatus(403)
@@ -217,7 +217,7 @@ class CriticalFlawsRemediationTest extends TestCase
             'customer_id'        => $customer->id,
             'device_model_id'    => $device->id,
             'issue_description'  => 'Thay pin',
-            'status'             => 'inspecting',
+            'status'             => 'ready_for_return',
             'created_by_user_id' => $admin->id,
         ]);
 

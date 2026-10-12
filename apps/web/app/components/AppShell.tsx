@@ -15,6 +15,7 @@ import {
 import type { UserProfile } from '@podscare/types';
 import { saasService } from '@podscare/api-client';
 import { usePodsCare, useNotifications } from '../providers';
+import { ShiftControlWidget } from './ShiftControlWidget';
 
 export interface AppShellProps {
   children: React.ReactNode;
@@ -288,6 +289,7 @@ export const AppShell: React.FC<AppShellProps> = ({ children, crumbName = 'Tổn
           unreadCount={unreadCount}
           isNotificationOpen={notificationOpen}
           onOpenNotifications={() => setNotificationOpen((prev) => !prev)}
+          shiftSlot={currentUser?.role !== 'super_admin' ? <ShiftControlWidget /> : undefined}
           planBadgeSlot={
             currentUser?.role !== 'super_admin' ? (
               <button

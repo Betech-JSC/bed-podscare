@@ -9,6 +9,15 @@ export interface PaymentItem {
   transaction_ref?: string | null;
   notes?: string | null;
   paid_at?: string | null;
+  refund_amount?: number | null;
+  refund_reason?: string | null;
+  refund_method?: 'cash' | 'bank_transfer' | string | null;
+  refunded_at?: string | null;
+  refunded_by_user_id?: number | null;
+  refunded_by_user?: {
+    id: number;
+    name: string;
+  } | null;
   created_at?: string;
   repair_order?: {
     id: number;
@@ -41,4 +50,10 @@ export interface CreatePaymentDTO {
   payment_method: 'cash' | 'bank_transfer' | 'card_pos' | 'wallet' | string;
   transaction_ref?: string;
   notes?: string;
+}
+
+export interface RefundPaymentDTO {
+  refund_amount?: number;
+  refund_method: 'cash' | 'bank_transfer' | string;
+  refund_reason: string;
 }

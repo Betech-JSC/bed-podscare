@@ -6,6 +6,8 @@ use App\Http\Controllers\Controller;
 use App\Models\AuditLog;
 use App\Models\Payment;
 use App\Models\RepairOrder;
+use App\Models\User;
+use App\Services\RefundService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
@@ -18,7 +20,19 @@ class PaymentController extends Controller
      */
     public function index(Request $request): JsonResponse
     {
+        $user = $request->user();
         $query = Payment::with(['repairOrder.customer', 'receivedByUser:id,name']);
+
+        if ($user) {
+            $query->whereHas('repairOrder', function ($q) use ($user) {
+                if ($user->role !== 'super_admin') {
+                    $q->where('tenant_id', $user->tenant_id);
+                }
+                if (! in_array($user->role, ['admin', 'super_admin'], true)) {
+                    $q->where('branch_id', $user->branch_id);
+                }
+            });
+        }
 
         if ($orderIdentifier = $request->input('repair_order_id') ?? $request->input('order_code')) {
             if (is_numeric($orderIdentifier)) {
@@ -78,6 +92,23 @@ class PaymentController extends Controller
         return DB::transaction(function () use ($request, $validated) {
             $order = RepairOrder::findOrFail($validated['repair_order_id']);
 
+            $user = $request->user();
+            if ($user && ! in_array($user->role, ['admin', 'super_admin'], true) && ! empty($user->branch_id) && (int) $order->branch_id !== (int) $user->branch_id) {
+                return $this->failure('Bạn không có quyền tạo phiếu thanh toán cho đơn hàng thuộc chi nhánh khác.', 403);
+            }
+
+            if ($order->status === 'completed') {
+                return $this->failure('Đơn hàng đã hoàn tất hoặc đã được thanh toán.', 422);
+            }
+
+            if ($order->payments()->where('status', 'paid')->exists()) {
+                return $this->failure('Đơn hàng đã hoàn tất hoặc đã có phiếu thanh toán thành công.', 422);
+            }
+
+            if (! in_array($order->status, ['ready_for_return', 'waiting_pickup', 'in_repair'], true)) {
+                return $this->failure('Chỉ có thể tạo phiếu thanh toán cho đơn hàng đang sửa chữa, sẵn sàng giao trả hoặc chờ khách nhận.', 422);
+            }
+
             if ($request->has('service_price')) {
                 $newPrice = (float) $request->input('service_price');
                 $order->total_price = $newPrice;
@@ -87,8 +118,10 @@ class PaymentController extends Controller
             }
 
             $year = date('y');
-            $randomNum = str_pad((string) random_int(100, 99999), 4, '0', STR_PAD_LEFT);
-            $paymentCode = "FX{$year}-PY-{$randomNum}";
+            do {
+                $randomNum = str_pad((string) random_int(100, 999999), 6, '0', STR_PAD_LEFT);
+                $paymentCode = "FX{$year}-PY-{$randomNum}";
+            } while (Payment::where('payment_code', $paymentCode)->exists());
 
             $isBankTransfer = $validated['payment_method'] === 'bank_transfer';
             $isAutoConfirm = $request->boolean('auto_confirm') || $request->input('status') === 'paid';
@@ -132,6 +165,17 @@ class PaymentController extends Controller
 
             // Tự động hoàn tất đơn hàng, kích hoạt bảo hành điện tử và tích lũy doanh số khi thu tiền trực tiếp
             if ($status === 'paid' && ($isAutoConfirm || $validated['payment_method'] === 'cash')) {
+                // Đồng bộ vào sổ quỹ và két ca trực khi thu tiền mặt
+                if ($validated['payment_method'] === 'cash') {
+                    app(\App\Services\CashTransactionService::class)->recordRepairOrderCashPayment(
+                        (int) $order->tenant_id,
+                        (int) $order->branch_id,
+                        (int) $request->user()->id,
+                        $payment,
+                        $order
+                    );
+                }
+
                 $order->status = 'completed';
                 if (! $order->handed_over_at) {
                     $order->handed_over_at = Carbon::now();
@@ -141,11 +185,18 @@ class PaymentController extends Controller
                 }
                 $order->save();
 
+                // Tự động trừ kho linh kiện đã dùng cho đơn hàng
+                app(\App\Services\OrderWorkflowService::class)->deductInventoryForOrder($order, (int) $request->user()->id);
+
                 // Kích hoạt bảo hành điện tử tự động
                 if ($warrantyDays > 0 && ! $order->warranties()->exists()) {
-                    $randomWr = str_pad((string) random_int(100, 9999), 4, '0', STR_PAD_LEFT);
+                    do {
+                        $randomWr = str_pad((string) random_int(100, 999999), 6, '0', STR_PAD_LEFT);
+                        $wrCode = "FX{$year}-WR-{$randomWr}";
+                    } while (\App\Models\Warranty::where('warranty_code', $wrCode)->exists());
+
                     \App\Models\Warranty::create([
-                        'warranty_code'   => "FX{$year}-WR-{$randomWr}",
+                        'warranty_code'   => $wrCode,
                         'repair_order_id' => $order->id,
                         'customer_id'     => $order->customer_id,
                         'device_model_id' => $order->device_model_id,
@@ -197,6 +248,7 @@ class PaymentController extends Controller
     public function show(Request $request, int|string $id): JsonResponse
     {
         $payment = Payment::with(['repairOrder.customer', 'receivedByUser:id,name'])->findOrFail($id);
+        $this->authorizePaymentAccess($payment, $request->user());
 
         return $this->success($payment, 'Lấy thông tin phiếu thanh toán thành công.');
     }
@@ -207,6 +259,7 @@ class PaymentController extends Controller
     public function vietqr(Request $request, int|string $id): JsonResponse
     {
         $payment = Payment::with('repairOrder.tenant')->findOrFail($id);
+        $this->authorizePaymentAccess($payment, $request->user());
         $order = $payment->repairOrder;
 
         // Ưu tiên lấy thông tin tài khoản ngân hàng của Tenant thuộc đơn hàng
@@ -262,6 +315,7 @@ class PaymentController extends Controller
         }
 
         $payment = Payment::with('repairOrder')->findOrFail($id);
+        $this->authorizePaymentAccess($payment, $user);
 
         if ($payment->status === 'paid') {
             return $this->failure('Phiếu thanh toán này đã được duyệt thanh toán trước đó.', 422);
@@ -292,6 +346,17 @@ class PaymentController extends Controller
 
             $order = $payment->repairOrder;
             if ($order) {
+                // Đồng bộ vào sổ quỹ và két ca trực khi duyệt thanh toán tiền mặt
+                if ($payment->payment_method === 'cash') {
+                    app(\App\Services\CashTransactionService::class)->recordRepairOrderCashPayment(
+                        (int) $order->tenant_id,
+                        (int) $order->branch_id,
+                        (int) $user->id,
+                        $payment,
+                        $order
+                    );
+                }
+
                 $order->status = 'completed';
                 if (! $order->handed_over_at) {
                     $order->handed_over_at = Carbon::now();
@@ -301,13 +366,20 @@ class PaymentController extends Controller
                 }
                 $order->save();
 
+                // Tự động trừ kho linh kiện đã dùng cho đơn hàng
+                app(\App\Services\OrderWorkflowService::class)->deductInventoryForOrder($order, (int) $user->id);
+
                 // Kích hoạt bảo hành điện tử tự động nếu chưa có
                 $warrantyDays = $order->warranty_terms_days ?: 90;
                 $year = date('y');
                 if ($warrantyDays > 0 && ! $order->warranties()->exists()) {
-                    $randomWr = str_pad((string) random_int(100, 9999), 4, '0', STR_PAD_LEFT);
+                    do {
+                        $randomWr = str_pad((string) random_int(100, 999999), 6, '0', STR_PAD_LEFT);
+                        $wrCode = "FX{$year}-WR-{$randomWr}";
+                    } while (\App\Models\Warranty::where('warranty_code', $wrCode)->exists());
+
                     \App\Models\Warranty::create([
-                        'warranty_code'   => "FX{$year}-WR-{$randomWr}",
+                        'warranty_code'   => $wrCode,
                         'repair_order_id' => $order->id,
                         'customer_id'     => $order->customer_id,
                         'device_model_id' => $order->device_model_id,
@@ -352,5 +424,98 @@ class PaymentController extends Controller
                 'Duyệt thanh toán thành công.'
             );
         });
+    }
+
+    /**
+     * Hoàn tiền cho phiếu thanh toán đã thu.
+     */
+    public function refund(Request $request, int|string $id, RefundService $refundService): JsonResponse
+    {
+        $user = $request->user();
+        if (! in_array($user?->role, ['admin', 'super_admin', 'cashier', 'cskh'], true)) {
+            return $this->failure('Bạn không có quyền thực hiện hoàn tiền đơn hàng.', 403);
+        }
+
+        $payment = Payment::with(['repairOrder.customer'])->findOrFail($id);
+        $this->authorizePaymentAccess($payment, $user);
+
+        $validated = $request->validate([
+            'refund_amount'   => 'nullable|numeric|min:1',
+            'refund_method'   => 'required|in:cash,bank_transfer',
+            'refund_reason'   => 'required|string|max:500',
+            'transaction_ref' => 'nullable|string|max:100',
+        ], [
+            'refund_method.required' => 'Vui lòng chọn phương thức hoàn tiền (tiền mặt hoặc chuyển khoản).',
+            'refund_method.in'       => 'Phương thức hoàn tiền không hợp lệ.',
+            'refund_reason.required' => 'Vui lòng nhập lý do hoàn tiền.',
+        ]);
+
+        try {
+            $refundedPayment = $refundService->processRefund($payment, $user, $validated);
+
+            return $this->success(
+                $refundedPayment,
+                'Hoàn tiền đơn hàng thành công.'
+            );
+        } catch (\DomainException $e) {
+            return $this->failure($e->getMessage(), 422);
+        }
+    }
+
+    /**
+     * Hoàn tiền cho đơn hàng thông qua mã đơn hoặc ID đơn hàng.
+     */
+    public function refundOrder(Request $request, int|string $id, RefundService $refundService): JsonResponse
+    {
+        $user = $request->user();
+        if (! in_array($user?->role, ['admin', 'super_admin', 'cashier', 'cskh'], true)) {
+            return $this->failure('Bạn không có quyền thực hiện hoàn tiền đơn hàng.', 403);
+        }
+
+        $order = is_numeric($id)
+            ? RepairOrder::find((int) $id)
+            : RepairOrder::where('order_code', (string) $id)->first();
+
+        if (! $order) {
+            return $this->failure('Không tìm thấy đơn hàng cần hoàn tiền.', 404);
+        }
+
+        $payment = Payment::where('repair_order_id', $order->id)
+            ->where('status', 'paid')
+            ->latest('id')
+            ->first();
+
+        if (! $payment) {
+            return $this->failure('Đơn hàng không có giao dịch thanh toán hợp lệ (paid) để hoàn tiền.', 422);
+        }
+
+        return $this->refund($request, $payment->id, $refundService);
+    }
+
+    /**
+     * Kiểm tra phân quyền đa tenant và chi nhánh đối với phiếu thanh toán.
+     */
+    protected function authorizePaymentAccess(Payment $payment, ?User $user): void
+    {
+        if (! $user) {
+            abort(401, 'Chưa xác thực danh tính.');
+        }
+
+        if ($user->role === 'super_admin') {
+            return;
+        }
+
+        $order = $payment->repairOrder()->withoutGlobalScopes()->first();
+        if (! $order) {
+            abort(404, 'Không tìm thấy đơn hàng liên kết với phiếu thanh toán.');
+        }
+
+        if ((int) $order->tenant_id !== (int) $user->tenant_id) {
+            abort(403, 'Bạn không có quyền truy cập phiếu thanh toán thuộc cửa hàng khác.');
+        }
+
+        if (! in_array($user->role, ['admin', 'super_admin'], true) && ! empty($user->branch_id) && (int) $order->branch_id !== (int) $user->branch_id) {
+            abort(403, 'Bạn không có quyền truy cập phiếu thanh toán thuộc chi nhánh khác.');
+        }
     }
 }

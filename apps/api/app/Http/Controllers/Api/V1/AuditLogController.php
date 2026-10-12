@@ -37,6 +37,33 @@ class AuditLogController extends Controller
             $query->where('user_id', $userId);
         }
 
+        // Lọc theo auditable_id
+        if ($auditableId = $request->input('auditable_id')) {
+            $query->where('auditable_id', $auditableId);
+        }
+
+        // Lọc theo ngày tạo (from_date, to_date)
+        if ($fromDate = $request->input('from_date')) {
+            $query->whereDate('created_at', '>=', $fromDate);
+        }
+        if ($toDate = $request->input('to_date')) {
+            $query->whereDate('created_at', '<=', $toDate);
+        }
+
+        // Lọc theo has_diff (có chứa old_values hoặc new_values)
+        if ($request->has('has_diff')) {
+            $hasDiff = filter_var($request->input('has_diff'), FILTER_VALIDATE_BOOLEAN, FILTER_NULL_ON_FAILURE);
+            if ($hasDiff === true) {
+                $query->where(function ($q) {
+                    $q->whereNotNull('old_values')
+                      ->orWhereNotNull('new_values');
+                });
+            } elseif ($hasDiff === false) {
+                $query->whereNull('old_values')
+                      ->whereNull('new_values');
+            }
+        }
+
         // Tìm kiếm tổng hợp theo q
         if ($search = $request->input('q')) {
             $query->where(function ($q) use ($search) {
@@ -44,6 +71,15 @@ class AuditLogController extends Controller
                   ->orWhere('action', 'like', "%{$search}%")
                   ->orWhere('user_name', 'like', "%{$search}%")
                   ->orWhere('auditable_type', 'like', "%{$search}%");
+            });
+        }
+
+        // Phân quyền tenant
+        $user = $request->user();
+        if ($user && $user->role !== 'super_admin' && ! empty($user->tenant_id)) {
+            $query->where(function ($q) use ($user) {
+                $q->where('tenant_id', $user->tenant_id)
+                  ->orWhereNull('tenant_id');
             });
         }
 

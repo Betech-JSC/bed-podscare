@@ -120,12 +120,16 @@ class UserController extends Controller
             'branch_id.required_if' => 'Chi nhánh công tác là bắt buộc đối với nhân sự chi nhánh.',
         ]);
 
+        $oldRole = $user->role;
+        $oldBranchId = $user->branch_id;
+        $oldIsActive = (bool) $user->is_active;
+
         if (isset($validated['role']) && $validated['role'] === 'tech') {
             $validated['role'] = 'technician';
         }
 
         if (isset($validated['role'])) {
-            if ($request->user() && $request->user()->role === 'admin') {
+            if ($request->user() && in_array($request->user()->role, ['admin', 'super_admin'], true)) {
                 $user->role = $validated['role'];
             }
             unset($validated['role']);
@@ -141,13 +145,46 @@ class UserController extends Controller
         $user->save();
         $user->load('branch');
 
+        $newRole = $user->role;
+        $newBranchId = $user->branch_id;
+        $newIsActive = (bool) $user->is_active;
+
+        if ($oldRole !== $newRole || $oldBranchId !== $newBranchId || $oldIsActive !== $newIsActive) {
+            app(\App\Services\AuditLogService::class)->logFieldDiff(
+                $user->tenant_id,
+                $request->user(),
+                'Thay đổi phân quyền',
+                $user,
+                [
+                    'role'      => $oldRole,
+                    'branch_id' => $oldBranchId,
+                    'is_active' => $oldIsActive,
+                ],
+                [
+                    'role'      => $newRole,
+                    'branch_id' => $newBranchId,
+                    'is_active' => $newIsActive,
+                ],
+                "Quản trị viên {$request->user()?->name} thay đổi phân quyền cho tài khoản {$user->name} ({$user->email})",
+                [
+                    'target_user_id' => $user->id,
+                    'old_role'       => $oldRole,
+                    'new_role'       => $newRole,
+                    'old_branch_id'  => $oldBranchId,
+                    'new_branch_id'  => $newBranchId,
+                    'old_is_active'  => $oldIsActive,
+                    'new_is_active'  => $newIsActive,
+                ]
+            );
+        }
+
         return $this->success($user, 'Cập nhật tài khoản thành công.');
     }
 
     /**
      * Khóa hoặc kích hoạt tài khoản.
      */
-    public function toggleStatus(int $id): JsonResponse
+    public function toggleStatus(Request $request, int $id): JsonResponse
     {
         $user = User::find($id);
 
@@ -155,11 +192,27 @@ class UserController extends Controller
             return $this->empty('Không tìm thấy tài khoản người dùng.');
         }
 
+        $oldIsActive = (bool) $user->is_active;
         $user->is_active = ! $user->is_active;
         $user->save();
         $user->load('branch');
 
         $statusText = $user->is_active ? 'kích hoạt' : 'tạm khóa';
+
+        app(\App\Services\AuditLogService::class)->logFieldDiff(
+            $user->tenant_id,
+            $request->user(),
+            'Thay đổi phân quyền',
+            $user,
+            ['is_active' => $oldIsActive],
+            ['is_active' => (bool) $user->is_active],
+            "Quản trị viên " . ($request->user()?->name ?? 'Admin') . " {$statusText} tài khoản {$user->name}",
+            [
+                'target_user_id' => $user->id,
+                'old_is_active'  => $oldIsActive,
+                'new_is_active'  => (bool) $user->is_active,
+            ]
+        );
 
         return $this->success($user, "Đã {$statusText} tài khoản thành công.");
     }

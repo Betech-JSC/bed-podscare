@@ -13,6 +13,7 @@ use App\Models\QcInspection;
 use App\Models\RepairOrder;
 use App\Models\User;
 use App\Models\Warranty;
+use App\Services\OrderCodeService;
 use App\Services\OrderWorkflowService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -25,8 +26,11 @@ use Symfony\Component\HttpKernel\Exception\ConflictHttpException;
 class OrderController extends Controller
 {
     public function __construct(
-        protected OrderWorkflowService $workflowService
-    ) {}
+        protected OrderWorkflowService $workflowService,
+        protected ?OrderCodeService $orderCodeService = null
+    ) {
+        $this->orderCodeService = $orderCodeService ?? app(OrderCodeService::class);
+    }
     /**
      * Danh sách đơn sửa chữa với bộ lọc.
      */
@@ -35,14 +39,32 @@ class OrderController extends Controller
         $query = RepairOrder::with(['customer', 'deviceModel', 'branch', 'technician', 'qcInspector', 'createdByUser:id,name,role']);
 
         if ($status = $request->input('status')) {
-            $normalized = $this->normalizeStatus($status);
-            if ($normalized === 'waiting_qc') {
-                $query->whereIn('status', ['waiting_qc', 'qc_pending', 'qc_inspecting']);
-            } elseif ($normalized === 'waiting_approval') {
-                $query->whereIn('status', ['waiting_approval', 'quote_pending']);
+            if ($status === 'special_parts') {
+                $query->specialPartsPending();
             } else {
-                $query->where('status', $status);
+                $normalized = $this->normalizeStatus($status);
+                if ($normalized === 'waiting_qc') {
+                    $query->whereIn('status', ['waiting_qc', 'qc_pending', 'qc_inspecting']);
+                } elseif ($normalized === 'waiting_approval') {
+                    $query->whereIn('status', ['waiting_approval', 'quote_pending']);
+                } else {
+                    $query->where('status', $status);
+                }
             }
+        }
+
+        if ($specialPartsStatus = $request->input('special_parts_status')) {
+            if ($specialPartsStatus === 'pending') {
+                $query->specialPartsPending();
+            } elseif ($specialPartsStatus === 'purchased') {
+                $query->specialPartsPurchased();
+            } elseif ($specialPartsStatus === 'all') {
+                $query->whereNotNull('special_parts_status');
+            } else {
+                $query->where('special_parts_status', $specialPartsStatus);
+            }
+        } elseif ($request->boolean('special_parts') || $request->input('special_parts') === 'true') {
+            $query->specialPartsPending();
         }
 
         $user = $request->user();
@@ -137,9 +159,12 @@ class OrderController extends Controller
         }
 
         if (! $hasSpecificDate) {
-            if ($isTechnician) {
+            $hasSpecialPartsFilter = $request->has('special_parts_status') || $request->boolean('special_parts') || $request->input('special_parts') === 'true' || $request->input('status') === 'special_parts';
+            if ($hasSpecialPartsFilter && ! $request->has('date_filter')) {
+                $dateFilter = 'all';
+            } elseif ($isTechnician) {
                 if (in_array($dateFilter, ['all', '30_days'], true) || ! in_array($dateFilter, ['today', '3_days', 'yesterday', '7_days'], true)) {
-                    $dateFilter = '3_days';
+                    $dateFilter = '7_days';
                 }
             } else {
                 if (! in_array($dateFilter, ['today', '3_days', 'yesterday', '7_days', '30_days', 'all'], true)) {
@@ -214,7 +239,7 @@ class OrderController extends Controller
             'appearance_notes'      => 'nullable|string',
             'test_note'             => 'nullable|string',
             'intake_batch_code'     => 'nullable|string|max:50',
-            'estimated_price'       => 'required|numeric|min:0',
+            'estimated_price'       => ($request->input('order_type') === 'warranty') ? 'required|numeric|min:0' : 'required|numeric|gt:0',
             'warranty_terms_days'   => 'nullable|integer|min:0',
             'status'                => 'nullable|string',
             'order_type'            => 'nullable|string|in:in_store,cod,warranty',
@@ -255,14 +280,8 @@ class OrderController extends Controller
                 $customerId = $customer->id;
             }
 
-            // 2. Tự động sinh mã đơn FX26-xxxxx (đảm bảo duy nhất)
-            $year = date('y');
-            $attempts = 0;
-            do {
-                $randomNum = str_pad((string) random_int(1, 99999), 5, '0', STR_PAD_LEFT);
-                $orderCode = "FX{$year}-{$randomNum}";
-                $attempts++;
-            } while (RepairOrder::where('order_code', $orderCode)->exists() && $attempts < 20);
+            // 2. Tự động sinh mã đơn định danh PC{branch_code}{DDMMYY}{STT} theo chi nhánh và ngày
+            $orderCode = $this->orderCodeService->generate((int) $validated['branch_id']);
 
             // 3. Tạo RepairOrder: mặc định trạng thái waiting_tech để KTV nhận đơn tức thì
             $initialStatus = $validated['status'] ?? 'waiting_tech';
@@ -436,6 +455,32 @@ class OrderController extends Controller
 
         $this->authorizeOrderBranch($order, $request->user());
 
+        if ($order->status === 'completed') {
+            $priceFieldsChanged = false;
+            if ($request->has('total_price')) {
+                $reqTotal = $request->input('total_price');
+                if ($reqTotal === null ? $order->total_price !== null : (float) $reqTotal != (float) ($order->total_price ?? 0)) {
+                    $priceFieldsChanged = true;
+                }
+            }
+            if ($request->has('initial_price')) {
+                $reqInitial = $request->input('initial_price');
+                if ($reqInitial === null ? $order->initial_price !== null : (float) $reqInitial != (float) ($order->initial_price ?? 0)) {
+                    $priceFieldsChanged = true;
+                }
+            }
+            if ($request->has('estimated_price')) {
+                $reqEst = $request->input('estimated_price');
+                if ($reqEst === null ? $order->total_price !== null : (float) $reqEst != (float) ($order->total_price ?? 0)) {
+                    $priceFieldsChanged = true;
+                }
+            }
+
+            if ($priceFieldsChanged) {
+                return $this->failure('Không thể chỉnh sửa giá của đơn hàng đã hoàn tất.', 422);
+            }
+        }
+
         $user = $request->user();
         $isAdmin = $user && in_array($user->role, ['admin', 'super_admin'], true);
 
@@ -497,20 +542,47 @@ class OrderController extends Controller
                     unset($orderUpdates['estimated_price']);
                 }
 
+                $oldPrice = (float) ($order->total_price ?? 0);
+                $isPriceModified = isset($orderUpdates['total_price']) && (float) $orderUpdates['total_price'] !== $oldPrice;
+                $newPrice = isset($orderUpdates['total_price']) ? (float) $orderUpdates['total_price'] : $oldPrice;
+                $priceDiff = $newPrice - $oldPrice;
+
+                $oldValues = $order->only(array_keys($orderUpdates));
+
                 if (! empty($orderUpdates)) {
                     $order->update($orderUpdates);
                 }
 
-                AuditLog::create([
-                    'tenant_id'      => $order->tenant_id,
-                    'user_id'        => $user->id,
-                    'user_name'      => $user->name,
-                    'action'         => 'Cập nhật toàn diện đơn hàng',
-                    'auditable_type' => 'RepairOrder',
-                    'auditable_id'   => $order->id,
-                    'details'        => "Admin {$user->name} cập nhật thông tin đơn {$order->order_code}",
-                    'ip_address'     => $request->ip(),
-                ]);
+                app(\App\Services\AuditLogService::class)->logFieldDiff(
+                    $order->tenant_id,
+                    $user,
+                    'Cập nhật toàn diện đơn hàng',
+                    $order,
+                    $oldValues,
+                    $orderUpdates,
+                    "Admin {$user->name} cập nhật thông tin đơn {$order->order_code}"
+                );
+
+                if ($isPriceModified) {
+                    $reason = $orderUpdates['price_note'] ?? ($request->input('reason') ?? 'Điều chỉnh giá đơn hàng');
+                    app(\App\Services\AuditLogService::class)->logFieldDiff(
+                        $order->tenant_id,
+                        $user,
+                        'Sửa giá đơn hàng',
+                        $order,
+                        ['total_price' => $oldPrice],
+                        ['total_price' => $newPrice],
+                        "Điều chỉnh giá đơn {$order->order_code}: " . number_format($oldPrice) . " ₫ -> " . number_format($newPrice) . " ₫ (chênh lệch: " . number_format($priceDiff) . " ₫). Lý do: {$reason}",
+                        [
+                            'old_price'  => $oldPrice,
+                            'new_price'  => $newPrice,
+                            'difference' => $priceDiff,
+                            'reason'     => $reason,
+                            'order_id'   => $order->id,
+                            'order_code' => $order->order_code,
+                        ]
+                    );
+                }
 
                 return $this->success(
                     $order->fresh(['customer', 'deviceModel', 'branch', 'technician', 'createdByUser:id,name,role']),
@@ -609,8 +681,9 @@ class OrderController extends Controller
             // 6. Checklists
             $order->intakeChecklists()->delete();
 
-            // 7. Inventory transactions
-            $order->inventoryTransactions()->delete();
+            // 7. Inventory transactions: Hoàn trả linh kiện về kho và bảo lưu lịch sử giao dịch
+            $this->workflowService->reverseInventoryForOrder($order, $user->id, 'deleted');
+            $order->inventoryTransactions()->update(['repair_order_id' => null]);
 
             // 8. Payments
             $order->payments()->delete();
@@ -732,6 +805,208 @@ class OrderController extends Controller
         ]);
 
         return $this->success($order->fresh(), 'Đã lưu ghi chú linh kiện thành công.');
+    }
+
+    /**
+     * KTV gửi hoặc cập nhật yêu cầu linh kiện đặc biệt (mua ngoài).
+     */
+    public function requestSpecialPart(Request $request, int|string $id): JsonResponse
+    {
+        $order = $this->resolveOrder($id);
+
+        if (! $order) {
+            return $this->empty('Không tìm thấy đơn sửa chữa.');
+        }
+
+        $this->authorizeOrderBranch($order, $request->user());
+
+        if ($request->has('note') && ! $request->has('special_parts_needed')) {
+            $request->merge(['special_parts_needed' => $request->input('note')]);
+        }
+
+        $validated = $request->validate([
+            'special_parts_needed' => 'required|string|min:1|max:2000',
+            'pause_order'          => 'nullable|boolean',
+        ], [
+            'special_parts_needed.required' => 'Nội dung linh kiện cần mua ngoài không được để trống.',
+            'special_parts_needed.min'      => 'Nội dung linh kiện cần mua ngoài không được để trống.',
+        ]);
+
+        $user = $request->user();
+        $now = Carbon::now();
+        $note = trim($validated['special_parts_needed']);
+
+        $updates = [
+            'special_parts_needed'       => $note,
+            'special_parts_status'       => 'pending',
+            'special_parts_requested_at' => $now,
+        ];
+
+        // Nếu KTV chọn tạm dừng đơn và trạng thái hiện tại chưa phải waiting_parts
+        if ($request->boolean('pause_order') && $order->status !== 'waiting_parts') {
+            try {
+                $this->workflowService->transition($order, 'waiting_parts', [
+                    'reason'       => 'KTV yêu cầu linh kiện đặc biệt (mua ngoài)',
+                    'parts_needed' => $order->parts_needed ?: $note,
+                    'user'         => $user,
+                ]);
+            } catch (\Throwable $e) {
+                $updates['status'] = 'waiting_parts';
+                $updates['paused_at'] = $now;
+                if (empty($order->parts_needed)) {
+                    $updates['parts_needed'] = $note;
+                }
+            }
+        }
+
+        $order->update($updates);
+
+        AuditLog::create([
+            'tenant_id'      => $order->tenant_id,
+            'user_id'        => $user?->id,
+            'user_name'      => $user?->name ?? 'Kỹ thuật viên',
+            'action'         => 'Yêu cầu linh kiện đặc biệt',
+            'auditable_type' => 'RepairOrder',
+            'auditable_id'   => $order->id,
+            'details'        => "KTV " . ($user?->name ?? 'KTV') . " yêu cầu linh kiện ngoài: {$note}" . ($request->boolean('pause_order') ? ' (Tạm dừng đơn)' : ''),
+            'ip_address'     => $request->ip(),
+        ]);
+
+        $notificationTitle = "Yêu cầu linh kiện đặc biệt: {$order->order_code}";
+        $notificationMsg = "Đơn {$order->order_code} cần mua ngoài linh kiện: {$note}";
+
+        $notification = Notification::create([
+            'branch_id'  => $order->branch_id,
+            'order_id'   => $order->id,
+            'user_id'    => null,
+            'type'       => 'special_part_requested',
+            'title'      => $notificationTitle,
+            'message'    => $notificationMsg,
+            'severity'   => 'warning',
+            'action_url' => "/repairs?id={$order->id}",
+        ]);
+
+        OrderOperationalEvent::dispatch(
+            $notification->id,
+            $order->id,
+            $order->order_code ?? (string) $order->id,
+            $notificationTitle,
+            $notificationMsg,
+            'warning',
+            $now->toIso8601String(),
+            "/repairs?id={$order->id}",
+            $order->branch_id,
+            'cskh',
+            null,
+            'special_part_requested',
+            'order.special_part_requested'
+        );
+
+        OrderOperationalEvent::dispatch(
+            $notification->id,
+            $order->id,
+            $order->order_code ?? (string) $order->id,
+            $notificationTitle,
+            $notificationMsg,
+            'warning',
+            $now->toIso8601String(),
+            "/repairs?id={$order->id}",
+            $order->branch_id,
+            'admin',
+            null,
+            'special_part_requested',
+            'order.special_part_requested'
+        );
+
+        return $this->success(
+            $order->fresh(['customer', 'technician', 'branch', 'deviceModel', 'createdByUser:id,name,role']),
+            'Đã gửi yêu cầu linh kiện đặc biệt thành công.'
+        );
+    }
+
+    /**
+     * Admin/CSKH bấm 1 nút xác nhận đã mua linh kiện đặc biệt (mua ngoài).
+     */
+    public function fulfillSpecialPart(Request $request, int|string $id): JsonResponse
+    {
+        $user = $request->user();
+        if ($user && ! in_array($user->role, ['admin', 'cskh', 'super_admin'], true)) {
+            return $this->failure('Chỉ Quản trị viên (Admin) hoặc CSKH mới có quyền xác nhận đã mua linh kiện ngoài.', 403);
+        }
+
+        $order = $this->resolveOrder($id);
+
+        if (! $order) {
+            return $this->empty('Không tìm thấy đơn sửa chữa.');
+        }
+
+        $this->authorizeOrderBranch($order, $user);
+
+        $now = Carbon::now();
+        $updates = [
+            'special_parts_status'       => 'purchased',
+            'special_parts_fulfilled_at' => $now,
+        ];
+
+        if ($request->boolean('resume_order') && $order->status === 'waiting_parts') {
+            try {
+                $this->workflowService->transition($order, 'in_repair', [
+                    'reason' => 'Đã có linh kiện đặc biệt mua ngoài',
+                    'user'   => $user,
+                ]);
+            } catch (\Throwable $e) {
+                $updates['status'] = 'in_repair';
+                $updates['paused_at'] = null;
+            }
+        }
+
+        $order->update($updates);
+
+        AuditLog::create([
+            'tenant_id'      => $order->tenant_id,
+            'user_id'        => $user?->id,
+            'user_name'      => $user?->name ?? 'Admin',
+            'action'         => 'Xác nhận đã mua linh kiện đặc biệt',
+            'auditable_type' => 'RepairOrder',
+            'auditable_id'   => $order->id,
+            'details'        => ($user?->name ?? 'Quầy') . " đã xác nhận mua xong linh kiện ngoài cho đơn {$order->order_code}",
+            'ip_address'     => $request->ip(),
+        ]);
+
+        $notificationTitle = "Đã có linh kiện đặc biệt: {$order->order_code}";
+        $notificationMsg = "Quầy đã mua linh kiện ngoài cho đơn {$order->order_code}. KTV có thể tiếp tục xử lý.";
+
+        $notification = Notification::create([
+            'branch_id'  => $order->branch_id,
+            'order_id'   => $order->id,
+            'user_id'    => $order->technician_id,
+            'type'       => 'special_part_fulfilled',
+            'title'      => $notificationTitle,
+            'message'    => $notificationMsg,
+            'severity'   => 'success',
+            'action_url' => "/repairs?id={$order->id}",
+        ]);
+
+        OrderOperationalEvent::dispatch(
+            $notification->id,
+            $order->id,
+            $order->order_code ?? (string) $order->id,
+            $notificationTitle,
+            $notificationMsg,
+            'success',
+            $now->toIso8601String(),
+            "/repairs?id={$order->id}",
+            $order->branch_id,
+            'technician',
+            $order->technician_id,
+            'special_part_fulfilled',
+            'order.special_part_fulfilled'
+        );
+
+        return $this->success(
+            $order->fresh(['customer', 'technician', 'branch', 'deviceModel', 'createdByUser:id,name,role']),
+            'Đã xác nhận mua linh kiện thành công.'
+        );
     }
 
     /**

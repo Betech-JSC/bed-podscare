@@ -50,4 +50,14 @@ class InventoryTransaction extends Model
     {
         return $this->belongsTo(User::class, 'created_by_user_id');
     }
+
+    public function toArray(): array
+    {
+        $user = request()?->user();
+        if (! $user || $user->role !== 'admin') {
+            $this->makeHidden('unit_cost');
+        }
+
+        return parent::toArray();
+    }
 }

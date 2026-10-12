@@ -51,4 +51,19 @@ class Part extends Model
     {
         return $this->hasMany(BranchPart::class);
     }
+
+    public function goodsReceiptItems(): HasMany
+    {
+        return $this->hasMany(GoodsReceiptItem::class);
+    }
+
+    public function toArray(): array
+    {
+        $user = request()?->user();
+        if (! $user || $user->role !== 'admin') {
+            $this->makeHidden('cost_price');
+        }
+
+        return parent::toArray();
+    }
 }

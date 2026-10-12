@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api\V1;
 
 use App\Http\Controllers\Controller;
+use App\Models\Part;
 use App\Models\QcInspection;
 use App\Models\RepairOrder;
 use App\Models\User;
@@ -25,56 +26,24 @@ class KpiController extends Controller
     public function staff(Request $request): JsonResponse
     {
         $user = $request->user();
+        $isAdminOrSuper = $user && in_array($user->role, ['admin', 'super_admin'], true);
+        $canViewRevenue = $user && in_array($user->role, ['admin', 'super_admin', 'manager'], true);
+
         $branchId = $request->input('branch_id');
-        if ($user && $user->role !== 'admin') {
+        if (! $isAdminOrSuper && $user && $user->branch_id) {
             $branchId = $user->branch_id;
         }
+
         $techId = $request->input('technician_id');
+        $roleFilter = $request->input('role');
         $fromDate = $request->input('from_date', $request->input('date_from'));
         $toDate = $request->input('to_date', $request->input('date_to'));
 
-        // 1. Lọc danh sách nhân viên kỹ thuật (hoặc theo branch / technician_id)
-        $userQuery = User::whereIn('role', ['technician', 'tech']);
+        $queryTechnicians = ! $roleFilter || $roleFilter === 'all' || in_array($roleFilter, ['technician', 'tech'], true);
+        $queryCskh = ! $roleFilter || $roleFilter === 'all' || $roleFilter === 'cskh';
 
-        if ($branchId && $branchId !== 'all') {
-            $userQuery->where('branch_id', $branchId);
-        }
-
-        if ($techId) {
-            $userQuery->where('id', $techId);
-        }
-
-        $technicians = $userQuery->with('branch')->get();
-
-        // Nếu chỉ định technician_id cụ thể nhưng user mang vai trò khác (ví dụ admin test)
-        if ($techId && $technicians->isEmpty()) {
-            $technicians = User::where('id', $techId)->with('branch')->get();
-        }
-
-        // Nếu không có KTV nào thỏa mãn trong DB, fallback lấy tất cả KTV hoặc user có đơn
-        if ($technicians->isEmpty() && ! $techId) {
-            $technicians = User::whereNotNull('role')->with('branch')->limit(10)->get();
-        }
-
-        $techIds = $technicians->pluck('id')->all();
-
-        // 2. Truy vấn tất cả repair orders của các KTV
-        $ordersQuery = RepairOrder::whereIn('technician_id', $techIds);
-
-        if ($branchId && $branchId !== 'all') {
-            $ordersQuery->where('branch_id', $branchId);
-        }
-
-        if ($fromDate) {
-            $ordersQuery->whereDate('created_at', '>=', $fromDate);
-        }
-
-        if ($toDate) {
-            $ordersQuery->whereDate('created_at', '<=', $toDate);
-        }
-
-        $ordersGrouped = $ordersQuery->with('qcInspections')->get()->groupBy('technician_id');
-
+        // 1. Lọc và thống kê nhân viên kỹ thuật
+        $technicians = collect();
         $staffKpis = [];
         $totalSystemOrders = 0;
         $totalSystemCompleted = 0;
@@ -83,118 +52,268 @@ class KpiController extends Controller
         $totalSystemQcTotal = 0;
         $totalSystemQcPassed = 0;
 
-        foreach ($technicians as $tech) {
-            /** @var \Illuminate\Support\Collection<int, RepairOrder> $techOrders */
-            $techOrders = $ordersGrouped->get($tech->id, collect());
-            $orderCount = $techOrders->count();
+        if ($queryTechnicians) {
+            $userQuery = User::whereIn('role', ['technician', 'tech']);
 
-            // Tổng đơn hoàn tất
-            $completedOrders = $techOrders->where('status', 'completed');
-            $completedCount = $completedOrders->count();
+            if ($user && $user->tenant_id && $user->role !== 'super_admin') {
+                $userQuery->where('tenant_id', $user->tenant_id);
+            }
 
-            // Đơn sửa lại / bảo hành (rework_needed hoặc fail QC)
-            $reworkOrders = $techOrders->filter(function ($order) {
-                return $order->status === 'rework_needed'
-                    || $order->qcInspections->contains('result', 'fail');
-            });
-            $reworkCount = $reworkOrders->count();
+            if ($branchId && $branchId !== 'all') {
+                $userQuery->where('branch_id', $branchId);
+            }
 
-            // Tỉ lệ đạt QC
-            $allQc = $techOrders->flatMap->qcInspections;
-            $qcTotal = $allQc->count();
-            $qcPassed = $allQc->where('result', 'pass')->count();
+            if ($techId) {
+                $userQuery->where('id', $techId);
+            }
 
-            if ($qcTotal > 0) {
-                $qcPassRate = round(($qcPassed / $qcTotal) * 100, 1);
-            } else {
-                $eligibleOrders = $techOrders->filter(function ($o) {
-                    return $o->qc_passed_at !== null
-                        || in_array($o->status, ['ready_for_return', 'waiting_pickup', 'completed', 'rework_needed'], true);
+            $technicians = $userQuery->with('branch')->get();
+
+            // Nếu chỉ định technician_id cụ thể nhưng user mang vai trò khác (ví dụ admin test)
+            if ($techId && $technicians->isEmpty()) {
+                $fallbackTechQuery = User::where('id', $techId)->with('branch');
+                if ($user && $user->tenant_id && $user->role !== 'super_admin') {
+                    $fallbackTechQuery->where('tenant_id', $user->tenant_id);
+                }
+                $technicians = $fallbackTechQuery->get();
+            }
+
+            // Nếu không có KTV nào thỏa mãn và không có techId/branchId, fallback trong tenant
+            if ($technicians->isEmpty() && ! $techId && ! $branchId) {
+                $fallbackAllQuery = User::whereIn('role', ['technician', 'tech'])->with('branch');
+                if ($user && $user->tenant_id && $user->role !== 'super_admin') {
+                    $fallbackAllQuery->where('tenant_id', $user->tenant_id);
+                }
+                $technicians = $fallbackAllQuery->limit(10)->get();
+            }
+
+            $techIds = $technicians->pluck('id')->all();
+
+            $ordersQuery = RepairOrder::whereIn('technician_id', $techIds);
+
+            if ($user && $user->tenant_id && $user->role !== 'super_admin') {
+                $ordersQuery->where('tenant_id', $user->tenant_id);
+            }
+
+            if ($branchId && $branchId !== 'all') {
+                $ordersQuery->where('branch_id', $branchId);
+            }
+
+            if ($fromDate) {
+                $ordersQuery->whereDate('created_at', '>=', $fromDate);
+            }
+
+            if ($toDate) {
+                $ordersQuery->whereDate('created_at', '<=', $toDate);
+            }
+
+            $ordersGrouped = $ordersQuery->with('qcInspections')->get()->groupBy('technician_id');
+
+            foreach ($technicians as $tech) {
+                /** @var \Illuminate\Support\Collection<int, RepairOrder> $techOrders */
+                $techOrders = $ordersGrouped->get($tech->id, collect());
+                $orderCount = $techOrders->count();
+
+                // Tổng đơn hoàn tất
+                $completedOrders = $techOrders->where('status', 'completed');
+                $completedCount = $completedOrders->count();
+
+                // Doanh thu dịch vụ tạo ra (Task 1.1 & 1.2)
+                $revenueGenerated = (float) $completedOrders->sum('total_price');
+                $revenueGeneratedFormatted = number_format($revenueGenerated, 0, ',', '.') . ' ₫';
+
+                if (! $canViewRevenue) {
+                    $revenueGenerated = null;
+                    $revenueGeneratedFormatted = null;
+                }
+
+                // Đơn sửa lại / bảo hành (rework_needed hoặc fail QC)
+                $reworkOrders = $techOrders->filter(function ($order) {
+                    return $order->status === 'rework_needed'
+                        || $order->qcInspections->contains('result', 'fail');
                 });
-                $passedOrders = $techOrders->filter(function ($o) {
-                    return $o->qc_passed_at !== null
-                        || in_array($o->status, ['ready_for_return', 'waiting_pickup', 'completed'], true);
-                });
-                $qcPassRate = $eligibleOrders->count() > 0
-                    ? round(($passedOrders->count() / $eligibleOrders->count()) * 100, 1)
-                    : null;
+                $reworkCount = $reworkOrders->count();
+
+                // Tỉ lệ đạt QC
+                $allQc = $techOrders->flatMap->qcInspections;
+                $qcTotal = $allQc->count();
+                $qcPassed = $allQc->where('result', 'pass')->count();
+
+                if ($qcTotal > 0) {
+                    $qcPassRate = round(($qcPassed / $qcTotal) * 100, 1);
+                } else {
+                    $eligibleOrders = $techOrders->filter(function ($o) {
+                        return $o->qc_passed_at !== null
+                            || in_array($o->status, ['ready_for_return', 'waiting_pickup', 'completed', 'rework_needed'], true);
+                    });
+                    $passedOrders = $techOrders->filter(function ($o) {
+                        return $o->qc_passed_at !== null
+                            || in_array($o->status, ['ready_for_return', 'waiting_pickup', 'completed'], true);
+                    });
+                    $qcPassRate = $eligibleOrders->count() > 0
+                        ? round(($passedOrders->count() / $eligibleOrders->count()) * 100, 1)
+                        : null;
+                }
+
+                // Thời gian xử lý trung bình (phút)
+                $durations = $techOrders->map(function ($order) {
+                    if ($order->repair_started_at && $order->repair_completed_at) {
+                        return abs(Carbon::parse($order->repair_completed_at)->diffInMinutes(Carbon::parse($order->repair_started_at)));
+                    }
+                    if ($order->repair_completed_at && $order->tech_accepted_at) {
+                        return abs(Carbon::parse($order->repair_completed_at)->diffInMinutes(Carbon::parse($order->tech_accepted_at)));
+                    }
+                    if ($order->repair_completed_at && $order->created_at) {
+                        return abs(Carbon::parse($order->repair_completed_at)->diffInMinutes(Carbon::parse($order->created_at)));
+                    }
+                    return null;
+                })->filter(fn($val) => $val !== null && $val >= 0);
+
+                $avgMinutes = $durations->count() > 0 ? round($durations->avg(), 1) : 0.0;
+                $avgHours = round($avgMinutes / 60, 2);
+
+                $hoursPart = floor($avgMinutes / 60);
+                $minsPart = round($avgMinutes % 60);
+                $formattedTime = $hoursPart > 0 ? "{$hoursPart}h {$minsPart}m" : "{$minsPart}m";
+
+                // Tích lũy số liệu toàn hệ thống
+                $totalSystemOrders += $orderCount;
+                $totalSystemCompleted += $completedCount;
+                $totalSystemRework += $reworkCount;
+                $totalSystemQcTotal += $qcTotal;
+                $totalSystemQcPassed += $qcPassed;
+                foreach ($durations as $d) {
+                    $allSystemDurations[] = $d;
+                }
+
+                $roleLabel = match ($tech->role) {
+                    'technician', 'tech' => 'Kỹ thuật viên',
+                    'cskh'               => 'CSKH',
+                    'qc'                 => 'Kiểm định QC',
+                    default              => 'Kỹ thuật viên',
+                };
+
+                // Điểm đánh giá (rating) và trend tính động từ dữ liệu thực tế
+                $rating = null;
+                if ($orderCount > 0) {
+                    if ($qcPassRate !== null) {
+                        $score = round(($qcPassRate / 100) * 5, 1);
+                        $rating = "{$score}/5";
+                    } elseif ($completedCount > 0) {
+                        $score = round(($completedCount / $orderCount) * 5, 1);
+                        $rating = "{$score}/5";
+                    }
+                }
+
+                $staffKpis[] = [
+                    'id'                           => $tech->id,
+                    'technician_id'                => $tech->id,
+                    'name'                         => $tech->name,
+                    'email'                        => $tech->email,
+                    'phone'                        => $tech->phone,
+                    'role'                         => $roleLabel,
+                    'user_role'                    => $tech->role,
+                    'branch_id'                    => $tech->branch_id,
+                    'branch_name'                  => $tech->branch?->name,
+                    'count'                        => "{$orderCount} đơn",
+                    'total_orders'                 => $orderCount,
+                    'completed'                    => $completedCount,
+                    'rework_needed'                => $reworkCount,
+                    'in_repair'                    => $techOrders->whereIn('status', ['assigned', 'in_repair', 'waiting_parts', 'waiting_qc'])->count(),
+                    'qc_passed'                    => $qcPassed,
+                    'qc_total'                     => $qcTotal,
+                    'qc_pass_rate'                 => $qcPassRate,
+                    'qcPass'                       => $qcPassRate !== null ? "{$qcPassRate}%" : null,
+                    'rating'                       => $rating,
+                    'trend'                        => null,
+                    'avg_processing_time_minutes'  => $avgMinutes,
+                    'avg_processing_time_hours'    => $avgHours,
+                    'avg_processing_time_formatted'=> $formattedTime,
+                    'revenue_generated'            => $revenueGenerated,
+                    'revenue_generated_formatted'  => $revenueGeneratedFormatted,
+                ];
+            }
+        }
+
+        // 2. Lọc và thống kê nhân sự CSKH (Task 1.3)
+        $cskhUsers = collect();
+        $cskhKpis = [];
+
+        if ($queryCskh) {
+            $cskhQuery = User::where('role', 'cskh');
+
+            if ($user && $user->tenant_id && $user->role !== 'super_admin') {
+                $cskhQuery->where('tenant_id', $user->tenant_id);
             }
 
-            // Thời gian xử lý trung bình (phút)
-            $durations = $techOrders->map(function ($order) {
-                if ($order->repair_started_at && $order->repair_completed_at) {
-                    return abs(Carbon::parse($order->repair_completed_at)->diffInMinutes(Carbon::parse($order->repair_started_at)));
-                }
-                if ($order->repair_completed_at && $order->tech_accepted_at) {
-                    return abs(Carbon::parse($order->repair_completed_at)->diffInMinutes(Carbon::parse($order->tech_accepted_at)));
-                }
-                if ($order->repair_completed_at && $order->created_at) {
-                    return abs(Carbon::parse($order->repair_completed_at)->diffInMinutes(Carbon::parse($order->created_at)));
-                }
-                return null;
-            })->filter(fn($val) => $val !== null && $val >= 0);
-
-            $avgMinutes = $durations->count() > 0 ? round($durations->avg(), 1) : 0.0;
-            $avgHours = round($avgMinutes / 60, 2);
-
-            $hoursPart = floor($avgMinutes / 60);
-            $minsPart = round($avgMinutes % 60);
-            $formattedTime = $hoursPart > 0 ? "{$hoursPart}h {$minsPart}m" : "{$minsPart}m";
-
-            // Tích lũy số liệu toàn hệ thống
-            $totalSystemOrders += $orderCount;
-            $totalSystemCompleted += $completedCount;
-            $totalSystemRework += $reworkCount;
-            $totalSystemQcTotal += $qcTotal;
-            $totalSystemQcPassed += $qcPassed;
-            foreach ($durations as $d) {
-                $allSystemDurations[] = $d;
+            if ($branchId && $branchId !== 'all') {
+                $cskhQuery->where('branch_id', $branchId);
             }
 
-            $roleLabel = match ($tech->role) {
-                'technician', 'tech' => 'Kỹ thuật viên',
-                'cskh'               => 'CSKH',
-                'qc'                 => 'Kiểm định QC',
-                default              => 'Kỹ thuật viên',
-            };
+            $cskhUsers = $cskhQuery->with('branch')->get();
+            $cskhIds = $cskhUsers->pluck('id')->all();
 
-            // Điểm đánh giá (rating) và trend tính động từ dữ liệu thực tế
-            $rating = null;
-            if ($orderCount > 0) {
-                if ($qcPassRate !== null) {
-                    $score = round(($qcPassRate / 100) * 5, 1);
-                    $rating = "{$score}/5";
-                } elseif ($completedCount > 0) {
-                    $score = round(($completedCount / $orderCount) * 5, 1);
-                    $rating = "{$score}/5";
+            $cskhOrdersGrouped = collect();
+
+            if (! empty($cskhIds)) {
+                $cskhOrdersQuery = RepairOrder::whereIn('created_by_user_id', $cskhIds);
+
+                if ($user && $user->tenant_id && $user->role !== 'super_admin') {
+                    $cskhOrdersQuery->where('tenant_id', $user->tenant_id);
                 }
+
+                if ($branchId && $branchId !== 'all') {
+                    $cskhOrdersQuery->where('branch_id', $branchId);
+                }
+
+                if ($fromDate) {
+                    $cskhOrdersQuery->whereDate('created_at', '>=', $fromDate);
+                }
+
+                if ($toDate) {
+                    $cskhOrdersQuery->whereDate('created_at', '<=', $toDate);
+                }
+
+                $cskhOrdersGrouped = $cskhOrdersQuery->get()->groupBy('created_by_user_id');
             }
 
-            $staffKpis[] = [
-                'id'                           => $tech->id,
-                'technician_id'                => $tech->id,
-                'name'                         => $tech->name,
-                'email'                        => $tech->email,
-                'phone'                        => $tech->phone,
-                'role'                         => $roleLabel,
-                'user_role'                    => $tech->role,
-                'branch_id'                    => $tech->branch_id,
-                'branch_name'                  => $tech->branch?->name,
-                'count'                        => "{$orderCount} đơn",
-                'total_orders'                 => $orderCount,
-                'completed'                    => $completedCount,
-                'rework_needed'                => $reworkCount,
-                'in_repair'                    => $techOrders->whereIn('status', ['assigned', 'in_repair', 'waiting_parts', 'waiting_qc'])->count(),
-                'qc_passed'                    => $qcPassed,
-                'qc_total'                     => $qcTotal,
-                'qc_pass_rate'                 => $qcPassRate,
-                'qcPass'                       => $qcPassRate !== null ? "{$qcPassRate}%" : null,
-                'rating'                       => $rating,
-                'trend'                        => null,
-                'avg_processing_time_minutes'  => $avgMinutes,
-                'avg_processing_time_hours'    => $avgHours,
-                'avg_processing_time_formatted'=> $formattedTime,
-            ];
+            foreach ($cskhUsers as $cskh) {
+                /** @var \Illuminate\Support\Collection<int, RepairOrder> $cskhOrders */
+                $cskhOrders = $cskhOrdersGrouped->get($cskh->id, collect());
+                $createdCount = $cskhOrders->count();
+                $completedOrders = $cskhOrders->where('status', 'completed');
+                $completedCount = $completedOrders->count();
+                $conversionRate = $createdCount > 0 ? round(($completedCount / $createdCount) * 100, 1) : 0.0;
+
+                $cskhRevenue = (float) $completedOrders->sum('total_price');
+                $cskhRevenueFormatted = number_format($cskhRevenue, 0, ',', '.') . ' ₫';
+
+                if (! $canViewRevenue) {
+                    $cskhRevenue = null;
+                    $cskhRevenueFormatted = null;
+                }
+
+                $cskhKpis[] = [
+                    'id'                          => $cskh->id,
+                    'user_id'                     => $cskh->id,
+                    'name'                        => $cskh->name,
+                    'email'                       => $cskh->email,
+                    'phone'                       => $cskh->phone,
+                    'role'                        => 'CSKH',
+                    'user_role'                   => 'cskh',
+                    'branch_id'                   => $cskh->branch_id,
+                    'branch_name'                 => $cskh->branch?->name,
+                    'count'                       => "{$createdCount} đơn",
+                    'total_orders'                => $createdCount,
+                    'orders_created_count'        => $createdCount,
+                    'completed'                   => $completedCount,
+                    'orders_completed_count'      => $completedCount,
+                    'conversion_rate'             => $conversionRate,
+                    'conversion_rate_formatted'   => "{$conversionRate}%",
+                    'revenue_generated'           => $cskhRevenue,
+                    'revenue_generated_formatted' => $cskhRevenueFormatted,
+                ];
+            }
         }
 
         // Tính tổng hợp hệ thống
@@ -218,6 +337,7 @@ class KpiController extends Controller
 
         $summary = [
             'total_technicians'            => count($technicians),
+            'total_cskh'                   => count($cskhUsers),
             'total_orders'                 => $totalSystemOrders,
             'total_completed'              => $totalSystemCompleted,
             'completed'                    => $totalSystemCompleted,
@@ -231,14 +351,28 @@ class KpiController extends Controller
             'customer_satisfaction'        => $customerSatisfaction,
         ];
 
-        // Nếu client yêu cầu chỉ lấy danh sách mảng KTV
+        // Xác định danh sách nhân sự chính trả về theo roleFilter
+        if ($roleFilter === 'cskh') {
+            $selectedStaff = $cskhKpis;
+        } elseif (in_array($roleFilter, ['technician', 'tech'], true)) {
+            $selectedStaff = $staffKpis;
+        } elseif ($roleFilter === 'all') {
+            $selectedStaff = array_merge($staffKpis, $cskhKpis);
+        } else {
+            // Mặc định trả về KTV trong staff để tương thích với các view hiện hữu
+            $selectedStaff = $staffKpis;
+        }
+
+        // Nếu client yêu cầu chỉ lấy danh sách mảng KTV/CSKH phẳng
         if ($request->input('view') === 'list' || $request->boolean('flat')) {
-            return $this->success($staffKpis, 'Lấy thống kê KPI nhân sự thành công.');
+            return $this->success($selectedStaff, 'Lấy thống kê KPI nhân sự thành công.');
         }
 
         return $this->success([
-            'summary' => $summary,
-            'staff'   => $staffKpis,
+            'summary'     => $summary,
+            'staff'       => $selectedStaff,
+            'technicians' => $staffKpis,
+            'cskh'        => $cskhKpis,
         ], 'Lấy thống kê KPI nhân sự thành công.');
     }
 
@@ -259,8 +393,9 @@ class KpiController extends Controller
     public function dashboard(Request $request): JsonResponse
     {
         $user = $request->user();
+        $isAdmin = $user && $user->role === 'admin';
         $branchId = $request->input('branch_id');
-        if ($user && $user->role !== 'admin') {
+        if (! $isAdmin && $user) {
             $branchId = $user->branch_id;
         }
         $periodInput = $request->input('period', '14_days');
@@ -353,16 +488,22 @@ class KpiController extends Controller
             $selectedDateRevenueFormatted = number_format($selectedDateRevenue, 0, ',', '.') . ' ₫';
         }
 
-        // 4. Doanh thu tháng này từ các đơn hoàn tất
-        $startOfMonth = Carbon::now()->startOfMonth();
-        $monthlyRevenue = (float) (clone $baseQuery)
+        // 4. Doanh thu tháng này từ các đơn hoàn tất (theo $targetDate và COALESCE handed_over_at, updated_at)
+        $targetDate = Carbon::parse($targetDateStr, $tz);
+        $startOfMonth = $targetDate->copy()->startOfMonth();
+        $endOfMonth = $targetDate->copy()->endOfMonth();
+
+        $monthlyOrdersQuery = (clone $baseQuery)
             ->where('status', 'completed')
-            ->where(function ($q) use ($startOfMonth) {
-                $q->whereDate('handed_over_at', '>=', $startOfMonth)
-                  ->orWhereDate('updated_at', '>=', $startOfMonth)
-                  ->orWhereDate('created_at', '>=', $startOfMonth);
-            })
-            ->sum('total_price');
+            ->where(function ($q) use ($startOfMonth, $endOfMonth) {
+                $q->whereBetween('handed_over_at', [$startOfMonth, $endOfMonth])
+                  ->orWhere(function ($sq) use ($startOfMonth, $endOfMonth) {
+                      $sq->whereNull('handed_over_at')
+                         ->whereBetween('updated_at', [$startOfMonth, $endOfMonth]);
+                  });
+            });
+
+        $monthlyRevenue = (float) (clone $monthlyOrdersQuery)->sum('total_price');
 
         // Định dạng doanh thu tháng
         if ($monthlyRevenue >= 1000000) {
@@ -392,6 +533,8 @@ class KpiController extends Controller
         $inWorkshopStatuses = [
             'inspecting',
             'waiting_approval',
+            'quote_pending',
+            'rejected',
             'waiting_tech',
             'assigned',
             'in_repair',
@@ -399,6 +542,7 @@ class KpiController extends Controller
             'rework_needed',
             'waiting_qc',
             'qc_pending',
+            'qc_inspecting',
         ];
 
         $inWorkshopCount = (int) (clone $baseQuery)
@@ -413,22 +557,141 @@ class KpiController extends Controller
             return number_format($amount, 0, ',', '.') . ' ₫';
         };
 
+        $formatCurrencyShort = function (float $amount): string {
+            if (abs($amount) >= 1000000) {
+                $inMillions = round($amount / 1000000, 1);
+                return str_replace('.', ',', (string) $inMillions) . 'tr ₫';
+            }
+            return number_format($amount, 0, ',', '.') . ' ₫';
+        };
+
         $totalUncollectedAmount = $readyForPickupAmount + $inWorkshopAmount;
         $totalUncollectedAmountFormatted = $formatCurrency($totalUncollectedAmount);
 
-        $reconciliation = [
-            'handed_over_count'                 => $handedOverCount,
-            'handed_over_revenue'               => $handedOverRevenue,
-            'handed_over_revenue_formatted'     => $formatCurrency($handedOverRevenue),
-            'ready_for_pickup_count'            => $readyForPickupCount,
-            'ready_for_pickup_amount'           => $readyForPickupAmount,
-            'ready_for_pickup_amount_formatted' => $formatCurrency($readyForPickupAmount),
-            'in_workshop_count'                 => $inWorkshopCount,
-            'in_workshop_amount'                => $inWorkshopAmount,
-            'in_workshop_amount_formatted'      => $formatCurrency($inWorkshopAmount),
-            'total_uncollected_amount'          => $totalUncollectedAmount,
-            'total_uncollected_amount_formatted'=> $totalUncollectedAmountFormatted,
-        ];
+        if ($isAdmin) {
+            $reconciliation = [
+                'handed_over_count'                 => $handedOverCount,
+                'handed_over_revenue'               => $handedOverRevenue,
+                'handed_over_revenue_formatted'     => $formatCurrency($handedOverRevenue),
+                'ready_for_pickup_count'            => $readyForPickupCount,
+                'ready_for_pickup_amount'           => $readyForPickupAmount,
+                'ready_for_pickup_amount_formatted' => $formatCurrency($readyForPickupAmount),
+                'in_workshop_count'                 => $inWorkshopCount,
+                'in_workshop_amount'                => $inWorkshopAmount,
+                'in_workshop_amount_formatted'      => $formatCurrency($inWorkshopAmount),
+                'total_uncollected_amount'          => $totalUncollectedAmount,
+                'total_uncollected_amount_formatted'=> $totalUncollectedAmountFormatted,
+            ];
+        } else {
+            $reconciliation = [
+                'handed_over_count'      => $handedOverCount,
+                'ready_for_pickup_count' => $readyForPickupCount,
+                'in_workshop_count'      => $inWorkshopCount,
+            ];
+        }
+
+        // Tính toán COGS, Gross Profit & Accounts Receivable cho Admin
+        $selectedDateCogs = 0.0;
+        $monthlyCogs = 0.0;
+        $selectedDateGrossProfit = 0.0;
+        $monthlyGrossProfit = 0.0;
+        $selectedDateGrossProfitMargin = 0.0;
+        $monthlyGrossProfitMargin = 0.0;
+        $grossProfitMargin = 0.0;
+        $accountsReceivable = 0.0;
+        $selectedDateCogsFormatted = '0 ₫';
+        $monthlyCogsFormatted = '0 ₫';
+        $selectedDateGrossProfitFormatted = '0 ₫';
+        $monthlyGrossProfitFormatted = '0 ₫';
+        $accountsReceivableFormatted = '0 ₫';
+
+        if ($isAdmin) {
+            $calcCogsForOrderIds = function (array $orderIds): float {
+                if (empty($orderIds)) {
+                    return 0.0;
+                }
+
+                // 1. COGS từ các giao dịch xuất kho export_repair thực tế
+                $exportCogsByOrder = DB::table('inventory_transactions as it')
+                    ->leftJoin('parts as p', 'it.part_id', '=', 'p.id')
+                    ->whereIn('it.repair_order_id', $orderIds)
+                    ->where('it.transaction_type', 'export_repair')
+                    ->select('it.repair_order_id', DB::raw('SUM(ABS(it.quantity) * COALESCE(it.unit_cost, p.cost_price, 0)) as order_cogs'))
+                    ->groupBy('it.repair_order_id')
+                    ->pluck('order_cogs', 'repair_order_id')
+                    ->all();
+
+                // 2. Fallback cho các đơn hoàn tất không có giao dịch xuất kho: kiểm tra quote_items của báo giá approved
+                $ordersWithExport = array_keys($exportCogsByOrder);
+                $remainingOrderIds = array_diff($orderIds, $ordersWithExport);
+
+                $quoteCogs = 0.0;
+                if (! empty($remainingOrderIds)) {
+                    $quoteCogs = (float) DB::table('quote_items as qi')
+                        ->join('repair_quotes as rq', 'qi.quote_id', '=', 'rq.id')
+                        ->join('parts as p', 'qi.part_id', '=', 'p.id')
+                        ->whereIn('rq.repair_order_id', $remainingOrderIds)
+                        ->where(function ($q) {
+                            $q->where('rq.status', 'approved')
+                              ->orWhereNull('rq.status');
+                        })
+                        ->whereNotNull('qi.part_id')
+                        ->sum(DB::raw('qi.quantity * COALESCE(p.cost_price, 0)'));
+                }
+
+                return (float) (array_sum($exportCogsByOrder) + $quoteCogs);
+            };
+
+            $selectedDateOrderIds = (clone $selectedDateOrdersQuery)->pluck('id')->all();
+            $monthlyOrderIds = (clone $monthlyOrdersQuery)->pluck('id')->all();
+
+            $selectedDateCogs = $calcCogsForOrderIds($selectedDateOrderIds);
+            $monthlyCogs = $calcCogsForOrderIds($monthlyOrderIds);
+
+            $selectedDateGrossProfit = $selectedDateRevenue - $selectedDateCogs;
+            $monthlyGrossProfit = $monthlyRevenue - $monthlyCogs;
+
+            $selectedDateGrossProfitMargin = $selectedDateRevenue > 0
+                ? round(($selectedDateGrossProfit / $selectedDateRevenue) * 100, 1)
+                : 0.0;
+            $monthlyGrossProfitMargin = $monthlyRevenue > 0
+                ? round(($monthlyGrossProfit / $monthlyRevenue) * 100, 1)
+                : 0.0;
+            $grossProfitMargin = $monthlyGrossProfitMargin;
+
+            // Chuẩn hóa Công nợ khách hàng (AR):
+            // Chỉ tính trên các đơn đã bàn giao hoặc hoàn tất (ready_for_return, waiting_pickup, completed) mà chưa thanh toán đủ.
+            // Loại bỏ hoàn toàn các đơn xưởng (inspecting, waiting_approval, in_repair, rejected, cancelled).
+            $arOrders = (clone $baseQuery)
+                ->whereIn('status', ['ready_for_return', 'waiting_pickup', 'completed'])
+                ->with(['payments' => function ($q) {
+                    $q->where('status', 'paid');
+                }])
+                ->get(['id', 'total_price', 'status']);
+
+            $accountsReceivable = 0.0;
+            foreach ($arOrders as $arOrder) {
+                $paid = (float) $arOrder->payments->sum('amount');
+                $unpaid = (float) $arOrder->total_price - $paid;
+                if ($unpaid > 0) {
+                    $accountsReceivable += $unpaid;
+                }
+            }
+            $accountsReceivableFormatted = $formatCurrencyShort($accountsReceivable);
+
+            // Tính tổng nợ NCC (Accounts Payable)
+            $supplierQuery = \App\Models\Supplier::where('is_active', true);
+            if ($user && $user->tenant_id && $user->role !== 'super_admin') {
+                $supplierQuery->where('tenant_id', $user->tenant_id);
+            }
+            $accountsPayable = (float) $supplierQuery->sum('debt_balance');
+            $accountsPayableFormatted = $formatCurrencyShort($accountsPayable);
+
+            $selectedDateCogsFormatted = $formatCurrencyShort($selectedDateCogs);
+            $monthlyCogsFormatted = $formatCurrencyShort($monthlyCogs);
+            $selectedDateGrossProfitFormatted = $formatCurrencyShort($selectedDateGrossProfit);
+            $monthlyGrossProfitFormatted = $formatCurrencyShort($monthlyGrossProfit);
+        }
 
         // 6. Tỷ lệ hoàn tất đơn hàng
         $totalOrders = (clone $baseQuery)->count();
@@ -437,7 +700,7 @@ class KpiController extends Controller
             ? round(($completedOrders / $totalOrders) * 100, 1)
             : 0.0;
 
-        // 5. Phân bổ theo trạng thái
+        // 5. Phân bổ theo trạng thái (Bao phủ 13 trạng thái chuẩn + gộp alias)
         $allStatuses = [
             'inspecting',
             'waiting_approval',
@@ -451,6 +714,7 @@ class KpiController extends Controller
             'waiting_pickup',
             'completed',
             'cancelled',
+            'rejected',
         ];
 
         $statusRawCounts = (clone $baseQuery)
@@ -459,9 +723,24 @@ class KpiController extends Controller
             ->pluck('count', 'status')
             ->all();
 
+        $aliasMap = [
+            'quote_pending'  => 'waiting_approval',
+            'qc_pending'     => 'waiting_qc',
+            'qc_inspecting'  => 'waiting_qc',
+        ];
+
         $statusDistribution = [];
         foreach ($allStatuses as $status) {
-            $statusDistribution[$status] = (int) ($statusRawCounts[$status] ?? 0);
+            $statusDistribution[$status] = 0;
+        }
+
+        foreach ($statusRawCounts as $rawStatus => $count) {
+            $targetStatus = $aliasMap[$rawStatus] ?? $rawStatus;
+            if (isset($statusDistribution[$targetStatus])) {
+                $statusDistribution[$targetStatus] += (int) $count;
+            } else {
+                $statusDistribution[$targetStatus] = (int) $count;
+            }
         }
 
         // 6. Workload by status cho dashboard widgets
@@ -478,87 +757,290 @@ class KpiController extends Controller
                                 + ($statusDistribution['waiting_pickup'] ?? 0),
         ];
 
-        // 7. Biểu đồ doanh thu chuỗi ngày gần nhất qua SQL Aggregation trực tiếp
-        $startDate = Carbon::today($tz)->subDays($daysCount - 1)->startOfDay();
-        $endDate = Carbon::today($tz)->endOfDay();
-
-        $dailyStats = (clone $baseQuery)
-            ->where('status', 'completed')
-            ->where(function ($q) use ($startDate, $endDate) {
-                $q->whereBetween('handed_over_at', [$startDate, $endDate])
-                  ->orWhere(function ($sq) use ($startDate, $endDate) {
-                      $sq->whereNull('handed_over_at')
-                         ->whereBetween('updated_at', [$startDate, $endDate]);
-                  });
-            })
-            ->selectRaw("DATE(COALESCE(handed_over_at, updated_at)) as day_date, COUNT(*) as order_count, SUM(total_price) as total_revenue")
-            ->groupBy('day_date')
-            ->get()
-            ->keyBy('day_date');
-
-        $dayNames = [
-            0 => 'CN',
-            1 => 'T2',
-            2 => 'T3',
-            3 => 'T4',
-            4 => 'T5',
-            5 => 'T6',
-            6 => 'T7',
-        ];
-
+        // 7. Biểu đồ doanh thu chuỗi ngày gần nhất qua SQL Aggregation trực tiếp (Chỉ tính cho Admin)
         $revenueChart = [];
-        for ($i = $daysCount - 1; $i >= 0; $i--) {
-            $date = Carbon::today($tz)->subDays($i);
-            $dateStr = $date->toDateString();
-            $dayOfWeek = $date->dayOfWeek;
-            $label = $dayNames[$dayOfWeek] ?? ('T' . ($dayOfWeek + 1));
+        if ($isAdmin) {
+            $startDate = Carbon::today($tz)->subDays($daysCount - 1)->startOfDay();
+            $endDate = Carbon::today($tz)->endOfDay();
 
-            $stat = $dailyStats->get($dateStr);
+            $dailyStats = (clone $baseQuery)
+                ->where('status', 'completed')
+                ->where(function ($q) use ($startDate, $endDate) {
+                    $q->whereBetween('handed_over_at', [$startDate, $endDate])
+                      ->orWhere(function ($sq) use ($startDate, $endDate) {
+                          $sq->whereNull('handed_over_at')
+                             ->whereBetween('updated_at', [$startDate, $endDate]);
+                      });
+                })
+                ->selectRaw("DATE(COALESCE(handed_over_at, updated_at)) as day_date, COUNT(*) as order_count, SUM(total_price) as total_revenue")
+                ->groupBy('day_date')
+                ->get()
+                ->keyBy('day_date');
 
-            $revenueChart[] = [
-                'date'             => $dateStr,
-                'label'            => $label,
-                'revenue'          => (float) ($stat?->total_revenue ?? 0),
-                'completed_orders' => (int) ($stat?->order_count ?? 0),
+            $dayNames = [
+                0 => 'CN',
+                1 => 'T2',
+                2 => 'T3',
+                3 => 'T4',
+                4 => 'T5',
+                5 => 'T6',
+                6 => 'T7',
             ];
+
+            for ($i = $daysCount - 1; $i >= 0; $i--) {
+                $date = Carbon::today($tz)->subDays($i);
+                $dateStr = $date->toDateString();
+                $dayOfWeek = $date->dayOfWeek;
+                $label = $dayNames[$dayOfWeek] ?? ('T' . ($dayOfWeek + 1));
+
+                $stat = $dailyStats->get($dateStr);
+
+                $revenueChart[] = [
+                    'date'             => $dateStr,
+                    'label'            => $label,
+                    'revenue'          => (float) ($stat?->total_revenue ?? 0),
+                    'completed_orders' => (int) ($stat?->order_count ?? 0),
+                ];
+            }
         }
 
-        $summary = [
-            'active_orders'                   => $activeOrders,
-            'intake_today'                    => $intakeToday,
-            'today_orders'                    => $intakeToday,
-            'daily_revenue'                   => $dailyRevenue,
-            'daily_revenue_formatted'         => $dailyRevenueFormatted,
-            'selected_date'                   => $targetDateStr,
-            'selected_date_revenue'           => $selectedDateRevenue,
-            'selected_date_revenue_formatted' => $selectedDateRevenueFormatted,
-            'selected_date_completed_orders'  => $selectedDateCompletedOrders,
-            'monthly_revenue'                 => $monthlyRevenue,
-            'monthly_revenue_formatted'       => $monthlyRevenueFormatted,
-            'completion_rate'                 => $completionRate,
-            'total_orders'                    => $totalOrders,
-            'completed_orders'                => $completedOrders,
-            'reconciliation'                  => $reconciliation,
+        // 8. Thống kê chỉ số điều hành (Operational Summary)
+        $activeOrdersOp = (clone $baseQuery)
+            ->whereNotIn('status', ['completed', 'cancelled', 'rejected'])
+            ->count();
+
+        $waitingPickupOrders = (clone $baseQuery)
+            ->whereIn('status', ['waiting_pickup', 'ready_for_return'])
+            ->count();
+
+        $waitingPartsOrders = (clone $baseQuery)
+            ->where(function ($q) {
+                $q->where('status', 'waiting_parts')
+                  ->orWhere('special_parts_status', 'pending');
+            })
+            ->whereNotIn('status', ['completed', 'cancelled', 'rejected'])
+            ->count();
+
+        $twentyFourHoursAgo = Carbon::now($tz)->subHours(24);
+        $overdueOrdersCount = (clone $baseQuery)
+            ->whereNotIn('status', ['completed', 'cancelled', 'rejected'])
+            ->where('created_at', '<=', $twentyFourHoursAgo)
+            ->count();
+
+        $operationalSummary = [
+            'active_orders'          => $activeOrdersOp,
+            'waiting_pickup_orders'  => $waitingPickupOrders,
+            'waiting_parts_orders'   => $waitingPartsOrders,
+            'overdue_orders'         => $overdueOrdersCount,
         ];
 
-        return $this->success([
+        // 9. Danh sách công việc cần xử lý trong ca (Actionable Tasks)
+        $overdueOrders = (clone $baseQuery)
+            ->whereNotIn('status', ['completed', 'cancelled', 'rejected'])
+            ->where('created_at', '<=', $twentyFourHoursAgo)
+            ->with(['customer', 'technician', 'deviceModel'])
+            ->orderBy('created_at', 'asc')
+            ->limit(10)
+            ->get()
+            ->map(function (RepairOrder $order) use ($tz) {
+                $hoursOverdue = max(0, (int) Carbon::parse($order->created_at, $tz)->diffInHours(Carbon::now($tz)));
+                return [
+                    'id'               => $order->id,
+                    'order_code'       => $order->order_code,
+                    'customer_name'    => $order->customer?->name ?? 'Khách vãng lai',
+                    'customer_phone'   => $order->customer?->phone ?? '',
+                    'device_model'     => $order->deviceModel?->name ?? 'Thiết bị',
+                    'technician_name'  => $order->technician?->name ?? 'Chưa phân công',
+                    'created_at'       => $order->created_at?->toIso8601String(),
+                    'hours_overdue'    => $hoursOverdue,
+                    'status'           => $order->status,
+                    'issue_description'=> $order->issue_description ?? '',
+                    'total_price'      => (float) ($order->total_price ?? 0),
+                ];
+            })
+            ->values()
+            ->all();
+
+        $waitingApprovalOrders = (clone $baseQuery)
+            ->whereIn('status', ['waiting_approval', 'quote_pending'])
+            ->with(['customer', 'technician', 'deviceModel'])
+            ->orderBy('updated_at', 'desc')
+            ->limit(10)
+            ->get()
+            ->map(function (RepairOrder $order) use ($tz) {
+                $hoursPending = max(0, (int) Carbon::parse($order->updated_at ?? $order->created_at, $tz)->diffInHours(Carbon::now($tz)));
+                return [
+                    'id'               => $order->id,
+                    'order_code'       => $order->order_code,
+                    'customer_name'    => $order->customer?->name ?? 'Khách vãng lai',
+                    'customer_phone'   => $order->customer?->phone ?? '',
+                    'device_model'     => $order->deviceModel?->name ?? 'Thiết bị',
+                    'technician_name'  => $order->technician?->name ?? 'Chưa phân công',
+                    'total_price'      => (float) ($order->total_price ?? $order->initial_price ?? 0),
+                    'issue_description'=> $order->issue_description ?? '',
+                    'hours_pending'    => $hoursPending,
+                    'status'           => $order->status,
+                    'created_at'       => $order->created_at?->toIso8601String(),
+                ];
+            })
+            ->values()
+            ->all();
+
+        $waitingQcOrders = (clone $baseQuery)
+            ->whereIn('status', ['waiting_qc', 'qc_pending', 'qc_inspecting'])
+            ->with(['customer', 'technician', 'deviceModel'])
+            ->orderBy('repair_completed_at', 'asc')
+            ->limit(10)
+            ->get()
+            ->map(function (RepairOrder $order) use ($tz) {
+                $refTime = $order->repair_completed_at ?? $order->updated_at ?? $order->created_at;
+                $hoursWaiting = max(0, (int) Carbon::parse($refTime, $tz)->diffInHours(Carbon::now($tz)));
+                return [
+                    'id'                  => $order->id,
+                    'order_code'          => $order->order_code,
+                    'customer_name'       => $order->customer?->name ?? 'Khách vãng lai',
+                    'device_model'        => $order->deviceModel?->name ?? 'Thiết bị',
+                    'technician_name'     => $order->technician?->name ?? 'Chưa phân công',
+                    'repair_completed_at' => $order->repair_completed_at ? Carbon::parse($order->repair_completed_at)->toIso8601String() : null,
+                    'hours_waiting'       => $hoursWaiting,
+                    'status'              => $order->status,
+                    'issue_description'   => $order->issue_description ?? '',
+                    'total_price'         => (float) ($order->total_price ?? 0),
+                ];
+            })
+            ->values()
+            ->all();
+
+        $waitingPickupList = (clone $baseQuery)
+            ->whereIn('status', ['waiting_pickup', 'ready_for_return'])
+            ->with(['customer', 'technician', 'deviceModel'])
+            ->orderBy('qc_passed_at', 'asc')
+            ->limit(10)
+            ->get()
+            ->map(function (RepairOrder $order) {
+                return [
+                    'id'               => $order->id,
+                    'order_code'       => $order->order_code,
+                    'customer_name'    => $order->customer?->name ?? 'Khách vãng lai',
+                    'customer_phone'   => $order->customer?->phone ?? '',
+                    'device_model'     => $order->deviceModel?->name ?? 'Thiết bị',
+                    'technician_name'  => $order->technician?->name ?? 'Chưa phân công',
+                    'total_price'      => (float) ($order->total_price ?? 0),
+                    'status'           => $order->status,
+                    'issue_description'=> $order->issue_description ?? '',
+                ];
+            })
+            ->values()
+            ->all();
+
+        $partsQuery = Part::query();
+        if ($user && $user->tenant_id) {
+            $partsQuery->where('tenant_id', $user->tenant_id);
+        }
+        $lowStockParts = $partsQuery
+            ->whereColumn('stock_quantity', '<=', 'min_stock_alert')
+            ->orderBy('stock_quantity', 'asc')
+            ->limit(10)
+            ->get()
+            ->map(function (Part $part) {
+                return [
+                    'id'               => $part->id,
+                    'sku'              => $part->sku,
+                    'name'             => $part->name,
+                    'stock_quantity'   => (int) $part->stock_quantity,
+                    'min_stock_alert'  => (int) $part->min_stock_alert,
+                    'category'         => $part->category,
+                    'storage_location' => $part->storage_location,
+                    'unit'             => $part->unit ?? 'cái',
+                ];
+            })
+            ->values()
+            ->all();
+
+        $actionableTasks = [
+            'overdue'          => $overdueOrders,
+            'waiting_approval' => $waitingApprovalOrders,
+            'pending_quotes'   => $waitingApprovalOrders,
+            'waiting_qc'       => $waitingQcOrders,
+            'pending_qc'       => $waitingQcOrders,
+            'waiting_pickup'   => $waitingPickupList,
+            'ready_pickup'     => $waitingPickupList,
+            'low_stock_parts'  => $lowStockParts,
+        ];
+
+        $summary = [
+            'active_orders'                  => $activeOrders,
+            'intake_today'                   => $intakeToday,
+            'today_orders'                   => $intakeToday,
+            'selected_date'                  => $targetDateStr,
+            'selected_date_completed_orders' => $selectedDateCompletedOrders,
+            'completion_rate'                => $completionRate,
+            'total_orders'                   => $totalOrders,
+            'completed_orders'               => $completedOrders,
+            'reconciliation'                 => $reconciliation,
+            'operational_summary'            => $operationalSummary,
+            'actionable_tasks'               => $actionableTasks,
+        ];
+
+        if ($isAdmin) {
+            $financialMetrics = [
+                'daily_revenue'                       => $dailyRevenue,
+                'daily_revenue_formatted'             => $dailyRevenueFormatted,
+                'selected_date_revenue'               => $selectedDateRevenue,
+                'selected_date_revenue_formatted'     => $selectedDateRevenueFormatted,
+                'monthly_revenue'                     => $monthlyRevenue,
+                'monthly_revenue_formatted'           => $monthlyRevenueFormatted,
+                'selected_date_cogs'                  => $selectedDateCogs,
+                'selected_date_cogs_formatted'        => $selectedDateCogsFormatted,
+                'monthly_cogs'                        => $monthlyCogs,
+                'monthly_cogs_formatted'              => $monthlyCogsFormatted,
+                'selected_date_gross_profit'          => $selectedDateGrossProfit,
+                'selected_date_gross_profit_formatted'=> $selectedDateGrossProfitFormatted,
+                'selected_date_gross_profit_margin'   => $selectedDateGrossProfitMargin,
+                'monthly_gross_profit'                => $monthlyGrossProfit,
+                'monthly_gross_profit_formatted'      => $monthlyGrossProfitFormatted,
+                'monthly_gross_profit_margin'         => $monthlyGrossProfitMargin,
+                'gross_profit_margin'                 => $grossProfitMargin,
+                'accounts_receivable'                 => $accountsReceivable,
+                'accounts_receivable_formatted'       => $accountsReceivableFormatted,
+                'accounts_payable'                    => $accountsPayable,
+                'accounts_payable_formatted'          => $accountsPayableFormatted,
+            ];
+
+            $summary = array_merge($summary, $financialMetrics);
+        }
+
+        $responsePayload = [
             'summary'                         => $summary,
             'active_orders'                   => $activeOrders,
             'intake_today'                    => $intakeToday,
             'today_orders'                    => $intakeToday,
-            'daily_revenue'                   => $dailyRevenue,
-            'daily_revenue_formatted'         => $dailyRevenueFormatted,
             'selected_date'                   => $targetDateStr,
-            'selected_date_revenue'           => $selectedDateRevenue,
-            'selected_date_revenue_formatted' => $selectedDateRevenueFormatted,
             'selected_date_completed_orders'  => $selectedDateCompletedOrders,
-            'monthly_revenue'                 => $monthlyRevenue,
-            'monthly_revenue_formatted'       => $monthlyRevenueFormatted,
             'reconciliation'                  => $reconciliation,
             'completion_rate'                 => $completionRate,
+            'total_orders'                    => $totalOrders,
+            'completed_orders'                => $completedOrders,
             'status_distribution'            => $statusDistribution,
             'workload_by_status'              => $workloadByStatus,
-            'revenue_chart'                   => $revenueChart,
-        ], 'Lấy số liệu tổng quan KPI thành công.');
+            'operational_summary'             => $operationalSummary,
+            'actionable_tasks'                => $actionableTasks,
+        ];
+
+        if ($isAdmin) {
+            $responsePayload = array_merge($responsePayload, $financialMetrics, [
+                'revenue_chart' => $revenueChart,
+            ]);
+        }
+
+        return $this->success($responsePayload, 'Lấy số liệu tổng quan KPI thành công.');
+    }
+
+    /**
+     * Alias method cho GET /api/v1/kpi
+     */
+    public function index(Request $request): JsonResponse
+    {
+        return $this->dashboard($request);
     }
 }

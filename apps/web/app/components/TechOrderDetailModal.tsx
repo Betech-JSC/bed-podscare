@@ -17,6 +17,7 @@ import { repairService, inventoryService } from '@podscare/api-client';
 import { normalizeStatusCode } from '../repairs/fsm';
 import { useSilentPrint } from './print';
 import { HandoverTechModal } from './HandoverTechModal';
+import { SpecialPartsRequestModal } from './SpecialPartsRequestModal';
 
 export interface TechOrderDetailModalProps {
   isOpen: boolean;
@@ -59,6 +60,7 @@ export const TechOrderDetailModal: React.FC<TechOrderDetailModalProps> = ({
   const [inventoryParts, setInventoryParts] = useState<any[]>([]);
   const [isSearchingInventory, setIsSearchingInventory] = useState(false);
   const [showSuggestions, setShowSuggestions] = useState(false);
+  const [isSpecialPartsModalOpen, setIsSpecialPartsModalOpen] = useState(false);
 
   // Reset form when order changes
   useEffect(() => {
@@ -325,6 +327,14 @@ export const TechOrderDetailModal: React.FC<TechOrderDetailModalProps> = ({
       subtitle={`SĐT: ${order.phone} · Chi nhánh: ${order.branch || order.branchName || 'Chi nhánh hiện tại'}`}
       headerExtra={
         <div className="flex items-center gap-2">
+          {(order.order_type === 'warranty' || order.orderType === 'warranty') && (
+            <span
+              data-testid="tech-modal-warranty-badge"
+              className="px-2 py-0.5 rounded text-[10px] font-black uppercase tracking-wider bg-[#d9383a] text-white shadow-xs"
+            >
+              BẢO HÀNH (0 ₫)
+            </span>
+          )}
           <StatusTag label={order.status} type={order.statusType} />
         </div>
       }
@@ -390,6 +400,27 @@ export const TechOrderDetailModal: React.FC<TechOrderDetailModalProps> = ({
       }
     >
       <div className="space-y-6 max-h-[72vh] overflow-y-auto pr-1">
+        {/* Banner cảnh báo đơn bảo hành & QC Guardrail */}
+        {(order.order_type === 'warranty' || order.orderType === 'warranty') && (
+          <div
+            data-testid="tech-modal-warranty-alert"
+            className="p-3 bg-[#fef2f2] border border-[#fecaca] rounded-[10px] flex flex-wrap items-center justify-between gap-2 text-xs"
+          >
+            <div className="flex items-center gap-2">
+              <span className="px-2 py-0.5 rounded font-black text-[10px] uppercase bg-[#b91c1c] text-white">
+                ĐƠN BẢO HÀNH
+              </span>
+              <span className="font-bold text-[#b91c1c]">
+                Chi phí khách: 0 ₫ (Bảo hành máy)
+              </span>
+            </div>
+            <div className="flex items-center gap-1.5 font-bold text-[#991b1b]">
+              <Icon name="alert" size={14} className="text-[#b91c1c]" />
+              <span>Chốt chặn QC: Bắt buộc kiểm định QC Đạt (Pass) trước khi hoàn tất</span>
+            </div>
+          </div>
+        )}
+
         {/* ========================================================================= */}
         {/* KHỐI 1: THÔNG TIN TIẾP NHẬN TỪ QUẦY CSKH                                 */}
         {/* ========================================================================= */}
@@ -422,9 +453,15 @@ export const TechOrderDetailModal: React.FC<TechOrderDetailModalProps> = ({
             </div>
             <div>
               <span className="text-[#84948c] block mb-0.5">Báo giá tiếp nhận:</span>
-              <b className="text-sm text-[#176b58] font-bold">
-                {moneyFormatted(order.price)}
-              </b>
+              {(order.order_type === 'warranty' || order.orderType === 'warranty') ? (
+                <b className="text-sm text-[#176b58] font-bold">
+                  0 ₫ <small className="text-[11px] font-normal text-[#809088]">(Bảo hành)</small>
+                </b>
+              ) : (
+                <b className="text-sm text-[#176b58] font-bold">
+                  {moneyFormatted(order.price)}
+                </b>
+              )}
             </div>
           </div>
 
@@ -731,6 +768,119 @@ export const TechOrderDetailModal: React.FC<TechOrderDetailModalProps> = ({
             </div>
           )}
 
+          {/* ========================================================================= */}
+          {/* KHU VỰC: LINH KIỆN ĐẶC BIỆT CẦN MUA NGOÀI                                   */}
+          {/* ========================================================================= */}
+          {isActive && (
+            <div data-testid="tech-special-parts-section" className="p-4 bg-[#fdfaf5] rounded-[10px] border border-[#f5ebdb] space-y-3 shadow-xs">
+              <div className="flex items-center justify-between pb-2 border-b border-[#f0e2cd]">
+                <div className="flex items-center gap-2">
+                  <Icon name="cart" size={15} className="text-[#b45309]" />
+                  <h5 className="text-xs font-bold text-[#b45309] uppercase tracking-[0.8px] m-0">
+                    LINH KIỆN ĐẶC BIỆT (CẦN MUA NGOÀI)
+                  </h5>
+                </div>
+                {(order.special_parts_status === 'pending' || order.specialPartsStatus === 'pending') ? (
+                  <span data-testid="special-parts-status-pending" className="text-[11px] font-bold text-[#b45309] bg-[#fef3c7] px-2.5 py-0.5 rounded-full border border-[#fde68a]">
+                    Đang chờ Quầy mua ngoài
+                  </span>
+                ) : (order.special_parts_status === 'purchased' || order.specialPartsStatus === 'purchased') ? (
+                  <span data-testid="special-parts-status-purchased" className="text-[11px] font-bold text-[#28805e] bg-[#eaf5ef] px-2.5 py-0.5 rounded-full border border-[#c2e4d3]">
+                    Quầy đã mua linh kiện
+                  </span>
+                ) : null}
+              </div>
+
+              {order.special_parts_needed || order.specialPartsNeeded ? (
+                <div className="space-y-2 text-xs">
+                  <div className="p-2.5 bg-white rounded-[8px] border border-[#f0e2cd] text-[#2b3b33]">
+                    <span className="font-bold text-[#92400e] block mb-0.5">Yêu cầu đã gửi Quầy:</span>
+                    <p className="m-0 leading-relaxed font-medium">
+                      {order.special_parts_needed || order.specialPartsNeeded}
+                    </p>
+                    {order.special_parts_requested_at && (
+                      <span className="text-[10px] text-[#8c7456] block mt-1">
+                        Gửi lúc: {new Date(order.special_parts_requested_at).toLocaleString('vi-VN')}
+                      </span>
+                    )}
+                  </div>
+
+                  <div className="flex flex-wrap items-center justify-between gap-2 pt-1">
+                    {(order.special_parts_status === 'purchased' || order.specialPartsStatus === 'purchased') ? (
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs text-[#28805e] font-semibold flex items-center gap-1">
+                          <Icon name="check" size={14} />
+                          Linh kiện đã mua xong!
+                        </span>
+                        {code === 'waiting_parts' && (
+                          <Button
+                            type="button"
+                            variant="primary"
+                            size="sm"
+                            data-testid="tech-resume-repair-special-part-btn"
+                            onClick={async () => {
+                              try {
+                                await repairService.transition(order.id, { transition: 'in_repair', status: 'Đang sửa' });
+                                if (invalidateOrders) await invalidateOrders();
+                                toast(`Đã tiếp tục sửa chữa đơn ${order.id}`, 'success');
+                                const updated: RepairOrder = {
+                                  ...order,
+                                  status: 'Đang sửa',
+                                  statusType: 'progress',
+                                  paused_at: null,
+                                  pausedAt: null,
+                                };
+                                if (updateOrder) updateOrder(updated);
+                              } catch (err: any) {
+                                toast('Lỗi khi tiếp tục sửa máy', 'error');
+                              }
+                            }}
+                            className="bg-[#176b58] hover:bg-[#125848] text-white font-bold text-xs"
+                          >
+                            Tiếp tục sửa máy
+                          </Button>
+                        )}
+                      </div>
+                    ) : (
+                      <span className="text-xs text-[#92400e] italic">
+                        Quầy đang tìm mua ngoài. Bạn có thể cập nhật lại nội dung yêu cầu nếu cần.
+                      </span>
+                    )}
+
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      data-testid="edit-special-part-btn"
+                      onClick={() => setIsSpecialPartsModalOpen(true)}
+                      className="flex items-center gap-1.5 text-xs text-[#b45309] border-[#fde68a] hover:bg-[#fef3c7] font-semibold"
+                    >
+                      <Icon name="edit" size={13} />
+                      <span>Cập nhật yêu cầu</span>
+                    </Button>
+                  </div>
+                </div>
+              ) : (
+                <div className="flex items-center justify-between gap-3 text-xs">
+                  <p className="m-0 text-[#7c6950] leading-relaxed">
+                    Linh kiện không có trong kho nội bộ (tai lẻ zin, hộp hiếm, vỏ màu, IC...)? Bấm yêu cầu để Quầy tìm mua ngoài.
+                  </p>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    data-testid="open-special-parts-request-modal-btn"
+                    onClick={() => setIsSpecialPartsModalOpen(true)}
+                    className="flex-none flex items-center gap-1.5 text-xs bg-white text-[#b45309] border-[#e8d5be] hover:bg-[#fef9f0] font-bold"
+                  >
+                    <Icon name="cart" size={14} />
+                    <span>Yêu cầu mua ngoài</span>
+                  </Button>
+                </div>
+              )}
+            </div>
+          )}
+
           {/* Form nghiệm thu cho đơn đang active */}
           {isActive ? (
             <form onSubmit={handleCompleteRepair} className="space-y-4">
@@ -849,6 +999,19 @@ export const TechOrderDetailModal: React.FC<TechOrderDetailModalProps> = ({
           onClose();
         }}
         invalidateOrders={invalidateOrders}
+      />
+    )}
+
+    {isSpecialPartsModalOpen && (
+      <SpecialPartsRequestModal
+        isOpen={isSpecialPartsModalOpen}
+        onClose={() => setIsSpecialPartsModalOpen(false)}
+        preselectedOrder={order}
+        invalidateOrders={invalidateOrders}
+        updateOrder={updateOrder}
+        onSuccess={(updatedOrder) => {
+          if (updateOrder) updateOrder(updatedOrder);
+        }}
       />
     )}
   </>

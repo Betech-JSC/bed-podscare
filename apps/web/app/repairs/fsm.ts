@@ -61,6 +61,8 @@ export function normalizeStatusCode(status?: string | null): string {
     waiting_pickup: 'waiting_pickup',
     completed: 'completed',
     cancelled: 'cancelled',
+    refunded: 'refunded',
+    'Đã hoàn tiền': 'refunded',
   };
 
   return map[clean] || clean;
@@ -86,6 +88,7 @@ export function getStatusCodeLabel(codeOrLabel?: string | null): string {
     waiting_pickup: 'Chờ khách nhận',
     completed: 'Hoàn tất',
     cancelled: 'Đã hủy',
+    refunded: 'Đã hoàn tiền',
   };
   return labels[code] || codeOrLabel;
 }
@@ -135,10 +138,10 @@ export const FSM_QUICK_ACTIONS: Record<string, QuickTransitionAction[]> = {
   ],
   ready_for_return: [
     { label: 'Chờ khách nhận', targetStatus: 'waiting_pickup', statusType: 'wait', variant: 'secondary' },
-    { label: 'Hoàn tất', targetStatus: 'completed', statusType: 'gray', variant: 'secondary' },
+    { label: 'Hoàn tất', targetStatus: 'completed', statusType: 'ready', variant: 'primary' },
   ],
   waiting_pickup: [
-    { label: 'Hoàn tất', targetStatus: 'completed', statusType: 'gray', variant: 'secondary' },
+    { label: 'Hoàn tất', targetStatus: 'completed', statusType: 'ready', variant: 'primary' },
   ],
   completed: [],
   rejected: [

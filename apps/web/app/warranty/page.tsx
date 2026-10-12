@@ -22,14 +22,29 @@ interface FormattedWarranty {
   statusType: 'ready' | 'gray' | 'danger' | 'wait';
   remainingDays: number;
   raw?: any;
+  revokedAt?: string | null;
+  revokedReason?: string | null;
 }
 
 export default function WarrantyPage() {
   const router = useRouter();
   const { toast } = useToast();
+  const [activeTab, setActiveTab] = useState<'warranties' | 'claims'>('warranties');
   const [warranties, setWarranties] = useState<FormattedWarranty[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [search, setSearch] = useState('');
+
+  // Warranty Claims state
+  const [claims, setClaims] = useState<any[]>([]);
+  const [claimsLoading, setClaimsLoading] = useState(false);
+  const [claimModalOpen, setClaimModalOpen] = useState(false);
+  const [claimWarrantyId, setClaimWarrantyId] = useState<string | number>('');
+  const [claimIssue, setClaimIssue] = useState('');
+  const [claimResolutionMode, setClaimResolutionMode] = useState<
+    'store_check' | 'send_tech' | 'replace_part' | 'rejected'
+  >('send_tech');
+  const [claimNotes, setClaimNotes] = useState('');
+  const [isSubmittingClaim, setIsSubmittingClaim] = useState(false);
 
   // Lookup Modal state
   const [lookupOpen, setLookupOpen] = useState(false);
@@ -66,6 +81,7 @@ export default function WarrantyPage() {
     rawStatus: string,
     remainingDays: number
   ): { label: string; type: 'ready' | 'gray' | 'danger' | 'wait' } => {
+    if (rawStatus === 'revoked') return { label: 'Đã thu hồi', type: 'danger' };
     if (rawStatus === 'voided') return { label: 'Đã hủy', type: 'danger' };
     if (rawStatus === 'expired' || remainingDays <= 0) return { label: 'Hết hạn', type: 'gray' };
     return { label: 'Còn hạn', type: 'ready' };
@@ -109,6 +125,8 @@ export default function WarrantyPage() {
             statusType: st.type,
             remainingDays: remDays,
             raw: w,
+            revokedAt: w.revoked_at ? new Intl.DateTimeFormat('vi-VN').format(new Date(w.revoked_at)) : null,
+            revokedReason: w.revoked_reason || null,
           };
         });
         setWarranties(mapped);
@@ -123,12 +141,73 @@ export default function WarrantyPage() {
     }
   }, []);
 
+  const loadClaims = useCallback(async () => {
+    setClaimsLoading(true);
+    try {
+      const res = await warrantyService.getClaims({ per_page: 50 });
+      const raw = res?.data;
+      const list = Array.isArray(raw) ? raw : (raw?.data || []);
+      setClaims(list);
+    } catch (err) {
+      console.warn('Could not fetch warranty claims:', err);
+      setClaims([]);
+    } finally {
+      setClaimsLoading(false);
+    }
+  }, []);
+
   useEffect(() => {
     const timer = setTimeout(() => {
       loadWarranties(search);
     }, 300);
     return () => clearTimeout(timer);
   }, [search, loadWarranties]);
+
+  useEffect(() => {
+    if (activeTab === 'claims') {
+      loadClaims();
+    }
+  }, [activeTab, loadClaims]);
+
+  const handleCreateClaim = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    if (!claimWarrantyId || !claimIssue.trim()) {
+      toast('Vui lòng chọn sổ bảo hành và nhập mô tả lỗi khiếu nại', 'info');
+      return;
+    }
+
+    setIsSubmittingClaim(true);
+    try {
+      const res = await warrantyService.createClaim({
+        warranty_id: claimWarrantyId,
+        issue_description: claimIssue.trim(),
+        resolution_mode: claimResolutionMode,
+        notes: claimNotes.trim() || undefined,
+      });
+
+      const claimData = res?.data || res;
+      const reworkCode = claimData?.rework_order?.order_code || claimData?.reworkOrder?.order_code;
+      toast(
+        reworkCode
+          ? `Tiếp nhận khiếu nại thành công! Đã tự động tạo đơn làm lại ${reworkCode} trong hàng đợi kỹ thuật.`
+          : 'Tiếp nhận khiếu nại bảo hành thành công!',
+        'success'
+      );
+
+      setClaimModalOpen(false);
+      setClaimIssue('');
+      setClaimNotes('');
+      setClaimWarrantyId('');
+      loadClaims();
+      loadWarranties();
+    } catch (err: any) {
+      console.error('Error creating claim:', err);
+      const msg = err?.response?.data?.message || err?.message || 'Không thể tạo khiếu nại bảo hành';
+      toast(msg, 'error');
+    } finally {
+      setIsSubmittingClaim(false);
+    }
+  };
 
   const handleOpenMedicalHistory = async (w: FormattedWarranty) => {
     setSelectedWarranty(w);
@@ -299,103 +378,302 @@ export default function WarrantyPage() {
           </form>
         </div>
 
-        {/* Warranties Table Card */}
-        <div className="bg-white rounded-[12px] border border-[#e5ece8] p-4 sm:p-5 shadow-xs">
-          <div className="mb-4">
-            <FilterBar
-              searchValue={search}
-              onSearchChange={setSearch}
-              searchPlaceholder="Nhập số điện thoại khách hàng, số serial hoặc mã BH..."
-            />
-          </div>
+        {/* Tab Navigation: Sổ bảo hành vs Khiếu nại & Làm lại */}
+        <div className="flex items-center gap-2 border-b border-[#e5ece8] pb-1">
+          <button
+            type="button"
+            data-testid="warranty-tab-list"
+            onClick={() => setActiveTab('warranties')}
+            className={`px-4 py-2.5 rounded-[8px] font-semibold text-sm transition-all flex items-center gap-2 cursor-pointer ${
+              activeTab === 'warranties'
+                ? 'bg-[#176b58] text-white shadow-xs'
+                : 'bg-white text-[#52635a] hover:bg-[#f0f4f2] border border-[#e5ece8]'
+            }`}
+          >
+            <span>Sổ bảo hành điện tử</span>
+            <span
+              className={`px-2 py-0.5 rounded-full text-xs font-bold ${
+                activeTab === 'warranties'
+                  ? 'bg-white/20 text-white'
+                  : 'bg-[#eaf4ef] text-[#176b58]'
+              }`}
+            >
+              {warranties.length}
+            </span>
+          </button>
 
-          {isLoading ? (
-            <div className="py-12 flex flex-col items-center justify-center gap-3">
-              <div className="w-8 h-8 rounded-full border-2 border-[#176b58]/20 border-t-[#176b58] animate-spin" />
-              <span className="text-xs font-medium text-[#7a8a81]">Đang tải dữ liệu sổ bảo hành...</span>
-            </div>
-          ) : filtered.length === 0 ? (
-            <EmptyState
-              title={search ? 'Không tìm thấy sổ bảo hành' : 'Chưa có sổ bảo hành điện tử'}
-              description={
-                search
-                  ? 'Không có sổ bảo hành điện tử nào khớp với số điện thoại hoặc serial tra cứu.'
-                  : 'Hiện tại hệ thống chưa ghi nhận thông tin bảo hành nào cho linh kiện hoặc đơn sửa.'
-              }
-              icon="shield"
-              actionLabel={search ? 'Xóa bộ lọc' : 'Làm mới'}
-              onAction={() => {
-                if (search) setSearch('');
-                else loadWarranties();
-              }}
-            />
-          ) : (
-            <div className="overflow-x-auto -mx-4 sm:mx-0">
-              <table className="w-full text-left border-collapse min-w-[900px]">
-                <thead>
-                  <tr className="border-y border-[#f0f3f1] bg-[#fafbfa] text-xs font-bold text-[#809088] uppercase tracking-wider h-10">
-                    <th className="px-3">Mã sổ BH</th>
-                    <th className="px-3">Mã đơn sửa</th>
-                    <th className="px-3">Khách hàng</th>
-                    <th className="px-3">Thiết bị & Serial</th>
-                    <th className="px-3">Gói bảo hành</th>
-                    <th className="px-3">Ngày hết hạn</th>
-                    <th className="px-3">Trạng thái</th>
-                    <th className="px-3 text-right">Bệnh án</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-[#f1f3f2] text-sm">
-                  {filtered.map((w) => (
-                    <tr
-                      key={w.id}
-                      onClick={() => handleOpenMedicalHistory(w)}
-                      className="h-13 hover:bg-[#fafcfa] cursor-pointer transition-colors"
-                    >
-                      <td className="px-3 font-mono font-bold text-[#176b58]">{w.code}</td>
-                      <td className="px-3 font-mono font-medium text-[#2d3d35]">{w.orderCode}</td>
-                      <td className="px-3">
-                        <span className="font-semibold text-[#1c302b] block">{w.customerName}</span>
-                        <small className="text-xs font-medium text-[#176b58] block">{w.phone}</small>
-                      </td>
-                      <td className="px-3">
-                        <span className="font-medium text-[#2d3d35] block">{w.device}</span>
-                        <small className="text-xs font-mono text-[#8a9690]">{w.serial}</small>
-                      </td>
-                      <td className="px-3">
-                        <span className="font-semibold text-[#374941]">{w.periodDays} ngày</span>
-                        <small className="block text-xs text-[#8a9690]">Từ {w.startsAt}</small>
-                      </td>
-                      <td className="px-3 text-xs">
-                        <span className="font-semibold text-[#273931]">{w.expiresAt}</span>
-                        {w.remainingDays > 0 && (
-                          <small className="block text-xs text-[#176b58] font-bold">
-                            (Còn {w.remainingDays} ngày)
-                          </small>
-                        )}
-                      </td>
-                      <td className="px-3">
-                        <StatusTag label={w.status} type={w.statusType} />
-                      </td>
-                      <td className="px-3 text-right">
-                        <button
-                          type="button"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            handleOpenMedicalHistory(w);
-                          }}
-                          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-[8px] text-xs font-bold bg-[#eaf4ef] text-[#176b58] hover:bg-[#d5ebdf] border border-[#c2ded0] transition-all cursor-pointer shadow-2xs"
-                        >
-                          <Icon name="search" size={13} />
-                          <span>Xem bệnh án máy</span>
-                        </button>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
+          <button
+            type="button"
+            data-testid="warranty-tab-claims"
+            onClick={() => setActiveTab('claims')}
+            className={`px-4 py-2.5 rounded-[8px] font-semibold text-sm transition-all flex items-center gap-2 cursor-pointer ${
+              activeTab === 'claims'
+                ? 'bg-[#176b58] text-white shadow-xs'
+                : 'bg-white text-[#52635a] hover:bg-[#f0f4f2] border border-[#e5ece8]'
+            }`}
+          >
+            <span>Khiếu nại & Làm lại (Rework)</span>
+            <span
+              className={`px-2 py-0.5 rounded-full text-xs font-bold ${
+                activeTab === 'claims'
+                  ? 'bg-white/20 text-white'
+                  : 'bg-[#eaf4ef] text-[#176b58]'
+              }`}
+            >
+              {claims.length}
+            </span>
+          </button>
         </div>
+
+        {/* Tab 1: Warranties Table Card */}
+        {activeTab === 'warranties' && (
+          <div className="bg-white rounded-[12px] border border-[#e5ece8] p-4 sm:p-5 shadow-xs">
+            <div className="mb-4">
+              <FilterBar
+                searchValue={search}
+                onSearchChange={setSearch}
+                searchPlaceholder="Nhập số điện thoại khách hàng, số serial hoặc mã BH..."
+              />
+            </div>
+
+            {isLoading ? (
+              <div className="py-12 flex flex-col items-center justify-center gap-3">
+                <div className="w-8 h-8 rounded-full border-2 border-[#176b58]/20 border-t-[#176b58] animate-spin" />
+                <span className="text-xs font-medium text-[#7a8a81]">Đang tải dữ liệu sổ bảo hành...</span>
+              </div>
+            ) : filtered.length === 0 ? (
+              <EmptyState
+                title={search ? 'Không tìm thấy sổ bảo hành' : 'Chưa có sổ bảo hành điện tử'}
+                description={
+                  search
+                    ? 'Không có sổ bảo hành điện tử nào khớp với số điện thoại hoặc serial tra cứu.'
+                    : 'Hiện tại hệ thống chưa ghi nhận thông tin bảo hành nào cho linh kiện hoặc đơn sửa.'
+                }
+                icon="shield"
+                actionLabel={search ? 'Xóa bộ lọc' : 'Làm mới'}
+                onAction={() => {
+                  if (search) setSearch('');
+                  else loadWarranties();
+                }}
+              />
+            ) : (
+              <div className="overflow-x-auto -mx-4 sm:mx-0">
+                <table className="w-full text-left border-collapse min-w-[900px]">
+                  <thead>
+                    <tr className="border-y border-[#f0f3f1] bg-[#fafbfa] text-xs font-bold text-[#809088] uppercase tracking-wider h-10">
+                      <th className="px-3">Mã sổ BH</th>
+                      <th className="px-3">Mã đơn sửa</th>
+                      <th className="px-3">Khách hàng</th>
+                      <th className="px-3">Thiết bị & Serial</th>
+                      <th className="px-3">Gói bảo hành</th>
+                      <th className="px-3">Ngày hết hạn</th>
+                      <th className="px-3">Trạng thái</th>
+                      <th className="px-3 text-right">Bệnh án</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-[#f1f3f2] text-sm">
+                    {filtered.map((w) => (
+                      <tr
+                        key={w.id}
+                        onClick={() => handleOpenMedicalHistory(w)}
+                        className="h-13 hover:bg-[#fafcfa] cursor-pointer transition-colors"
+                      >
+                        <td className="px-3 font-mono font-bold text-[#176b58]">{w.code}</td>
+                        <td className="px-3 font-mono font-medium text-[#2d3d35]">{w.orderCode}</td>
+                        <td className="px-3">
+                          <span className="font-semibold text-[#1c302b] block">{w.customerName}</span>
+                          <small className="text-xs font-medium text-[#176b58] block">{w.phone}</small>
+                        </td>
+                        <td className="px-3">
+                          <span className="font-medium text-[#2d3d35] block">{w.device}</span>
+                          <small className="text-xs font-mono text-[#8a9690]">{w.serial}</small>
+                        </td>
+                        <td className="px-3">
+                          <span className="font-semibold text-[#374941]">{w.periodDays} ngày</span>
+                          <small className="block text-xs text-[#8a9690]">Từ {w.startsAt}</small>
+                        </td>
+                        <td className="px-3 text-xs">
+                          <span className="font-semibold text-[#273931]">{w.expiresAt}</span>
+                          {w.remainingDays > 0 && (
+                            <small className="block text-xs text-[#176b58] font-bold">
+                              (Còn {w.remainingDays} ngày)
+                            </small>
+                          )}
+                        </td>
+                        <td className="px-3">
+                          <StatusTag label={w.status} type={w.statusType} />
+                          {w.status === 'Đã thu hồi' && (
+                            <small className="block text-[11px] text-[#b91c1c] font-medium mt-0.5">
+                              {w.revokedReason ? `(${w.revokedReason})` : '(Đã hoàn tiền)'}
+                            </small>
+                          )}
+                        </td>
+                        <td className="px-3 text-right">
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleOpenMedicalHistory(w);
+                            }}
+                            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-[8px] text-xs font-bold bg-[#eaf4ef] text-[#176b58] hover:bg-[#d5ebdf] border border-[#c2ded0] transition-all cursor-pointer shadow-2xs"
+                          >
+                            <Icon name="search" size={13} />
+                            <span>Xem bệnh án máy</span>
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Tab 2: Claims & Rework Card */}
+        {activeTab === 'claims' && (
+          <div className="bg-white rounded-[12px] border border-[#e5ece8] p-4 sm:p-5 shadow-xs">
+            <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
+              <div>
+                <h3 className="font-heading font-bold text-base text-[#1c302b] m-0">
+                  Danh sách yêu cầu khiếu nại & Đơn làm lại (Rework)
+                </h3>
+                <p className="text-xs text-[#809088] mt-0.5 mb-0">
+                  Tiếp nhận các trường hợp phát sinh lỗi kỹ thuật trong hạn bảo hành và tự động đẩy đơn làm lại sang hàng đợi KTV.
+                </p>
+              </div>
+              <Button
+                variant="primary"
+                size="sm"
+                icon="plus"
+                data-testid="create-claim-btn"
+                onClick={() => setClaimModalOpen(true)}
+                className="bg-[#176b58] hover:bg-[#125848] text-white font-bold"
+              >
+                Tiếp nhận khiếu nại mới
+              </Button>
+            </div>
+
+            {claimsLoading ? (
+              <div className="py-12 flex flex-col items-center justify-center gap-3">
+                <div className="w-8 h-8 rounded-full border-2 border-[#176b58]/20 border-t-[#176b58] animate-spin" />
+                <span className="text-xs font-medium text-[#7a8a81]">Đang tải danh sách khiếu nại...</span>
+              </div>
+            ) : claims.length === 0 ? (
+              <EmptyState
+                title="Chưa có yêu cầu khiếu nại bảo hành"
+                description="Hệ thống chưa ghi nhận bất kỳ trường hợp khiếu nại hoặc yêu cầu làm lại nào."
+                icon="shield"
+                actionLabel="Tiếp nhận khiếu nại"
+                onAction={() => setClaimModalOpen(true)}
+              />
+            ) : (
+              <div className="overflow-x-auto -mx-4 sm:mx-0">
+                <table className="w-full text-left border-collapse min-w-[900px]">
+                  <thead>
+                    <tr className="border-y border-[#f0f3f1] bg-[#fafbfa] text-xs font-bold text-[#809088] uppercase tracking-wider h-10">
+                      <th className="px-3">Mã khiếu nại</th>
+                      <th className="px-3">Sổ bảo hành</th>
+                      <th className="px-3">Khách hàng</th>
+                      <th className="px-3">Mô tả lỗi phát sinh</th>
+                      <th className="px-3">Hướng xử lý</th>
+                      <th className="px-3">Đơn sửa lại (Rework)</th>
+                      <th className="px-3">Thời gian</th>
+                      <th className="px-3">Trạng thái</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-[#f1f3f2] text-sm">
+                    {claims.map((c) => {
+                      const rework = c.rework_order || c.reworkOrder;
+                      const dateStr = c.created_at
+                        ? new Intl.DateTimeFormat('vi-VN', {
+                            hour: '2-digit',
+                            minute: '2-digit',
+                            day: '2-digit',
+                            month: '2-digit',
+                            year: 'numeric',
+                          }).format(new Date(c.created_at))
+                        : '—';
+
+                      const resolutionLabels: Record<string, string> = {
+                        store_check: 'Kiểm tra tại quầy',
+                        send_tech: 'Gửi KTV kiểm tra',
+                        replace_part: 'Thay thế linh kiện',
+                        rejected: 'Từ chối bảo hành',
+                      };
+
+                      return (
+                        <tr key={c.id} className="h-13 hover:bg-[#fafcfa] transition-colors">
+                          <td className="px-3 font-mono font-bold text-[#176b58]">{c.claim_code}</td>
+                          <td className="px-3 font-mono text-xs font-semibold text-[#2d3d35]">
+                            {c.warranty?.warranty_code || `#${c.warranty_id}`}
+                          </td>
+                          <td className="px-3">
+                            <span className="font-semibold text-[#1c302b] block">
+                              {c.warranty?.customer?.name || 'Khách hàng'}
+                            </span>
+                            <small className="text-xs text-[#6e7e76] block">
+                              {c.warranty?.customer?.phone}
+                            </small>
+                          </td>
+                          <td className="px-3 text-xs text-[#33443c] max-w-[220px]">
+                            <p className="line-clamp-2 m-0" title={c.issue_description}>
+                              {c.issue_description}
+                            </p>
+                          </td>
+                          <td className="px-3 text-xs">
+                            <span className="font-medium text-[#1c302b]">
+                              {resolutionLabels[c.resolution_mode] || c.resolution_mode}
+                            </span>
+                          </td>
+                          <td className="px-3">
+                            {rework ? (
+                              <button
+                                type="button"
+                                data-testid={`rework-link-${rework.order_code}`}
+                                onClick={() => router.push(`/repairs?search=${rework.order_code}`)}
+                                className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-[6px] font-mono text-xs font-bold text-[#176b58] bg-[#eaf4ef] border border-[#c2ded0] hover:bg-[#d5ebdf] cursor-pointer shadow-2xs"
+                                title="Chuyển đến đơn sửa chữa làm lại (Rework)"
+                              >
+                                <Icon name="wrench" size={12} />
+                                <span>{rework.order_code}</span>
+                              </button>
+                            ) : (
+                              <span className="text-[#8a9690] text-xs font-mono">—</span>
+                            )}
+                          </td>
+                          <td className="px-3 text-xs text-[#8a9690] whitespace-nowrap">{dateStr}</td>
+                          <td className="px-3">
+                            <StatusTag
+                              label={
+                                c.status === 'received'
+                                  ? 'Đã tiếp nhận'
+                                  : c.status === 'in_progress'
+                                  ? 'Đang xử lý'
+                                  : c.status === 'resolved'
+                                  ? 'Đã xử lý'
+                                  : c.status === 'rejected'
+                                  ? 'Từ chối'
+                                  : c.status
+                              }
+                              type={
+                                c.status === 'resolved'
+                                  ? 'ready'
+                                  : c.status === 'rejected'
+                                  ? 'danger'
+                                  : 'wait'
+                              }
+                            />
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        )}
 
         {/* DRAWER / MODAL: HỒ SƠ BỆNH ÁN & LỊCH SỬ SỬA CHỮA THIẾT BỊ */}
         <Modal
@@ -771,14 +1049,16 @@ export default function WarrantyPage() {
                   </div>
                   <StatusTag
                     label={
-                      lookupResult.status === 'voided' || lookupResult.status === 'Đã hủy'
+                      lookupResult.status === 'revoked' || lookupResult.status === 'Đã thu hồi'
+                        ? 'Đã thu hồi'
+                        : lookupResult.status === 'voided' || lookupResult.status === 'Đã hủy'
                         ? 'Đã hủy'
                         : lookupResult.status === 'expired' || lookupResult.status === 'Hết hạn' || (lookupResult.remainingDays !== undefined && lookupResult.remainingDays <= 0)
                         ? 'Hết hạn'
                         : 'Còn hạn'
                     }
                     type={
-                      lookupResult.status === 'voided' || lookupResult.status === 'Đã hủy'
+                      lookupResult.status === 'revoked' || lookupResult.status === 'Đã thu hồi' || lookupResult.status === 'voided' || lookupResult.status === 'Đã hủy'
                         ? 'danger'
                         : lookupResult.status === 'expired' || lookupResult.status === 'Hết hạn' || (lookupResult.remainingDays !== undefined && lookupResult.remainingDays <= 0)
                         ? 'gray'
@@ -818,9 +1098,109 @@ export default function WarrantyPage() {
                 <div className="p-2.5 bg-white rounded border border-[#edf2ef] text-xs text-[#52635a]">
                   <b>Chính sách bảo hành:</b> Bảo hành đổi mới linh kiện tương đương nếu phát sinh lỗi kỹ thuật do linh kiện (không bao gồm rơi vỡ, vô nước, can thiệp bên thứ 3).
                 </div>
+
+                {(lookupResult.status === 'revoked' || lookupResult.status === 'Đã thu hồi') && (
+                  <div className="p-2.5 bg-[#fef2f2] rounded border border-[#fecaca] text-xs text-[#b91c1c] flex items-start gap-1.5">
+                    <Icon name="alert" size={14} className="flex-none mt-0.5 text-[#b91c1c]" />
+                    <div>
+                      <b>Sổ bảo hành đã bị thu hồi:</b> Sổ này đã bị thu hồi do đơn hàng gốc đã được hoàn tiền.
+                      {lookupResult.revoked_reason && ` (Lý do: ${lookupResult.revoked_reason})`}
+                    </div>
+                  </div>
+                )}
               </div>
             )}
           </div>
+        </Modal>
+
+        {/* Modal Tiếp nhận Khiếu nại Bảo hành & Kích hoạt Rework */}
+        <Modal
+          isOpen={claimModalOpen}
+          onClose={() => setClaimModalOpen(false)}
+          maxWidth="md"
+          eyebrow="TIẾP NHẬN BẢO HÀNH & REWORK"
+          title="Tiếp nhận khiếu nại bảo hành"
+          subtitle="Tạo phiếu khiếu nại và tự động kích hoạt đơn sửa chữa làm lại (Rework) cho KTV nếu có yêu cầu kỹ thuật."
+          footer={
+            <div className="flex justify-end gap-2.5 w-full">
+              <Button variant="secondary" size="md" onClick={() => setClaimModalOpen(false)}>
+                Hủy bỏ
+              </Button>
+              <Button
+                variant="primary"
+                size="md"
+                disabled={isSubmittingClaim}
+                onClick={handleCreateClaim}
+                className="bg-[#176b58] hover:bg-[#125848] text-white font-bold"
+              >
+                {isSubmittingClaim ? 'Đang tiếp nhận...' : 'Xác nhận tạo khiếu nại & Rework'}
+              </Button>
+            </div>
+          }
+        >
+          <form onSubmit={handleCreateClaim} className="space-y-4">
+            <div>
+              <label className="text-xs font-bold text-[#4d5e55] block mb-1">
+                Chọn sổ bảo hành cần khiếu nại (Chỉ áp dụng sổ còn hạn):
+              </label>
+              <select
+                value={claimWarrantyId}
+                onChange={(e) => setClaimWarrantyId(e.target.value)}
+                className="w-full text-xs font-medium px-3 py-2 rounded-[8px] border border-[#d2dcd6] bg-white outline-none focus:border-[#176b58] text-[#1c302b]"
+              >
+                <option value="">-- Chọn sổ bảo hành --</option>
+                {warranties
+                  .filter((w) => w.status !== 'Đã thu hồi' && w.status !== 'Hết hạn')
+                  .map((w) => (
+                    <option key={w.id} value={w.id}>
+                      {w.code} · {w.customerName} ({w.device} - {w.orderCode})
+                    </option>
+                  ))}
+              </select>
+            </div>
+
+            <div>
+              <label className="text-xs font-bold text-[#4d5e55] block mb-1">
+                Hướng xử lý bảo hành:
+              </label>
+              <select
+                value={claimResolutionMode}
+                onChange={(e) => setClaimResolutionMode(e.target.value as any)}
+                className="w-full text-xs font-medium px-3 py-2 rounded-[8px] border border-[#d2dcd6] bg-white outline-none focus:border-[#176b58] text-[#1c302b]"
+              >
+                <option value="send_tech">Gửi kỹ thuật kiểm tra (Tự động tạo đơn Rework 0 ₫)</option>
+                <option value="replace_part">Thay thế linh kiện bảo hành (Tự động tạo đơn Rework 0 ₫)</option>
+                <option value="store_check">Kiểm tra tại quầy (Tự động tạo đơn Rework 0 ₫)</option>
+                <option value="rejected">Từ chối bảo hành (Không tạo đơn Rework)</option>
+              </select>
+            </div>
+
+            <div>
+              <label className="text-xs font-bold text-[#4d5e55] block mb-1">
+                Mô tả lỗi hoặc hiện tượng phát sinh:
+              </label>
+              <textarea
+                value={claimIssue}
+                onChange={(e) => setClaimIssue(e.target.value)}
+                rows={3}
+                placeholder="VD: Tai nghe bên phải pin tụt nhanh sau 2 tuần thay pin, sạc không đầy..."
+                className="w-full text-xs px-3 py-2 rounded-[8px] border border-[#d2dcd6] bg-white outline-none focus:border-[#176b58] text-[#1c302b]"
+              />
+            </div>
+
+            <div>
+              <label className="text-xs font-bold text-[#4d5e55] block mb-1">
+                Ghi chú nội bộ (Tùy chọn):
+              </label>
+              <input
+                type="text"
+                value={claimNotes}
+                onChange={(e) => setClaimNotes(e.target.value)}
+                placeholder="Ghi chú thêm cho KTV hoặc CSKH..."
+                className="w-full text-xs px-3 py-2 rounded-[8px] border border-[#d2dcd6] bg-white outline-none focus:border-[#176b58] text-[#1c302b]"
+              />
+            </div>
+          </form>
         </Modal>
       </div>
     </AppShell>

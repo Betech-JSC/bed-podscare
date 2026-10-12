@@ -1,11 +1,14 @@
 'use client';
 
 import React, { useState, useEffect, useCallback } from 'react';
+import Link from 'next/link';
 import { paymentService, repairService, tenantService, type PaymentItem } from '@podscare/api-client';
 import { Button, StatusTag, FilterBar, EmptyState, Modal, useToast, StatCard, CurrencyInput, Icon } from '@podscare/ui';
 import { AppShell } from '../components/AppShell';
 import { usePodsCare } from '../providers';
 import { VietQrPaymentModal } from '../components/VietQrPaymentModal';
+import { RefundModal } from '../components/RefundModal';
+import { normalizeStatusCode } from '../repairs/fsm';
 
 interface FormattedPayment {
   id: number | string;
@@ -45,6 +48,8 @@ export default function PaymentsPage() {
   const [selectedPendingCode, setSelectedPendingCode] = useState<string>('');
   const [isLoading, setIsLoading] = useState(true);
   const [vietQrModalOpen, setVietQrModalOpen] = useState(false);
+  const [refundModalOpen, setRefundModalOpen] = useState(false);
+  const [refundTargetPayment, setRefundTargetPayment] = useState<FormattedPayment | null>(null);
   const [activeVietQrPayment, setActiveVietQrPayment] = useState<{
     paymentId: number | string;
     orderCode: string;
@@ -130,8 +135,8 @@ export default function PaymentsPage() {
             amount: Number(p.amount) || 0,
             method: mapMethodLabel(p.payment_method),
             methodKey: p.payment_method,
-            status: (p.status === 'completed' || p.status === 'paid') ? 'Hoàn tất' : (p.status === 'pending' ? 'Chờ chuyển khoản' : 'Chờ xử lý'),
-            statusType: (p.status === 'completed' || p.status === 'paid') ? 'ready' : 'wait',
+            status: p.status === 'refunded' ? 'Đã hoàn tiền' : (p.status === 'completed' || p.status === 'paid') ? 'Hoàn tất' : (p.status === 'pending' ? 'Chờ chuyển khoản' : 'Chờ xử lý'),
+            statusType: p.status === 'refunded' ? 'danger' : (p.status === 'completed' || p.status === 'paid') ? 'ready' : 'wait',
             receivedBy: p.received_by_user?.name || (p.status === 'pending' ? 'Chờ CSKH duyệt' : 'Hệ thống SePay'),
             date: dateStr,
             transactionRef: p.transaction_ref || undefined,
@@ -172,18 +177,22 @@ export default function PaymentsPage() {
     }
   };
 
+  const handleOpenRefund = (payment: FormattedPayment) => {
+    setRefundTargetPayment(payment);
+    setRefundModalOpen(true);
+  };
+
   const loadPendingOrders = useCallback(async () => {
     try {
       const res = await repairService.getRepairs({ per_page: 50 });
       const raw = res?.data;
       const list = Array.isArray(raw) ? raw : (raw?.data || (Array.isArray(res) ? res : []));
       if (Array.isArray(list) && list.length > 0) {
-        const eligible = list.filter((o: any) =>
-          ['ready_for_return', 'waiting_pickup', 'waiting_qc', 'in_repair', 'waiting_tech', 'waiting_approval', 'completed'].includes(o.status)
-        );
-        eligible.sort((a: any, b: any) => {
-          const priority = (s: string) => (s === 'ready_for_return' || s === 'waiting_pickup' ? 0 : 1);
-          return priority(a.status) - priority(b.status);
+        const eligible = list.filter((o: any) => {
+          const status = normalizeStatusCode(o.status);
+          const isReadyStatus = ['ready_for_return', 'waiting_pickup'].includes(status);
+          const hasPaidPayment = Array.isArray(o.payments) && o.payments.some((p: any) => p.status === 'paid' || p.status === 'completed');
+          return isReadyStatus && !hasPaidPayment;
         });
         const mapped: PendingOrderOption[] = eligible.map((o: any) => ({
           id: o.id,
@@ -214,54 +223,6 @@ export default function PaymentsPage() {
       if (found.price > 0) {
         setQrAmount(found.price);
       }
-    }
-  };
-
-  const handleSimulatePayment = async () => {
-    if (!qrOrderCode || qrAmount <= 0) {
-      toast('Vui lòng chọn hoặc nhập mã đơn và số tiền hợp lệ', 'info');
-      return;
-    }
-
-    setIsSubmitting(true);
-    try {
-      const orderRef = qrOrderCode.trim();
-      const repairOrderId = /^\d+$/.test(orderRef) ? Number(orderRef) : orderRef;
-
-      // 1. Ghi nhận phiếu thu tiền mặt thanh toán hoàn tất
-      await paymentService.createPayment({
-        repair_order_id: repairOrderId,
-        amount: qrAmount,
-        payment_method: 'cash',
-        notes: `Thanh toán giả lập tại quầy cho đơn ${orderRef}`,
-      });
-
-      // 2. Chuyển đổi trạng thái đơn hàng sang completed trên State Machine
-      try {
-        await repairService.transition(repairOrderId, {
-          transition: 'completed',
-          repair_note: 'Hoàn tất bàn giao sau khi thanh toán giả lập tại quầy',
-        });
-      } catch (transErr: any) {
-        console.warn('Could not transition order to completed automatically:', transErr);
-      }
-
-      toast(`Đã giả lập thanh toán thành công cho đơn ${orderRef}!`, 'success');
-      setQrModalOpen(false);
-      await loadPayments();
-      await loadPendingOrders();
-      if (invalidateOrders) {
-        await invalidateOrders();
-      }
-    } catch (err: any) {
-      console.error('Could not simulate payment:', err);
-      const errMsg =
-        err?.response?.data?.message ||
-        err?.message ||
-        'Không thể giả lập thanh toán. Vui lòng kiểm tra lại kết nối.';
-      toast(`Lỗi giả lập thanh toán: ${errMsg}`, 'error');
-    } finally {
-      setIsSubmitting(false);
     }
   };
 
@@ -373,6 +334,28 @@ export default function PaymentsPage() {
               Tạo mã VietQR / Thu tiền
             </Button>
           </div>
+        </div>
+
+        {/* Navigation Tabs */}
+        <div className="flex items-center justify-between border-b border-[#e9eeeb] pt-1">
+          <div className="flex items-center gap-4">
+            <span className="pb-3 text-sm font-bold border-b-2 border-[#176b51] text-[#176b51]">
+              Giao dịch thanh toán đơn hàng
+            </span>
+            <Link
+              href="/shifts"
+              className="pb-3 text-sm font-bold border-b-2 border-transparent text-[#81908a] hover:text-[#17231f] transition-all"
+            >
+              Sổ quỹ & Ca trực
+            </Link>
+          </div>
+          <Link
+            href="/shifts"
+            className="text-xs font-semibold text-[#176b51] hover:underline pb-3 flex items-center gap-1"
+          >
+            <span>Mở / Chốt ca & Sổ quỹ chi nhánh</span>
+            <span>→</span>
+          </Link>
         </div>
 
         {/* Financial StatCards */}
@@ -514,6 +497,17 @@ export default function PaymentsPage() {
                           >
                             {confirmingId === p.id ? 'Đang duyệt...' : 'Duyệt đã nhận tiền'}
                           </Button>
+                        ) : (p.rawStatus === 'completed' || p.rawStatus === 'paid') ? (
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            icon="payments"
+                            data-testid={`refund-payment-btn-${p.id}`}
+                            onClick={() => handleOpenRefund(p)}
+                            className="text-xs font-bold text-[#d9383a] border-[#fecaca] hover:bg-[#fef2f2] whitespace-nowrap"
+                          >
+                            Hoàn tiền
+                          </Button>
                         ) : (
                           <span className="text-xs text-[#8a9690] font-medium">—</span>
                         )}
@@ -535,29 +529,18 @@ export default function PaymentsPage() {
           title="Tạo mã thanh toán VietQR động"
           subtitle="Sinh mã QR thanh toán chuẩn VietQR tự động khớp đơn và đối soát qua SePay."
           footer={
-            <div className="flex flex-wrap items-center justify-between gap-2.5 w-full">
-              <Button
-                variant="secondary"
-                size="md"
-                disabled={isSubmitting || !qrOrderCode}
-                onClick={handleSimulatePayment}
-                title="Giả lập thanh toán tiền mặt và hoàn tất đơn hàng"
-              >
-                Giả lập thanh toán thành công
+            <div className="flex flex-wrap items-center justify-end gap-2.5 w-full">
+              <Button variant="secondary" size="md" onClick={() => setQrModalOpen(false)}>
+                Đóng
               </Button>
-              <div className="flex gap-2">
-                <Button variant="secondary" size="md" onClick={() => setQrModalOpen(false)}>
-                  Đóng
-                </Button>
-                <Button
-                  variant="primary"
-                  size="md"
-                  disabled={isSubmitting}
-                  onClick={handleCreatePayment}
-                >
-                  {isSubmitting ? 'Đang ghi nhận...' : 'Xác nhận thu tiền'}
-                </Button>
-              </div>
+              <Button
+                variant="primary"
+                size="md"
+                disabled={isSubmitting}
+                onClick={handleCreatePayment}
+              >
+                {isSubmitting ? 'Đang ghi nhận...' : 'Xác nhận thu tiền'}
+              </Button>
             </div>
           }
         >
@@ -694,6 +677,19 @@ export default function PaymentsPage() {
             }}
           />
         )}
+
+        <RefundModal
+          isOpen={refundModalOpen}
+          onClose={() => {
+            setRefundModalOpen(false);
+            setRefundTargetPayment(null);
+          }}
+          payment={refundTargetPayment}
+          onSuccess={() => {
+            loadPayments();
+            loadPendingOrders();
+          }}
+        />
       </div>
     </AppShell>
   );

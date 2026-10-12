@@ -61,7 +61,7 @@ class AdminDateFilterAndRevenueAlignmentTest extends TestCase
             'is_active'    => true,
         ]);
 
-        $this->adminUser = User::create([
+        $this->adminUser = User::forceCreate([
             'tenant_id' => $this->tenant->id,
             'branch_id' => $this->branch->id,
             'name'      => 'Admin Alignment Tester',

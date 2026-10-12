@@ -79,4 +79,14 @@ class User extends Authenticatable
     {
         return $this->hasMany(QcInspection::class, 'inspector_id');
     }
+
+    public function workShifts(): HasMany
+    {
+        return $this->hasMany(WorkShift::class, 'cashier_id');
+    }
+
+    public function cashTransactions(): HasMany
+    {
+        return $this->hasMany(CashTransaction::class, 'created_by_user_id');
+    }
 }

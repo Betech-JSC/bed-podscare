@@ -1,5 +1,7 @@
 export type OrderStatusType = 'wait' | 'progress' | 'ready' | 'danger' | 'new' | 'gray';
 
+export type SpecialPartsStatus = 'pending' | 'purchased';
+
 export type OrderDateFilter = 'today' | 'yesterday' | 'day_before' | '3_days' | '7_days' | '30_days' | 'all';
 
 export interface OrderFilterDTO {
@@ -16,6 +18,8 @@ export interface OrderFilterDTO {
   per_page?: number;
   technician_id?: string | number;
   intake_batch_code?: string;
+  special_parts?: boolean | string;
+  special_parts_status?: SpecialPartsStatus | 'all' | string;
   [key: string]: any;
 }
 
@@ -123,6 +127,14 @@ export interface RepairOrder {
   partsUsed?: string;
   parts_needed?: string | null;
   partsNeeded?: string | null;
+  special_parts_needed?: string | null;
+  specialPartsNeeded?: string | null;
+  special_parts_status?: SpecialPartsStatus | null;
+  specialPartsStatus?: SpecialPartsStatus | null;
+  special_parts_requested_at?: string | null;
+  specialPartsRequestedAt?: string | null;
+  special_parts_fulfilled_at?: string | null;
+  specialPartsFulfilledAt?: string | null;
   paused_at?: string | null;
   pausedAt?: string | null;
   finalCheck?: string;

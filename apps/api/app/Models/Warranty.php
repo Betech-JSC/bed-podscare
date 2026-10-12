@@ -21,6 +21,8 @@ class Warranty extends Model
         'duration_days',
         'end_date',
         'status',
+        'revoked_at',
+        'revoked_reason',
     ];
 
     protected function casts(): array
@@ -29,6 +31,7 @@ class Warranty extends Model
             'start_date' => 'date',
             'end_date' => 'date',
             'duration_days' => 'integer',
+            'revoked_at' => 'datetime',
         ];
     }
 

@@ -17,25 +17,60 @@ class InventoryController extends Controller
      */
     public function parts(Request $request): JsonResponse
     {
-        $query = Part::where('is_active', true);
+        $user = $request->user();
+        $isAdmin = $user && in_array($user->role, ['admin', 'super_admin'], true);
 
-        if ($cat = $request->input('category')) {
-            $query->where('category', $cat);
+        $targetBranchId = null;
+        if ($isAdmin) {
+            if ($request->has('branch_id') && $request->input('branch_id') !== 'all') {
+                $targetBranchId = (int) $request->input('branch_id');
+            } elseif ($user?->branch_id) {
+                $targetBranchId = (int) $user->branch_id;
+            }
+        } else {
+            $targetBranchId = (int) ($user?->branch_id ?? 1);
         }
 
-        if ($request->boolean('low_stock')) {
-            $query->whereColumn('stock_quantity', '<=', 'min_stock_alert');
+        $query = Part::where('parts.is_active', true);
+
+        if ($targetBranchId) {
+            $query->leftJoin('branch_parts', function ($join) use ($targetBranchId) {
+                $join->on('parts.id', '=', 'branch_parts.part_id')
+                     ->where('branch_parts.branch_id', '=', $targetBranchId);
+            })->select(
+                'parts.*',
+                DB::raw('COALESCE(branch_parts.stock_quantity, 0) as stock_quantity'),
+                DB::raw('COALESCE(branch_parts.min_stock_alert, parts.min_stock_alert, 5) as min_stock_alert')
+            );
+
+            if ($request->boolean('low_stock')) {
+                $query->whereRaw('COALESCE(branch_parts.stock_quantity, 0) <= COALESCE(branch_parts.min_stock_alert, parts.min_stock_alert, 5)');
+            }
+        } else {
+            if ($request->boolean('low_stock')) {
+                $query->whereColumn('parts.stock_quantity', '<=', 'parts.min_stock_alert');
+            }
+        }
+
+        if ($cat = $request->input('category')) {
+            $query->where('parts.category', $cat);
         }
 
         if ($search = $request->input('q')) {
             $query->where(function ($q) use ($search) {
-                $q->where('name', 'like', "%{$search}%")
-                  ->orWhere('sku', 'like', "%{$search}%")
-                  ->orWhere('compatible_models', 'like', "%{$search}%");
+                $q->where('parts.name', 'like', "%{$search}%")
+                  ->orWhere('parts.sku', 'like', "%{$search}%")
+                  ->orWhere('parts.compatible_models', 'like', "%{$search}%");
             });
         }
 
-        $parts = $query->orderBy('name')->paginate($request->input('per_page', 20));
+        $parts = $query->orderBy('parts.name')->paginate($request->input('per_page', 20));
+
+        if (! $isAdmin) {
+            $parts->getCollection()->each(function (Part $part) {
+                $part->makeHidden('cost_price');
+            });
+        }
 
         return $this->success($parts, 'Lấy danh sách linh kiện kho thành công.');
     }
@@ -51,6 +86,16 @@ class InventoryController extends Controller
 
         if (! $part) {
             return $this->empty('Không tìm thấy linh kiện.');
+        }
+
+        $user = request()->user();
+        if (! $user || $user->role !== 'admin') {
+            $part->makeHidden('cost_price');
+            if ($part->relationLoaded('inventoryTransactions')) {
+                $part->inventoryTransactions->each(function (InventoryTransaction $tx) {
+                    $tx->makeHidden('unit_cost');
+                });
+            }
         }
 
         return $this->success($part, 'Lấy chi tiết linh kiện thành công.');
@@ -82,6 +127,15 @@ class InventoryController extends Controller
 
         $transactions = $query->latest('id')->paginate($request->input('per_page', 20));
 
+        if (! $user || $user->role !== 'admin') {
+            $transactions->getCollection()->each(function (InventoryTransaction $tx) {
+                $tx->makeHidden('unit_cost');
+                if ($tx->relationLoaded('part') && $tx->part) {
+                    $tx->part->makeHidden('cost_price');
+                }
+            });
+        }
+
         return $this->success($transactions, 'Lấy lịch sử giao dịch kho thành công.');
     }
 
@@ -101,7 +155,7 @@ class InventoryController extends Controller
             'part_id'          => 'required|exists:parts,id',
             'branch_id'        => ($user && $user->role !== 'admin' && $user->branch_id) ? 'nullable|exists:branches,id' : 'required|exists:branches,id',
             'repair_order_id'  => 'nullable|exists:repair_orders,id',
-            'transaction_type' => 'required|in:import,export_repair,export_damage,adjust_inventory',
+            'transaction_type' => 'required|in:import,export_repair,export_damage,adjust_inventory,import_return',
             'quantity'         => 'required|integer',
             'unit_cost'        => 'nullable|numeric|min:0',
             'supplier_name'    => 'nullable|string|max:255',
@@ -110,9 +164,10 @@ class InventoryController extends Controller
 
         if ($user && $user->role !== 'admin') {
             $validated['branch_id'] = $user->branch_id;
+            unset($validated['unit_cost']); // Non-admin không được tự ý set unit_cost
         }
 
-        return DB::transaction(function () use ($request, $validated) {
+        return DB::transaction(function () use ($request, $validated, $user) {
             $part = Part::where('id', $validated['part_id'])->lockForUpdate()->firstOrFail();
 
             // Lấy hoặc khởi tạo tồn kho chi nhánh với pessimistic lock
@@ -161,6 +216,10 @@ class InventoryController extends Controller
                 );
             }
 
+            $unitCost = ($user && $user->role === 'admin' && array_key_exists('unit_cost', $validated) && $validated['unit_cost'] !== null)
+                ? (float) $validated['unit_cost']
+                : (float) $part->cost_price;
+
             $tx = InventoryTransaction::create([
                 'transaction_code'   => $txCode,
                 'part_id'            => $part->id,
@@ -168,7 +227,7 @@ class InventoryController extends Controller
                 'repair_order_id'    => $validated['repair_order_id'] ?? null,
                 'transaction_type'   => $validated['transaction_type'],
                 'quantity'           => $qty,
-                'unit_cost'          => $validated['unit_cost'] ?? $part->cost_price,
+                'unit_cost'          => $unitCost,
                 'supplier_name'      => $validated['supplier_name'] ?? null,
                 'notes'              => $validated['notes'] ?? null,
                 'created_by_user_id' => $request->user()->id,
@@ -188,7 +247,15 @@ class InventoryController extends Controller
                 'ip_address'     => $request->ip(),
             ]);
 
-            return $this->success($tx->load(['part', 'branch']), 'Tạo phiếu giao dịch kho thành công.', 201);
+            $loadedTx = $tx->load(['part', 'branch']);
+            if (! $user || $user->role !== 'admin') {
+                $loadedTx->makeHidden('unit_cost');
+                if ($loadedTx->part) {
+                    $loadedTx->part->makeHidden('cost_price');
+                }
+            }
+
+            return $this->success($loadedTx, 'Tạo phiếu giao dịch kho thành công.', 201);
         });
     }
 }

@@ -14,6 +14,7 @@ import {
 import { AppShell } from '../components/AppShell';
 import { TechOrderDetailModal } from '../components/TechOrderDetailModal';
 import { HandoverTechModal } from '../components/HandoverTechModal';
+import { SpecialPartsRequestModal } from '../components/SpecialPartsRequestModal';
 import { usePodsCare } from '../providers';
 import type { RepairOrder } from '@podscare/types';
 import { normalizeStatusCode } from '../repairs/fsm';
@@ -34,11 +35,13 @@ export default function TechnicianQueuePage() {
   } = usePodsCare();
 
   const [dateFilter, setDateFilter] = useState<'today' | '3_days'>('today');
-  const [activeTab, setActiveTab] = useState<'my_orders' | 'available' | 'completed'>('my_orders');
+  const [activeTab, setActiveTab] = useState<'my_orders' | 'available' | 'completed' | 'special_parts'>('my_orders');
   const [selectedOrder, setSelectedOrder] = useState<RepairOrder | null>(null);
   const [detailModalOpen, setDetailModalOpen] = useState(false);
   const [handoverModalOpen, setHandoverModalOpen] = useState(false);
   const [handoverOrderTarget, setHandoverOrderTarget] = useState<RepairOrder | null>(null);
+  const [specialPartsModalOpen, setSpecialPartsModalOpen] = useState(false);
+  const [specialPartsOrderTarget, setSpecialPartsOrderTarget] = useState<RepairOrder | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const { printReceipt, isPrinting: isSilentPrinting } = useSilentPrint();
 
@@ -138,6 +141,14 @@ export default function TechnicianQueuePage() {
         partsUsed: o.parts_used_summary,
         parts_needed: o.parts_needed,
         partsNeeded: o.parts_needed,
+        special_parts_needed: o.special_parts_needed,
+        specialPartsNeeded: o.special_parts_needed,
+        special_parts_status: o.special_parts_status,
+        specialPartsStatus: o.special_parts_status,
+        special_parts_requested_at: o.special_parts_requested_at,
+        specialPartsRequestedAt: o.special_parts_requested_at,
+        special_parts_fulfilled_at: o.special_parts_fulfilled_at,
+        specialPartsFulfilledAt: o.special_parts_fulfilled_at,
         paused_at: o.paused_at,
         pausedAt: o.paused_at,
         finalCheck: o.final_check_result,
@@ -207,6 +218,24 @@ export default function TechnicianQueuePage() {
         isMyOrder &&
         ['ready_for_return', 'waiting_pickup', 'completed', 'waiting_qc'].includes(code)
       );
+    });
+  }, [branchFilteredOrders, currentUser?.id, currentUser?.role]);
+
+  // 4. Máy có yêu cầu mua linh kiện ngoài: Các đơn có special_parts_needed hoặc special_parts_status
+  const mySpecialPartsOrders = useMemo(() => {
+    return branchFilteredOrders.filter((o) => {
+      const isMyOrder =
+        currentUser?.role === 'admin' ||
+        (currentUser?.id !== undefined &&
+          currentUser?.id !== null &&
+          Number(o.technicianId || o.technician_id) === Number(currentUser.id));
+      const hasSpecialPart = Boolean(
+        o.special_parts_needed ||
+        o.specialPartsNeeded ||
+        o.special_parts_status ||
+        o.specialPartsStatus
+      );
+      return isMyOrder && hasSpecialPart;
     });
   }, [branchFilteredOrders, currentUser?.id, currentUser?.role]);
 
@@ -512,6 +541,29 @@ export default function TechnicianQueuePage() {
               {myCompletedTodayOrders.length}
             </span>
           </button>
+
+          <button
+            type="button"
+            data-testid="tech-tab-special-parts"
+            onClick={() => setActiveTab('special_parts')}
+            className={`px-4 py-2.5 rounded-[8px] font-semibold text-sm transition-all flex items-center gap-2 cursor-pointer ${
+              activeTab === 'special_parts'
+                ? 'bg-[#176b58] text-white shadow-xs'
+                : 'bg-white text-[#52635a] hover:bg-[#f0f4f2] border border-[#e5ece8]'
+            }`}
+          >
+            <Icon name="cart" size={14} />
+            <span>Linh kiện đặc biệt</span>
+            <span
+              className={`px-2 py-0.5 rounded-full text-xs font-bold ${
+                activeTab === 'special_parts'
+                  ? 'bg-white/20 text-white'
+                  : 'bg-[#fef3c7] text-[#92400e]'
+              }`}
+            >
+              {mySpecialPartsOrders.length}
+            </span>
+          </button>
         </div>
 
         {/* Tab Content 1: ĐƠN CỦA TÔI */}
@@ -546,9 +598,19 @@ export default function TechnicianQueuePage() {
                     >
                       <div className="space-y-3">
                         <div className="flex items-center justify-between">
-                          <span className="font-mono font-bold text-sm text-[#176b58] bg-[#eaf4ef] px-2.5 py-1 rounded-[6px]">
-                            {order.id}
-                          </span>
+                          <div className="flex items-center gap-1.5">
+                            <span className="font-mono font-bold text-sm text-[#176b58] bg-[#eaf4ef] px-2.5 py-1 rounded-[6px]">
+                              {order.id}
+                            </span>
+                            {(order.order_type === 'warranty' || order.orderType === 'warranty') && (
+                              <span
+                                data-testid="warranty-badge"
+                                className="px-2 py-0.5 rounded text-[10px] font-black uppercase tracking-wider bg-[#d9383a] text-white shadow-xs"
+                              >
+                                BẢO HÀNH
+                              </span>
+                            )}
+                          </div>
                           <StatusTag label={order.status} type={order.statusType} />
                         </div>
 
@@ -577,13 +639,63 @@ export default function TechnicianQueuePage() {
                             <span className="text-[#809088]">Chi nhánh:</span>
                             <span>{order.branch}</span>
                           </div>
-                          {order.price ? (
-                            <div className="flex items-center justify-between pt-1 border-t border-[#f0f3f1]">
-                              <span className="text-[#809088]">Báo giá:</span>
+                          <div className="flex items-center justify-between pt-1 border-t border-[#f0f3f1]">
+                            <span className="text-[#809088]">Báo giá:</span>
+                            {(order.order_type === 'warranty' || order.orderType === 'warranty') ? (
+                              <b className="text-[#176b58] font-bold">
+                                0 ₫ <small className="text-[11px] font-normal text-[#809088]">(Bảo hành máy)</small>
+                              </b>
+                            ) : (
                               <b className="text-[#176b58] font-bold">{moneyFormatted(order.price)}</b>
-                            </div>
-                          ) : null}
+                            )}
+                          </div>
                         </div>
+
+                        {/* QC Guardrail Alert cho đơn bảo hành */}
+                        {(order.order_type === 'warranty' || order.orderType === 'warranty') && (
+                          <div
+                            data-testid="warranty-qc-alert"
+                            className="bg-[#fef2f2] border border-[#fecaca] rounded-[8px] p-2 text-xs font-bold text-[#b91c1c] flex items-center gap-1.5"
+                          >
+                            <Icon name="alert" size={13} className="text-[#b91c1c] flex-none" />
+                            <span>Bắt buộc kiểm định QC Đạt trước khi hoàn tất</span>
+                          </div>
+                        )}
+
+                        {/* Badges linh kiện đặc biệt (mua ngoài) */}
+                        {(order.special_parts_status === 'pending' || order.specialPartsStatus === 'pending') && (
+                          <div
+                            data-testid={`card-special-parts-pending-${order.id}`}
+                            className="bg-[#fef3c7] border border-[#fde68a] rounded-[8px] p-2 text-xs text-[#92400e] flex items-center gap-1.5"
+                          >
+                            <Icon name="cart" size={13} className="text-[#b45309]" />
+                            <span className="font-semibold truncate">Cần mua ngoài: {order.special_parts_needed || order.specialPartsNeeded}</span>
+                          </div>
+                        )}
+                        {(order.special_parts_status === 'purchased' || order.specialPartsStatus === 'purchased') && (
+                          <div
+                            data-testid={`card-special-parts-purchased-${order.id}`}
+                            className="bg-[#eaf5ef] border border-[#c2e4d3] rounded-[8px] p-2 text-xs text-[#28805e] flex items-center justify-between gap-1.5"
+                          >
+                            <span className="font-bold flex items-center gap-1">
+                              <Icon name="check" size={13} className="text-[#28805e]" />
+                              Quầy đã mua linh kiện
+                            </span>
+                            {isWaitingParts && (
+                              <button
+                                type="button"
+                                data-testid={`tech-resume-purchased-btn-${order.id}`}
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleResumeRepair(order);
+                                }}
+                                className="px-2 py-0.5 rounded text-[11px] font-bold bg-[#176b58] text-white hover:bg-[#125848] transition-colors cursor-pointer"
+                              >
+                                Tiếp tục sửa
+                              </button>
+                            )}
+                          </div>
+                        )}
                       </div>
 
                       <div
@@ -725,9 +837,19 @@ export default function TechnicianQueuePage() {
                   >
                     <div className="space-y-3">
                       <div className="flex items-center justify-between">
-                        <span className="font-mono font-bold text-sm text-[#176b58] bg-[#eaf4ef] px-2.5 py-1 rounded-[6px]">
-                          {order.id}
-                        </span>
+                        <div className="flex items-center gap-1.5">
+                          <span className="font-mono font-bold text-sm text-[#176b58] bg-[#eaf4ef] px-2.5 py-1 rounded-[6px]">
+                            {order.id}
+                          </span>
+                          {(order.order_type === 'warranty' || order.orderType === 'warranty') && (
+                            <span
+                              data-testid="warranty-badge"
+                              className="px-2 py-0.5 rounded text-[10px] font-black uppercase tracking-wider bg-[#d9383a] text-white shadow-xs"
+                            >
+                              BẢO HÀNH
+                            </span>
+                          )}
+                        </div>
                         <StatusTag label={order.status} type={order.statusType} />
                       </div>
 
@@ -756,6 +878,12 @@ export default function TechnicianQueuePage() {
                           <span className="text-[#809088]">Tiếp nhận lúc:</span>
                           <span>{order.date}</span>
                         </div>
+                        {(order.order_type === 'warranty' || order.orderType === 'warranty') && (
+                          <div className="flex items-center justify-between">
+                            <span className="text-[#809088]">Báo giá:</span>
+                            <b className="text-[#176b58] font-bold">0 ₫ <small className="text-[11px] font-normal text-[#809088]">(Bảo hành máy)</small></b>
+                          </div>
+                        )}
                         {order.accessories && order.accessories !== 'Không gửi kèm' && (
                           <div className="flex items-center justify-between">
                             <span className="text-[#809088]">Phụ kiện:</span>
@@ -763,6 +891,17 @@ export default function TechnicianQueuePage() {
                           </div>
                         )}
                       </div>
+
+                      {/* QC Guardrail Alert cho đơn bảo hành */}
+                      {(order.order_type === 'warranty' || order.orderType === 'warranty') && (
+                        <div
+                          data-testid="warranty-qc-alert"
+                          className="bg-[#fef2f2] border border-[#fecaca] rounded-[8px] p-2 text-xs font-bold text-[#b91c1c] flex items-center gap-1.5"
+                        >
+                          <Icon name="alert" size={13} className="text-[#b91c1c] flex-none" />
+                          <span>Bắt buộc kiểm định QC Đạt trước khi hoàn tất</span>
+                        </div>
+                      )}
                     </div>
 
                     <div className="pt-4 mt-3 border-t border-[#f0f3f1] flex gap-2">
@@ -825,9 +964,19 @@ export default function TechnicianQueuePage() {
                   >
                     <div className="space-y-3">
                       <div className="flex items-center justify-between">
-                        <span className="font-mono font-bold text-sm text-[#176b58] bg-[#eaf4ef] px-2.5 py-1 rounded-[6px]">
-                          {order.id}
-                        </span>
+                        <div className="flex items-center gap-1.5">
+                          <span className="font-mono font-bold text-sm text-[#176b58] bg-[#eaf4ef] px-2.5 py-1 rounded-[6px]">
+                            {order.id}
+                          </span>
+                          {(order.order_type === 'warranty' || order.orderType === 'warranty') && (
+                            <span
+                              data-testid="warranty-badge"
+                              className="px-2 py-0.5 rounded text-[10px] font-black uppercase tracking-wider bg-[#d9383a] text-white shadow-xs"
+                            >
+                              BẢO HÀNH
+                            </span>
+                          )}
+                        </div>
                         <StatusTag label={order.status} type={order.statusType} />
                       </div>
 
@@ -854,7 +1003,13 @@ export default function TechnicianQueuePage() {
                         </div>
                         <div className="flex items-center justify-between">
                           <span className="text-[#809088]">Chi phí:</span>
-                          <b className="text-[#176b58] font-bold">{moneyFormatted(order.price)}</b>
+                          {(order.order_type === 'warranty' || order.orderType === 'warranty') ? (
+                            <b className="text-[#176b58] font-bold">
+                              0 ₫ <small className="text-[11px] font-normal text-[#809088]">(Bảo hành máy)</small>
+                            </b>
+                          ) : (
+                            <b className="text-[#176b58] font-bold">{moneyFormatted(order.price)}</b>
+                          )}
                         </div>
                       </div>
                     </div>
@@ -888,6 +1043,195 @@ export default function TechnicianQueuePage() {
                   title="Chưa có đơn nào hoàn tất hôm nay"
                   description="Sau khi sửa xong thiết bị từ tab 'Đơn của tôi' và bấm Hoàn tất sửa chữa, danh sách sẽ được lưu vết tại đây."
                   icon="check"
+                />
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Tab Content 4: LINH KIỆN ĐẶC BIỆT */}
+        {activeTab === 'special_parts' && (
+          <div className="bg-white rounded-[12px] border border-[#e5ece8] p-5 sm:p-6 shadow-xs">
+            <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
+              <div>
+                <h2 className="font-heading font-bold text-base text-[#1c302b] m-0 flex items-center gap-2">
+                  <Icon name="cart" size={18} className="text-[#176b58]" />
+                  <span>Danh sách máy cần mua linh kiện ngoài ({mySpecialPartsOrders.length})</span>
+                </h2>
+                <p className="text-xs text-[#809088] mt-0.5 mb-0">
+                  Các thiết bị cần linh kiện đặc biệt không có sẵn trong kho nội bộ, đang chờ hoặc đã được Quầy tìm mua.
+                </p>
+              </div>
+              <div className="flex items-center gap-2">
+                <Button
+                  variant="primary"
+                  size="sm"
+                  data-testid="tech-open-add-special-parts-modal-btn"
+                  onClick={() => {
+                    setSpecialPartsOrderTarget(null);
+                    setSpecialPartsModalOpen(true);
+                  }}
+                  className="bg-[#176b58] hover:bg-[#125848] text-white font-bold text-xs flex items-center gap-1.5 shadow-xs"
+                >
+                  <Icon name="plus" size={14} />
+                  <span>+ Thêm yêu cầu mua ngoài</span>
+                </Button>
+              </div>
+            </div>
+
+            {mySpecialPartsOrders.length > 0 ? (
+              <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+                {mySpecialPartsOrders.map((order) => {
+                  const code = normalizeStatusCode(order.status);
+                  const isWaitingParts = code === 'waiting_parts';
+                  const isPurchased = order.special_parts_status === 'purchased' || order.specialPartsStatus === 'purchased';
+
+                  return (
+                    <article
+                      key={order.id}
+                      className={`bg-white border rounded-[12px] p-5 flex flex-col justify-between shadow-2xs hover:shadow-xs transition-all cursor-pointer group ${
+                        isPurchased ? 'border-[#a7d9c0] hover:border-[#176b58]' : 'border-[#fde68a] hover:border-[#f59e0b]'
+                      }`}
+                      onClick={() => handleOpenDetailModal(order)}
+                    >
+                      <div className="space-y-3">
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-1.5">
+                            <span className="font-mono font-bold text-sm text-[#176b58] bg-[#eaf4ef] px-2.5 py-1 rounded-[6px]">
+                              {order.id}
+                            </span>
+                            {(order.order_type === 'warranty' || order.orderType === 'warranty') && (
+                              <span
+                                data-testid="warranty-badge"
+                                className="px-2 py-0.5 rounded text-[10px] font-black uppercase tracking-wider bg-[#d9383a] text-white shadow-xs"
+                              >
+                                BẢO HÀNH
+                              </span>
+                            )}
+                          </div>
+                          <div className="flex items-center gap-1.5">
+                            {isPurchased ? (
+                              <span
+                                data-testid={`tech-purchased-badge-${order.id}`}
+                                className="inline-flex items-center gap-1 px-2.5 py-1 rounded-[20px] text-[10px] font-bold text-[#28805e] bg-[#eaf5ef] border border-[#c2e4d3]"
+                              >
+                                <Icon name="check" size={12} className="text-[#28805e]" />
+                                Quầy đã mua linh kiện
+                              </span>
+                            ) : (
+                              <span
+                                data-testid={`tech-pending-badge-${order.id}`}
+                                className="inline-flex items-center gap-1 px-2.5 py-1 rounded-[20px] text-[10px] font-bold text-[#b45309] bg-[#fef3c7] border border-[#fde68a]"
+                              >
+                                <Icon name="clock" size={12} className="text-[#b45309]" />
+                                Đang chờ Quầy mua
+                              </span>
+                            )}
+                          </div>
+                        </div>
+
+                        <div>
+                          <h3 className="font-heading font-bold text-base text-[#1c302b] m-0 group-hover:text-[#176b58] transition-colors">
+                            {order.device}
+                          </h3>
+                          {order.serial && order.serial !== 'Chưa cập nhật' && (
+                            <span className="text-xs font-mono text-[#83938b] block mt-0.5">
+                              SN: {order.serial}
+                            </span>
+                          )}
+                        </div>
+
+                        {/* Ghi chú linh kiện cần mua ngoài */}
+                        <div className={`p-3 rounded-[8px] border text-xs leading-relaxed ${
+                          isPurchased ? 'bg-[#f4faf7] border-[#d2eadc] text-[#1c302b]' : 'bg-[#fffbeb] border-[#fde68a] text-[#78350f]'
+                        }`}>
+                          <span className="font-bold block mb-1 flex items-center gap-1">
+                            <Icon name="cart" size={12} />
+                            Linh kiện cần mua ngoài:
+                          </span>
+                          <p className="m-0 font-medium whitespace-pre-wrap">
+                            {order.special_parts_needed || order.specialPartsNeeded || 'Chưa ghi rõ nội dung'}
+                          </p>
+                          {order.special_parts_requested_at && (
+                            <span className="text-[10px] opacity-75 block mt-1.5">
+                              Yêu cầu lúc: {new Date(order.special_parts_requested_at).toLocaleString('vi-VN')}
+                            </span>
+                          )}
+                        </div>
+
+                        <div className="space-y-1 text-xs text-[#52635a]">
+                          <div className="flex items-center justify-between">
+                            <span className="text-[#809088]">Khách hàng:</span>
+                            <b className="text-[#1c302b]">{order.name} ({order.phone})</b>
+                          </div>
+                          <div className="flex items-center justify-between">
+                            <span className="text-[#809088]">KTV phụ trách:</span>
+                            <span className="font-semibold text-[#1c302b]">{order.tech}</span>
+                          </div>
+                          <div className="flex items-center justify-between">
+                            <span className="text-[#809088]">Chi nhánh:</span>
+                            <span>{order.branch}</span>
+                          </div>
+                          <div className="flex items-center justify-between">
+                            <span className="text-[#809088]">Trạng thái máy:</span>
+                            <StatusTag label={order.status} type={order.statusType} />
+                          </div>
+                        </div>
+                      </div>
+
+                      <div
+                        className="pt-4 mt-3 border-t border-[#f0f3f1] flex flex-wrap gap-2"
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                        {isPurchased && isWaitingParts ? (
+                          <Button
+                            variant="primary"
+                            size="sm"
+                            data-testid={`tech-resume-special-part-btn-${order.id}`}
+                            onClick={() => handleResumeRepair(order)}
+                            className="flex-1 text-xs font-bold bg-[#176b58] hover:bg-[#125848] text-white"
+                          >
+                            Tiếp tục sửa máy
+                          </Button>
+                        ) : null}
+
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          data-testid={`tech-edit-special-part-btn-${order.id}`}
+                          onClick={() => {
+                            setSpecialPartsOrderTarget(order);
+                            setSpecialPartsModalOpen(true);
+                          }}
+                          className="text-xs text-[#b45309] border-[#fde68a] hover:bg-[#fef3c7] font-semibold"
+                        >
+                          Sửa ghi chú
+                        </Button>
+
+                        <Button
+                          variant="secondary"
+                          size="sm"
+                          onClick={() => handleOpenDetailModal(order)}
+                          className="text-xs font-semibold"
+                        >
+                          Chi tiết máy
+                        </Button>
+                      </div>
+                    </article>
+                  );
+                })}
+              </div>
+            ) : (
+              <div className="py-8">
+                <EmptyState
+                  title="Chưa có yêu cầu mua linh kiện ngoài nào"
+                  description="Khi phát hiện thiết bị cần linh kiện đặc biệt không có sẵn trong kho, hãy bấm nút '+ Thêm yêu cầu mua ngoài' để thông báo tới Quầy."
+                  icon="inventory"
+                  actionLabel="+ Thêm yêu cầu mua ngoài"
+                  onAction={() => {
+                    setSpecialPartsOrderTarget(null);
+                    setSpecialPartsModalOpen(true);
+                  }}
                 />
               </div>
             )}
@@ -938,6 +1282,27 @@ export default function TechnicianQueuePage() {
           }}
         />
       )}
+
+      {/* Special Parts Request Modal */}
+      <SpecialPartsRequestModal
+        isOpen={specialPartsModalOpen}
+        onClose={() => {
+          setSpecialPartsModalOpen(false);
+          setSpecialPartsOrderTarget(null);
+        }}
+        orders={myActiveOrders}
+        preselectedOrder={specialPartsOrderTarget}
+        invalidateOrders={async () => {
+          if (invalidateOrders) await invalidateOrders();
+          refetch();
+        }}
+        updateOrder={updateOrder}
+        onSuccess={(updated) => {
+          if (updateOrder) updateOrder(updated);
+          refetch();
+          setActiveTab('special_parts');
+        }}
+      />
     </AppShell>
   );
 }

@@ -3,6 +3,7 @@
 use App\Http\Controllers\Api\V1\AuditLogController;
 use App\Http\Controllers\Api\V1\AuthController;
 use App\Http\Controllers\Api\V1\BranchController;
+use App\Http\Controllers\Api\V1\CashTransactionController;
 use App\Http\Controllers\Api\V1\CustomerController;
 use App\Http\Controllers\Api\V1\DeviceController;
 use App\Http\Controllers\Api\V1\InventoryController;
@@ -17,8 +18,11 @@ use App\Http\Controllers\Api\V1\QuoteController;
 use App\Http\Controllers\Api\V1\SaasBillingController;
 use App\Http\Controllers\Api\V1\SePayPlatformWebhookController;
 use App\Http\Controllers\Api\V1\ServiceController;
+use App\Http\Controllers\Api\V1\ShiftController;
 use App\Http\Controllers\Api\V1\ShipmentController;
 use App\Http\Controllers\Api\V1\SuperAdminController;
+use App\Http\Controllers\Api\V1\SupplierController;
+use App\Http\Controllers\Api\V1\GoodsReceiptController;
 use App\Http\Controllers\Api\V1\TenantRegistrationController;
 use App\Http\Controllers\Api\V1\TenantSettingController;
 use App\Http\Controllers\Api\V1\TrackingController;
@@ -120,6 +124,10 @@ Route::prefix('v1')->group(function () {
         Route::post('/repairs/{id}/transition', [OrderController::class, 'transition'])->name('api.v1.repairs.transition');
         Route::patch('/orders/{id}/parts-note', [OrderController::class, 'updatePartsNote'])->name('api.v1.orders.parts_note');
         Route::patch('/repairs/{id}/parts-note', [OrderController::class, 'updatePartsNote'])->name('api.v1.repairs.parts_note');
+        Route::post('/orders/{id}/special-parts-request', [OrderController::class, 'requestSpecialPart'])->name('api.v1.orders.special_parts_request');
+        Route::post('/repairs/{id}/special-parts-request', [OrderController::class, 'requestSpecialPart'])->name('api.v1.repairs.special_parts_request');
+        Route::post('/orders/{id}/special-parts-fulfill', [OrderController::class, 'fulfillSpecialPart'])->name('api.v1.orders.special_parts_fulfill');
+        Route::post('/repairs/{id}/special-parts-fulfill', [OrderController::class, 'fulfillSpecialPart'])->name('api.v1.repairs.special_parts_fulfill');
         Route::post('/orders/{id}/assign-technician', [OrderController::class, 'assignTechnician'])->name('api.v1.orders.assign_technician');
         Route::post('/repairs/{id}/assign-technician', [OrderController::class, 'assignTechnician'])->name('api.v1.repairs.assign_technician');
         Route::post('/orders/{id}/handover', [OrderController::class, 'handover'])->name('api.v1.orders.handover');
@@ -161,6 +169,21 @@ Route::prefix('v1')->group(function () {
         Route::get('/inventory/transactions', [InventoryController::class, 'transactions'])->name('api.v1.inventory.transactions.index');
         Route::post('/inventory/transactions', [InventoryController::class, 'createTransaction'])->name('api.v1.inventory.transactions.store');
 
+        // Suppliers & Accounts Payable
+        Route::get('/suppliers', [SupplierController::class, 'index'])->name('api.v1.suppliers.index');
+        Route::post('/suppliers', [SupplierController::class, 'store'])->name('api.v1.suppliers.store');
+        Route::get('/suppliers/{id}', [SupplierController::class, 'show'])->name('api.v1.suppliers.show');
+        Route::put('/suppliers/{id}', [SupplierController::class, 'update'])->name('api.v1.suppliers.update');
+        Route::delete('/suppliers/{id}', [SupplierController::class, 'destroy'])->name('api.v1.suppliers.destroy');
+        Route::post('/suppliers/{id}/payments', [SupplierController::class, 'recordPayment'])->name('api.v1.suppliers.payments.store');
+        Route::post('/suppliers/{id}/debt/pay', [SupplierController::class, 'recordPayment'])->name('api.v1.suppliers.debt.pay');
+        Route::get('/suppliers/{id}/debt-transactions', [SupplierController::class, 'debtTransactions'])->name('api.v1.suppliers.debt_transactions.index');
+
+        // Goods Receipts (Phiếu nhập kho linh kiện)
+        Route::get('/goods-receipts', [GoodsReceiptController::class, 'index'])->name('api.v1.goods_receipts.index');
+        Route::post('/goods-receipts', [GoodsReceiptController::class, 'store'])->name('api.v1.goods_receipts.store');
+        Route::get('/goods-receipts/{id}', [GoodsReceiptController::class, 'show'])->name('api.v1.goods_receipts.show');
+
         // Shipments
         Route::get('/shipments', [ShipmentController::class, 'index'])->name('api.v1.shipments.index');
         Route::post('/shipments', [ShipmentController::class, 'store'])->name('api.v1.shipments.store');
@@ -180,6 +203,26 @@ Route::prefix('v1')->group(function () {
         Route::get('/payments/{id}', [PaymentController::class, 'show'])->name('api.v1.payments.show');
         Route::post('/payments/{id}/vietqr', [PaymentController::class, 'vietqr'])->name('api.v1.payments.vietqr');
         Route::post('/payments/{id}/confirm', [PaymentController::class, 'confirm'])->name('api.v1.payments.confirm');
+        Route::post('/payments/{id}/refund', [PaymentController::class, 'refund'])->name('api.v1.payments.refund');
+        Route::post('/orders/{id}/refund', [PaymentController::class, 'refundOrder'])->name('api.v1.orders.refund');
+
+        // Work Shifts & Cash Reconciliation
+        Route::get('/shifts', [ShiftController::class, 'index'])->name('api.v1.shifts.index');
+        Route::get('/shifts/current', [ShiftController::class, 'current'])->name('api.v1.shifts.current');
+        Route::post('/shifts/open', [ShiftController::class, 'open'])->name('api.v1.shifts.open');
+        Route::post('/shifts/{id}/close', [ShiftController::class, 'close'])->name('api.v1.shifts.close');
+        Route::get('/shifts/{id}/summary', [ShiftController::class, 'summary'])->name('api.v1.shifts.summary');
+        Route::get('/shifts/{id}/print', [ShiftController::class, 'print'])->name('api.v1.shifts.print');
+        Route::get('/shifts/{id}', [ShiftController::class, 'show'])->name('api.v1.shifts.show');
+
+        // Cashbook & Transactions
+        Route::get('/cashbook/transactions', [CashTransactionController::class, 'index'])->name('api.v1.cashbook.transactions.index');
+        Route::post('/cashbook/expenses', [CashTransactionController::class, 'storeExpense'])->name('api.v1.cashbook.expenses.store');
+        Route::post('/cashbook/transactions', [CashTransactionController::class, 'storeExpense'])->name('api.v1.cashbook.transactions.store');
+        Route::post('/cash-transactions/expense', [CashTransactionController::class, 'storeExpense'])->name('api.v1.cash_transactions.expense');
+        Route::get('/cashbook/categories', [CashTransactionController::class, 'categories'])->name('api.v1.cashbook.categories');
+        Route::get('/cashbook/balance', [CashTransactionController::class, 'balance'])->name('api.v1.cashbook.balance');
+
 
         // Notifications
         Route::get('/notifications', [NotificationController::class, 'index'])->name('api.v1.notifications.index');
@@ -197,6 +240,7 @@ Route::prefix('v1')->group(function () {
         Route::put('/partners/{id}', [PartnerController::class, 'update'])->name('api.v1.partners.update');
 
         // Staff KPI & Performance
+        Route::get('/kpi', [KpiController::class, 'dashboard'])->name('api.v1.kpi.index');
         Route::get('/kpi/dashboard', [KpiController::class, 'dashboard'])->name('api.v1.kpi.dashboard');
         Route::get('/kpi/staff', [KpiController::class, 'staff'])->name('api.v1.kpi.staff');
 

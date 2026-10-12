@@ -59,7 +59,7 @@ class RevenueReconciliationAndWarrantyHistoryTest extends TestCase
             'is_active'    => true,
         ]);
 
-        $this->adminUser = User::create([
+        $this->adminUser = User::forceCreate([
             'tenant_id' => $this->tenant->id,
             'branch_id' => $this->branch->id,
             'name'      => 'Admin Test User',
@@ -69,7 +69,7 @@ class RevenueReconciliationAndWarrantyHistoryTest extends TestCase
             'role'      => 'admin',
         ]);
 
-        $this->techUser = User::create([
+        $this->techUser = User::forceCreate([
             'tenant_id' => $this->tenant->id,
             'branch_id' => $this->branch->id,
             'name'      => 'Kỹ Thuật Viên Tuấn',

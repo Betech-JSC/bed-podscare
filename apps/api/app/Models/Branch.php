@@ -55,4 +55,14 @@ class Branch extends Model
     {
         return $this->hasMany(BranchPart::class);
     }
+
+    public function workShifts(): HasMany
+    {
+        return $this->hasMany(WorkShift::class);
+    }
+
+    public function cashTransactions(): HasMany
+    {
+        return $this->hasMany(CashTransaction::class);
+    }
 }

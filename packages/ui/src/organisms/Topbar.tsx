@@ -12,6 +12,7 @@ export interface TopbarProps {
   isNotificationOpen?: boolean;
   notificationSlot?: React.ReactNode;
   planBadgeSlot?: React.ReactNode;
+  shiftSlot?: React.ReactNode;
 }
 
 export const Topbar: React.FC<TopbarProps> = ({
@@ -25,6 +26,7 @@ export const Topbar: React.FC<TopbarProps> = ({
   isNotificationOpen = false,
   notificationSlot,
   planBadgeSlot,
+  shiftSlot,
 }) => {
   const todayFormatted = new Intl.DateTimeFormat('vi-VN', {
     weekday: 'long',
@@ -54,8 +56,9 @@ export const Topbar: React.FC<TopbarProps> = ({
         </div>
       </div>
 
-      {/* Right: Plan Badge, Search, Notifications, Date */}
-      <div className="flex items-center gap-2.5 sm:gap-4">
+      {/* Right: Shift Widget, Plan Badge, Search, Notifications, Date */}
+      <div className="flex items-center gap-2 sm:gap-3">
+        {shiftSlot}
         {planBadgeSlot}
 
         {/* Global Search with ⌘K */}

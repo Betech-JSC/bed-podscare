@@ -1,30 +1,28 @@
 import { HttpClient, defaultHttpClient } from '../http-client';
+import type {
+  OperationalSummary,
+  ActionableTasks,
+  DashboardKpiResponse,
+  TechnicianKpiItem,
+  CskhKpiItem,
+  StaffKpiItem,
+  StaffKpiSummary,
+  StaffPerformanceData,
+  StaffKpiFilterParams,
+  ApiResponse,
+} from '@podscare/types';
 
-export interface StaffKpiItem {
-  id?: number | string;
-  technician_id?: number | string;
-  name: string;
-  email?: string;
-  phone?: string;
-  role: string;
-  user_role?: string;
-  branch_id?: number | null;
-  branch_name?: string | null;
-  count: string;
-  total_orders?: number;
-  completed?: number;
-  rework_needed?: number;
-  in_repair?: number;
-  qc_passed?: number;
-  qc_total?: number;
-  qc_pass_rate?: number;
-  qcPass: string;
-  rating: string;
-  trend: string;
-  avg_processing_time_minutes?: number;
-  avg_processing_time_hours?: number;
-  avg_processing_time_formatted?: string;
-}
+export type {
+  OperationalSummary,
+  ActionableTasks,
+  DashboardKpiResponse,
+  TechnicianKpiItem,
+  CskhKpiItem,
+  StaffKpiItem,
+  StaffKpiSummary,
+  StaffPerformanceData,
+  StaffKpiFilterParams,
+};
 
 export interface KpiSummary {
   total_technicians?: number;
@@ -76,6 +74,8 @@ export interface DashboardStats {
     total_uncollected_amount?: number;
     total_uncollected_amount_formatted?: string;
   };
+  operational_summary?: OperationalSummary;
+  actionable_tasks?: ActionableTasks;
   [key: string]: any;
 }
 
@@ -91,21 +91,18 @@ export interface DashboardKpiData {
   status_distribution?: Record<string, number>;
   revenue_chart?: RevenueChartPoint[];
   recent_orders?: any[];
+  operational_summary?: OperationalSummary;
+  actionable_tasks?: ActionableTasks;
   [key: string]: any;
 }
 
 export class KpiService {
   constructor(private http: HttpClient = defaultHttpClient) {}
 
-  async getStaffKpi(params?: {
-    branch_id?: string | number;
-    technician_id?: string | number;
-    from_date?: string;
-    to_date?: string;
-    view?: string;
-    flat?: boolean;
-  }): Promise<any> {
-    return this.http.get('/api/v1/kpi/staff', { params });
+  async getStaffKpi(
+    params?: StaffKpiFilterParams
+  ): Promise<ApiResponse<StaffPerformanceData>> {
+    return this.http.get('/api/v1/kpi/staff', { params: params as Record<string, string | number | boolean | undefined> });
   }
 
   async getDashboardKpi(params?: {

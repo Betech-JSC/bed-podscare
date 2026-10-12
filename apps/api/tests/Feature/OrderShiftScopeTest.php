@@ -124,8 +124,8 @@ class OrderShiftScopeTest extends TestCase
         $now = Carbon::now($this->tz);
 
         // 1. Đơn tạo hôm nay (bất kể trạng thái: completed hay in_repair)
-        $todayCompleted = $this->createOrder('completed', $now->copy()->subHours(2));
-        $todayInRepair = $this->createOrder('in_repair', $now->copy()->subMinutes(30));
+        $todayCompleted = $this->createOrder('completed', Carbon::today($this->tz)->hour(0)->minute(5));
+        $todayInRepair = $this->createOrder('in_repair', Carbon::today($this->tz)->hour(0)->minute(15));
 
         // 2. Đơn tạo hôm qua và các ngày trước nhưng chưa xong (in_repair)
         $yesterdayUnfinished = $this->createOrder('in_repair', Carbon::yesterday($this->tz)->hour(14));
@@ -239,7 +239,7 @@ class OrderShiftScopeTest extends TestCase
         $now = Carbon::now($this->tz);
 
         $orderYesterday = $this->createOrder('in_repair', Carbon::yesterday($this->tz)->hour(14));
-        $orderToday = $this->createOrder('in_repair', $now->copy()->subMinutes(10));
+        $orderToday = $this->createOrder('in_repair', Carbon::today($this->tz)->hour(0)->minute(5));
         $order4DaysAgo = $this->createOrder('in_repair', $now->copy()->subDays(4));
         $order15DaysAgo = $this->createOrder('in_repair', $now->copy()->subDays(15));
 

@@ -6,3 +6,4 @@ export * from './ThermalK80Receipt';
 export * from './A4ReceiptTemplate';
 export * from './useSilentPrint';
 export * from './PrintFormatModal';
+export * from './ShiftReceiptPrint';

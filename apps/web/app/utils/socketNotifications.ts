@@ -40,6 +40,10 @@ export const ALLOWED_NOTIFICATION_TYPES: string[] = [
   'order_ready_delivery',
   'order_completed',
   'order_cancelled',
+  'special_part_requested',
+  'special_part_fulfilled',
+  'order_special_part_requested',
+  'order_special_part_fulfilled',
 ];
 
 /**

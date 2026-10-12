@@ -849,10 +849,15 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
           newId = data.order_code;
         } else if (data?.data?.order_code) {
           newId = data.data.order_code;
-        } else if (data?.id) {
-          newId = `FX${new Date().getFullYear().toString().slice(-2)}-${String(data.id).padStart(4, '0')}`;
         } else {
-          newId = `FX${new Date().getFullYear().toString().slice(-2)}-${Math.floor(1000 + Math.random() * 9000)}`;
+          const now = new Date();
+          const dd = String(now.getDate()).padStart(2, '0');
+          const mm = String(now.getMonth() + 1).padStart(2, '0');
+          const yy = String(now.getFullYear()).slice(-2);
+          const dateStr = `${dd}${mm}${yy}`;
+          const branchCode = branchIdNum || 1;
+          const seq = data?.id ? String(Number(data.id) % 100 || (i + 1)).padStart(2, '0') : String(i + 1).padStart(2, '0');
+          newId = `PC${branchCode}${dateStr}${seq}`;
         }
 
         const selectedCskhUser = cskhUsers.find((u) => String(u.id) === String(selectedCskhId));

@@ -5,7 +5,7 @@
  */
 
 import type { RepairOrder } from '@podscare/types';
-import { generateBarcodeSVG, generateQRCodeSVG } from './BarcodeQRUtils';
+import { generateBarcodeSVG, generateQRCodeSVG, extractOrderDisplaySuffix } from './BarcodeQRUtils';
 import { formatMoney, formatOrderTypeLabel, formatMultiOrderTypeLabel, FIXO_LOGO_A4_SVG, type TenantReceiptBranding } from './thermalK80HtmlBuilder';
 
 /**
@@ -585,7 +585,7 @@ export function renderCombinedA4ReceiptHTML(
   const effectiveHotline = effectiveBranding?.hotline || effectiveBranding?.storeHotline || (primaryOrder as any).tenant?.hotline;
   const effectiveFooterNote = effectiveBranding?.footerNote || effectiveBranding?.receiptFooterNote || (primaryOrder as any).tenant?.receipt_footer_note;
 
-  const batchCode = primaryOrder.intake_batch_code || `IB26-${orders.map((o) => o.id.replace(/^FX\d+-/, '')).join('-')}`;
+  const batchCode = primaryOrder.intake_batch_code || `IB26-${orders.map((o) => extractOrderDisplaySuffix(o.id)).join('-')}`;
   const barcodeSvg = generateBarcodeSVG(primaryOrder.intake_batch_code || primaryOrder.id, {
     height: 28,
     barWidth: 1.2,

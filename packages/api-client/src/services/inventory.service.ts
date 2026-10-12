@@ -50,6 +50,7 @@ export class InventoryService {
   constructor(private http: HttpClient = defaultHttpClient) {}
 
   async getParts(params?: {
+    branch_id?: number | string;
     category?: string;
     low_stock?: boolean;
     q?: string;

@@ -9,6 +9,25 @@
 
 import type { RepairOrder } from '@podscare/types';
 
+/**
+ * Trích xuất hậu tố mã đơn hiển thị (cho mã lô gộp hoặc rút gọn).
+ * Hỗ trợ cả định dạng cũ FX (FX26-0001 -> 0001) và định dạng mới PC (PC112102601 -> 01, PC1-121026-01 -> 01).
+ */
+function extractOrderDisplaySuffix(id: string): string {
+  if (!id) return '';
+  if (/^FX\d+-/i.test(id)) {
+    return id.replace(/^FX\d+-/i, '') || id;
+  }
+  if (id.includes('-')) {
+    const parts = id.split('-');
+    return parts[parts.length - 1] || id;
+  }
+  if (/^PC/i.test(id)) {
+    return id.length >= 11 ? id.slice(-2) : (id.replace(/^PC/i, '') || id);
+  }
+  return id;
+}
+
 // ==========================================
 // 1. BARCODE CODE 128 (SUBSET B) GENERATOR
 // ==========================================
@@ -987,7 +1006,7 @@ export function buildCombinedCustomerCopyHtml(
   const effectiveHotline = branding?.hotline || branding?.storeHotline || (primaryOrder as any).tenant?.hotline || '1900.6868 · fixo.vn';
   const effectiveFooterNote = branding?.footerNote || branding?.receiptFooterNote || (primaryOrder as any).tenant?.receipt_footer_note || '* Quý khách vui lòng giữ phiếu này để đối chiếu khi nhận máy.<br />Cảm ơn quý khách đã tin tưởng dịch vụ FIXO Care!';
 
-  const batchCode = primaryOrder.intake_batch_code || `IB26-${orders.map((o) => o.id.replace(/^FX\d+-/, '')).join('-')}`;
+  const batchCode = primaryOrder.intake_batch_code || `IB26-${orders.map((o) => extractOrderDisplaySuffix(o.id)).join('-')}`;
   const barcodeSvg = generateBarcodeSVG(primaryOrder.intake_batch_code || primaryOrder.id, {
     height: 36,
     barWidth: 1.35,
@@ -1160,7 +1179,7 @@ export function buildCombinedCustomerCopyHtml(
  */
 export function buildCombinedStoreCopyHtml(orders: RepairOrder[]): string {
   const primaryOrder = orders[0];
-  const batchCode = primaryOrder.intake_batch_code || `IB26-${orders.map((o) => o.id.replace(/^FX\d+-/, '')).join('-')}`;
+  const batchCode = primaryOrder.intake_batch_code || `IB26-${orders.map((o) => extractOrderDisplaySuffix(o.id)).join('-')}`;
   const barcodeSvgStore = generateBarcodeSVG(primaryOrder.intake_batch_code || primaryOrder.id, {
     height: 24,
     barWidth: 1.35,

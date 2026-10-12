@@ -181,6 +181,42 @@ export class RepairService {
   ): Promise<any> {
     return this.deleteAdditionalService(orderId, serviceId);
   }
+
+  async requestSpecialPart(
+    orderId: string | number,
+    noteOrPayload: string | { special_parts_needed: string; pause_order?: boolean; note?: string },
+    pauseOrder: boolean = true
+  ): Promise<any> {
+    const payload =
+      typeof noteOrPayload === 'string'
+        ? { special_parts_needed: noteOrPayload, pause_order: pauseOrder }
+        : {
+            special_parts_needed: noteOrPayload.special_parts_needed || noteOrPayload.note || '',
+            pause_order: noteOrPayload.pause_order !== undefined ? noteOrPayload.pause_order : pauseOrder,
+          };
+
+    return this.http.post(`/api/v1/orders/${orderId}/special-parts-request`, payload);
+  }
+
+  async fulfillSpecialPart(
+    orderId: string | number,
+    resumeOrder: boolean = false
+  ): Promise<any> {
+    return this.http.post(`/api/v1/orders/${orderId}/special-parts-fulfill`, {
+      resume_order: resumeOrder,
+    });
+  }
+
+  async refundOrder(
+    orderId: string | number,
+    payload: {
+      refund_amount?: number;
+      refund_method: 'cash' | 'bank_transfer' | string;
+      refund_reason: string;
+    }
+  ): Promise<any> {
+    return this.http.post(`/api/v1/orders/${orderId}/refund`, payload);
+  }
 }
 
 export const repairService = new RepairService();

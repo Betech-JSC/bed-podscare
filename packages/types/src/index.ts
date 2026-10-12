@@ -10,4 +10,5 @@ export * from './api';
 export * from './kpi';
 export * from './warranty';
 export * from './payment';
-
+export * from './shift';
+export * from './supplier';

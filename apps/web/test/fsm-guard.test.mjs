@@ -94,13 +94,17 @@ describe('OpenSpec: friendly-fsm-status-messages-and-ui-guard Group 2 Verificati
     assert.deepStrictEqual(qcLabels, ['Sẵn sàng trả']);
     assert.ok(!qcLabels.includes('Hoàn tất'), 'waiting_qc must NEVER contain Hoàn tất button');
 
-    // ready_for_return
-    const readyLabels = getQuickActionsForStatus('ready_for_return').map((a) => a.label);
+    // ready_for_return: ['Chờ khách nhận', 'Hoàn tất'] (hỗ trợ hoàn tất nhanh cho CSKH)
+    const readyActions = getQuickActionsForStatus('ready_for_return');
+    const readyLabels = readyActions.map((a) => a.label);
     assert.deepStrictEqual(readyLabels, ['Chờ khách nhận', 'Hoàn tất']);
+    assert.ok(readyActions.some((a) => a.targetStatus === 'completed'), 'ready_for_return must include completed action');
 
-    // waiting_pickup
-    const pickupLabels = getQuickActionsForStatus('waiting_pickup').map((a) => a.label);
+    // waiting_pickup: ['Hoàn tất'] (hỗ trợ hoàn tất nhanh cho CSKH)
+    const pickupActions = getQuickActionsForStatus('waiting_pickup');
+    const pickupLabels = pickupActions.map((a) => a.label);
     assert.deepStrictEqual(pickupLabels, ['Hoàn tất']);
+    assert.ok(pickupActions.some((a) => a.targetStatus === 'completed'), 'waiting_pickup must include completed action');
 
     // completed
     const completedLabels = getQuickActionsForStatus('completed').map((a) => a.label);

@@ -98,13 +98,11 @@ describe('OpenSpec: pre-test-critical-flow-fixes Frontend Verification', () => {
     assert.ok(content.includes('handleSelectPendingOrder'), 'Must define handleSelectPendingOrder');
     assert.ok(content.includes('pendingOrders'), 'Must maintain pendingOrders state');
 
-    // Must contain "Giả lập thanh toán thành công" simulation handler
-    assert.ok(content.includes('handleSimulatePayment'), 'Must define handleSimulatePayment');
-    assert.ok(content.includes('Giả lập thanh toán thành công'), 'Must display "Giả lập thanh toán thành công" button');
+    // Must NOT contain "Giả lập thanh toán thành công" simulation handler in production
+    assert.ok(!content.includes('handleSimulatePayment'), 'Must NOT define handleSimulatePayment in production');
+    assert.ok(!content.includes('Giả lập thanh toán thành công'), 'Must NOT display "Giả lập thanh toán thành công" button in production');
 
-    // Must call transition to 'completed'
-    assert.ok(content.includes("transition: 'completed'"), "Must transition order to 'completed'");
-    // Must create payment
+    // Must create payment via paymentService
     assert.ok(content.includes('paymentService.createPayment'), 'Must create payment via paymentService');
   });
 

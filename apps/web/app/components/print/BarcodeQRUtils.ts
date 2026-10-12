@@ -589,3 +589,23 @@ export function generateQRCodeSVG(data: string, options: QRCodeOptions = {}): st
     <path d="${pathData}" fill="#000000" />
   </svg>`;
 }
+
+/**
+ * Trích xuất hậu tố mã đơn hiển thị (cho mã lô gộp hoặc rút gọn).
+ * Hỗ trợ cả định dạng cũ FX (FX26-0001 -> 0001) và định dạng mới PC (PC112102601 -> 01, PC1-121026-01 -> 01).
+ */
+export function extractOrderDisplaySuffix(id: string): string {
+  if (!id) return '';
+  if (/^FX\d+-/i.test(id)) {
+    return id.replace(/^FX\d+-/i, '') || id;
+  }
+  if (id.includes('-')) {
+    const parts = id.split('-');
+    return parts[parts.length - 1] || id;
+  }
+  if (/^PC/i.test(id)) {
+    return id.length >= 11 ? id.slice(-2) : (id.replace(/^PC/i, '') || id);
+  }
+  return id;
+}
+

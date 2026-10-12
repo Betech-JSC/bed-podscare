@@ -493,7 +493,11 @@ export default function CustomersPage() {
                   className="max-h-[300px] overflow-y-auto space-y-2 pr-1"
                 >
                   {activeCustomer.repair_orders.map((ord: any, idx: number) => {
-                    const orderCode = ord.order_code || ord.id || `FX26-${idx + 1}`;
+                    const now = new Date();
+                    const dd = String(now.getDate()).padStart(2, '0');
+                    const mm = String(now.getMonth() + 1).padStart(2, '0');
+                    const yy = String(now.getFullYear()).slice(-2);
+                    const orderCode = ord.order_code || ord.id || `PC1${dd}${mm}${yy}${String(idx + 1).padStart(2, '0')}`;
                     const devName = ord.device_model?.name || ord.device || 'Thiết bị Apple';
                     const isWarrantyOrder = ord.order_type === 'warranty' || ord.orderType === 'warranty';
                     const isCodOrder = ord.order_type === 'cod' || ord.orderType === 'cod';

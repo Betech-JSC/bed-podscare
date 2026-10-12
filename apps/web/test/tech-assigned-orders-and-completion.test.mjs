@@ -72,7 +72,8 @@ describe('OpenSpec: tech-assigned-orders-and-completion Test Suite', () => {
 
     // 2.1 State activeTab
     assert.ok(
-      content.includes("const [activeTab, setActiveTab] = useState<'my_orders' | 'available' | 'completed'>('my_orders')"),
+      content.includes("const [activeTab, setActiveTab] = useState<'my_orders' | 'available' | 'completed'>('my_orders')") ||
+      content.includes("const [activeTab, setActiveTab] = useState<'my_orders' | 'available' | 'completed' | 'special_parts'>('my_orders')"),
       'tech/page.tsx phải có state activeTab'
     );
 

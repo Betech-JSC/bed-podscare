@@ -23,6 +23,7 @@ import { IntakeWizardModal } from '../components/IntakeWizardModal';
 import { CheckoutHandoverModal } from '../components/CheckoutHandoverModal';
 import { AdminEditOrderModal } from '../components/AdminEditOrderModal';
 import { ConfirmDeleteOrderModal } from '../components/ConfirmDeleteOrderModal';
+import { RefundModal } from '../components/RefundModal';
 import { usePodsCare } from '../providers';
 import type { RepairOrder, AdditionalServiceItem, OrderDateFilter } from '@podscare/types';
 import { repairService, serviceService } from '@podscare/api-client';
@@ -50,6 +51,7 @@ function RepairsPageContent() {
   const initialStatusParam = searchParams.get('status') || '';
   const initialOrderTypeParam = (searchParams.get('order_type') as any) || 'all';
   const initialBranchParam = searchParams.get('branch_id');
+  const initialOrderIdParam = searchParams.get('id') || searchParams.get('order_id');
 
   const backendToStatusLabelMap: Record<string, string> = {
     inspecting: 'Đang kiểm tra',
@@ -74,8 +76,8 @@ function RepairsPageContent() {
   const [statusFilter, setStatusFilter] = useState(
     backendToStatusLabelMap[initialStatusParam] || initialStatusParam
   );
-  const [orderTypeFilter, setOrderTypeFilter] = useState<'all' | 'in_store' | 'cod' | 'warranty'>(
-    ['all', 'in_store', 'cod', 'warranty'].includes(initialOrderTypeParam)
+  const [orderTypeFilter, setOrderTypeFilter] = useState<'all' | 'in_store' | 'cod' | 'warranty' | 'special_parts'>(
+    ['all', 'in_store', 'cod', 'warranty', 'special_parts'].includes(initialOrderTypeParam)
       ? initialOrderTypeParam
       : 'all'
   );
@@ -85,7 +87,9 @@ function RepairsPageContent() {
   const [checkoutModalOpen, setCheckoutModalOpen] = useState(false);
   const [adminEditModalOpen, setAdminEditModalOpen] = useState(false);
   const [adminDeleteModalOpen, setAdminDeleteModalOpen] = useState(false);
+  const [refundModalOpen, setRefundModalOpen] = useState(false);
   const [isTransitioning, setIsTransitioning] = useState(false);
+  const [isFulfillingSpecialPart, setIsFulfillingSpecialPart] = useState(false);
   const { printReceipt, isPrinting: isSilentPrinting } = useSilentPrint();
 
   // Additional services state (CSKH & Admin)
@@ -153,7 +157,9 @@ function RepairsPageContent() {
       if (search.trim()) {
         params.q = search.trim();
       }
-      if (orderTypeFilter && orderTypeFilter !== 'all') {
+      if (orderTypeFilter === 'special_parts') {
+        params.special_parts_status = 'pending';
+      } else if (orderTypeFilter && orderTypeFilter !== 'all') {
         params.order_type = orderTypeFilter;
       }
       const res = await repairService.getRepairs(params);
@@ -168,6 +174,7 @@ function RepairsPageContent() {
     let inStore = 0;
     let cod = 0;
     let warranty = 0;
+    let specialParts = 0;
     list.forEach((o: any) => {
       total++;
       const t = o.order_type || o.orderType || 'in_store';
@@ -178,8 +185,11 @@ function RepairsPageContent() {
       } else {
         inStore++;
       }
+      if (o.special_parts_status === 'pending' || o.specialPartsStatus === 'pending') {
+        specialParts++;
+      }
     });
-    return { total, inStore, cod, warranty };
+    return { total, inStore, cod, warranty, specialParts };
   }, [apiOrdersData, orders]);
 
   const filteredOrders: RepairOrder[] = useMemo(() => {
@@ -188,7 +198,9 @@ function RepairsPageContent() {
     if (list.length === 0 && !search && !statusFilter) {
       list = orders;
     }
-    if (orderTypeFilter !== 'all') {
+    if (orderTypeFilter === 'special_parts') {
+      list = list.filter((o: any) => (o.special_parts_status || o.specialPartsStatus) === 'pending');
+    } else if (orderTypeFilter !== 'all') {
       list = list.filter((o: any) => (o.order_type || o.orderType || 'in_store') === orderTypeFilter);
     }
     const statusMap: Record<string, { label: string; type: any }> = {
@@ -255,6 +267,14 @@ function RepairsPageContent() {
         partsUsed: o.parts_used_summary,
         parts_needed: o.parts_needed,
         partsNeeded: o.parts_needed,
+        special_parts_needed: o.special_parts_needed,
+        specialPartsNeeded: o.special_parts_needed,
+        special_parts_status: o.special_parts_status,
+        specialPartsStatus: o.special_parts_status,
+        special_parts_requested_at: o.special_parts_requested_at,
+        specialPartsRequestedAt: o.special_parts_requested_at,
+        special_parts_fulfilled_at: o.special_parts_fulfilled_at,
+        specialPartsFulfilledAt: o.special_parts_fulfilled_at,
         paused_at: o.paused_at,
         pausedAt: o.paused_at,
         finalCheck: o.final_check_result,
@@ -287,6 +307,18 @@ function RepairsPageContent() {
     };
   }, [refetch]);
 
+  // Tự động mở chi tiết đơn khi điều hướng từ Notification Popover hoặc query param ?id=...
+  React.useEffect(() => {
+    if (initialOrderIdParam && filteredOrders.length > 0) {
+      const target = filteredOrders.find(
+        (o) => String(o.id) === String(initialOrderIdParam)
+      );
+      if (target) {
+        setSelectedOrder(target);
+      }
+    }
+  }, [initialOrderIdParam, filteredOrders]);
+
   // Admin / CSKH kích hoạt tiếp tục sửa chữa khi đã có linh kiện
   const handleResumeOrder = async (orderToResume: RepairOrder) => {
     try {
@@ -316,6 +348,42 @@ function RepairsPageContent() {
       toast(errMsg, 'error');
     } finally {
       setIsTransitioning(false);
+    }
+  };
+
+  // Admin / CSKH xác nhận đã mua linh kiện đặc biệt
+  const handleFulfillSpecialPart = async (orderToFulfill: RepairOrder) => {
+    try {
+      setIsFulfillingSpecialPart(true);
+      await repairService.fulfillSpecialPart(orderToFulfill.id, true);
+      toast(`Đã xác nhận mua linh kiện cho đơn ${orderToFulfill.id}! Đơn đã được chuyển về bàn sửa KTV.`, 'success');
+      refetch();
+      if (invalidateOrders) await invalidateOrders();
+
+      const updated: RepairOrder = {
+        ...orderToFulfill,
+        status: 'Đang sửa',
+        statusType: 'progress',
+        special_parts_status: 'purchased',
+        specialPartsStatus: 'purchased',
+        special_parts_fulfilled_at: new Date().toISOString(),
+        specialPartsFulfilledAt: new Date().toISOString(),
+        paused_at: null,
+        pausedAt: null,
+      };
+      updateOrder(updated);
+      if (selectedOrder && selectedOrder.id === orderToFulfill.id) {
+        setSelectedOrder(updated);
+      }
+    } catch (err: any) {
+      console.error('Fulfill special part error:', err);
+      const errMsg =
+        err?.response?.data?.message ||
+        err?.message ||
+        'Không thể xác nhận đã mua linh kiện.';
+      toast(errMsg, 'error');
+    } finally {
+      setIsFulfillingSpecialPart(false);
     }
   };
 
@@ -724,6 +792,26 @@ function RepairsPageContent() {
                 {orderCounts.warranty}
               </span>
             </button>
+            <button
+              type="button"
+              data-testid="tab-filter-special-parts"
+              onClick={() => setOrderTypeFilter('special_parts')}
+              className={`px-3.5 py-1.5 rounded-[8px] text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
+                orderTypeFilter === 'special_parts'
+                  ? 'bg-[#d97706] text-white shadow-sm'
+                  : 'bg-[#fef3c7] text-[#92400e] hover:bg-[#fde68a]'
+              }`}
+            >
+              <Icon name="cart" size={14} />
+              <span>Cần mua ngoài</span>
+              <span
+                className={`text-[10px] px-1.5 py-0.5 rounded-full font-mono ${
+                  orderTypeFilter === 'special_parts' ? 'bg-white/25 text-white' : 'bg-[#fde68a] text-[#78350f]'
+                }`}
+              >
+                {orderCounts.specialParts}
+              </span>
+            </button>
           </div>
 
           {/* Date Filter Pills (Shift Day & History Scope) */}
@@ -1023,7 +1111,25 @@ function RepairsPageContent() {
                       <td className="px-4">
                         <div className="space-y-1">
                           <StatusTag label={o.status} type={o.statusType} />
-                          {(o.parts_needed || o.partsNeeded || normalizeStatusCode(o.status) === 'waiting_parts') && (
+                          {(o.special_parts_status === 'pending' || o.specialPartsStatus === 'pending') ? (
+                            <div
+                              data-testid={`badge-special-part-pending-${o.id}`}
+                              className="inline-flex items-center gap-1 text-[11px] font-bold text-[#b45309] bg-[#fef3c7] px-2 py-0.5 rounded border border-[#fde68a] max-w-[210px] truncate"
+                              title={`Linh kiện cần mua ngoài: ${o.special_parts_needed || o.specialPartsNeeded || 'Chưa cập nhật'}`}
+                            >
+                              <Icon name="cart" size={12} className="text-[#b45309]" />
+                              <span className="truncate">Cần mua ngoài: {o.special_parts_needed || o.specialPartsNeeded || 'Cần tìm mua'}</span>
+                            </div>
+                          ) : (o.special_parts_status === 'purchased' || o.specialPartsStatus === 'purchased') ? (
+                            <div
+                              data-testid={`badge-special-part-purchased-${o.id}`}
+                              className="inline-flex items-center gap-1 text-[11px] font-bold text-[#28805e] bg-[#eaf5ef] px-2 py-0.5 rounded border border-[#c2e4d3] max-w-[210px] truncate"
+                              title="Quầy đã mua xong linh kiện"
+                            >
+                              <Icon name="check" size={12} className="text-[#28805e]" />
+                              <span className="truncate">Đã mua linh kiện</span>
+                            </div>
+                          ) : (o.parts_needed || o.partsNeeded || normalizeStatusCode(o.status) === 'waiting_parts') ? (
                             <div
                               className="inline-flex items-center gap-1 text-[11px] font-semibold text-[#b45309] bg-[#fef3c7] px-2 py-0.5 rounded border border-[#fde68a] max-w-[190px] truncate"
                               title={`Linh kiện yêu cầu: ${o.parts_needed || o.partsNeeded || 'Chưa cập nhật'}`}
@@ -1031,7 +1137,7 @@ function RepairsPageContent() {
                               <Icon name="package" size={12} />
                               <span className="truncate">Cần: {o.parts_needed || o.partsNeeded || 'Chờ linh kiện'}</span>
                             </div>
-                          )}
+                          ) : null}
                         </div>
                       </td>
                       <td className="px-4 font-semibold text-[#405048]">
@@ -1046,7 +1152,7 @@ function RepairsPageContent() {
                       </td>
                       <td className="px-4 text-right">
                         <div className="flex items-center justify-end gap-1.5">
-                          {normalizeStatusCode(o.status) !== 'completed' ? (
+                          {['ready_for_return', 'waiting_pickup', 'in_repair'].includes(normalizeStatusCode(o.status)) ? (
                             <Button
                               variant="primary"
                               size="sm"
@@ -1061,14 +1167,14 @@ function RepairsPageContent() {
                               <Icon name="payments" size={12} />
                               <span>Thanh toán</span>
                             </Button>
-                          ) : (
+                          ) : normalizeStatusCode(o.status) === 'completed' ? (
                             <span
                               data-testid={`row-paid-badge-${o.id}`}
                               className="text-[11px] font-semibold text-[#667770] bg-[#edf2ef] px-2 py-0.5 rounded border border-[#d8e0dc] whitespace-nowrap"
                             >
                               Đã thu
                             </span>
-                          )}
+                          ) : null}
 
                           {normalizeStatusCode(o.status) === 'waiting_parts' && (
                             <Button
@@ -1081,6 +1187,22 @@ function RepairsPageContent() {
                               }}
                             >
                               Đã có linh kiện
+                            </Button>
+                          )}
+
+                          {(o.special_parts_status === 'pending' || o.specialPartsStatus === 'pending') && (
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              data-testid={`row-fulfill-special-part-btn-${o.id}`}
+                              disabled={isFulfillingSpecialPart}
+                              className="text-xs bg-[#fffbeb] text-[#b45309] border-[#fde68a] hover:bg-[#fef3c7] font-bold whitespace-nowrap"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleFulfillSpecialPart(o);
+                              }}
+                            >
+                              Đã mua linh kiện
                             </Button>
                           )}
 
@@ -1145,7 +1267,7 @@ function RepairsPageContent() {
                 />
 
                 {/* CSKH Simplified Checkout Button */}
-                {['ready_for_return', 'waiting_pickup'].includes(normalizeStatusCode(selectedOrder.status)) && (
+                {['ready_for_return', 'waiting_pickup', 'in_repair'].includes(normalizeStatusCode(selectedOrder.status)) && (
                   <Button
                     variant="primary"
                     size="md"
@@ -1183,6 +1305,22 @@ function RepairsPageContent() {
                     </Button>
                   </>
                 )}
+
+                {/* Refund Order Action (Admin, Super Admin, Cashier, CSKH) */}
+                {['completed', 'ready_for_return', 'waiting_pickup'].includes(normalizeStatusCode(selectedOrder.status)) &&
+                  normalizeStatusCode(selectedOrder.status) !== 'refunded' &&
+                  ['admin', 'super_admin', 'cashier', 'cskh'].includes(role || '') && (
+                    <Button
+                      variant="outline"
+                      size="md"
+                      icon="payments"
+                      data-testid="refund-order-btn"
+                      onClick={() => setRefundModalOpen(true)}
+                      className="text-xs text-[#d9383a] border-[#fecaca] hover:bg-[#fef2f2] font-bold"
+                    >
+                      Hoàn tiền đơn
+                    </Button>
+                  )}
               </div>
               <div className="flex gap-2">
                 <Button variant="ghost" onClick={() => setSelectedOrder(null)}>
@@ -1226,6 +1364,80 @@ function RepairsPageContent() {
                     </button>
                   ))}
                 </div>
+              </div>
+            )}
+
+            {/* Khối thông tin nổi bật cảnh báo: Yêu cầu mua linh kiện ngoài */}
+            {Boolean(selectedOrder.special_parts_needed || selectedOrder.specialPartsNeeded || selectedOrder.special_parts_status) && (
+              <div data-testid="drawer-special-parts-warning" className="p-4 bg-[#fffbeb] rounded-[10px] border-2 border-[#f59e0b] space-y-3 shadow-xs">
+                <div className="flex items-center justify-between pb-2 border-b border-[#fde68a]">
+                  <div className="flex items-center gap-2">
+                    <Icon name="cart" size={16} className="text-[#b45309]" />
+                    <h4 className="text-xs font-bold text-[#b45309] uppercase tracking-wide m-0">
+                      YÊU CẦU MUA LINH KIỆN NGOÀI (KTV BÁO QUẦY)
+                    </h4>
+                  </div>
+                  <span
+                    data-testid="drawer-special-parts-status"
+                    className={`px-2.5 py-0.5 rounded-full text-xs font-bold ${
+                      (selectedOrder.special_parts_status === 'purchased' || selectedOrder.specialPartsStatus === 'purchased')
+                        ? 'bg-[#eaf5ef] text-[#28805e] border border-[#c2e4d3]'
+                        : 'bg-[#fef3c7] text-[#b45309] border border-[#fde68a]'
+                    }`}
+                  >
+                    {(selectedOrder.special_parts_status === 'purchased' || selectedOrder.specialPartsStatus === 'purchased')
+                      ? 'Quầy đã mua linh kiện'
+                      : 'Chờ Quầy tìm mua ngoài'}
+                  </span>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
+                  <div>
+                    <span className="text-[#92400e] font-semibold block mb-0.5">Linh kiện cần mua ngoài:</span>
+                    <b className="text-[#78350f] text-sm block">
+                      {selectedOrder.special_parts_needed || selectedOrder.specialPartsNeeded || 'Chưa ghi rõ'}
+                    </b>
+                  </div>
+                  <div>
+                    <span className="text-[#92400e] font-semibold block mb-0.5">KTV yêu cầu:</span>
+                    <b className="text-[#78350f] text-sm block">
+                      {selectedOrder.tech || 'Kỹ thuật viên'}
+                    </b>
+                  </div>
+                </div>
+
+                {selectedOrder.special_parts_requested_at && (
+                  <div className="text-xs text-[#92400e]">
+                    <span>Thời gian yêu cầu: </span>
+                    <b className="text-[#78350f]">{new Date(selectedOrder.special_parts_requested_at).toLocaleString('vi-VN')}</b>
+                  </div>
+                )}
+
+                {selectedOrder.special_parts_fulfilled_at && (
+                  <div className="text-xs text-[#1e583f] bg-[#eaf5ef] p-2 rounded border border-[#c2e4d3]">
+                    <span>Đã mua lúc: </span>
+                    <b>{new Date(selectedOrder.special_parts_fulfilled_at).toLocaleString('vi-VN')}</b>
+                  </div>
+                )}
+
+                {/* 1 Nút hành động duy nhất cho Admin / CSKH */}
+                {(selectedOrder.special_parts_status === 'pending' || selectedOrder.specialPartsStatus === 'pending') && (
+                  <div className="pt-2 border-t border-[#fde68a] flex items-center justify-between">
+                    <span className="text-xs text-[#92400e] italic font-medium">
+                      Bấm xác nhận sau khi đã mua để chuyển đơn về bàn sửa KTV.
+                    </span>
+                    <Button
+                      variant="primary"
+                      size="md"
+                      data-testid="fulfill-special-part-btn"
+                      disabled={isFulfillingSpecialPart}
+                      onClick={() => handleFulfillSpecialPart(selectedOrder)}
+                      className="bg-[#d97706] hover:bg-[#b45309] text-white font-bold text-xs sm:text-sm px-4 py-2 shadow-sm cursor-pointer"
+                    >
+                      {isFulfillingSpecialPart ? 'Đang xử lý...' : 'Đã mua linh kiện'}
+                    </Button>
+                  </div>
+                )}
               </div>
             )}
 
@@ -1580,7 +1792,7 @@ function RepairsPageContent() {
                     )}
 
                     {/* Nút thanh toán & bàn giao nhanh cho CSKH */}
-                    {['ready_for_return', 'waiting_pickup'].includes(currentStatusCode) && (
+                    {['ready_for_return', 'waiting_pickup', 'in_repair'].includes(currentStatusCode) && (
                       <Button
                         variant="primary"
                         size="sm"
@@ -1823,6 +2035,21 @@ function RepairsPageContent() {
             setSelectedOrder(null);
             refetch();
             if (invalidateOrders) invalidateOrders();
+          }}
+        />
+      )}
+
+      {/* Refund Order Modal */}
+      {selectedOrder && (
+        <RefundModal
+          isOpen={refundModalOpen}
+          onClose={() => setRefundModalOpen(false)}
+          order={selectedOrder}
+          onSuccess={async () => {
+            setRefundModalOpen(false);
+            setSelectedOrder(null);
+            refetch();
+            if (invalidateOrders) await invalidateOrders();
           }}
         />
       )}

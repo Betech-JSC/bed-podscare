@@ -10,6 +10,7 @@ use App\Models\RepairOrder;
 use App\Models\Warranty;
 use Carbon\Carbon;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Support\Facades\DB;
 
 class OrderWorkflowService extends BaseWorkflowService
 {
@@ -29,8 +30,9 @@ class OrderWorkflowService extends BaseWorkflowService
         'waiting_qc'       => ['ready_for_return', 'rework_needed'],
         'qc_pending'       => ['ready_for_return', 'rework_needed'],
         'qc_inspecting'    => ['ready_for_return', 'rework_needed'],
-        'ready_for_return' => ['waiting_pickup', 'completed'],
-        'waiting_pickup'   => ['completed'],
+        'ready_for_return' => ['waiting_pickup', 'completed', 'cancelled'],
+        'waiting_pickup'   => ['completed', 'cancelled'],
+        'completed'        => ['cancelled'],
     ];
 
     /**
@@ -106,37 +108,62 @@ class OrderWorkflowService extends BaseWorkflowService
     {
         // Khi chuyển sang ready_for_return:
         if ($newStatus === 'ready_for_return') {
-            // Cho phép KTV nghiệm thu trực tiếp khi chuyển thẳng từ in_repair, assigned, hoặc rework_needed sang ready_for_return
-            if (in_array($oldStatus, ['in_repair', 'assigned', 'rework_needed'], true)) {
-                $hasPassedQc = QcInspection::where('repair_order_id', $model->id)
-                    ->where('result', 'pass')
-                    ->exists();
+            if ($model->order_type === 'warranty') {
+                $latestQc = QcInspection::where('repair_order_id', $model->id)
+                    ->latest('id')
+                    ->first();
 
-                if (! $hasPassedQc) {
-                    $inspectorId = $options['user']?->id 
-                        ?? ($options['admin_id'] 
-                        ?? ($options['technician_id'] 
-                        ?? ($model->technician_id 
-                        ?? auth()->id())));
-
-                    QcInspection::create([
-                        'tenant_id'       => $model->tenant_id,
-                        'repair_order_id' => $model->id,
-                        'inspector_id'    => $inspectorId,
-                        'result'          => 'pass',
-                        'notes'           => $options['repair_note'] ?? 'Kỹ thuật viên nghiệm thu trực tiếp',
-                    ]);
-                }
-            } else {
-                $hasPassedQc = QcInspection::where('repair_order_id', $model->id)
-                    ->where('result', 'pass')
-                    ->exists();
-
-                if (! $hasPassedQc) {
+                if (! $latestQc || $latestQc->result !== 'pass') {
                     throw new \DomainException(
-                        'Đơn hàng chưa có biên bản kiểm định chất lượng đạt chuẩn (QC Pass). Không thể chuyển sang trạng thái sẵn sàng giao trả.'
+                        'Đơn sửa chữa bảo hành bắt buộc phải hoàn thành kiểm định QC đạt chuẩn (Pass) trước khi sẵn sàng trả máy hoặc hoàn tất.'
                     );
                 }
+            } else {
+                // Cho phép KTV nghiệm thu trực tiếp khi chuyển thẳng từ in_repair, assigned, hoặc rework_needed sang ready_for_return
+                if (in_array($oldStatus, ['in_repair', 'assigned', 'rework_needed'], true)) {
+                    $hasPassedQc = QcInspection::where('repair_order_id', $model->id)
+                        ->where('result', 'pass')
+                        ->exists();
+
+                    if (! $hasPassedQc) {
+                        $inspectorId = $options['user']?->id 
+                            ?? ($options['admin_id'] 
+                            ?? ($options['technician_id'] 
+                            ?? ($model->technician_id 
+                            ?? auth()->id())));
+
+                        QcInspection::create([
+                            'tenant_id'       => $model->tenant_id,
+                            'repair_order_id' => $model->id,
+                            'inspector_id'    => $inspectorId,
+                            'result'          => 'pass',
+                            'notes'           => $options['repair_note'] ?? 'Kỹ thuật viên nghiệm thu trực tiếp',
+                        ]);
+                    }
+                } else {
+                    $hasPassedQc = QcInspection::where('repair_order_id', $model->id)
+                        ->where('result', 'pass')
+                        ->exists();
+
+                    if (! $hasPassedQc) {
+                        throw new \DomainException(
+                            'Đơn hàng chưa có biên bản kiểm định chất lượng đạt chuẩn (QC Pass). Không thể chuyển sang trạng thái sẵn sàng giao trả.'
+                        );
+                    }
+                }
+            }
+        }
+
+        // Khi chuyển sang completed đối với đơn warranty:
+        if ($newStatus === 'completed' && $model->order_type === 'warranty') {
+            $latestQc = QcInspection::where('repair_order_id', $model->id)
+                ->latest('id')
+                ->first();
+
+            if (! $latestQc || $latestQc->result !== 'pass') {
+                throw new \DomainException(
+                    'Đơn sửa chữa bảo hành bắt buộc phải hoàn thành kiểm định QC đạt chuẩn (Pass) trước khi sẵn sàng trả máy hoặc hoàn tất.'
+                );
             }
         }
     }
@@ -269,12 +296,234 @@ class OrderWorkflowService extends BaseWorkflowService
                     $customer->increment('orders_count');
                     $customer->increment('total_spent', $model->total_price);
                 }
+
+                // Tự động trừ tồn kho linh kiện đã sử dụng (export_repair)
+                $this->deductInventoryForOrder($model, $adminId);
+                break;
+
+            case 'cancelled':
+                $adminId = $options['admin_id'] ?? ($options['user']?->id ?? auth()->id());
+                // Tự động hoàn kho nếu đơn đã từng xuất linh kiện
+                $this->reverseInventoryForOrder($model, $adminId, 'cancelled');
                 break;
         }
 
         if (! empty($updates)) {
             $model->update($updates);
         }
+    }
+
+    /**
+     * Tự động trừ tồn kho linh kiện khi đơn hàng hoàn tất (export_repair).
+     * Đảm bảo Idempotency: không trừ lần hai nếu đã từng xuất linh kiện cho đơn này.
+     */
+    public function deductInventoryForOrder(RepairOrder $order, ?int $userId = null): void
+    {
+        DB::transaction(function () use ($order, $userId) {
+            // Idempotency check: Chỉ xuất kho nếu chưa từng có export_repair cho đơn này
+            $alreadyExported = \App\Models\InventoryTransaction::where('repair_order_id', $order->id)
+                ->where('transaction_type', 'export_repair')
+                ->exists();
+
+            if ($alreadyExported) {
+                return;
+            }
+
+            // Lấy danh sách linh kiện từ quote_items của báo giá approved
+            $quoteItems = \App\Models\QuoteItem::whereHas('quote', function ($q) use ($order) {
+                $q->where('repair_order_id', $order->id)
+                  ->where(function ($sq) {
+                      $sq->where('status', 'approved')
+                         ->orWhereNull('status');
+                  });
+            })->whereNotNull('part_id')
+              ->where('quantity', '>', 0)
+              ->get();
+
+            if ($quoteItems->isEmpty()) {
+                return;
+            }
+
+            $date = date('Ymd');
+            $actorId = $userId ?? $order->handed_over_by_user_id ?? $order->technician_id ?? 1;
+
+            foreach ($quoteItems as $item) {
+                $part = \App\Models\Part::find($item->part_id);
+                if (! $part) {
+                    continue;
+                }
+
+                $branchPart = \App\Models\BranchPart::where('branch_id', $order->branch_id)
+                    ->where('part_id', $item->part_id)
+                    ->lockForUpdate()
+                    ->first();
+
+                if (! $branchPart) {
+                    $branchPart = \App\Models\BranchPart::create([
+                        'branch_id'       => $order->branch_id,
+                        'part_id'         => $item->part_id,
+                        'stock_quantity'  => 0,
+                        'min_stock_alert' => $part->min_stock_alert ?? 5,
+                    ]);
+                }
+
+                $qty = (int) $item->quantity;
+
+                do {
+                    $rand = str_pad((string) random_int(1, 9999), 4, '0', STR_PAD_LEFT);
+                    $txCode = "TX-{$date}-{$rand}";
+                } while (\App\Models\InventoryTransaction::where('transaction_code', $txCode)->exists());
+
+                \App\Models\InventoryTransaction::create([
+                    'transaction_code'   => $txCode,
+                    'part_id'            => $item->part_id,
+                    'branch_id'          => $order->branch_id,
+                    'repair_order_id'    => $order->id,
+                    'transaction_type'   => 'export_repair',
+                    'quantity'           => -$qty,
+                    'unit_cost'          => (float) ($part->cost_price ?? 0),
+                    'notes'              => "Xuất kho tự động cho đơn sửa chữa {$order->order_code}",
+                    'created_by_user_id' => $actorId,
+                ]);
+
+                $branchPart->decrement('stock_quantity', $qty);
+                $part->decrement('stock_quantity', $qty);
+            }
+        });
+    }
+
+    /**
+     * Tự động hoàn kho linh kiện khi đơn hàng bị hủy hoặc xóa (import_reversal).
+     * Đảm bảo Idempotency: không hoàn trả lần hai nếu đã từng hoàn kho cho đơn này.
+     */
+    public function reverseInventoryForOrder(RepairOrder $order, ?int $userId = null, string $reason = 'cancelled'): void
+    {
+        DB::transaction(function () use ($order, $userId, $reason) {
+            $exportTxs = \App\Models\InventoryTransaction::where('repair_order_id', $order->id)
+                ->where('transaction_type', 'export_repair')
+                ->get();
+
+            if ($exportTxs->isEmpty()) {
+                return;
+            }
+
+            // Idempotency check: Chỉ hoàn kho nếu chưa từng có import_reversal cho đơn này
+            $alreadyReversed = \App\Models\InventoryTransaction::where('repair_order_id', $order->id)
+                ->where('transaction_type', 'import_reversal')
+                ->exists();
+
+            if ($alreadyReversed) {
+                return;
+            }
+
+            $date = date('Ymd');
+            $actorId = $userId ?? 1;
+
+            foreach ($exportTxs as $tx) {
+                $reverseQty = abs($tx->quantity);
+
+                $branchPart = \App\Models\BranchPart::where('branch_id', $tx->branch_id)
+                    ->where('part_id', $tx->part_id)
+                    ->lockForUpdate()
+                    ->first();
+
+                if ($branchPart) {
+                    $branchPart->increment('stock_quantity', $reverseQty);
+                }
+
+                $part = \App\Models\Part::find($tx->part_id);
+                if ($part) {
+                    $part->increment('stock_quantity', $reverseQty);
+                }
+
+                do {
+                    $rand = str_pad((string) random_int(1, 9999), 4, '0', STR_PAD_LEFT);
+                    $txCode = "TX-{$date}-{$rand}";
+                } while (\App\Models\InventoryTransaction::where('transaction_code', $txCode)->exists());
+
+                $note = $reason === 'deleted'
+                    ? "Hoàn kho tự động do xóa đơn sửa chữa {$order->order_code}"
+                    : "Hoàn kho tự động do hủy đơn sửa chữa {$order->order_code}";
+
+                \App\Models\InventoryTransaction::create([
+                    'transaction_code'   => $txCode,
+                    'part_id'            => $tx->part_id,
+                    'branch_id'          => $tx->branch_id,
+                    'repair_order_id'    => $order->id,
+                    'transaction_type'   => 'import_reversal',
+                    'quantity'           => $reverseQty,
+                    'unit_cost'          => $tx->unit_cost,
+                    'notes'              => $note,
+                    'created_by_user_id' => $actorId,
+                ]);
+            }
+        });
+    }
+
+    /**
+     * Tự động hoàn kho linh kiện khi đơn hàng bị hoàn tiền (import_return).
+     * Đảm bảo Idempotency: không hoàn trả lần hai nếu đã từng hoàn kho (import_return hoặc import_reversal) cho đơn này.
+     */
+    public function restockInventoryForOrder(RepairOrder $order, ?int $userId = null, string $reason = 'refund'): void
+    {
+        DB::transaction(function () use ($order, $userId, $reason) {
+            $exportTxs = \App\Models\InventoryTransaction::where('repair_order_id', $order->id)
+                ->where('transaction_type', 'export_repair')
+                ->get();
+
+            if ($exportTxs->isEmpty()) {
+                return;
+            }
+
+            // Idempotency check: Chỉ hoàn kho nếu chưa từng có import_return hoặc import_reversal cho đơn này
+            $alreadyRestocked = \App\Models\InventoryTransaction::where('repair_order_id', $order->id)
+                ->whereIn('transaction_type', ['import_return', 'import_reversal'])
+                ->exists();
+
+            if ($alreadyRestocked) {
+                return;
+            }
+
+            $date = date('Ymd');
+            $actorId = $userId ?? 1;
+
+            foreach ($exportTxs as $tx) {
+                $returnQty = abs($tx->quantity);
+
+                $branchPart = \App\Models\BranchPart::where('branch_id', $tx->branch_id)
+                    ->where('part_id', $tx->part_id)
+                    ->lockForUpdate()
+                    ->first();
+
+                if ($branchPart) {
+                    $branchPart->increment('stock_quantity', $returnQty);
+                }
+
+                $part = \App\Models\Part::withoutGlobalScopes()->find($tx->part_id);
+                if ($part) {
+                    $part->increment('stock_quantity', $returnQty);
+                }
+
+                do {
+                    $rand = str_pad((string) random_int(1, 9999), 4, '0', STR_PAD_LEFT);
+                    $txCode = "TX-{$date}-{$rand}";
+                } while (\App\Models\InventoryTransaction::where('transaction_code', $txCode)->exists());
+
+                $note = "Hoàn kho tự động (import_return) do hoàn tiền đơn sửa chữa {$order->order_code}: {$reason}";
+
+                \App\Models\InventoryTransaction::create([
+                    'transaction_code'   => $txCode,
+                    'part_id'            => $tx->part_id,
+                    'branch_id'          => $tx->branch_id,
+                    'repair_order_id'    => $order->id,
+                    'transaction_type'   => 'import_return',
+                    'quantity'           => $returnQty,
+                    'unit_cost'          => $tx->unit_cost,
+                    'notes'              => $note,
+                    'created_by_user_id' => $actorId,
+                ]);
+            }
+        });
     }
 
     /**

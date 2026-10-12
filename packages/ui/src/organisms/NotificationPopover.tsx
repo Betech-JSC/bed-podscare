@@ -105,6 +105,27 @@ function getNotificationVisual(item: NotificationItem): EventVisual {
     };
   }
 
+  // 1.5 Yêu cầu linh kiện đặc biệt cần mua ngoài (Icon cart - Màu hổ phách Warm Ivory)
+  if (
+    type === 'special_part_requested' ||
+    type === 'special_part_fulfilled' ||
+    title.includes('linh kiện đặc biệt') ||
+    msg.includes('linh kiện đặc biệt') ||
+    title.includes('mua ngoài') ||
+    msg.includes('mua ngoài')
+  ) {
+    const isFulfilled = type === 'special_part_fulfilled' || title.includes('đã mua');
+    return {
+      iconName: isFulfilled ? 'check' : 'cart',
+      unreadIconClass: isFulfilled
+        ? 'bg-[#eaf5ef] text-[#28805e] border border-[#d2eadc]'
+        : 'bg-[#fef3c7] text-[#b45309] border border-[#fde68a]',
+      readIconClass: isFulfilled
+        ? 'bg-[#f2f7f4] text-[#567a6b] border border-[#e5ece8]'
+        : 'bg-[#faf5ea] text-[#92400e] border border-[#f3e7ce]',
+    };
+  }
+
   // 2. Tiếp nhận / Đơn mới tạo (Icon hộp / thiết bị / tiếp nhận - Calm Jade)
   if (
     type === 'order_created' ||
@@ -234,9 +255,12 @@ export const NotificationPopover: React.FC<NotificationPopoverProps> = ({
         type === 'order' ||
         type === 'order_created' ||
         type === 'order_reception' ||
+        type === 'special_part_requested' ||
+        type === 'special_part_fulfilled' ||
         Boolean(item.orderCode) ||
         title.includes('đơn') ||
-        title.includes('tiếp nhận')
+        title.includes('tiếp nhận') ||
+        title.includes('linh kiện')
       ) {
         orders++;
       }
@@ -292,9 +316,12 @@ export const NotificationPopover: React.FC<NotificationPopoverProps> = ({
           type === 'order' ||
           type === 'order_created' ||
           type === 'order_reception' ||
+          type === 'special_part_requested' ||
+          type === 'special_part_fulfilled' ||
           Boolean(item.orderCode) ||
           title.includes('đơn') ||
-          title.includes('tiếp nhận')
+          title.includes('tiếp nhận') ||
+          title.includes('linh kiện')
         );
       }
       if (activeTab === 'quotes') {

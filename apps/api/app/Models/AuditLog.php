@@ -19,12 +19,23 @@ class AuditLog extends Model
         'auditable_type',
         'auditable_id',
         'details',
+        'old_values',
+        'new_values',
         'ip_address',
         'channel',
         'module',
         'description',
         'metadata',
     ];
+
+    protected function casts(): array
+    {
+        return [
+            'old_values' => 'array',
+            'new_values' => 'array',
+            'metadata' => 'array',
+        ];
+    }
 
     protected static function booted(): void
     {
@@ -64,6 +75,11 @@ class AuditLog extends Model
             if (isset($value['branch_id']) && empty($this->attributes['auditable_id'])) {
                 $this->attributes['auditable_id'] = $value['branch_id'];
             }
+            $this->attributes['metadata'] = json_encode($value);
+        } elseif (is_string($value)) {
+            $this->attributes['metadata'] = $value;
+        } else {
+            $this->attributes['metadata'] = null;
         }
     }
 

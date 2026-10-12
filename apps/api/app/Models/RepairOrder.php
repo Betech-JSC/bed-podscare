@@ -27,6 +27,8 @@ class RepairOrder extends Model
         'test_note',
         'status',
         'order_type',
+        'claim_id',
+        'parent_order_id',
         'shipping_address',
         'total_price',
         'initial_price',
@@ -46,6 +48,10 @@ class RepairOrder extends Model
         'repair_note',
         'parts_used_summary',
         'parts_needed',
+        'special_parts_needed',
+        'special_parts_status',
+        'special_parts_requested_at',
+        'special_parts_fulfilled_at',
         'paused_at',
         'final_check_result',
         'qc_passed_at',
@@ -87,6 +93,8 @@ class RepairOrder extends Model
             'tech_accepted_at' => 'datetime',
             'repair_started_at' => 'datetime',
             'paused_at' => 'datetime',
+            'special_parts_requested_at' => 'datetime',
+            'special_parts_fulfilled_at' => 'datetime',
             'repair_completed_at' => 'datetime',
             'qc_passed_at' => 'datetime',
             'customer_notified_at' => 'datetime',
@@ -110,6 +118,16 @@ class RepairOrder extends Model
             return $query->where('order_type', $type);
         }
         return $query;
+    }
+
+    public function scopeSpecialPartsPending($query)
+    {
+        return $query->where('special_parts_status', 'pending');
+    }
+
+    public function scopeSpecialPartsPurchased($query)
+    {
+        return $query->where('special_parts_status', 'purchased');
     }
 
     public function recalculateTotalPrice(): float
@@ -257,5 +275,20 @@ class RepairOrder extends Model
     {
         return $this->hasMany(RepairOrder::class, 'intake_batch_code', 'intake_batch_code')
             ->whereNotNull('intake_batch_code');
+    }
+
+    public function warrantyClaim(): BelongsTo
+    {
+        return $this->belongsTo(WarrantyClaim::class, 'claim_id');
+    }
+
+    public function parentOrder(): BelongsTo
+    {
+        return $this->belongsTo(RepairOrder::class, 'parent_order_id');
+    }
+
+    public function reworkOrders(): HasMany
+    {
+        return $this->hasMany(RepairOrder::class, 'parent_order_id');
     }
 }

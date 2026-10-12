@@ -20,13 +20,20 @@ class Payment extends Model
         'paid_at',
         'received_by_user_id',
         'notes',
+        'refund_amount',
+        'refund_reason',
+        'refund_method',
+        'refunded_at',
+        'refunded_by_user_id',
     ];
 
     protected function casts(): array
     {
         return [
             'amount' => 'decimal:2',
+            'refund_amount' => 'decimal:2',
             'paid_at' => 'datetime',
+            'refunded_at' => 'datetime',
         ];
     }
 
@@ -38,5 +45,10 @@ class Payment extends Model
     public function receivedByUser(): BelongsTo
     {
         return $this->belongsTo(User::class, 'received_by_user_id');
+    }
+
+    public function refundedByUser(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'refunded_by_user_id');
     }
 }

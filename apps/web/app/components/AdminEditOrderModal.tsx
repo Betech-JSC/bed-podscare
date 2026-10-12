@@ -13,6 +13,7 @@ import {
 import type { RepairOrder } from '@podscare/types';
 import { repairService, userService, type UserRecord } from '@podscare/api-client';
 import { usePodsCare } from '../providers';
+import { normalizeStatusCode } from '../repairs/fsm';
 
 export interface AdminEditOrderModalProps {
   isOpen: boolean;
@@ -52,6 +53,7 @@ export const AdminEditOrderModal: React.FC<AdminEditOrderModalProps> = ({
   const [warrantyDays, setWarrantyDays] = useState<number | string>(
     (order as any).warranty_terms_days || 90
   );
+  const isOrderCompleted = normalizeStatusCode(order.status) === 'completed';
 
   const [technicians, setTechnicians] = useState<UserRecord[]>([]);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -324,7 +326,13 @@ export const AdminEditOrderModal: React.FC<AdminEditOrderModalProps> = ({
               label="Tổng chi phí sửa chữa (VNĐ) *"
               value={totalPrice}
               onChangeValue={(val) => setTotalPrice(val)}
+              disabled={isOrderCompleted}
             />
+            {isOrderCompleted && (
+              <p className="mt-1 text-[11px] text-[#b45309] font-medium flex items-center gap-1">
+                <span>🔒 Đơn hàng đã hoàn tất, giá tiền đã được khóa cố định để bảo toàn sổ quỹ.</span>
+              </p>
+            )}
           </div>
           <div>
             <label className="block text-xs font-bold text-[#2d3d35] mb-1">

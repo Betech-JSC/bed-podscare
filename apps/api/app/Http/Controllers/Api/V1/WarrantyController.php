@@ -8,6 +8,7 @@ use App\Models\Customer;
 use App\Models\RepairOrder;
 use App\Models\Warranty;
 use App\Models\WarrantyClaim;
+use App\Services\WarrantyReworkService;
 use App\Support\PiiHelper;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -261,7 +262,7 @@ class WarrantyController extends Controller
     /**
      * Tiếp nhận yêu cầu bảo hành phát sinh.
      */
-    public function createClaim(Request $request): JsonResponse
+    public function createClaim(Request $request, WarrantyReworkService $reworkService): JsonResponse
     {
         $validated = $request->validate([
             'warranty_id'       => 'required|exists:warranties,id',
@@ -270,8 +271,12 @@ class WarrantyController extends Controller
             'notes'             => 'nullable|string',
         ]);
 
-        return DB::transaction(function () use ($request, $validated) {
+        return DB::transaction(function () use ($request, $validated, $reworkService) {
             $warranty = Warranty::findOrFail($validated['warranty_id']);
+
+            if ($warranty->status === 'revoked') {
+                return $this->failure('Sổ bảo hành đã bị thu hồi do đơn hàng đã được hoàn tiền, không thể tiếp nhận khiếu nại.', 422);
+            }
 
             if ($warranty->status !== 'active' || Carbon::parse($warranty->end_date)->endOfDay()->isPast()) {
                 return $this->failure('Sổ bảo hành đã hết hạn hoặc không còn hiệu lực để tiếp nhận khiếu nại.', 422);
@@ -293,6 +298,11 @@ class WarrantyController extends Controller
                 'received_by_user_id' => $request->user()->id,
             ]);
 
+            // Tự động kích hoạt đơn rework nếu resolution_mode là send_tech, replace_part, store_check
+            if (in_array($validated['resolution_mode'], ['send_tech', 'replace_part', 'store_check'], true)) {
+                $reworkService->createReworkOrderFromClaim($claim, $request->user());
+            }
+
             AuditLog::create([
                 'user_id'        => $request->user()->id,
                 'user_name'      => $request->user()->name,
@@ -303,7 +313,7 @@ class WarrantyController extends Controller
                 'ip_address'     => $request->ip(),
             ]);
 
-            return $this->success($claim->load('warranty'), 'Tiếp nhận yêu cầu bảo hành thành công.', 201);
+            return $this->success($claim->fresh(['warranty', 'reworkOrder']), 'Tiếp nhận yêu cầu bảo hành thành công.', 201);
         });
     }
 }
