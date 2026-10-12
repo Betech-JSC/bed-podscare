@@ -20,6 +20,8 @@ interface CustomerViewModel {
   name: string;
   phone: string;
   email?: string;
+  address?: string;
+  shipping_address?: string;
   orders: number;
   spent: string;
   totalSpentRaw: number;
@@ -107,6 +109,8 @@ export default function CustomersPage() {
         name,
         phone: c.phone || 'Chưa cập nhật SĐT',
         email: c.email,
+        address: c.address,
+        shipping_address: c.shipping_address,
         orders: ordersCount,
         spent: formattedSpent,
         totalSpentRaw: totalSpent,
@@ -129,6 +133,8 @@ export default function CustomersPage() {
         name: detail.name || fromList?.name || 'Khách lẻ',
         phone: detail.phone || fromList?.phone || 'Chưa cập nhật SĐT',
         email: detail.email || fromList?.email,
+        address: detail.address || fromList?.address || fromList?.raw?.address,
+        shipping_address: detail.shipping_address || fromList?.shipping_address || fromList?.raw?.shipping_address,
         repair_orders: detail.repair_orders || detail.repairOrders || fromList?.raw?.repair_orders || [],
         warranties: detail.warranties || fromList?.raw?.warranties || [],
       };
@@ -164,10 +170,25 @@ export default function CustomersPage() {
     };
   }, [activeCustomer]);
 
+  const customerAddress = useMemo(() => {
+    return (
+      activeCustomer?.address ||
+      activeCustomer?.shipping_address ||
+      activeCustomer?.repair_orders?.find((o: any) => o.shipping_address)?.shipping_address ||
+      activeCustomer?.repair_orders?.find((o: any) => o.shippingAddress)?.shippingAddress
+    );
+  }, [activeCustomer]);
+
   const handleCopyPhone = (phoneNum: string) => {
     if (!phoneNum || phoneNum === 'Chưa cập nhật SĐT') return;
     navigator.clipboard?.writeText(phoneNum);
     toast(`Đã sao chép số điện thoại ${phoneNum}`, 'success');
+  };
+
+  const handleCopyAddress = (addr: string) => {
+    if (!addr) return;
+    navigator.clipboard?.writeText(addr);
+    toast('Đã sao chép địa chỉ khách hàng', 'success');
   };
 
   const handleStartIntakeForCustomer = () => {
@@ -332,47 +353,78 @@ export default function CustomersPage() {
         >
           <div className="space-y-4">
             {/* Header thông tin liên hệ & Action nhanh */}
-            <div className="p-3.5 bg-[#fbfdfc] border border-[#dce7e1] rounded-[8px] flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-              <div className="flex items-center gap-3">
-                <div className="w-12 h-12 rounded-full bg-[#eaf4ef] text-[#176b58] font-bold text-base flex items-center justify-center border border-[#b8d7c8] flex-shrink-0">
-                  {activeCustomer?.initials || 'KH'}
+            <div className="p-3.5 bg-[#fbfdfc] border border-[#dce7e1] rounded-[8px] space-y-2.5">
+              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+                <div className="flex items-center gap-3">
+                  <div className="w-12 h-12 rounded-full bg-[#eaf4ef] text-[#176b58] font-bold text-base flex items-center justify-center border border-[#b8d7c8] flex-shrink-0">
+                    {activeCustomer?.initials || 'KH'}
+                  </div>
+                  <div>
+                    <div className="font-bold text-base text-[#111827]">
+                      {activeCustomer?.name}
+                    </div>
+                    <div className="flex items-center gap-2 mt-0.5">
+                      <span className="font-mono text-sm text-[#176b58] font-semibold">
+                        {activeCustomer?.phone}
+                      </span>
+                      {activeCustomer?.phone && (
+                        <button
+                          type="button"
+                          onClick={() => handleCopyPhone(activeCustomer.phone)}
+                          data-testid="btn-copy-phone"
+                          className="text-[11px] px-1.5 py-0.5 rounded bg-white border border-[#d1ded7] text-[#416053] hover:bg-[#eaf4ef] transition-colors cursor-pointer"
+                          title="Sao chép số điện thoại"
+                        >
+                          Sao chép
+                        </button>
+                      )}
+                      {activeCustomer?.phone && (
+                        <a
+                          href={`tel:${activeCustomer.phone}`}
+                          data-testid="btn-call-phone"
+                          className="text-[11px] px-1.5 py-0.5 rounded bg-[#176b58] text-white hover:bg-[#135646] transition-colors cursor-pointer flex items-center gap-1"
+                          title="Gọi điện ngay"
+                        >
+                          Gọi điện
+                        </a>
+                      )}
+                    </div>
+                  </div>
                 </div>
-                <div>
-                  <div className="font-bold text-base text-[#111827]">
-                    {activeCustomer?.name}
-                  </div>
-                  <div className="flex items-center gap-2 mt-0.5">
-                    <span className="font-mono text-sm text-[#176b58] font-semibold">
-                      {activeCustomer?.phone}
-                    </span>
-                    {activeCustomer?.phone && (
-                      <button
-                        type="button"
-                        onClick={() => handleCopyPhone(activeCustomer.phone)}
-                        data-testid="btn-copy-phone"
-                        className="text-[11px] px-1.5 py-0.5 rounded bg-white border border-[#d1ded7] text-[#416053] hover:bg-[#eaf4ef] transition-colors cursor-pointer"
-                        title="Sao chép số điện thoại"
-                      >
-                        Sao chép
-                      </button>
-                    )}
-                    {activeCustomer?.phone && (
-                      <a
-                        href={`tel:${activeCustomer.phone}`}
-                        data-testid="btn-call-phone"
-                        className="text-[11px] px-1.5 py-0.5 rounded bg-[#176b58] text-white hover:bg-[#135646] transition-colors cursor-pointer flex items-center gap-1"
-                        title="Gọi điện ngay"
-                      >
-                        Gọi điện
-                      </a>
-                    )}
-                  </div>
+                <div className="text-left sm:text-right text-xs text-[#667a70]">
+                  <div>Ngày tạo hồ sơ: <b>{activeCustomer?.since || 'Mới đây'}</b></div>
+                  {activeCustomer?.email && (
+                    <div className="mt-0.5">Email: <b>{activeCustomer.email}</b></div>
+                  )}
                 </div>
               </div>
-              <div className="text-left sm:text-right text-xs text-[#667a70]">
-                <div>Ngày tạo hồ sơ: <b>{activeCustomer?.since || 'Mới đây'}</b></div>
-                {activeCustomer?.email && (
-                  <div className="mt-0.5">Email: <b>{activeCustomer.email}</b></div>
+
+              {/* Dòng địa chỉ khách hàng */}
+              <div className="pt-2 border-t border-[#edf3f0] flex flex-wrap sm:flex-nowrap items-center justify-between gap-2 text-xs">
+                <div className="flex items-center gap-1.5 min-w-0">
+                  <span className="text-[#667a70] font-medium flex-shrink-0">Địa chỉ:</span>
+                  {customerAddress ? (
+                    <span
+                      data-testid="customer-detail-address"
+                      className="text-[#1c302b] font-medium break-words sm:truncate"
+                      title={customerAddress}
+                    >
+                      {customerAddress}
+                    </span>
+                  ) : (
+                    <span className="italic text-[#9ca3af]">Chưa cập nhật</span>
+                  )}
+                </div>
+                {customerAddress && (
+                  <button
+                    type="button"
+                    onClick={() => handleCopyAddress(customerAddress)}
+                    data-testid="btn-copy-address"
+                    className="text-[11px] px-1.5 py-0.5 rounded bg-white border border-[#d1ded7] text-[#416053] hover:bg-[#eaf4ef] transition-colors cursor-pointer flex-shrink-0"
+                    title="Sao chép địa chỉ"
+                  >
+                    Sao chép
+                  </button>
                 )}
               </div>
             </div>
@@ -495,6 +547,18 @@ export default function CustomersPage() {
                           <div className="text-xs text-[#4b5563] mt-1 line-clamp-1">
                             Lỗi: <b>{ord.issue_description || ord.issue || 'Kiểm tra tổng quát'}</b>
                           </div>
+                          {(ord.shipping_address || ord.shippingAddress) && (
+                            <div
+                              data-testid={`history-order-shipping-${ord.id || idx}`}
+                              className="mt-1.5 inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-[11px] bg-[#fffbeb] text-[#92400e] border border-[#fef08a] max-w-full"
+                              title={ord.shipping_address || ord.shippingAddress}
+                            >
+                              <span className="font-semibold flex-shrink-0">📦 Địa chỉ giao:</span>
+                              <span className="font-normal truncate">
+                                {ord.shipping_address || ord.shippingAddress}
+                              </span>
+                            </div>
+                          )}
                         </div>
 
                         <div className="flex sm:flex-col sm:items-end justify-between items-center text-xs gap-1 flex-shrink-0">

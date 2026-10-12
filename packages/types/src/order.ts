@@ -92,6 +92,7 @@ export interface RepairOrder {
   orderType?: 'in_store' | 'cod' | 'warranty';
   shipping_address?: string | null;
   shippingAddress?: string | null;
+  address?: string | null;
   price: number;
   total_price?: number;
   initial_price?: number;

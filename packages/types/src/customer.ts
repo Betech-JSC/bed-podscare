@@ -3,6 +3,8 @@ export interface Customer {
   name: string;
   phone: string;
   email?: string;
+  address?: string;
+  shipping_address?: string;
   source?: string;
   orders: number;
   spent: string | number;
@@ -15,6 +17,8 @@ export interface CreateCustomerDTO {
   name: string;
   phone: string;
   email?: string;
+  address?: string;
+  shipping_address?: string;
   source?: string;
   note?: string;
 }

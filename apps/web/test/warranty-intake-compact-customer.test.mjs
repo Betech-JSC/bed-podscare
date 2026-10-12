@@ -181,4 +181,51 @@ test('OpenSpec: Warranty Intake & Compact Customer List', async (t) => {
       'Must embed IntakeWizardModal for direct intake from customer profile'
     );
   });
+
+  await t.test('6. Customer Modal Address & Order Shipping Address Display', () => {
+    assert.ok(fs.existsSync(customersPagePath), 'customers/page.tsx must exist');
+    const content = fs.readFileSync(customersPagePath, 'utf-8');
+
+    // Customer address extraction and display
+    assert.ok(
+      content.includes('customerAddress'),
+      'Must extract customerAddress from customer or repair orders'
+    );
+    assert.ok(
+      content.includes('customer-detail-address'),
+      'Must render customer-detail-address data-testid'
+    );
+    assert.ok(
+      content.includes('btn-copy-address'),
+      'Must provide btn-copy-address for copying customer address'
+    );
+    assert.ok(
+      content.includes('Chưa cập nhật'),
+      'Must show fallback "Chưa cập nhật" when address is missing'
+    );
+
+    // History order shipping address badge
+    assert.ok(
+      content.includes('history-order-shipping-'),
+      'Must render history-order-shipping- data-testid'
+    );
+    assert.ok(
+      content.includes('📦 Địa chỉ giao:'),
+      'Must render shipping address badge with "📦 Địa chỉ giao:" label'
+    );
+
+    // Shared types verification
+    const typesCustomerPath = path.resolve(__dirname, '../../../packages/types/src/customer.ts');
+    assert.ok(fs.existsSync(typesCustomerPath), 'packages/types/src/customer.ts must exist');
+    const typesCustomerContent = fs.readFileSync(typesCustomerPath, 'utf-8');
+    assert.ok(
+      typesCustomerContent.includes('address?: string;'),
+      'Customer interface must have address field'
+    );
+    assert.ok(
+      typesCustomerContent.includes('shipping_address?: string;'),
+      'Customer interface must have shipping_address field'
+    );
+  });
 });
+
