@@ -341,4 +341,45 @@ class AuditLogAndKpiTest extends TestCase
         $data = $response->json('data');
         $this->assertIsArray($data);
     }
+
+    /**
+     * Test 9: Danh sách AuditLog tải an toàn với auditable_type là 'branch' (lowercase) hoặc type không tồn tại.
+     */
+    public function test_audit_logs_handles_lowercase_branch_and_unknown_types(): void
+    {
+        $admin = $this->getAuthUser();
+        $branch = $this->getBranch();
+
+        // 1. Tạo audit log với auditable_type là 'branch' (lowercase)
+        $branchLog = AuditLog::create([
+            'user_id'        => $admin->id,
+            'user_name'      => $admin->name,
+            'action'         => 'branch.test_lowercase',
+            'auditable_type' => 'branch',
+            'auditable_id'   => $branch->id,
+            'details'        => 'Test branch morphMap mapping',
+        ]);
+
+        // 2. Tạo audit log với auditable_type là chuỗi không tồn tại
+        $unknownLog = AuditLog::create([
+            'user_id'        => $admin->id,
+            'user_name'      => $admin->name,
+            'action'         => 'custom.system_action',
+            'auditable_type' => 'non_existent_class_xyz',
+            'auditable_id'   => 9999,
+            'details'        => 'Test safe fallback for non-existent class',
+        ]);
+
+        // 3. Eager load trực tiếp không bị crash
+        $branchLog->refresh();
+        $this->assertInstanceOf(Branch::class, $branchLog->auditable);
+
+        $unknownLog->refresh();
+        $this->assertNull($unknownLog->auditable);
+
+        // 4. API endpoint /api/v1/audit-logs trả về 200 OK với phân trang
+        $response = $this->actingAs($admin, 'sanctum')->getJson('/api/v1/audit-logs');
+        $response->assertStatus(200)
+            ->assertJsonPath('success', true);
+    }
 }

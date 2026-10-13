@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -95,6 +96,39 @@ class AuditLog extends Model
 
     public function auditable(): MorphTo
     {
+        $type = $this->getAttributeFromArray('auditable_type');
+        if (! empty($type)) {
+            $class = static::getActualClassNameForMorph($type);
+            if (! class_exists($class)) {
+                return $this->newMorphTo(
+                    $this->newQuery()->whereRaw('1=0'),
+                    $this,
+                    $this->getAttributeFromArray('auditable_id'),
+                    'id',
+                    'auditable_type',
+                    'auditable'
+                );
+            }
+        }
+
         return $this->morphTo();
+    }
+
+    protected function newMorphTo(Builder $query, Model $parent, $foreignKey, $ownerKey, $type, $relation)
+    {
+        return new class($query, $parent, $foreignKey, $ownerKey, $type, $relation) extends MorphTo {
+            public function getEager()
+            {
+                foreach (array_keys($this->dictionary) as $type) {
+                    $class = Model::getActualClassNameForMorph($type);
+                    if (! class_exists($class)) {
+                        continue;
+                    }
+                    $this->matchToMorphParents($type, $this->getResultsByType($type));
+                }
+
+                return $this->models;
+            }
+        };
     }
 }
