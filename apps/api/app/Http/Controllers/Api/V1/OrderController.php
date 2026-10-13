@@ -239,7 +239,7 @@ class OrderController extends Controller
             'appearance_notes'      => 'nullable|string',
             'test_note'             => 'nullable|string',
             'intake_batch_code'     => 'nullable|string|max:50',
-            'estimated_price'       => ($request->input('order_type') === 'warranty') ? 'required|numeric|min:0' : 'required|numeric|gt:0',
+            'estimated_price'       => 'nullable|numeric|min:0',
             'warranty_terms_days'   => 'nullable|integer|min:0',
             'status'                => 'nullable|string',
             'order_type'            => 'nullable|string|in:in_store,cod,warranty',
@@ -251,6 +251,7 @@ class OrderController extends Controller
         ];
 
         $validated = $request->validate($rules);
+        $validated['estimated_price'] = (float) ($validated['estimated_price'] ?? 0);
 
         if ($isStaff && $user->branch_id) {
             $validated['branch_id'] = $user->branch_id;

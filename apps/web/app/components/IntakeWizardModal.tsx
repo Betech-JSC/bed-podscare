@@ -961,10 +961,15 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
       }
     } catch (err: any) {
       console.error('API createIntake failed:', err);
-      const errMsg =
-        err?.response?.data?.message ||
-        err?.message ||
-        'Không thể tạo đơn tiếp nhận lúc này. Vui lòng kiểm tra kết nối mạng và thử lại.';
+      const errorData = err?.data || err?.response?.data;
+      let errMsg = errorData?.message || err?.message || 'Có lỗi xảy ra khi tạo đơn.';
+      if (errorData?.errors && typeof errorData.errors === 'object') {
+        const firstField = Object.keys(errorData.errors)[0];
+        const fieldErrors = errorData.errors[firstField];
+        if (Array.isArray(fieldErrors) && fieldErrors.length > 0) {
+          errMsg = fieldErrors[0];
+        }
+      }
       toast(`Lỗi tạo đơn: ${errMsg}`, 'error');
     } finally {
       setIsSubmitting(false);

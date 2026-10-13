@@ -337,9 +337,9 @@ class OrderTest extends TestCase
     }
 
     /**
-     * Test: Bắt buộc estimated_price > 0 khi tạo đơn tiếp nhận.
+     * Test: Cho phép estimated_price >= 0 hoặc null khi tạo đơn tiếp nhận.
      */
-    public function test_store_order_requires_positive_estimated_price(): void
+    public function test_store_order_allows_zero_or_null_estimated_price(): void
     {
         $user = $this->getAuthenticatedUser();
         $branch = Branch::first();
@@ -353,17 +353,19 @@ class OrderTest extends TestCase
             'issue_description' => 'Test lỗi bắt buộc giá tiền',
         ];
 
-        // 1. Thiếu estimated_price hoàn toàn -> 422
+        // 1. Thiếu estimated_price hoàn toàn -> 201 Thành công, mặc định total_price = 0
         $responseMissing = $this->actingAs($user, 'sanctum')->postJson('/api/v1/orders', $basePayload);
-        $responseMissing->assertStatus(422)
-            ->assertJsonValidationErrors(['estimated_price']);
+        $responseMissing->assertStatus(201)
+            ->assertJsonPath('success', true);
+        $this->assertEquals(0, (float) $responseMissing->json('data.total_price'));
 
-        // 2. estimated_price = 0 -> 422
+        // 2. estimated_price = 0 -> 201 Thành công
         $responseZero = $this->actingAs($user, 'sanctum')->postJson('/api/v1/orders', array_merge($basePayload, [
             'estimated_price' => 0,
         ]));
-        $responseZero->assertStatus(422)
-            ->assertJsonValidationErrors(['estimated_price']);
+        $responseZero->assertStatus(201)
+            ->assertJsonPath('success', true);
+        $this->assertEquals(0, (float) $responseZero->json('data.total_price'));
 
         // 3. estimated_price âm -> 422
         $responseNegative = $this->actingAs($user, 'sanctum')->postJson('/api/v1/orders', array_merge($basePayload, [
@@ -378,6 +380,7 @@ class OrderTest extends TestCase
         ]));
         $responseValid->assertStatus(201)
             ->assertJsonPath('success', true);
+        $this->assertEquals(350000, (float) $responseValid->json('data.total_price'));
     }
 
     /**
