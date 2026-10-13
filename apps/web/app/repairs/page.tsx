@@ -434,7 +434,13 @@ function RepairsPageContent() {
       updateOrder(updated);
       setSelectedOrder(updated);
       setIsEditingShippingAddress(false);
-      toast('Đã cập nhật địa chỉ giao hàng COD thành công!', 'success');
+      const isWarranty = selectedOrder.order_type === 'warranty' || (selectedOrder as any).orderType === 'warranty';
+      toast(
+        isWarranty
+          ? 'Đã cập nhật địa chỉ gửi trả bảo hành thành công!'
+          : 'Đã cập nhật địa chỉ giao hàng COD thành công!',
+        'success'
+      );
       refetch();
       if (invalidateOrders) invalidateOrders();
     } catch (err: any) {
@@ -1832,90 +1838,113 @@ function RepairsPageContent() {
               );
             })()}
 
-            {/* Khối Thông tin & Cập nhật nhanh Địa chỉ Giao hàng COD */}
-            {(selectedOrder.order_type === 'cod' || selectedOrder.orderType === 'cod') && (
-              <div
-                data-testid="cod-shipping-address-card"
-                className={`p-4 rounded-[10px] border transition-all ${
-                  Boolean(selectedOrder.shipping_address || (selectedOrder as any).shippingAddress)
-                    ? 'bg-[#f8faf9] border-[#d8e3dc]'
-                    : 'bg-[#fffdf7] border-[#fde68a]'
-                }`}
-              >
-                <div className="flex items-center justify-between pb-2 border-b border-[#e8f1ec]">
-                  <h4 className="text-xs font-bold text-[#b45309] uppercase tracking-[0.8px] m-0">
-                    <span>ĐỊA CHỈ GIAO HÀNG COD (KHÁCH TỈNH)</span>
-                  </h4>
-                  {canManageShippingAddress && !isEditingShippingAddress && (
-                    <button
-                      type="button"
-                      data-testid="edit-cod-shipping-address-btn"
-                      onClick={() => {
-                        setShippingAddressInput(
-                          selectedOrder.shipping_address || (selectedOrder as any).shippingAddress || ''
-                        );
-                        setIsEditingShippingAddress(true);
-                      }}
-                      className="text-xs font-bold text-[#176b58] hover:text-[#125848] bg-[#eaf4ef] hover:bg-[#d8ece1] px-2.5 py-1 rounded-[6px] border border-[#b8d9cb] transition-colors cursor-pointer"
-                    >
-                      {selectedOrder.shipping_address || (selectedOrder as any).shippingAddress
-                        ? 'Sửa địa chỉ'
-                        : '+ Thêm địa chỉ'}
-                    </button>
-                  )}
-                </div>
+            {/* Khối Thông tin & Cập nhật nhanh Địa chỉ Giao hàng / Gửi trả máy (COD & Bảo hành) */}
+            {(() => {
+              const isWarrantyOrder = selectedOrder.order_type === 'warranty' || selectedOrder.orderType === 'warranty';
+              const isCodOrder = selectedOrder.order_type === 'cod' || selectedOrder.orderType === 'cod';
+              const hasShippingAddress = Boolean(selectedOrder.shipping_address || (selectedOrder as any).shippingAddress);
+              const shouldShowShippingCard = isCodOrder || isWarrantyOrder || hasShippingAddress;
 
-                <div className="pt-2.5">
-                  {isEditingShippingAddress ? (
-                    <div className="space-y-2.5">
-                      <Input
-                        value={shippingAddressInput}
-                        onChange={(e) => setShippingAddressInput(e.target.value)}
-                        placeholder="Nhập số nhà, ngõ/đường, phường/xã, quận/huyện, tỉnh/thành phố..."
-                        data-testid="inline-shipping-address-input"
-                      />
-                      <div className="flex items-center justify-end gap-2">
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          disabled={isSavingShippingAddress}
-                          onClick={() => {
-                            setIsEditingShippingAddress(false);
-                            setShippingAddressInput(
-                              selectedOrder.shipping_address || (selectedOrder as any).shippingAddress || ''
-                            );
-                          }}
-                        >
-                          Hủy
-                        </Button>
-                        <Button
-                          variant="primary"
-                          size="sm"
-                          data-testid="save-cod-shipping-address-btn"
-                          disabled={isSavingShippingAddress}
-                          onClick={handleSaveShippingAddress}
-                          className="bg-[#176b58] hover:bg-[#125848] text-white font-bold"
-                        >
-                          {isSavingShippingAddress ? 'Đang lưu...' : 'Lưu địa chỉ'}
-                        </Button>
-                      </div>
-                    </div>
-                  ) : (
-                    <div>
-                      {selectedOrder.shipping_address || (selectedOrder as any).shippingAddress ? (
-                        <p className="text-sm text-[#1c302b] font-medium m-0 bg-white p-2.5 rounded-[6px] border border-[#d8e3dc]">
-                          {selectedOrder.shipping_address || (selectedOrder as any).shippingAddress}
-                        </p>
-                      ) : (
-                        <div className="p-2.5 rounded-[6px] bg-[#fef8e7] border border-dashed border-[#fde68a] text-xs text-[#92400e] flex items-center justify-between gap-2">
-                          <span>Chưa cập nhật địa chỉ giao hàng (CSKH ghi chú sau khi liên hệ khách)</span>
+              if (!shouldShowShippingCard) return null;
+
+              return (
+                <div
+                  data-testid="cod-shipping-address-card"
+                  className={`p-4 rounded-[10px] border transition-all ${
+                    hasShippingAddress
+                      ? 'bg-[#f8faf9] border-[#d8e3dc]'
+                      : isWarrantyOrder
+                      ? 'bg-[#f0fdf4] border-[#bbf7d0]'
+                      : 'bg-[#fffdf7] border-[#fde68a]'
+                  }`}
+                >
+                  <div className="flex items-center justify-between pb-2 border-b border-[#e8f1ec]">
+                    <h4 className={`text-xs font-bold uppercase tracking-[0.8px] m-0 ${
+                      isWarrantyOrder ? 'text-[#047857]' : 'text-[#b45309]'
+                    }`}>
+                      <span>
+                        {isWarrantyOrder
+                          ? 'ĐỊA CHỈ GỬI TRẢ MÁY BẢO HÀNH (KHÁCH TỈNH)'
+                          : 'ĐỊA CHỈ GIAO HÀNG COD (KHÁCH TỈNH)'}
+                      </span>
+                    </h4>
+                    {canManageShippingAddress && !isEditingShippingAddress && (
+                      <button
+                        type="button"
+                        data-testid="edit-cod-shipping-address-btn"
+                        onClick={() => {
+                          setShippingAddressInput(
+                            selectedOrder.shipping_address || (selectedOrder as any).shippingAddress || ''
+                          );
+                          setIsEditingShippingAddress(true);
+                        }}
+                        className="text-xs font-bold text-[#176b58] hover:text-[#125848] bg-[#eaf4ef] hover:bg-[#d8ece1] px-2.5 py-1 rounded-[6px] border border-[#b8d9cb] transition-colors cursor-pointer"
+                      >
+                        {hasShippingAddress ? 'Sửa địa chỉ' : '+ Thêm địa chỉ'}
+                      </button>
+                    )}
+                  </div>
+
+                  <div className="pt-2.5">
+                    {isEditingShippingAddress ? (
+                      <div className="space-y-2.5">
+                        <Input
+                          value={shippingAddressInput}
+                          onChange={(e) => setShippingAddressInput(e.target.value)}
+                          placeholder="Nhập số nhà, ngõ/đường, phường/xã, quận/huyện, tỉnh/thành phố..."
+                          data-testid="inline-shipping-address-input"
+                        />
+                        <div className="flex items-center justify-end gap-2">
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            disabled={isSavingShippingAddress}
+                            onClick={() => {
+                              setIsEditingShippingAddress(false);
+                              setShippingAddressInput(
+                                selectedOrder.shipping_address || (selectedOrder as any).shippingAddress || ''
+                              );
+                            }}
+                          >
+                            Hủy
+                          </Button>
+                          <Button
+                            variant="primary"
+                            size="sm"
+                            data-testid="save-cod-shipping-address-btn"
+                            disabled={isSavingShippingAddress}
+                            onClick={handleSaveShippingAddress}
+                            className="bg-[#176b58] hover:bg-[#125848] text-white font-bold"
+                          >
+                            {isSavingShippingAddress ? 'Đang lưu...' : 'Lưu địa chỉ'}
+                          </Button>
                         </div>
-                      )}
-                    </div>
-                  )}
+                      </div>
+                    ) : (
+                      <div>
+                        {hasShippingAddress ? (
+                          <p className="text-sm text-[#1c302b] font-medium m-0 bg-white p-2.5 rounded-[6px] border border-[#d8e3dc]">
+                            {selectedOrder.shipping_address || (selectedOrder as any).shippingAddress}
+                          </p>
+                        ) : (
+                          <div className={`p-2.5 rounded-[6px] border border-dashed text-xs flex items-center justify-between gap-2 ${
+                            isWarrantyOrder
+                              ? 'bg-[#f0fdf4] border-[#bbf7d0] text-[#166534]'
+                              : 'bg-[#fef8e7] border-[#fde68a] text-[#92400e]'
+                          }`}>
+                            <span>
+                              {isWarrantyOrder
+                                ? 'Chưa cập nhật địa chỉ gửi trả (CSKH ghi chú sau khi liên hệ khách)'
+                                : 'Chưa cập nhật địa chỉ giao hàng (CSKH ghi chú sau khi liên hệ khách)'}
+                            </span>
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
                 </div>
-              </div>
-            )}
+              );
+            })()}
 
             {/* Specs & info */}
             <div className="space-y-2.5">

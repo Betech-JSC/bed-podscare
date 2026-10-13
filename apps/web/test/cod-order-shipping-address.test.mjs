@@ -3,12 +3,18 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
 
-const projectRoot = process.cwd();
-const controllerPath = path.join(projectRoot, 'apps/api/app/Http/Controllers/Api/V1/OrderController.php');
-const wizardPath = path.join(projectRoot, 'apps/web/app/components/IntakeWizardModal.tsx');
-const repairsPagePath = path.join(projectRoot, 'apps/web/app/repairs/page.tsx');
-const k80BuilderPath = path.join(projectRoot, 'apps/web/app/components/print/thermalK80HtmlBuilder.ts');
-const a4BuilderPath = path.join(projectRoot, 'apps/web/app/components/print/a4ReceiptHtmlBuilder.ts');
+import { fileURLToPath } from 'node:url';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+const webDir = path.resolve(__dirname, '..');
+const repoRoot = path.resolve(__dirname, '../../..');
+
+const controllerPath = path.join(repoRoot, 'apps/api/app/Http/Controllers/Api/V1/OrderController.php');
+const wizardPath = path.join(webDir, 'app/components/IntakeWizardModal.tsx');
+const repairsPagePath = path.join(webDir, 'app/repairs/page.tsx');
+const k80BuilderPath = path.join(webDir, 'app/components/print/thermalK80HtmlBuilder.ts');
+const a4BuilderPath = path.join(webDir, 'app/components/print/a4ReceiptHtmlBuilder.ts');
 
 test('COD Shipping Address Note - Code Review & Independent Verification', async (t) => {
   await t.test('1. Backend OrderController: RBAC on shipping_address update', () => {
@@ -43,7 +49,7 @@ test('COD Shipping Address Note - Code Review & Independent Verification', async
     );
   });
 
-  await t.test('2. Frontend IntakeWizardModal: COD Shipping Address Field Visibility & Optional Nature', () => {
+  await t.test('2. Frontend IntakeWizardModal: Shipping Address Field Visibility & Optional Nature (COD & Warranty)', () => {
     const wizardSource = fs.readFileSync(wizardPath, 'utf8');
 
     // Kiểm tra state shippingAddress
@@ -52,16 +58,16 @@ test('COD Shipping Address Note - Code Review & Independent Verification', async
       'IntakeWizardModal must manage shippingAddress state'
     );
 
-    // Kiểm tra reset khi chuyển loại đơn không phải COD
+    // Kiểm tra reset khi chuyển loại đơn sang in_store (bảo lưu khi qua lại giữa cod và warranty)
     assert.ok(
-      wizardSource.includes("if (type !== 'cod') {\n      setShippingAddress('');\n    }"),
-      'IntakeWizardModal must clear shippingAddress when switching away from cod'
+      wizardSource.includes("if (type === 'in_store') {\n      setShippingAddress('');\n    }"),
+      'IntakeWizardModal must clear shippingAddress when switching to in_store'
     );
 
-    // Kiểm tra trường chỉ hiển thị khi orderType === "cod"
+    // Kiểm tra trường hiển thị khi orderType === "cod" hoặc "warranty"
     assert.ok(
-      wizardSource.includes("{orderType === 'cod' && ("),
-      'IntakeWizardModal must conditionally render shipping address only when orderType is cod'
+      wizardSource.includes("(orderType === 'cod' || orderType === 'warranty')"),
+      'IntakeWizardModal must conditionally render shipping address when orderType is cod or warranty'
     );
     assert.ok(
       wizardSource.includes('data-testid="cod-shipping-address-input"'),
@@ -72,10 +78,10 @@ test('COD Shipping Address Note - Code Review & Independent Verification', async
       'IntakeWizardModal must clearly mark shipping address as optional'
     );
 
-    // Kiểm tra payload chỉ đính kèm shipping_address khi orderType === 'cod' và có nội dung
+    // Kiểm tra payload chỉ đính kèm shipping_address khi orderType === 'cod' hoặc 'warranty' và có nội dung
     assert.ok(
-      wizardSource.includes("shipping_address: orderType === 'cod' && shippingAddress.trim() ? shippingAddress.trim() : undefined"),
-      'IntakeWizardModal payload must include shipping_address only when orderType is cod and address is not empty'
+      wizardSource.includes("shipping_address: (orderType === 'cod' || orderType === 'warranty') && shippingAddress.trim() ? shippingAddress.trim() : undefined"),
+      'IntakeWizardModal payload must include shipping_address when orderType is cod or warranty and address is not empty'
     );
   });
 

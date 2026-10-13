@@ -268,7 +268,7 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
 
   const handleSelectOrderType = (type: 'in_store' | 'cod' | 'warranty') => {
     setOrderType(type);
-    if (type !== 'cod') {
+    if (type === 'in_store') {
       setShippingAddress('');
     }
     if (type === 'warranty') {
@@ -839,7 +839,7 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
           intake_batch_code: batchCode,
           created_by_user_id: selectedCskhId ? Number(selectedCskhId) : undefined,
           order_type: orderType,
-          shipping_address: orderType === 'cod' && shippingAddress.trim() ? shippingAddress.trim() : undefined,
+          shipping_address: (orderType === 'cod' || orderType === 'warranty') && shippingAddress.trim() ? shippingAddress.trim() : undefined,
         };
 
         const res = await repairService.createIntake(payload);
@@ -871,8 +871,8 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
           id: newId,
           order_type: orderType,
           orderType: orderType,
-          shipping_address: orderType === 'cod' && shippingAddress.trim() ? shippingAddress.trim() : null,
-          shippingAddress: orderType === 'cod' && shippingAddress.trim() ? shippingAddress.trim() : null,
+          shipping_address: (orderType === 'cod' || orderType === 'warranty') && shippingAddress.trim() ? shippingAddress.trim() : null,
+          shippingAddress: (orderType === 'cod' || orderType === 'warranty') && shippingAddress.trim() ? shippingAddress.trim() : null,
           name: name.trim(),
           phone: phone.trim(),
           deviceCategory: dev.category,
@@ -1253,12 +1253,24 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
                   </p>
                 </div>
 
-                {/* 01.b Địa chỉ giao hàng COD (Tùy chọn cho đơn COD, ẩn khi tại quầy/bảo hành) */}
-                {orderType === 'cod' && (
-                  <div className="sm:col-span-2 p-3.5 rounded-[8px] bg-[#fffdf7] border border-[#fde68a] space-y-1.5 transition-all">
-                    <label className="block text-xs font-bold text-[#92400e]">
-                      <span>Địa chỉ nhận lại máy (Giao hàng COD)</span>
-                      <span className="text-[11px] font-normal text-[#b45309] ml-1">
+                {/* 01.b Địa chỉ giao hàng / gửi trả máy (Tùy chọn cho đơn COD và Bảo hành, ẩn khi tại quầy) */}
+                {(orderType === 'cod' || orderType === 'warranty') && (
+                  <div className={`sm:col-span-2 p-3.5 rounded-[8px] space-y-1.5 transition-all ${
+                    orderType === 'warranty'
+                      ? 'bg-[#f0fdf4] border border-[#bbf7d0]'
+                      : 'bg-[#fffdf7] border border-[#fde68a]'
+                  }`}>
+                    <label className={`block text-xs font-bold ${
+                      orderType === 'warranty' ? 'text-[#166534]' : 'text-[#92400e]'
+                    }`}>
+                      <span>
+                        {orderType === 'warranty'
+                          ? 'Địa chỉ gửi trả máy bảo hành (Dành cho khách gửi bưu điện)'
+                          : 'Địa chỉ nhận lại máy (Giao hàng COD)'}
+                      </span>
+                      <span className={`text-[11px] font-normal ml-1 ${
+                        orderType === 'warranty' ? 'text-[#15803d]' : 'text-[#b45309]'
+                      }`}>
                         (Tùy chọn — có thể cập nhật sau)
                       </span>
                     </label>
@@ -1268,8 +1280,12 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
                       placeholder="Ví dụ: Số 12 ngõ 45 đường Giải Phóng, P. Đồng Tâm, Q. Hai Bà Trưng, Hà Nội"
                       data-testid="cod-shipping-address-input"
                     />
-                    <p className="text-[11px] text-[#92400e]">
-                      Không bắt buộc — CSKH có thể nhận máy trước rồi liên hệ khách bổ sung sau.
+                    <p className={`text-[11px] ${
+                      orderType === 'warranty' ? 'text-[#166534]' : 'text-[#92400e]'
+                    }`}>
+                      {orderType === 'warranty'
+                        ? 'Không bắt buộc — Bỏ trống nếu khách bảo hành trực tiếp tại cửa hàng hoặc chưa có địa chỉ gửi trả.'
+                        : 'Không bắt buộc — CSKH có thể nhận máy trước rồi liên hệ khách bổ sung sau.'}
                     </p>
                   </div>
                 )}
