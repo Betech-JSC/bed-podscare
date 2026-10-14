@@ -175,9 +175,21 @@ describe('OpenSpec: admin-dashboard-four-revenue-and-debt-cards Frontend Verific
         !content.includes('{periodUncollectedCount} đơn chưa thu đủ'),
       'Tier 1 box 3 badge in drilldown modal must display "{periodUncollectedCount} đơn chờ khách nhận"'
     );
+
+    // Status-aware collected and uncollected tab & filter matching (including 0đ warranty orders)
+    assert.ok(
+      content.includes("normalizeStatusCode(item.status) === 'completed'") &&
+        content.includes("(normalizeStatusCode(item.status) !== 'completed' && item.status !== 'Hoàn tất') ||"),
+      'Drilldown modal filter and uncollected counts must include completed (incl. 0đ warranty) in collected and waiting-pickup (incl. 0đ warranty) in uncollected'
+    );
+    assert.ok(
+      content.includes("normalizeStatusCode(i.status) === 'completed'") &&
+        content.includes("(normalizeStatusCode(i.status) !== 'completed' && i.status !== 'Hoàn tất') ||"),
+      'Drilldown modal tab counters must include completed (incl. 0đ warranty) in collected and waiting-pickup (incl. 0đ warranty) in uncollected'
+    );
   });
 
-  test('Task 3.1 & 3.2 (GMT+7 & Daily Order Filter): DashboardPage uses Asia/Ho_Chi_Minh timezone for date initialization and extractIsoDate, and prioritizes PC order code / createdAt for waiting-pickup fallback', () => {
+  test('Task 3.1 & 3.2 (GMT+7 & Daily Order Filter): DashboardPage uses Asia/Ho_Chi_Minh timezone for date initialization and extractIsoDate, and prioritizes qc_passed_at / repair_completed_at / PC order code / createdAt for waiting-pickup fallback', () => {
     const dashboardPath = path.join(webRoot, 'app/dashboard/page.tsx');
     const content = fs.readFileSync(dashboardPath, 'utf-8');
 
@@ -202,8 +214,10 @@ describe('OpenSpec: admin-dashboard-four-revenue-and-debt-cards Frontend Verific
 
     assert.ok(
       content.includes('/^PC.*?(\\d{2})(\\d{2})(\\d{2})\\d{2,}$/') &&
-        content.includes('? pcCodeDate || o.createdAt || (o as any).created_at || o.date'),
-      'toBreakdownItem must prioritize PC...DDMMYY.. order code date or createdAt over updated_at for waiting-pickup orders'
+        content.includes('? (o as any).qc_passed_at ||') &&
+        content.includes('(o as any).repair_completed_at ||') &&
+        content.includes('pcCodeDate ||'),
+      'toBreakdownItem must prioritize qc_passed_at, repair_completed_at, PC...DDMMYY.. order code date, or createdAt over updated_at for waiting-pickup orders'
     );
   });
 

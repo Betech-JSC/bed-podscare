@@ -481,51 +481,94 @@ class AdminDashboardFourRevenueCardsTest extends TestCase
     }
 
     /**
-     * Test 4 (Task 2.2): Đơn chờ khách lấy từ ngày hôm trước (PCQUAN1013102608 - kể cả khi created_at bị lệch sang 14/10 01:00)
-     * và đơn cũ (FX26-43210 tạo ngày 10/10) được kỹ thuật sửa xong ngày 14/10 KHÔNG bị lọt vào Công nợ chưa thu theo ngày 14/10,
-     * nhưng vẫn nằm đầy đủ trong Công nợ chưa thu ở tháng và xuất hiện đúng ở ngày 13/10.
+     * Test 4: Kiểm chứng quy tắc lọc đơn chờ khách nhận theo NGÀY SỬA XONG (qc_passed_at / repair_completed_at)
+     * và đồng bộ số lượng đơn chờ nhận (kể cả đơn bảo hành 0đ) với thẻ Chờ khách nhận:
+     * - Đơn nhận ngày 13/10 (PCQUAN1013102608) nhưng sửa xong ngày 14/10 (qc_passed_at = 2026-10-14 13:16:47)
+     *   ĐƯỢC tính vào selected_date_orders_breakdown và selected_date_uncollected_amount của ngày 2026-10-14.
+     * - Đơn đã sửa xong từ các ngày trước (FX26-43210 sửa xong 12/10, PCQUAN1013102630 sửa xong 13/10)
+     *   nhưng hôm nay 14/10 bị chạm vào (updated_at = 2026-10-14 15:56:36) KHÔNG bị lọt vào ngày 2026-10-14,
+     *   mà nằm đúng ở ngày sửa xong của nó (2026-10-12 / 2026-10-13) và trong tổng tháng.
+     * - Đơn waiting_pickup / ready_for_return có giá 0đ (bảo hành) vẫn được đếm trong monthly_uncollected_orders_count
+     *   để khớp 100% với thẻ Chờ khách nhận (ready_for_pickup_count).
      */
-    public function test_previous_day_and_legacy_uncollected_orders_repaired_today_do_not_leak_into_selected_date_breakdown(): void
+    public function test_uncollected_orders_filter_by_repair_completion_date_and_match_ready_for_pickup_count_including_zero_price_warranty(): void
     {
         $this->assertSame('Asia/Ho_Chi_Minh', config('app.timezone'));
         $this->assertSame('Asia/Ho_Chi_Minh', date_default_timezone_get());
 
-        // 1. Đơn ngày 13/10 (PCQUAN1013102608) bị lệch created_at sang 14/10 01:00:00 do DB_TIMEZONE cũ,
-        // và được kỹ thuật sửa xong ngày 14/10 lúc 10:00:00 (waiting_pickup, giá 450.000 ₫)
-        $orderPrevDayPc = $this->createOrder([
-            'order_code'     => 'PCQUAN1013102608',
-            'status'         => 'waiting_pickup',
-            'total_price'    => 450000,
-            'handed_over_at' => null,
-            'created_at'     => Carbon::parse('2026-10-14 01:00:00', $this->tz),
-            'updated_at'     => Carbon::parse('2026-10-14 10:00:00', $this->tz),
+        // 1. Đơn nhận ngày 13/10 (PCQUAN1013102608) nhưng vừa sửa xong ngày 14/10 (qc_passed_at = 2026-10-14 13:16:47, giá 500.000 ₫)
+        // -> PHẢI được tính vào Công nợ chưa thu theo ngày 14/10!
+        $this->createOrder([
+            'order_code'          => 'PCQUAN1013102608',
+            'status'              => 'waiting_pickup',
+            'total_price'         => 500000,
+            'handed_over_at'      => null,
+            'repair_completed_at' => Carbon::parse('2026-10-14 12:30:00', $this->tz),
+            'qc_passed_at'        => Carbon::parse('2026-10-14 13:16:47', $this->tz),
+            'created_at'          => Carbon::parse('2026-10-13 10:00:00', $this->tz),
+            'updated_at'          => Carbon::parse('2026-10-14 15:24:31', $this->tz),
         ]);
 
-        // 2. Đơn cũ FX26-43210 tạo ngày 10/10/2026, kỹ thuật sửa xong ngày 14/10 lúc 10:00:00 (ready_for_return, giá 600.000 ₫)
-        $orderLegacyFx = $this->createOrder([
-            'order_code'     => 'FX26-43210',
-            'status'         => 'ready_for_return',
-            'total_price'    => 600000,
-            'handed_over_at' => null,
-            'created_at'     => Carbon::parse('2026-10-10 09:00:00', $this->tz),
-            'updated_at'     => Carbon::parse('2026-10-14 10:00:00', $this->tz),
+        // 2. Đơn cũ FX26-43210 tạo ngày 10/10, sửa xong ngày 12/10 (qc_passed_at = 2026-10-12 13:50:11),
+        // nhưng ngày 14/10 nhân viên bấm báo khách khiến updated_at = 2026-10-14 15:56:36 (ready_for_return, giá 600.000 ₫)
+        // -> KHÔNG ĐƯỢC lọt vào ngày 14/10, phải nằm ở ngày 12/10!
+        $this->createOrder([
+            'order_code'          => 'FX26-43210',
+            'status'              => 'ready_for_return',
+            'total_price'         => 600000,
+            'handed_over_at'      => null,
+            'repair_completed_at' => Carbon::parse('2026-10-12 11:20:00', $this->tz),
+            'qc_passed_at'        => Carbon::parse('2026-10-12 13:50:11', $this->tz),
+            'created_at'          => Carbon::parse('2026-10-10 09:00:00', $this->tz),
+            'updated_at'          => Carbon::parse('2026-10-14 15:56:36', $this->tz),
         ]);
 
-        // 3. Đơn tiếp nhận đúng ngày 14/10 (PCQUAN1014102623, ready_for_return, giá 350.000 ₫)
-        $orderTodayWaiting = $this->createOrder([
-            'order_code'     => 'PCQUAN1014102623',
-            'status'         => 'ready_for_return',
-            'total_price'    => 350000,
-            'handed_over_at' => null,
-            'created_at'     => Carbon::parse('2026-10-14 09:15:00', $this->tz),
-            'updated_at'     => Carbon::parse('2026-10-14 11:30:00', $this->tz),
+        // 3. Đơn nhận và sửa xong ngày 13/10 (PCQUAN1013102630, qc_passed_at = 2026-10-13 18:13:38),
+        // ngày 14/10 bị cập nhật updated_at = 2026-10-14 11:02:11 (waiting_pickup, giá 450.000 ₫)
+        // -> KHÔNG ĐƯỢC lọt vào ngày 14/10, phải nằm ở ngày 13/10!
+        $this->createOrder([
+            'order_code'          => 'PCQUAN1013102630',
+            'status'              => 'waiting_pickup',
+            'total_price'         => 450000,
+            'handed_over_at'      => null,
+            'repair_completed_at' => Carbon::parse('2026-10-13 17:45:00', $this->tz),
+            'qc_passed_at'        => Carbon::parse('2026-10-13 18:13:38', $this->tz),
+            'created_at'          => Carbon::parse('2026-10-13 15:30:00', $this->tz),
+            'updated_at'          => Carbon::parse('2026-10-14 11:02:11', $this->tz),
         ]);
 
-        // 4. Đơn completed bàn giao đúng ngày 14/10 (PCQUAN1014102601, completed, giá 500.000 ₫)
-        $orderTodayCompleted = $this->createOrder([
+        // 4. Đơn tiếp nhận và sửa xong ngày 14/10 (PCQUAN1014102623, ready_for_return, giá 350.000 ₫)
+        $this->createOrder([
+            'order_code'          => 'PCQUAN1014102623',
+            'status'              => 'ready_for_return',
+            'total_price'         => 350000,
+            'handed_over_at'      => null,
+            'repair_completed_at' => Carbon::parse('2026-10-14 11:00:00', $this->tz),
+            'qc_passed_at'        => Carbon::parse('2026-10-14 11:30:00', $this->tz),
+            'created_at'          => Carbon::parse('2026-10-14 09:15:00', $this->tz),
+            'updated_at'          => Carbon::parse('2026-10-14 11:30:00', $this->tz),
+        ]);
+
+        // 5. Đơn bảo hành 0đ chờ khách nhận sửa xong ngày 14/10 (PCQUAN1014102699, waiting_pickup, giá 0 ₫)
+        // -> Phải được đếm trong uncollected_orders_count để tổng số đơn khớp 100% với ready_for_pickup_count!
+        $this->createOrder([
+            'order_code'          => 'PCQUAN1014102699',
+            'status'              => 'waiting_pickup',
+            'order_type'          => 'warranty',
+            'total_price'         => 0,
+            'initial_price'       => 0,
+            'handed_over_at'      => null,
+            'repair_completed_at' => Carbon::parse('2026-10-14 14:00:00', $this->tz),
+            'qc_passed_at'        => Carbon::parse('2026-10-14 14:20:00', $this->tz),
+            'created_at'          => Carbon::parse('2026-10-14 10:00:00', $this->tz),
+            'updated_at'          => Carbon::parse('2026-10-14 14:20:00', $this->tz),
+        ]);
+
+        // 6. Đơn completed bàn giao đúng ngày 14/10 (PCQUAN1014102601, completed, giá 700.000 ₫)
+        $this->createOrder([
             'order_code'     => 'PCQUAN1014102601',
             'status'         => 'completed',
-            'total_price'    => 500000,
+            'total_price'    => 700000,
             'handed_over_at' => Carbon::parse('2026-10-14 15:00:00', $this->tz),
             'created_at'     => Carbon::parse('2026-10-14 08:30:00', $this->tz),
             'updated_at'     => Carbon::parse('2026-10-14 15:00:00', $this->tz),
@@ -540,32 +583,48 @@ class AdminDashboardFourRevenueCardsTest extends TestCase
 
         $oct14Codes = collect($dataOct14['selected_date_orders_breakdown'])->pluck('order_code')->all();
 
-        // Đơn ngày 14/10 (PCQUAN1014102623 và PCQUAN1014102601) PHẢI có mặt
+        // Đơn sửa xong ngày 14/10 (PCQUAN1013102608 nhận 13/10 sửa xong 14/10, PCQUAN1014102623, PCQUAN1014102699) và đơn bàn giao 14/10 (PCQUAN1014102601) PHẢI có mặt
+        $this->assertContains('PCQUAN1013102608', $oct14Codes);
         $this->assertContains('PCQUAN1014102623', $oct14Codes);
+        $this->assertContains('PCQUAN1014102699', $oct14Codes);
         $this->assertContains('PCQUAN1014102601', $oct14Codes);
 
-        // Đơn ngày 13/10 (PCQUAN1013102608) và đơn cũ (FX26-43210) TUYỆT ĐỐI KHÔNG được lọt vào ngày 14/10
-        $this->assertNotContains('PCQUAN1013102608', $oct14Codes);
+        // Đơn sửa xong từ ngày 12/10 (FX26-43210) và ngày 13/10 (PCQUAN1013102630) dù updated_at = 14/10 TUYỆT ĐỐI KHÔNG được lọt vào ngày 14/10
         $this->assertNotContains('FX26-43210', $oct14Codes);
+        $this->assertNotContains('PCQUAN1013102630', $oct14Codes);
 
-        // Kiểm tra số tiền và số lượng đơn của ngày 14/10: chỉ có 1 đơn completed (500k) và 1 đơn chờ lấy (350k)
+        // Kiểm tra số tiền và số lượng đơn của ngày 14/10:
+        // - 1 đơn completed (700k)
+        // - 3 đơn chờ nhận sửa xong hôm nay (500k + 350k + 0đ = 850k)
         $this->assertEquals(1, $dataOct14['selected_date_completed_orders_count']);
-        $this->assertEquals(1, $dataOct14['selected_date_uncollected_orders_count']);
-        $this->assertEquals(350000.0, (float) $dataOct14['selected_date_uncollected_amount']);
-        $this->assertEquals(500000.0, (float) $dataOct14['selected_date_collected_amount']);
-        $this->assertEquals(850000.0, (float) $dataOct14['selected_date_total_revenue']);
+        $this->assertEquals(3, $dataOct14['selected_date_uncollected_orders_count']);
+        $this->assertEquals(4, $dataOct14['selected_date_finished_orders_count']);
+        $this->assertEquals(850000.0, (float) $dataOct14['selected_date_uncollected_amount']);
+        $this->assertEquals(700000.0, (float) $dataOct14['selected_date_collected_amount']);
+        $this->assertEquals(1550000.0, (float) $dataOct14['selected_date_total_revenue']);
 
-        // Nhưng trong THÁNG 10/2026 (monthly_orders_breakdown & monthly_uncollected_amount), cả 3 đơn chờ lấy đều phải được tính đủ!
+        // Trong THÁNG 10/2026:
+        // - Cả 5 đơn chờ nhận (kể cả đơn 0đ bảo hành) đều phải nằm trong monthly_uncollected_orders_count
+        //   và khớp 100% với ready_for_pickup_count (5 đơn) & waiting_pickup_orders (5 đơn)
         $monthlyCodes = collect($dataOct14['monthly_orders_breakdown'])->pluck('order_code')->all();
         $this->assertContains('PCQUAN1013102608', $monthlyCodes);
         $this->assertContains('FX26-43210', $monthlyCodes);
+        $this->assertContains('PCQUAN1013102630', $monthlyCodes);
         $this->assertContains('PCQUAN1014102623', $monthlyCodes);
+        $this->assertContains('PCQUAN1014102699', $monthlyCodes);
         $this->assertContains('PCQUAN1014102601', $monthlyCodes);
-        $this->assertEquals(3, $dataOct14['monthly_uncollected_orders_count']);
-        // 450.000 + 600.000 + 350.000 = 1.400.000 ₫
-        $this->assertEquals(1400000.0, (float) $dataOct14['monthly_uncollected_amount']);
 
-        // --- KIỂM TRA LỌC NGÀY 2026-10-13 ---
+        $this->assertEquals(5, $dataOct14['monthly_uncollected_orders_count']);
+        $this->assertEquals(5, $dataOct14['reconciliation']['ready_for_pickup_count']);
+        $this->assertEquals(5, $dataOct14['operational_summary']['waiting_pickup_orders']);
+        $this->assertEquals(
+            $dataOct14['monthly_completed_orders_count'] + $dataOct14['monthly_uncollected_orders_count'],
+            $dataOct14['monthly_finished_orders_count']
+        );
+        // 500.000 + 600.000 + 450.000 + 350.000 + 0 = 1.900.000 ₫
+        $this->assertEquals(1900000.0, (float) $dataOct14['monthly_uncollected_amount']);
+
+        // --- KIỂM TRA LỌC NGÀY 2026-10-13 (chỉ có PCQUAN1013102630 sửa xong ngày 13/10) ---
         $resOct13 = $this->actingAs($this->adminUser, 'sanctum')
             ->getJson("/api/v1/kpi/dashboard?branch_id={$this->branch->id}&date=2026-10-13");
 
@@ -573,10 +632,22 @@ class AdminDashboardFourRevenueCardsTest extends TestCase
         $dataOct13 = $resOct13->json('data');
 
         $oct13Codes = collect($dataOct13['selected_date_orders_breakdown'])->pluck('order_code')->all();
-        $this->assertContains('PCQUAN1013102608', $oct13Codes);
-        $this->assertNotContains('PCQUAN1014102623', $oct13Codes);
+        $this->assertContains('PCQUAN1013102630', $oct13Codes);
+        $this->assertNotContains('PCQUAN1013102608', $oct13Codes);
         $this->assertNotContains('FX26-43210', $oct13Codes);
         $this->assertEquals(1, $dataOct13['selected_date_uncollected_orders_count']);
         $this->assertEquals(450000.0, (float) $dataOct13['selected_date_uncollected_amount']);
+
+        // --- KIỂM TRA LỌC NGÀY 2026-10-12 (chỉ có FX26-43210 sửa xong ngày 12/10) ---
+        $resOct12 = $this->actingAs($this->adminUser, 'sanctum')
+            ->getJson("/api/v1/kpi/dashboard?branch_id={$this->branch->id}&date=2026-10-12");
+
+        $resOct12->assertStatus(200);
+        $dataOct12 = $resOct12->json('data');
+
+        $oct12Codes = collect($dataOct12['selected_date_orders_breakdown'])->pluck('order_code')->all();
+        $this->assertContains('FX26-43210', $oct12Codes);
+        $this->assertEquals(1, $dataOct12['selected_date_uncollected_orders_count']);
+        $this->assertEquals(600000.0, (float) $dataOct12['selected_date_uncollected_amount']);
     }
 }

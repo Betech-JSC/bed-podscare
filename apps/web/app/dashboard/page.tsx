@@ -585,7 +585,12 @@ export default function DashboardPage() {
       const pcCodeDate = pcMatch ? `20${pcMatch[3]}-${pcMatch[2]}-${pcMatch[1]}` : null;
 
       const refDateRaw = isWaitingPickup
-        ? pcCodeDate || o.createdAt || (o as any).created_at || o.date
+        ? (o as any).qc_passed_at ||
+          (o as any).repair_completed_at ||
+          pcCodeDate ||
+          o.createdAt ||
+          (o as any).created_at ||
+          o.date
         : (o as any).handed_over_at ||
           (o as any).completed_at ||
           (o as any).updated_at ||
@@ -685,7 +690,11 @@ export default function DashboardPage() {
   const monthlyUncollectedCount = Number(
     kpiData?.monthly_uncollected_orders_count ??
       kpiSummary?.monthly_uncollected_orders_count ??
-      monthlyOrdersBreakdown.filter((item) => Number(item.uncollected_amount || 0) > 0).length
+      monthlyOrdersBreakdown.filter(
+        (item) =>
+          (normalizeStatusCode(item.status) !== 'completed' && item.status !== 'Hoàn tất') ||
+          Number(item.uncollected_amount || 0) > 0
+      ).length
   );
 
   // 2. Chỉ số Ngày đã chọn (Tổng ngày đã chọn, Thực thu ngày, Công nợ chưa thu theo ngày)
@@ -728,7 +737,11 @@ export default function DashboardPage() {
   const selectedDateUncollectedCount = Number(
     kpiData?.selected_date_uncollected_orders_count ??
       kpiSummary?.selected_date_uncollected_orders_count ??
-      selectedDateOrdersBreakdown.filter((item) => Number(item.uncollected_amount || 0) > 0).length
+      selectedDateOrdersBreakdown.filter(
+        (item) =>
+          (normalizeStatusCode(item.status) !== 'completed' && item.status !== 'Hoàn tất') ||
+          Number(item.uncollected_amount || 0) > 0
+      ).length
   );
 
   // Dữ liệu hiển thị trong Modal Chi tiết Doanh thu & Công nợ Khách hàng
@@ -759,10 +772,23 @@ export default function DashboardPage() {
     const q = drilldownSearch.trim().toLowerCase();
 
     const filtered = activeDrilldownRawItems.filter((item) => {
-      if (drilldownFilter === 'collected' && Number(item.collected_amount || 0) <= 0) {
+      if (
+        drilldownFilter === 'collected' &&
+        !(
+          normalizeStatusCode(item.status) === 'completed' ||
+          item.status === 'Hoàn tất' ||
+          Number(item.collected_amount || 0) > 0
+        )
+      ) {
         return false;
       }
-      if (drilldownFilter === 'uncollected' && Number(item.uncollected_amount || 0) <= 0) {
+      if (
+        drilldownFilter === 'uncollected' &&
+        !(
+          (normalizeStatusCode(item.status) !== 'completed' && item.status !== 'Hoàn tất') ||
+          Number(item.uncollected_amount || 0) > 0
+        )
+      ) {
         return false;
       }
       if (q) {
@@ -3008,7 +3034,14 @@ export default function DashboardPage() {
                 }`}
               >
                 Đã thực thu (
-                {activeDrilldownRawItems.filter((i) => Number(i.collected_amount || 0) > 0).length}
+                {
+                  activeDrilldownRawItems.filter(
+                    (i) =>
+                      normalizeStatusCode(i.status) === 'completed' ||
+                      i.status === 'Hoàn tất' ||
+                      Number(i.collected_amount || 0) > 0
+                  ).length
+                }
                 )
               </button>
               <button
@@ -3022,7 +3055,13 @@ export default function DashboardPage() {
                 }`}
               >
                 Còn nợ chưa thu (
-                {activeDrilldownRawItems.filter((i) => Number(i.uncollected_amount || 0) > 0).length}
+                {
+                  activeDrilldownRawItems.filter(
+                    (i) =>
+                      (normalizeStatusCode(i.status) !== 'completed' && i.status !== 'Hoàn tất') ||
+                      Number(i.uncollected_amount || 0) > 0
+                  ).length
+                }
                 )
               </button>
             </div>

@@ -685,9 +685,7 @@ class KpiController extends Controller
                         $orderCollected = $paidSum;
                         $orderUncollected = max(0.0, $orderTotal - $orderCollected);
                         $effectiveOrderTotal = $orderTotal;
-                        if ($orderUncollected > 0) {
-                            $uncollectedOrdersCount++;
-                        }
+                        $uncollectedOrdersCount++;
                     }
 
                     $totalRevenue += $effectiveOrderTotal;
@@ -699,7 +697,10 @@ class KpiController extends Controller
                         1
                     );
 
-                    $completedAtIso = ($order->handed_over_at ?? $order->updated_at)?->toIso8601String();
+                    $completedAtIso = ($order->status === 'completed'
+                        ? ($order->handed_over_at ?? $order->updated_at)
+                        : ($order->qc_passed_at ?? $order->repair_completed_at ?? $order->created_at ?? $order->updated_at)
+                    )?->toIso8601String();
 
                     $breakdown[] = [
                         'id'                           => $order->id,
@@ -751,10 +752,15 @@ class KpiController extends Controller
                         $wq->whereIn('status', ['ready_for_return', 'waiting_pickup']);
                         if (! $isCurrentMonth) {
                             $wq->where(function ($q) use ($startOfMonth, $endOfMonth) {
-                                $q->whereBetween('handed_over_at', [$startOfMonth, $endOfMonth])
+                                $q->whereBetween('qc_passed_at', [$startOfMonth, $endOfMonth])
                                   ->orWhere(function ($sq) use ($startOfMonth, $endOfMonth) {
-                                      $sq->whereNull('handed_over_at')
-                                         ->whereBetween('updated_at', [$startOfMonth, $endOfMonth]);
+                                      $sq->whereNull('qc_passed_at')
+                                         ->whereBetween('repair_completed_at', [$startOfMonth, $endOfMonth]);
+                                  })
+                                  ->orWhere(function ($sq2) use ($startOfMonth, $endOfMonth) {
+                                      $sq2->whereNull('qc_passed_at')
+                                          ->whereNull('repair_completed_at')
+                                          ->whereBetween('created_at', [$startOfMonth, $endOfMonth]);
                                   });
                             });
                         }
@@ -769,13 +775,11 @@ class KpiController extends Controller
                     },
                     'deviceModel',
                 ])
-                ->orderByDesc(DB::raw('COALESCE(handed_over_at, updated_at)'))
+                ->orderByDesc(DB::raw('COALESCE(handed_over_at, qc_passed_at, repair_completed_at, updated_at)'))
                 ->get();
 
-            $targetDmy = $targetDate->format('dmy');
-
             $selectedDateFinishedOrders = (clone $baseQuery)
-                ->where(function ($query) use ($targetDateStart, $targetDateEnd, $targetDmy) {
+                ->where(function ($query) use ($targetDateStart, $targetDateEnd) {
                     $query->where(function ($cq) use ($targetDateStart, $targetDateEnd) {
                         $cq->where('status', 'completed')
                            ->where(function ($q) use ($targetDateStart, $targetDateEnd) {
@@ -785,11 +789,19 @@ class KpiController extends Controller
                                         ->whereBetween('updated_at', [$targetDateStart, $targetDateEnd]);
                                  });
                            });
-                    })->orWhere(function ($wq) use ($targetDateStart, $targetDateEnd, $targetDmy) {
+                    })->orWhere(function ($wq) use ($targetDateStart, $targetDateEnd) {
                         $wq->whereIn('status', ['ready_for_return', 'waiting_pickup'])
-                           ->where(function ($q) use ($targetDateStart, $targetDateEnd, $targetDmy) {
-                               $q->whereBetween('created_at', [$targetDateStart, $targetDateEnd])
-                                 ->orWhere('order_code', 'like', "PC%{$targetDmy}__");
+                           ->where(function ($q) use ($targetDateStart, $targetDateEnd) {
+                               $q->whereBetween('qc_passed_at', [$targetDateStart, $targetDateEnd])
+                                 ->orWhere(function ($sq) use ($targetDateStart, $targetDateEnd) {
+                                     $sq->whereNull('qc_passed_at')
+                                        ->whereBetween('repair_completed_at', [$targetDateStart, $targetDateEnd]);
+                                 })
+                                 ->orWhere(function ($sq2) use ($targetDateStart, $targetDateEnd) {
+                                     $sq2->whereNull('qc_passed_at')
+                                         ->whereNull('repair_completed_at')
+                                         ->whereBetween('created_at', [$targetDateStart, $targetDateEnd]);
+                                 });
                            });
                     });
                 })
@@ -802,18 +814,8 @@ class KpiController extends Controller
                     },
                     'deviceModel',
                 ])
-                ->orderByDesc(DB::raw('COALESCE(handed_over_at, updated_at)'))
-                ->get()
-                ->filter(function (RepairOrder $order) use ($targetDmy) {
-                    if ($order->status !== 'completed') {
-                        $code = (string) ($order->order_code ?? '');
-                        if (preg_match('/^PC.*(\d{6})\d{2}$/', $code, $matches)) {
-                            return $matches[1] === $targetDmy;
-                        }
-                    }
-                    return true;
-                })
-                ->values();
+                ->orderByDesc(DB::raw('COALESCE(handed_over_at, qc_passed_at, repair_completed_at, updated_at)'))
+                ->get();
 
             $monthlyPeriodStats = $buildPeriodBreakdown($monthlyFinishedOrders);
             $monthlyTotalRevenue = $monthlyPeriodStats['total_revenue'];
