@@ -630,7 +630,158 @@ class KpiController extends Controller
         $monthlyGrossProfitFormatted = '0 ₫';
         $accountsReceivableFormatted = '0 ₫';
 
+        // 4 ô tài chính hàng đầu (Tổng tháng / Thực thu tháng, Công nợ chưa thu ở tháng, Tổng ngày chọn / Thực thu ngày, Công nợ chưa thu theo ngày)
+        $monthlyTotalRevenue = 0.0;
+        $monthlyTotalRevenueFormatted = '0 ₫';
+        $monthlyRevenueFullFormatted = '0 ₫';
+        $monthlyCollectedAmount = 0.0;
+        $monthlyCollectedAmountFormatted = '0 ₫';
+        $monthlyFinishedOrdersCount = 0;
+        $monthlyUncollectedAmount = 0.0;
+        $monthlyUncollectedAmountFormatted = '0 ₫';
+        $monthlyUncollectedOrdersCount = 0;
+        $monthlyOrdersBreakdown = [];
+
+        $selectedDateTotalRevenue = 0.0;
+        $selectedDateTotalRevenueFormatted = '0 ₫';
+        $selectedDateRevenueFullFormatted = '0 ₫';
+        $selectedDateCollectedAmount = 0.0;
+        $selectedDateCollectedAmountFormatted = '0 ₫';
+        $selectedDateFinishedOrdersCount = 0;
+        $selectedDateUncollectedAmount = 0.0;
+        $selectedDateUncollectedAmountFormatted = '0 ₫';
+        $selectedDateUncollectedOrdersCount = 0;
+        $selectedDateOrdersBreakdown = [];
+
         if ($isAdmin) {
+            $finishedStatuses = ['ready_for_return', 'waiting_pickup', 'completed'];
+
+            $buildPeriodBreakdown = function ($orders) use ($formatCurrency): array {
+                $totalRevenue = 0.0;
+                $collectedAmount = 0.0;
+                $uncollectedOrdersCount = 0;
+                $breakdown = [];
+
+                foreach ($orders as $order) {
+                    $orderTotal = (float) ($order->total_price > 0 ? $order->total_price : ($order->initial_price ?? 0));
+                    $paidPayments = $order->payments->whereIn('status', ['paid', 'completed']);
+                    $orderCollected = (float) $paidPayments->sum('amount');
+                    $orderCash = (float) $paidPayments->where('payment_method', 'cash')->sum('amount');
+                    $orderTransfer = (float) $paidPayments->whereIn('payment_method', ['bank_transfer', 'transfer', 'vietqr', 'sepay'])->sum('amount');
+                    $orderUncollected = max(0.0, $orderTotal - $orderCollected);
+
+                    $totalRevenue += $orderTotal;
+                    $collectedAmount += $orderCollected;
+                    if ($orderUncollected > 0) {
+                        $uncollectedOrdersCount++;
+                    }
+
+                    $customerOrdersCount = max(
+                        (int) ($order->customer?->orders_count ?? 0),
+                        (int) ($order->customer?->repair_orders_count ?? 0),
+                        1
+                    );
+
+                    $completedAtIso = ($order->handed_over_at ?? $order->updated_at)?->toIso8601String();
+
+                    $breakdown[] = [
+                        'id'                           => $order->id,
+                        'order_code'                   => $order->order_code,
+                        'customer_id'                  => $order->customer_id,
+                        'customer_name'                => $order->customer?->name ?? $order->customer_name ?? 'Khách lẻ',
+                        'customer_phone'               => $order->customer?->phone ?? $order->customer_phone ?? '',
+                        'customer_orders_count'        => $customerOrdersCount,
+                        'device_name'                  => $order->deviceModel?->name ?? $order->device_name ?? 'Thiết bị',
+                        'status'                       => $order->status,
+                        'total_price'                  => $orderTotal,
+                        'total_price_formatted'        => $formatCurrency($orderTotal),
+                        'collected_amount'             => $orderCollected,
+                        'collected_amount_formatted'   => $formatCurrency($orderCollected),
+                        'cash_amount'                  => $orderCash,
+                        'transfer_amount'              => $orderTransfer,
+                        'uncollected_amount'           => $orderUncollected,
+                        'uncollected_amount_formatted' => $formatCurrency($orderUncollected),
+                        'completed_at'                 => $completedAtIso,
+                        'updated_at'                   => $completedAtIso,
+                    ];
+                }
+
+                return [
+                    'total_revenue'            => $totalRevenue,
+                    'collected_amount'         => $collectedAmount,
+                    'uncollected_amount'       => max(0.0, $totalRevenue - $collectedAmount),
+                    'finished_orders_count'    => $orders->count(),
+                    'uncollected_orders_count' => $uncollectedOrdersCount,
+                    'orders_breakdown'         => $breakdown,
+                ];
+            };
+
+            $monthlyFinishedOrders = (clone $baseQuery)
+                ->whereIn('status', $finishedStatuses)
+                ->where(function ($q) use ($startOfMonth, $endOfMonth) {
+                    $q->whereBetween('handed_over_at', [$startOfMonth, $endOfMonth])
+                      ->orWhere(function ($sq) use ($startOfMonth, $endOfMonth) {
+                          $sq->whereNull('handed_over_at')
+                             ->whereBetween('updated_at', [$startOfMonth, $endOfMonth]);
+                      });
+                })
+                ->with([
+                    'payments' => function ($q) {
+                        $q->whereIn('status', ['paid', 'completed']);
+                    },
+                    'customer' => function ($q) {
+                        $q->withCount('repairOrders');
+                    },
+                    'deviceModel',
+                ])
+                ->orderByDesc(DB::raw('COALESCE(handed_over_at, updated_at)'))
+                ->get();
+
+            $selectedDateFinishedOrders = (clone $baseQuery)
+                ->whereIn('status', $finishedStatuses)
+                ->where(function ($q) use ($targetDateStart, $targetDateEnd) {
+                    $q->whereBetween('handed_over_at', [$targetDateStart, $targetDateEnd])
+                      ->orWhere(function ($sq) use ($targetDateStart, $targetDateEnd) {
+                          $sq->whereNull('handed_over_at')
+                             ->whereBetween('updated_at', [$targetDateStart, $targetDateEnd]);
+                      });
+                })
+                ->with([
+                    'payments' => function ($q) {
+                        $q->whereIn('status', ['paid', 'completed']);
+                    },
+                    'customer' => function ($q) {
+                        $q->withCount('repairOrders');
+                    },
+                    'deviceModel',
+                ])
+                ->orderByDesc(DB::raw('COALESCE(handed_over_at, updated_at)'))
+                ->get();
+
+            $monthlyPeriodStats = $buildPeriodBreakdown($monthlyFinishedOrders);
+            $monthlyTotalRevenue = $monthlyPeriodStats['total_revenue'];
+            $monthlyTotalRevenueFormatted = $formatCurrency($monthlyTotalRevenue);
+            $monthlyRevenueFullFormatted = $formatCurrency($monthlyTotalRevenue);
+            $monthlyCollectedAmount = $monthlyPeriodStats['collected_amount'];
+            $monthlyCollectedAmountFormatted = $formatCurrency($monthlyCollectedAmount);
+            $monthlyFinishedOrdersCount = $monthlyPeriodStats['finished_orders_count'];
+            $monthlyUncollectedAmount = $monthlyPeriodStats['uncollected_amount'];
+            $monthlyUncollectedAmountFormatted = $formatCurrency($monthlyUncollectedAmount);
+            $monthlyUncollectedOrdersCount = $monthlyPeriodStats['uncollected_orders_count'];
+            $monthlyOrdersBreakdown = $monthlyPeriodStats['orders_breakdown'];
+
+            $selectedDatePeriodStats = $buildPeriodBreakdown($selectedDateFinishedOrders);
+            $selectedDateTotalRevenue = $selectedDatePeriodStats['total_revenue'];
+            $selectedDateTotalRevenueFormatted = $formatCurrency($selectedDateTotalRevenue);
+            $selectedDateRevenueFullFormatted = $formatCurrency($selectedDateTotalRevenue);
+            $selectedDateCollectedAmount = $selectedDatePeriodStats['collected_amount'];
+            $selectedDateCollectedAmountFormatted = $formatCurrency($selectedDateCollectedAmount);
+            $selectedDateFinishedOrdersCount = $selectedDatePeriodStats['finished_orders_count'];
+            $selectedDateUncollectedAmount = $selectedDatePeriodStats['uncollected_amount'];
+            $selectedDateUncollectedAmountFormatted = $formatCurrency($selectedDateUncollectedAmount);
+            $selectedDateUncollectedOrdersCount = $selectedDatePeriodStats['uncollected_orders_count'];
+            $selectedDateOrdersBreakdown = $selectedDatePeriodStats['orders_breakdown'];
+
             $calcCogsForOrderIds = function (array $orderIds): float {
                 if (empty($orderIds)) {
                     return 0.0;
@@ -1024,27 +1175,47 @@ class KpiController extends Controller
 
         if ($isAdmin) {
             $financialMetrics = [
-                'daily_revenue'                       => $dailyRevenue,
-                'daily_revenue_formatted'             => $dailyRevenueFormatted,
-                'selected_date_revenue'               => $selectedDateRevenue,
-                'selected_date_revenue_formatted'     => $selectedDateRevenueFormatted,
-                'monthly_revenue'                     => $monthlyRevenue,
-                'monthly_revenue_formatted'           => $monthlyRevenueFormatted,
-                'selected_date_cogs'                  => $selectedDateCogs,
-                'selected_date_cogs_formatted'        => $selectedDateCogsFormatted,
-                'monthly_cogs'                        => $monthlyCogs,
-                'monthly_cogs_formatted'              => $monthlyCogsFormatted,
-                'selected_date_gross_profit'          => $selectedDateGrossProfit,
-                'selected_date_gross_profit_formatted'=> $selectedDateGrossProfitFormatted,
-                'selected_date_gross_profit_margin'   => $selectedDateGrossProfitMargin,
-                'monthly_gross_profit'                => $monthlyGrossProfit,
-                'monthly_gross_profit_formatted'      => $monthlyGrossProfitFormatted,
-                'monthly_gross_profit_margin'         => $monthlyGrossProfitMargin,
-                'gross_profit_margin'                 => $grossProfitMargin,
-                'accounts_receivable'                 => $accountsReceivable,
-                'accounts_receivable_formatted'       => $accountsReceivableFormatted,
-                'accounts_payable'                    => $accountsPayable,
-                'accounts_payable_formatted'          => $accountsPayableFormatted,
+                'daily_revenue'                            => $dailyRevenue,
+                'daily_revenue_formatted'                  => $dailyRevenueFormatted,
+                'selected_date_revenue'                    => $selectedDateRevenue,
+                'selected_date_revenue_formatted'          => $selectedDateRevenueFormatted,
+                'monthly_revenue'                          => $monthlyRevenue,
+                'monthly_revenue_formatted'                => $monthlyRevenueFormatted,
+                'monthly_total_revenue'                    => $monthlyTotalRevenue,
+                'monthly_total_revenue_formatted'          => $monthlyTotalRevenueFormatted,
+                'monthly_revenue_full_formatted'           => $monthlyRevenueFullFormatted,
+                'monthly_collected_amount'                 => $monthlyCollectedAmount,
+                'monthly_collected_amount_formatted'       => $monthlyCollectedAmountFormatted,
+                'monthly_finished_orders_count'            => $monthlyFinishedOrdersCount,
+                'monthly_uncollected_amount'               => $monthlyUncollectedAmount,
+                'monthly_uncollected_amount_formatted'     => $monthlyUncollectedAmountFormatted,
+                'monthly_uncollected_orders_count'         => $monthlyUncollectedOrdersCount,
+                'monthly_orders_breakdown'                 => $monthlyOrdersBreakdown,
+                'selected_date_total_revenue'              => $selectedDateTotalRevenue,
+                'selected_date_total_revenue_formatted'    => $selectedDateTotalRevenueFormatted,
+                'selected_date_revenue_full_formatted'     => $selectedDateRevenueFullFormatted,
+                'selected_date_collected_amount'           => $selectedDateCollectedAmount,
+                'selected_date_collected_amount_formatted' => $selectedDateCollectedAmountFormatted,
+                'selected_date_finished_orders_count'      => $selectedDateFinishedOrdersCount,
+                'selected_date_uncollected_amount'         => $selectedDateUncollectedAmount,
+                'selected_date_uncollected_amount_formatted'=> $selectedDateUncollectedAmountFormatted,
+                'selected_date_uncollected_orders_count'   => $selectedDateUncollectedOrdersCount,
+                'selected_date_orders_breakdown'           => $selectedDateOrdersBreakdown,
+                'selected_date_cogs'                       => $selectedDateCogs,
+                'selected_date_cogs_formatted'             => $selectedDateCogsFormatted,
+                'monthly_cogs'                             => $monthlyCogs,
+                'monthly_cogs_formatted'                   => $monthlyCogsFormatted,
+                'selected_date_gross_profit'               => $selectedDateGrossProfit,
+                'selected_date_gross_profit_formatted'     => $selectedDateGrossProfitFormatted,
+                'selected_date_gross_profit_margin'        => $selectedDateGrossProfitMargin,
+                'monthly_gross_profit'                     => $monthlyGrossProfit,
+                'monthly_gross_profit_formatted'           => $monthlyGrossProfitFormatted,
+                'monthly_gross_profit_margin'              => $monthlyGrossProfitMargin,
+                'gross_profit_margin'                      => $grossProfitMargin,
+                'accounts_receivable'                      => $accountsReceivable,
+                'accounts_receivable_formatted'            => $accountsReceivableFormatted,
+                'accounts_payable'                         => $accountsPayable,
+                'accounts_payable_formatted'               => $accountsPayableFormatted,
             ];
 
             $summary = array_merge($summary, $financialMetrics);

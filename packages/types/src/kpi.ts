@@ -21,6 +21,26 @@ export interface OperationalReconciliation {
   total_uncollected_amount_formatted?: string;
 }
 
+export interface RevenueOrderBreakdownItem {
+  id: number | string;
+  order_code: string;
+  customer_id?: number | null;
+  customer_name: string;
+  customer_phone: string;
+  customer_orders_count?: number;
+  device_name: string;
+  status: string;
+  total_price: number;
+  total_price_formatted?: string;
+  collected_amount: number;
+  collected_amount_formatted?: string;
+  cash_amount?: number;
+  transfer_amount?: number;
+  uncollected_amount: number;
+  uncollected_amount_formatted?: string;
+  completed_at?: string | null;
+}
+
 export interface DashboardSummary {
   active_orders: number;
   intake_today: number;
@@ -30,9 +50,28 @@ export interface DashboardSummary {
   selected_date?: string;
   selected_date_revenue?: number;
   selected_date_revenue_formatted?: string;
+  selected_date_total_revenue?: number;
+  selected_date_total_revenue_formatted?: string;
+  selected_date_collected_amount?: number;
+  selected_date_collected_amount_formatted?: string;
+  selected_date_uncollected_amount?: number;
+  selected_date_uncollected_amount_formatted?: string;
   selected_date_completed_orders?: number;
+  selected_date_finished_orders_count?: number;
+  selected_date_uncollected_orders_count?: number;
+  selected_date_orders_breakdown?: RevenueOrderBreakdownItem[];
   monthly_revenue?: number;
   monthly_revenue_formatted?: string;
+  monthly_total_revenue?: number;
+  monthly_total_revenue_formatted?: string;
+  monthly_collected_amount?: number;
+  monthly_collected_amount_formatted?: string;
+  monthly_uncollected_amount?: number;
+  monthly_uncollected_amount_formatted?: string;
+  monthly_completed_orders?: number;
+  monthly_finished_orders_count?: number;
+  monthly_uncollected_orders_count?: number;
+  monthly_orders_breakdown?: RevenueOrderBreakdownItem[];
   selected_date_cogs?: number;
   selected_date_cogs_formatted?: string;
   monthly_cogs?: number;
@@ -69,9 +108,28 @@ export interface DashboardKpiResponse {
   selected_date?: string;
   selected_date_revenue?: number;
   selected_date_revenue_formatted?: string;
+  selected_date_total_revenue?: number;
+  selected_date_total_revenue_formatted?: string;
+  selected_date_collected_amount?: number;
+  selected_date_collected_amount_formatted?: string;
+  selected_date_uncollected_amount?: number;
+  selected_date_uncollected_amount_formatted?: string;
   selected_date_completed_orders?: number;
+  selected_date_finished_orders_count?: number;
+  selected_date_uncollected_orders_count?: number;
+  selected_date_orders_breakdown?: RevenueOrderBreakdownItem[];
   monthly_revenue?: number;
   monthly_revenue_formatted?: string;
+  monthly_total_revenue?: number;
+  monthly_total_revenue_formatted?: string;
+  monthly_collected_amount?: number;
+  monthly_collected_amount_formatted?: string;
+  monthly_uncollected_amount?: number;
+  monthly_uncollected_amount_formatted?: string;
+  monthly_completed_orders?: number;
+  monthly_finished_orders_count?: number;
+  monthly_uncollected_orders_count?: number;
+  monthly_orders_breakdown?: RevenueOrderBreakdownItem[];
   selected_date_cogs?: number;
   selected_date_cogs_formatted?: string;
   monthly_cogs?: number;

@@ -21,7 +21,7 @@ import { StaffPerformanceWidget } from './components/StaffPerformanceWidget';
 import { ShiftCashbookSnapshot } from './components/ShiftCashbookSnapshot';
 import { usePodsCare } from '../providers';
 import { useShift } from '../providers/ShiftProvider';
-import type { RepairOrder } from '@podscare/types';
+import type { RepairOrder, RevenueOrderBreakdownItem } from '@podscare/types';
 import { kpiService, repairService } from '@podscare/api-client';
 import { useQuery } from '@tanstack/react-query';
 import { normalizeStatusCode } from '../repairs/fsm';
@@ -76,6 +76,37 @@ export default function DashboardPage() {
   const [checkoutModalOpen, setCheckoutModalOpen] = useState(false);
   const [checkoutOrder, setCheckoutOrder] = useState<RepairOrder | null>(null);
 
+  // Customer Revenue & Debt Drill-Down Modal State (Admin 4 Financial Cards)
+  const [drilldownModalOpen, setDrilldownModalOpen] = useState(false);
+  const [drilldownPeriod, setDrilldownPeriod] = useState<'month' | 'day'>('month');
+  const [drilldownFilter, setDrilldownFilter] = useState<'all' | 'collected' | 'uncollected'>('all');
+  const [drilldownSearch, setDrilldownSearch] = useState('');
+  const [drilldownSortKey, setDrilldownSortKey] = useState<
+    'customer' | 'order' | 'total' | 'collected' | 'uncollected'
+  >('uncollected');
+  const [drilldownSortDir, setDrilldownSortDir] = useState<'asc' | 'desc'>('desc');
+
+  const handleOpenDrilldownModal = (
+    targetPeriod: 'month' | 'day',
+    targetFilter: 'all' | 'collected' | 'uncollected'
+  ) => {
+    setDrilldownPeriod(targetPeriod);
+    setDrilldownFilter(targetFilter);
+    setDrilldownSearch('');
+    setDrilldownModalOpen(true);
+  };
+
+  const handleDrilldownSort = (
+    key: 'customer' | 'order' | 'total' | 'collected' | 'uncollected'
+  ) => {
+    if (drilldownSortKey === key) {
+      setDrilldownSortDir((prev) => (prev === 'asc' ? 'desc' : 'asc'));
+    } else {
+      setDrilldownSortKey(key);
+      setDrilldownSortDir(key === 'customer' || key === 'order' ? 'asc' : 'desc');
+    }
+  };
+
   // Đấu nối KPI Dashboard API
   const { data: kpiData } = useQuery({
     queryKey: ['kpi-dashboard', branchId, period, selectedDate],
@@ -91,6 +122,12 @@ export default function DashboardPage() {
 
   const moneyFormatted = (n: number) =>
     n ? new Intl.NumberFormat('vi-VN').format(n) + ' ₫' : '—';
+
+  const formatVND = (n?: number | string | null) => {
+    const num = Number(n);
+    if (!Number.isFinite(num)) return '0 ₫';
+    return new Intl.NumberFormat('vi-VN').format(Math.round(num)) + ' ₫';
+  };
 
   // Lọc orders theo chi nhánh hiện hành
   const branchOrders = React.useMemo(() => {
@@ -308,12 +345,13 @@ export default function DashboardPage() {
       id: String(item.order_code || item.id),
       name: item.customer_name || 'Khách hàng',
       phone: item.customer_phone || '',
-      device: item.device_model || 'Thiết bị',
+      device: item.device_name || item.device_model || 'Thiết bị',
       issue: item.issue_description || 'Sửa chữa',
       status: item.status || 'Chờ khách nhận',
       statusType: 'ready',
       price: Number(item.total_price) || 0,
       total_price: Number(item.total_price) || 0,
+      paid_amount: Number(item.collected_amount) || 0,
       tech: item.technician_name || 'Chưa phân công',
       date: new Date().toISOString(),
       branch: branch || 'Chi nhánh',
@@ -389,8 +427,8 @@ export default function DashboardPage() {
   const todayOrdersCount =
     kpiData?.intake_today ??
     branchOrders.filter((o) => {
-      const todayStr = new Intl.DateTimeFormat('vi-VN').format(new Date());
-      return o.date === 'Hôm nay' || o.date === todayStr;
+      const todayFormatted = new Intl.DateTimeFormat('vi-VN').format(new Date());
+      return o.date === 'Hôm nay' || o.date === todayFormatted;
     }).length;
 
   const branchRevenue = branchOrders
@@ -398,10 +436,7 @@ export default function DashboardPage() {
     .reduce((sum, o) => sum + (o.price || 0), 0);
 
   const branchRevenueDisplay =
-    kpiData?.monthly_revenue_formatted ??
-    (branchRevenue >= 1000000
-      ? (branchRevenue / 1000000).toFixed(1).replace('.', ',') + 'tr ₫'
-      : new Intl.NumberFormat('vi-VN').format(branchRevenue) + ' ₫');
+    kpiData?.monthly_revenue_formatted ?? formatVND(branchRevenue);
 
   const completedCount =
     kpiData?.completed_orders ??
@@ -437,8 +472,297 @@ export default function DashboardPage() {
     in_workshop_amount: 0,
     in_workshop_amount_formatted: '0 ₫',
     total_uncollected_amount: 0,
-    total_uncollected_amount_formatted: '0 ₫',
+    // Đơn bàn giao chưa thu đủ
+    total_uncollected_amount_formatted:
+      kpiData?.accounts_receivable_formatted ||
+      kpiData?.reconciliation?.total_uncollected_amount_formatted ||
+      '0 ₫',
   };
+
+  // Chuẩn hóa nhãn Tháng & Ngày đang chọn
+  const selectedMonthLabel = React.useMemo(() => {
+    const parts = (selectedDate || todayStr).split('-');
+    if (parts.length >= 2) {
+      return `Tháng ${Number(parts[1])}/${parts[0]}`;
+    }
+    return `Tháng ${new Date().getMonth() + 1}/${new Date().getFullYear()}`;
+  }, [selectedDate, todayStr]);
+
+  const selectedDateDisplay = React.useMemo(() => {
+    const parts = (selectedDate || todayStr).split('-');
+    if (parts.length === 3) {
+      return `${parts[2]}/${parts[1]}/${parts[0]}`;
+    }
+    return selectedDate || todayStr;
+  }, [selectedDate, todayStr]);
+
+  // Tính toán Fallback thông minh từ branchOrders cho các máy đã xong (ready_for_return, waiting_pickup, completed)
+  const { fallbackMonthlyBreakdown, fallbackDailyBreakdown } = React.useMemo(() => {
+    const targetMonthPrefix = (selectedDate || todayStr).slice(0, 7); // YYYY-MM
+    const targetDayStr = selectedDate || todayStr; // YYYY-MM-DD
+
+    // Đếm tổng số đơn theo khách hàng để xác định Khách quen / Khách mới
+    const customerCounts = new Map<string, number>();
+    branchOrders.forEach((o) => {
+      const key = (o.phone || o.name || '').trim();
+      if (key) {
+        customerCounts.set(key, (customerCounts.get(key) || 0) + 1);
+      }
+    });
+
+    const extractIsoDate = (raw?: string | null): string => {
+      if (!raw) return todayStr;
+      if (raw === 'Hôm nay') return todayStr;
+      if (raw === 'Hôm qua') return yesterdayStr;
+      if (/^\d{4}-\d{2}-\d{2}/.test(raw)) return raw.slice(0, 10);
+      const dmyMatch = raw.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})/);
+      if (dmyMatch) {
+        return `${dmyMatch[3]}-${dmyMatch[2].padStart(2, '0')}-${dmyMatch[1].padStart(2, '0')}`;
+      }
+      const parsed = new Date(raw);
+      if (!isNaN(parsed.getTime())) {
+        const y = parsed.getFullYear();
+        const m = String(parsed.getMonth() + 1).padStart(2, '0');
+        const d = String(parsed.getDate()).padStart(2, '0');
+        return `${y}-${m}-${d}`;
+      }
+      return todayStr;
+    };
+
+    const finishedOrders = branchOrders.filter((o) => {
+      const code = normalizeStatusCode(o.status);
+      return (
+        ['ready_for_return', 'waiting_pickup', 'completed'].includes(code) ||
+        ['Sẵn sàng trả', 'Chờ khách nhận', 'Hoàn tất', 'Đã trả máy'].includes(o.status)
+      );
+    });
+
+    const toBreakdownItem = (o: RepairOrder): RevenueOrderBreakdownItem & { _isoDate: string } => {
+      const code = normalizeStatusCode(o.status);
+      const totalPrice = Number(o.total_price ?? o.price ?? 0);
+      const rawPayments = Array.isArray((o as any).payments) ? (o as any).payments : [];
+
+      let collectedAmount = 0;
+      let cashAmount = 0;
+      let transferAmount = 0;
+
+      if (rawPayments.length > 0) {
+        rawPayments.forEach((p: any) => {
+          if (!p.status || p.status === 'paid' || p.status === 'completed') {
+            const amt = Number(p.amount || 0);
+            collectedAmount += amt;
+            const method = String(p.payment_method || p.method || '').toLowerCase();
+            if (method.includes('transfer') || method.includes('bank') || method.includes('qr')) {
+              transferAmount += amt;
+            } else {
+              cashAmount += amt;
+            }
+          }
+        });
+      } else if ((o as any).collected_amount !== undefined || (o as any).paid_amount !== undefined) {
+        collectedAmount = Number((o as any).collected_amount ?? (o as any).paid_amount ?? 0);
+        cashAmount = Number((o as any).cash_amount ?? collectedAmount);
+        transferAmount = Number((o as any).transfer_amount ?? 0);
+      } else if (code === 'completed' || o.status === 'Hoàn tất') {
+        collectedAmount = totalPrice;
+        cashAmount = totalPrice;
+      }
+
+      const uncollectedAmount = Math.max(0, totalPrice - collectedAmount);
+      const refDateRaw =
+        (o as any).handed_over_at ||
+        (o as any).completed_at ||
+        (o as any).updated_at ||
+        o.createdAt ||
+        o.date;
+      const isoDate = extractIsoDate(refDateRaw);
+      const custKey = (o.phone || o.name || '').trim();
+
+      return {
+        id: o.id,
+        order_code: (o as any).order_code || String(o.id),
+        customer_id: (o as any).customer_id ?? (o as any).customerId ?? null,
+        customer_name: o.name || (o as any).customer_name || 'Khách vãng lai',
+        customer_phone: o.phone || (o as any).customer_phone || '',
+        customer_orders_count: custKey ? customerCounts.get(custKey) || 1 : 1,
+        device_name: o.device || (o as any).device_name || (o as any).device_model || 'Thiết bị',
+        status: code || o.status,
+        total_price: totalPrice,
+        total_price_formatted: formatVND(totalPrice),
+        collected_amount: collectedAmount,
+        collected_amount_formatted: formatVND(collectedAmount),
+        cash_amount: cashAmount,
+        transfer_amount: transferAmount,
+        uncollected_amount: uncollectedAmount,
+        uncollected_amount_formatted: formatVND(uncollectedAmount),
+        completed_at: refDateRaw || null,
+        _isoDate: isoDate,
+      };
+    };
+
+    const mapped = finishedOrders.map(toBreakdownItem);
+    const monthly = mapped.filter((item) => item._isoDate.startsWith(targetMonthPrefix));
+    const daily = mapped.filter((item) => item._isoDate === targetDayStr);
+
+    return {
+      fallbackMonthlyBreakdown: monthly,
+      fallbackDailyBreakdown: daily,
+    };
+  }, [branchOrders, selectedDate, todayStr, yesterdayStr]);
+
+  const kpiSummary = kpiData?.summary || kpiData;
+
+  const monthlyOrdersBreakdown: RevenueOrderBreakdownItem[] = React.useMemo(() => {
+    const raw =
+      kpiData?.monthly_orders_breakdown ??
+      kpiSummary?.monthly_orders_breakdown;
+    if (Array.isArray(raw)) return raw;
+    return fallbackMonthlyBreakdown;
+  }, [kpiData, kpiSummary, fallbackMonthlyBreakdown]);
+
+  const selectedDateOrdersBreakdown: RevenueOrderBreakdownItem[] = React.useMemo(() => {
+    const raw =
+      kpiData?.selected_date_orders_breakdown ??
+      kpiSummary?.selected_date_orders_breakdown;
+    if (Array.isArray(raw)) return raw;
+    return fallbackDailyBreakdown;
+  }, [kpiData, kpiSummary, fallbackDailyBreakdown]);
+
+  // 1. Chỉ số Tháng (Tổng tháng, Thực thu tháng, Công nợ chưa thu ở tháng)
+  const monthlyTotalRevenue = Number(
+    kpiData?.monthly_total_revenue ??
+      kpiSummary?.monthly_total_revenue ??
+      kpiData?.monthly_revenue ??
+      kpiSummary?.monthly_revenue ??
+      monthlyOrdersBreakdown.reduce((sum, item) => sum + Number(item.total_price || 0), 0)
+  );
+
+  const monthlyCollectedAmount = Number(
+    kpiData?.monthly_collected_amount ??
+      kpiSummary?.monthly_collected_amount ??
+      monthlyOrdersBreakdown.reduce((sum, item) => sum + Number(item.collected_amount || 0), 0)
+  );
+
+  const monthlyUncollectedAmount = Number(
+    kpiData?.monthly_uncollected_amount ??
+      kpiSummary?.monthly_uncollected_amount ??
+      Math.max(0, monthlyTotalRevenue - monthlyCollectedAmount)
+  );
+
+  const monthlyOrdersCount = Number(
+    kpiData?.monthly_finished_orders_count ??
+      kpiSummary?.monthly_finished_orders_count ??
+      kpiData?.monthly_completed_orders ??
+      kpiSummary?.monthly_completed_orders ??
+      monthlyOrdersBreakdown.length
+  );
+
+  const monthlyUncollectedCount = Number(
+    kpiData?.monthly_uncollected_orders_count ??
+      kpiSummary?.monthly_uncollected_orders_count ??
+      monthlyOrdersBreakdown.filter((item) => Number(item.uncollected_amount || 0) > 0).length
+  );
+
+  // 2. Chỉ số Ngày đã chọn (Tổng ngày đã chọn, Thực thu ngày, Công nợ chưa thu theo ngày)
+  const selectedDateTotalRevenue = Number(
+    kpiData?.selected_date_total_revenue ??
+      kpiSummary?.selected_date_total_revenue ??
+      kpiData?.selected_date_revenue ??
+      kpiSummary?.selected_date_revenue ??
+      selectedDateOrdersBreakdown.reduce((sum, item) => sum + Number(item.total_price || 0), 0)
+  );
+
+  const selectedDateCollectedAmount = Number(
+    kpiData?.selected_date_collected_amount ??
+      kpiSummary?.selected_date_collected_amount ??
+      selectedDateOrdersBreakdown.reduce((sum, item) => sum + Number(item.collected_amount || 0), 0)
+  );
+
+  const selectedDateUncollectedAmount = Number(
+    kpiData?.selected_date_uncollected_amount ??
+      kpiSummary?.selected_date_uncollected_amount ??
+      Math.max(0, selectedDateTotalRevenue - selectedDateCollectedAmount)
+  );
+
+  const selectedDateOrdersCount = Number(
+    kpiData?.selected_date_finished_orders_count ??
+      kpiSummary?.selected_date_finished_orders_count ??
+      kpiData?.selected_date_completed_orders ??
+      kpiSummary?.selected_date_completed_orders ??
+      selectedDateOrdersBreakdown.length
+  );
+
+  const selectedDateUncollectedCount = Number(
+    kpiData?.selected_date_uncollected_orders_count ??
+      kpiSummary?.selected_date_uncollected_orders_count ??
+      selectedDateOrdersBreakdown.filter((item) => Number(item.uncollected_amount || 0) > 0).length
+  );
+
+  // Dữ liệu hiển thị trong Modal Chi tiết Doanh thu & Công nợ Khách hàng
+  const activeDrilldownRawItems =
+    drilldownPeriod === 'month' ? monthlyOrdersBreakdown : selectedDateOrdersBreakdown;
+
+  const periodTotal =
+    drilldownPeriod === 'month' ? monthlyTotalRevenue : selectedDateTotalRevenue;
+  const periodCollected =
+    drilldownPeriod === 'month' ? monthlyCollectedAmount : selectedDateCollectedAmount;
+  const periodUncollected =
+    drilldownPeriod === 'month' ? monthlyUncollectedAmount : selectedDateUncollectedAmount;
+  const periodOrdersCount =
+    drilldownPeriod === 'month' ? monthlyOrdersCount : selectedDateOrdersCount;
+  const periodUncollectedCount =
+    drilldownPeriod === 'month' ? monthlyUncollectedCount : selectedDateUncollectedCount;
+
+  const periodCashAmount = activeDrilldownRawItems.reduce(
+    (sum, item) => sum + Number(item.cash_amount ?? item.collected_amount ?? 0),
+    0
+  );
+  const periodTransferAmount = activeDrilldownRawItems.reduce(
+    (sum, item) => sum + Number(item.transfer_amount ?? 0),
+    0
+  );
+
+  const filteredAndSortedDrilldownItems = React.useMemo(() => {
+    const q = drilldownSearch.trim().toLowerCase();
+
+    const filtered = activeDrilldownRawItems.filter((item) => {
+      if (drilldownFilter === 'collected' && Number(item.collected_amount || 0) <= 0) {
+        return false;
+      }
+      if (drilldownFilter === 'uncollected' && Number(item.uncollected_amount || 0) <= 0) {
+        return false;
+      }
+      if (q) {
+        const matchName = (item.customer_name || '').toLowerCase().includes(q);
+        const matchPhone = (item.customer_phone || '').toLowerCase().includes(q);
+        const matchCode = String(item.order_code || item.id || '').toLowerCase().includes(q);
+        const matchDevice = (item.device_name || '').toLowerCase().includes(q);
+        if (!matchName && !matchPhone && !matchCode && !matchDevice) {
+          return false;
+        }
+      }
+      return true;
+    });
+
+    return [...filtered].sort((a, b) => {
+      let cmp = 0;
+      if (drilldownSortKey === 'customer') {
+        cmp = (a.customer_name || '').localeCompare(b.customer_name || '', 'vi');
+      } else if (drilldownSortKey === 'order') {
+        cmp = String(a.order_code || a.id || '').localeCompare(
+          String(b.order_code || b.id || ''),
+          'vi'
+        );
+      } else if (drilldownSortKey === 'total') {
+        cmp = Number(a.total_price || 0) - Number(b.total_price || 0);
+      } else if (drilldownSortKey === 'collected') {
+        cmp = Number(a.collected_amount || 0) - Number(b.collected_amount || 0);
+      } else if (drilldownSortKey === 'uncollected') {
+        cmp = Number(a.uncollected_amount || 0) - Number(b.uncollected_amount || 0);
+      }
+      return drilldownSortDir === 'asc' ? cmp : -cmp;
+    });
+  }, [activeDrilldownRawItems, drilldownFilter, drilldownSearch, drilldownSortKey, drilldownSortDir]);
 
   // Thuật toán sinh đồ thị doanh thu SVG động (Dynamic SVG Path Generator)
   const renderRevenueChart = () => {
@@ -704,47 +1028,169 @@ export default function DashboardPage() {
         </div>
       </div>
 
-      {/* Stats Cards (Khu vực A: Phân quyền tài chính RBAC) */}
+      {/* Stats Cards (Khu vực A: Phân quyền tài chính RBAC - 4 Ô Doanh thu & Công nợ) */}
       {role === 'admin' ? (
-        /* Khi role === 'admin': 4 thẻ chỉ số tài chính & vận hành tinh gọn */
-        <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-4 gap-3.5">
-          <StatCard
-            label="Doanh thu ngày chọn"
-            value={
-              kpiData?.selected_date_revenue_formatted ||
-              moneyFormatted(kpiData?.selected_date_revenue || 0)
-            }
-            icon="payments"
-            foot={`${kpiData?.selected_date_completed_orders ?? 0} đơn hoàn tất`}
-            onClick={() =>
-              router.push(
-                `/repairs?date=${selectedDate}&date_type=completed_at&status=completed`
-              )
-            }
-          />
-          <StatCard
-            label="Doanh thu tháng"
-            value={kpiData?.monthly_revenue_formatted || branchRevenueDisplay}
-            icon="payments"
-            foot={`Tháng ${new Date().getMonth() + 1}, ${new Date().getFullYear()}`}
-          />
-          <StatCard
-            label="Công nợ phải thu"
-            value={
-              kpiData?.accounts_receivable_formatted ||
-              kpiData?.reconciliation?.total_uncollected_amount_formatted ||
-              '0 ₫'
-            }
-            icon="account_balance_wallet"
-            foot="Đơn bàn giao chưa thu đủ"
-          />
-          <StatCard
-            label="Tỉ lệ bảo hành"
-            value={`${kpiData?.summary?.warranty_rate ?? kpiData?.warranty_rate ?? 0}%`}
-            icon="shield"
-            foot="Tỷ lệ máy bảo hành trong kỳ"
-            onClick={() => router.push('/repairs?intake_type=warranty')}
-          />
+        /* Khi role === 'admin': 4 thẻ chỉ số Doanh thu & Công nợ theo đúng thứ tự yêu cầu */
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3.5">
+          {/* Ô 1: Tổng tháng (Doanh thu tháng) */}
+          <button
+            type="button"
+            data-testid="admin-card-monthly-total"
+            onClick={() => handleOpenDrilldownModal('month', 'all')}
+            className="bg-white border border-[#c5e1d4] rounded-[12px] p-4 min-h-[124px] shadow-[0_2px_5px_rgba(36,60,41,0.03)] hover:border-[#176b58] hover:-translate-y-0.5 hover:shadow-[0_7px_18px_rgba(28,49,34,0.06)] text-left flex flex-col justify-between transition-all cursor-pointer group"
+          >
+            <div className="flex items-center justify-between text-[#406856] text-sm font-semibold w-full">
+              <span>Tổng tháng</span>
+              <span className="w-8 h-8 rounded-[8px] bg-[#eaf4ef] text-[#176b58] grid place-items-center flex-none">
+                <Icon name="payments" size={17} />
+              </span>
+            </div>
+
+            <div className="font-heading font-extrabold text-[22px] xl:text-[26px] tracking-[-0.6px] text-[#176b58] my-2">
+              {formatVND(monthlyTotalRevenue)}
+            </div>
+
+            <div className="flex items-center justify-between gap-1 text-xs text-[#287452] font-semibold pt-1.5 border-t border-[#edf4f0] w-full">
+              <span>
+                Thực thu: {formatVND(monthlyCollectedAmount)} · {monthlyOrdersCount} đơn ({selectedMonthLabel})
+              </span>
+              <Icon name="arrow" size={12} className="text-[#176b58] flex-none" />
+            </div>
+          </button>
+
+          {/* Ô 2: Công nợ chưa thu ở tháng */}
+          <button
+            type="button"
+            data-testid="admin-card-monthly-uncollected"
+            onClick={() => handleOpenDrilldownModal('month', 'uncollected')}
+            className={`border rounded-[12px] p-4 min-h-[124px] shadow-[0_2px_5px_rgba(36,60,41,0.03)] hover:-translate-y-0.5 hover:shadow-[0_7px_18px_rgba(28,49,34,0.06)] text-left flex flex-col justify-between transition-all cursor-pointer group ${
+              monthlyUncollectedAmount > 0
+                ? 'bg-[#fcfaf5] border-[#ebd9bd] hover:border-[#d2a25d]'
+                : 'bg-white border-[#e5ece8] hover:border-[#176b58]'
+            }`}
+          >
+            <div className="flex items-center justify-between text-sm font-semibold w-full">
+              <span className={monthlyUncollectedAmount > 0 ? 'text-[#915e1b]' : 'text-[#687871]'}>
+                Công nợ chưa thu ở tháng
+              </span>
+              <span
+                className={`w-8 h-8 rounded-[8px] grid place-items-center flex-none ${
+                  monthlyUncollectedAmount > 0
+                    ? 'bg-[#fbf3e5] text-[#915e1b]'
+                    : 'bg-[#eff5f1] text-[#398066]'
+                }`}
+              >
+                <Icon name="account_balance_wallet" size={17} />
+              </span>
+            </div>
+
+            <div
+              className={`font-heading font-extrabold text-[22px] xl:text-[26px] tracking-[-0.6px] my-2 ${
+                monthlyUncollectedAmount > 0 ? 'text-[#bc5b52]' : 'text-[#1c302b]'
+              }`}
+            >
+              {formatVND(monthlyUncollectedAmount)}
+            </div>
+
+            <div className="flex items-center justify-between gap-1 text-xs pt-1.5 border-t border-[#f0ece3] w-full">
+              <span
+                className={
+                  monthlyUncollectedAmount > 0
+                    ? 'text-[#915e1b] font-semibold'
+                    : 'text-[#687871] font-medium'
+                }
+              >
+                {monthlyUncollectedCount} đơn chưa thu đủ ({selectedMonthLabel})
+              </span>
+              <Icon
+                name="arrow"
+                size={12}
+                className={
+                  monthlyUncollectedAmount > 0 ? 'text-[#915e1b] flex-none' : 'text-[#176b58] flex-none'
+                }
+              />
+            </div>
+          </button>
+
+          {/* Ô 3: Tổng ngày đã chọn */}
+          <button
+            type="button"
+            data-testid="admin-card-daily-total"
+            onClick={() => handleOpenDrilldownModal('day', 'all')}
+            className="bg-white border border-[#c5e1d4] rounded-[12px] p-4 min-h-[124px] shadow-[0_2px_5px_rgba(36,60,41,0.03)] hover:border-[#176b58] hover:-translate-y-0.5 hover:shadow-[0_7px_18px_rgba(28,49,34,0.06)] text-left flex flex-col justify-between transition-all cursor-pointer group"
+          >
+            <div className="flex items-center justify-between text-[#406856] text-sm font-semibold w-full">
+              <span>Tổng ngày đã chọn</span>
+              <span className="w-8 h-8 rounded-[8px] bg-[#eaf4ef] text-[#176b58] grid place-items-center flex-none">
+                <Icon name="payments" size={17} />
+              </span>
+            </div>
+
+            <div className="font-heading font-extrabold text-[22px] xl:text-[26px] tracking-[-0.6px] text-[#176b58] my-2">
+              {formatVND(selectedDateTotalRevenue)}
+            </div>
+
+            <div className="flex items-center justify-between gap-1 text-xs text-[#287452] font-semibold pt-1.5 border-t border-[#edf4f0] w-full">
+              <span>
+                Thực thu: {formatVND(selectedDateCollectedAmount)} · {selectedDateOrdersCount} đơn hoàn tất
+              </span>
+              <Icon name="arrow" size={12} className="text-[#176b58] flex-none" />
+            </div>
+          </button>
+
+          {/* Ô 4: Công nợ chưa thu theo ngày */}
+          <button
+            type="button"
+            data-testid="admin-card-daily-uncollected"
+            onClick={() => handleOpenDrilldownModal('day', 'uncollected')}
+            className={`border rounded-[12px] p-4 min-h-[124px] shadow-[0_2px_5px_rgba(36,60,41,0.03)] hover:-translate-y-0.5 hover:shadow-[0_7px_18px_rgba(28,49,34,0.06)] text-left flex flex-col justify-between transition-all cursor-pointer group ${
+              selectedDateUncollectedAmount > 0
+                ? 'bg-[#fcfaf5] border-[#ebd9bd] hover:border-[#d2a25d]'
+                : 'bg-white border-[#e5ece8] hover:border-[#176b58]'
+            }`}
+          >
+            <div className="flex items-center justify-between text-sm font-semibold w-full">
+              <span className={selectedDateUncollectedAmount > 0 ? 'text-[#915e1b]' : 'text-[#687871]'}>
+                Công nợ chưa thu theo ngày
+              </span>
+              <span
+                className={`w-8 h-8 rounded-[8px] grid place-items-center flex-none ${
+                  selectedDateUncollectedAmount > 0
+                    ? 'bg-[#fbf3e5] text-[#915e1b]'
+                    : 'bg-[#eff5f1] text-[#398066]'
+                }`}
+              >
+                <Icon name="account_balance_wallet" size={17} />
+              </span>
+            </div>
+
+            <div
+              className={`font-heading font-extrabold text-[22px] xl:text-[26px] tracking-[-0.6px] my-2 ${
+                selectedDateUncollectedAmount > 0 ? 'text-[#bc5b52]' : 'text-[#1c302b]'
+              }`}
+            >
+              {formatVND(selectedDateUncollectedAmount)}
+            </div>
+
+            <div className="flex items-center justify-between gap-1 text-xs pt-1.5 border-t border-[#f0ece3] w-full">
+              <span
+                className={
+                  selectedDateUncollectedAmount > 0
+                    ? 'text-[#915e1b] font-semibold'
+                    : 'text-[#687871] font-medium'
+                }
+              >
+                {selectedDateUncollectedCount} đơn chưa thu đủ ngày {selectedDateDisplay}
+              </span>
+              <Icon
+                name="arrow"
+                size={12}
+                className={
+                  selectedDateUncollectedAmount > 0 ? 'text-[#915e1b] flex-none' : 'text-[#176b58] flex-none'
+                }
+              />
+            </div>
+          </button>
         </div>
       ) : (
         /* Khi role !== 'admin': 6 thẻ chỉ số vận hành hữu ích */
@@ -2382,6 +2828,437 @@ export default function DashboardPage() {
           }}
         />
       )}
+
+      {/* Customer Revenue & Debt Drill-Down Modal (Admin 4 Top Financial Cards) */}
+      <Modal
+        isOpen={drilldownModalOpen}
+        onClose={() => setDrilldownModalOpen(false)}
+        maxWidth="2xl"
+        eyebrow="FIXO · ĐỐI SOÁT DOANH THU & CÔNG NỢ KHÁCH HÀNG"
+        title={
+          drilldownPeriod === 'month'
+            ? `Chi tiết Doanh thu & Công nợ Khách hàng — ${selectedMonthLabel}`
+            : `Chi tiết Doanh thu & Công nợ Khách hàng — Ngày ${selectedDateDisplay}`
+        }
+        subtitle="Đối chiếu đầy đủ từng đồng: Tổng phát sinh = Thực thu (Tiền mặt + Chuyển khoản) + Công nợ chưa thu."
+        footer={
+          <div className="flex flex-wrap items-center justify-between gap-2.5 w-full">
+            <div className="text-xs text-[#64786e]">
+              Đang hiển thị <b>{filteredAndSortedDrilldownItems.length}</b> / <b>{activeDrilldownRawItems.length}</b> đơn máy đã xong
+            </div>
+            <div className="flex items-center gap-2">
+              <Button
+                variant="secondary"
+                size="md"
+                onClick={() => setDrilldownModalOpen(false)}
+              >
+                Đóng
+              </Button>
+            </div>
+          </div>
+        }
+      >
+        <div data-testid="revenue-debt-drilldown-modal" className="space-y-4">
+          {/* Thanh chuyển đổi nhanh Kỳ xem: [ Theo Tháng ] / [ Theo Ngày chọn ] */}
+          <div className="flex flex-wrap items-center justify-between gap-3 bg-[#f7faf8] border border-[#dce8e1] rounded-[10px] p-3">
+            <div className="flex items-center gap-2 text-xs font-semibold text-[#2d3d35]">
+              <span className="w-2 h-2 rounded-full bg-[#176b58]" />
+              <span>
+                {drilldownPeriod === 'month'
+                  ? `Chi tiết Doanh thu & Công nợ Khách hàng — ${selectedMonthLabel}`
+                  : `Chi tiết Doanh thu & Công nợ Khách hàng — Ngày ${selectedDateDisplay}`}
+              </span>
+            </div>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                data-testid="drilldown-period-month"
+                onClick={() => setDrilldownPeriod('month')}
+                className={`px-3 py-1.5 rounded-[8px] text-xs font-bold transition-all cursor-pointer ${
+                  drilldownPeriod === 'month'
+                    ? 'bg-[#176b58] text-white shadow-xs'
+                    : 'bg-white text-[#52635a] border border-[#d6e2db] hover:bg-[#edf4f0]'
+                }`}
+              >
+                Theo Tháng ({selectedMonthLabel})
+              </button>
+              <button
+                type="button"
+                data-testid="drilldown-period-day"
+                onClick={() => setDrilldownPeriod('day')}
+                className={`px-3 py-1.5 rounded-[8px] text-xs font-bold transition-all cursor-pointer ${
+                  drilldownPeriod === 'day'
+                    ? 'bg-[#176b58] text-white shadow-xs'
+                    : 'bg-white text-[#52635a] border border-[#d6e2db] hover:bg-[#edf4f0]'
+                }`}
+              >
+                Theo Ngày chọn ({selectedDateDisplay})
+              </button>
+            </div>
+          </div>
+
+          {/* TẦNG 1: Thanh 3 ô tổng hợp dòng tiền của kỳ đang xem (Số tiền đầy đủ từng đồng) */}
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-3.5">
+            {/* 1. Tổng phát sinh (Máy đã xong) */}
+            <div className="p-4 rounded-[12px] bg-[#f2f8f5] border border-[#c5e1d4] flex flex-col justify-between">
+              <div className="flex items-center justify-between text-xs font-bold uppercase tracking-wider text-[#176b58]">
+                <span>Tổng phát sinh (Máy đã xong)</span>
+                <span className="px-2 py-0.5 rounded-full bg-white text-[#176b58] border border-[#c5e1d4]">
+                  {periodOrdersCount} đơn
+                </span>
+              </div>
+              <div className="font-heading font-extrabold text-xl sm:text-2xl text-[#176b58] my-2">
+                {formatVND(periodTotal)}
+              </div>
+              <div className="text-xs text-[#406856] font-medium">
+                Tổng giá trị các đơn đã hoàn tất sửa chữa trong kỳ
+              </div>
+            </div>
+
+            {/* 2. Thực thu (Đã thanh toán) */}
+            <div className="p-4 rounded-[12px] bg-white border border-[#c5e1d4] flex flex-col justify-between">
+              <div className="flex items-center justify-between text-xs font-bold uppercase tracking-wider text-[#287452]">
+                <span>Thực thu (Đã thanh toán)</span>
+                <Icon name="check" size={15} className="text-[#176b58]" />
+              </div>
+              <div className="font-heading font-extrabold text-xl sm:text-2xl text-[#1c302b] my-2">
+                {formatVND(periodCollected)}
+              </div>
+              <div className="text-xs text-[#52635a] font-medium flex flex-wrap items-center gap-x-2 gap-y-1">
+                <span>Tiền mặt: <b className="text-[#176b58]">{formatVND(periodCashAmount)}</b></span>
+                <span>·</span>
+                <span>Chuyển khoản: <b className="text-[#176b58]">{formatVND(periodTransferAmount)}</b></span>
+              </div>
+            </div>
+
+            {/* 3. Công nợ chưa thu */}
+            <div
+              className={`p-4 rounded-[12px] border flex flex-col justify-between ${
+                periodUncollected > 0
+                  ? 'bg-[#fcfaf5] border-[#ebd9bd]'
+                  : 'bg-white border-[#e5ece8]'
+              }`}
+            >
+              <div className="flex items-center justify-between text-xs font-bold uppercase tracking-wider text-[#915e1b]">
+                <span>Công nợ chưa thu</span>
+                <span className="px-2 py-0.5 rounded-full bg-[#fbf3e5] text-[#915e1b] border border-[#ebd9bd]">
+                  {periodUncollectedCount} đơn chưa thu đủ
+                </span>
+              </div>
+              <div
+                className={`font-heading font-extrabold text-xl sm:text-2xl my-2 ${
+                  periodUncollected > 0 ? 'text-[#bc5b52]' : 'text-[#1c302b]'
+                }`}
+              >
+                {formatVND(periodUncollected)}
+              </div>
+              <div className="text-xs text-[#8c6527] font-medium">
+                Chênh lệch Tổng phát sinh trừ Thực thu trong kỳ
+              </div>
+            </div>
+          </div>
+
+          {/* TẦNG 2: Thanh lọc (Tất cả / Đã thực thu / Còn nợ chưa thu) & Tìm kiếm */}
+          <div className="flex flex-wrap items-center justify-between gap-3 bg-white border border-[#e5ece8] rounded-[10px] p-3">
+            <div className="flex flex-wrap items-center gap-1.5">
+              <button
+                type="button"
+                data-testid="drilldown-tab-all"
+                onClick={() => setDrilldownFilter('all')}
+                className={`px-3 py-1.5 rounded-[8px] text-xs font-bold transition-all cursor-pointer ${
+                  drilldownFilter === 'all'
+                    ? 'bg-[#176b58] text-white shadow-xs'
+                    : 'bg-[#f4f7f5] text-[#52635a] hover:bg-[#e8efeb]'
+                }`}
+              >
+                Tất cả ({activeDrilldownRawItems.length})
+              </button>
+              <button
+                type="button"
+                data-testid="drilldown-tab-collected"
+                onClick={() => setDrilldownFilter('collected')}
+                className={`px-3 py-1.5 rounded-[8px] text-xs font-bold transition-all cursor-pointer ${
+                  drilldownFilter === 'collected'
+                    ? 'bg-[#176b58] text-white shadow-xs'
+                    : 'bg-[#f4f7f5] text-[#52635a] hover:bg-[#e8efeb]'
+                }`}
+              >
+                Đã thực thu (
+                {activeDrilldownRawItems.filter((i) => Number(i.collected_amount || 0) > 0).length}
+                )
+              </button>
+              <button
+                type="button"
+                data-testid="drilldown-tab-uncollected"
+                onClick={() => setDrilldownFilter('uncollected')}
+                className={`px-3 py-1.5 rounded-[8px] text-xs font-bold transition-all cursor-pointer ${
+                  drilldownFilter === 'uncollected'
+                    ? 'bg-[#bc5b52] text-white shadow-xs'
+                    : 'bg-[#fcf4f2] text-[#bc5b52] border border-[#f5c7c2] hover:bg-[#fbefed]'
+                }`}
+              >
+                Còn nợ chưa thu (
+                {activeDrilldownRawItems.filter((i) => Number(i.uncollected_amount || 0) > 0).length}
+                )
+              </button>
+            </div>
+
+            <div className="relative flex-1 min-w-[220px] max-w-[340px]">
+              <input
+                type="text"
+                data-testid="drilldown-search-input"
+                value={drilldownSearch}
+                onChange={(e) => setDrilldownSearch(e.target.value)}
+                placeholder="Tìm tên khách hàng, SĐT, mã đơn, thiết bị..."
+                className="w-full text-xs border border-[#dce6e0] bg-[#fafcfa] text-[#1c302b] rounded-[8px] pl-3 pr-8 py-2 outline-none focus:border-[#176b58] focus:bg-white transition-all"
+              />
+              {drilldownSearch && (
+                <button
+                  type="button"
+                  onClick={() => setDrilldownSearch('')}
+                  className="absolute right-2.5 top-1/2 -translate-y-1/2 text-xs text-[#7c8c84] hover:text-[#1c302b] cursor-pointer"
+                >
+                  ×
+                </button>
+              )}
+            </div>
+          </div>
+
+          {/* TẦNG 3: Bảng chi tiết theo từng Khách hàng & Đơn máy (Click tiêu đề cột để sắp xếp asc/desc) */}
+          {filteredAndSortedDrilldownItems.length === 0 ? (
+            <div className="p-8 rounded-[12px] border border-dashed border-[#d8e3dc] bg-[#fafcfa] text-center text-xs text-[#667a70]">
+              Không có đơn hàng nào khớp với bộ lọc hiện tại trong kỳ đang chọn.
+            </div>
+          ) : (
+            <div className="overflow-x-auto border border-[#e5ece8] rounded-[12px] bg-white">
+              <table className="w-full text-left border-collapse min-w-[820px]">
+                <thead>
+                  <tr className="border-b border-[#e5ece8] bg-[#fafbfa] text-[11px] font-bold text-[#687871] uppercase tracking-wider h-10 select-none">
+                    <th
+                      data-testid="drilldown-sort-customer"
+                      onClick={() => handleDrilldownSort('customer')}
+                      className="px-4 cursor-pointer hover:text-[#176b58] transition-colors"
+                    >
+                      <span className="inline-flex items-center gap-1">
+                        <span>Khách hàng & Liên hệ</span>
+                        <span>
+                          {drilldownSortKey === 'customer'
+                            ? drilldownSortDir === 'asc'
+                              ? '▲'
+                              : '▼'
+                            : '↕'}
+                        </span>
+                      </span>
+                    </th>
+                    <th
+                      data-testid="drilldown-sort-order"
+                      onClick={() => handleDrilldownSort('order')}
+                      className="px-4 cursor-pointer hover:text-[#176b58] transition-colors"
+                    >
+                      <span className="inline-flex items-center gap-1">
+                        <span>Đơn & Thiết bị</span>
+                        <span>
+                          {drilldownSortKey === 'order'
+                            ? drilldownSortDir === 'asc'
+                              ? '▲'
+                              : '▼'
+                            : '↕'}
+                        </span>
+                      </span>
+                    </th>
+                    <th
+                      data-testid="drilldown-sort-total"
+                      onClick={() => handleDrilldownSort('total')}
+                      className="px-4 text-right cursor-pointer hover:text-[#176b58] transition-colors"
+                    >
+                      <span className="inline-flex items-center justify-end gap-1">
+                        <span>Tổng đơn</span>
+                        <span>
+                          {drilldownSortKey === 'total'
+                            ? drilldownSortDir === 'asc'
+                              ? '▲'
+                              : '▼'
+                            : '↕'}
+                        </span>
+                      </span>
+                    </th>
+                    <th
+                      data-testid="drilldown-sort-collected"
+                      onClick={() => handleDrilldownSort('collected')}
+                      className="px-4 text-right cursor-pointer hover:text-[#176b58] transition-colors"
+                    >
+                      <span className="inline-flex items-center justify-end gap-1">
+                        <span>Thực thu</span>
+                        <span>
+                          {drilldownSortKey === 'collected'
+                            ? drilldownSortDir === 'asc'
+                              ? '▲'
+                              : '▼'
+                            : '↕'}
+                        </span>
+                      </span>
+                    </th>
+                    <th
+                      data-testid="drilldown-sort-uncollected"
+                      onClick={() => handleDrilldownSort('uncollected')}
+                      className="px-4 text-right cursor-pointer hover:text-[#176b58] transition-colors"
+                    >
+                      <span className="inline-flex items-center justify-end gap-1">
+                        <span>Còn nợ chưa thu</span>
+                        <span>
+                          {drilldownSortKey === 'uncollected'
+                            ? drilldownSortDir === 'asc'
+                              ? '▲'
+                              : '▼'
+                            : '↕'}
+                        </span>
+                      </span>
+                    </th>
+                    <th className="px-4 text-right">Thao tác</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-[#f1f3f2] text-sm">
+                  {filteredAndSortedDrilldownItems.map((item, idx) => {
+                    const isLoyal = Number(item.customer_orders_count || 1) > 1;
+                    const normStatus = normalizeStatusCode(item.status);
+                    const isHandedOver =
+                      normStatus === 'completed' || item.status === 'Hoàn tất';
+                    const uncollectedVal = Number(item.uncollected_amount || 0);
+
+                    return (
+                      <tr
+                        key={`${item.order_code || item.id}-${idx}`}
+                        className="hover:bg-[#fafcfa] transition-colors"
+                      >
+                        {/* Cột 1: Khách hàng & Liên hệ */}
+                        <td className="px-4 py-3">
+                          <div className="flex items-center gap-2.5">
+                            <Avatar
+                              initials={item.customer_name || 'KH'}
+                              variant={(idx % 4) as any}
+                              size="sm"
+                            />
+                            <div>
+                              <div className="flex items-center gap-1.5 flex-wrap">
+                                <b className="text-[#1c302b] font-semibold">
+                                  {item.customer_name || 'Khách vãng lai'}
+                                </b>
+                                <span
+                                  className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                                    isLoyal
+                                      ? 'bg-[#eaf4ef] text-[#176b58] border border-[#c5e1d4]'
+                                      : 'bg-[#f4f6f5] text-[#64756d]'
+                                  }`}
+                                >
+                                  {isLoyal ? 'Khách quen' : 'Khách mới'}
+                                </span>
+                              </div>
+                              <div className="text-xs font-mono text-[#6e7f77] mt-0.5">
+                                {item.customer_phone || 'Chưa cập nhật SĐT'}
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+
+                        {/* Cột 2: Đơn & Thiết bị */}
+                        <td className="px-4 py-3">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setDrilldownModalOpen(false);
+                                handleOpenOrderDetail(
+                                  String(item.order_code || item.id),
+                                  typeof item.id === 'number' ? item.id : undefined
+                                );
+                              }}
+                              className="font-mono font-bold text-xs text-[#176b58] hover:underline cursor-pointer"
+                            >
+                              {item.order_code || item.id}
+                            </button>
+                            <span
+                              className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                                isHandedOver
+                                  ? 'bg-[#eaf4ef] text-[#176b58]'
+                                  : 'bg-[#fbf3e5] text-[#915e1b]'
+                              }`}
+                            >
+                              {isHandedOver ? 'Đã giao máy' : 'Chờ khách lấy'}
+                            </span>
+                          </div>
+                          <div className="text-xs text-[#4b5b53] font-medium mt-0.5">
+                            {item.device_name || 'Thiết bị'}
+                          </div>
+                        </td>
+
+                        {/* Cột 3: Tổng đơn */}
+                        <td className="px-4 py-3 text-right font-mono font-bold text-[#1c302b]">
+                          {formatVND(item.total_price)}
+                        </td>
+
+                        {/* Cột 4: Thực thu */}
+                        <td className="px-4 py-3 text-right font-mono font-semibold text-[#176b58]">
+                          {formatVND(item.collected_amount)}
+                        </td>
+
+                        {/* Cột 5: Còn nợ chưa thu */}
+                        <td className="px-4 py-3 text-right">
+                          {uncollectedVal > 0 ? (
+                            <span className="inline-flex items-center px-2.5 py-1 rounded-[8px] bg-[#fbefed] border border-[#f5c7c2] text-[#bc5b52] font-mono font-extrabold text-xs">
+                              {formatVND(uncollectedVal)}
+                            </span>
+                          ) : (
+                            <span className="inline-flex items-center px-2.5 py-1 rounded-[8px] bg-[#eaf4ef] text-[#176b58] font-bold text-xs">
+                              Đã thu đủ (0 ₫)
+                            </span>
+                          )}
+                        </td>
+
+                        {/* Cột 6: Thao tác */}
+                        <td className="px-4 py-3 text-right">
+                          <div className="inline-flex items-center justify-end gap-1.5">
+                            {uncollectedVal > 0 && (
+                              <Button
+                                variant="primary"
+                                size="sm"
+                                icon="payments"
+                                data-testid={`drilldown-btn-collect-${item.order_code || item.id}`}
+                                onClick={() => {
+                                  setDrilldownModalOpen(false);
+                                  handleOpenCheckout(item);
+                                }}
+                                className="bg-[#176b58] hover:bg-[#125848] text-white font-bold text-xs"
+                              >
+                                Thu tiền
+                              </Button>
+                            )}
+                            <Button
+                              variant="secondary"
+                              size="sm"
+                              data-testid={`drilldown-btn-customer-${item.order_code || item.id}`}
+                              onClick={() => {
+                                setDrilldownModalOpen(false);
+                                router.push(
+                                  `/customers?q=${encodeURIComponent(
+                                    item.customer_phone || item.customer_name || ''
+                                  )}`
+                                );
+                              }}
+                              className="text-xs font-semibold"
+                            >
+                              Hồ sơ khách
+                            </Button>
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      </Modal>
     </AppShell>
   );
 }
