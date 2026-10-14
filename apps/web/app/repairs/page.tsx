@@ -123,13 +123,18 @@ function RepairsPageContent() {
     'Hoàn tất': 'completed',
   };
 
-  // Khởi tạo branch_id từ URL nếu có
+  // Khởi tạo branch_id và intake=warranty từ URL nếu có
   React.useEffect(() => {
     if (initialBranchParam && branches && branches.length > 0) {
       const b = branches.find((item) => String(item.id) === initialBranchParam);
       if (b) setBranch(b.name, b.id);
     }
-  }, [initialBranchParam, branches, setBranch]);
+    const intakeParam = searchParams.get('intake');
+    if (intakeParam === 'warranty') {
+      setInitialIntakeType('warranty');
+      setIntakeModalOpen(true);
+    }
+  }, [initialBranchParam, branches, setBranch, searchParams]);
 
   // Nạp đơn hàng trực tiếp qua API với bộ lọc chi nhánh, trạng thái, thời gian và tìm kiếm
   const {
@@ -275,6 +280,8 @@ function RepairsPageContent() {
         specialPartsRequestedAt: o.special_parts_requested_at,
         special_parts_fulfilled_at: o.special_parts_fulfilled_at,
         specialPartsFulfilledAt: o.special_parts_fulfilled_at,
+        warranty_terms_days: o.warranty_terms_days ?? (o.warranty_months ? Number(o.warranty_months) * 30 : undefined),
+        warranty_months: o.warranty_months ?? (o.warranty_terms_days ? Math.round(Number(o.warranty_terms_days) / 30) : undefined),
         paused_at: o.paused_at,
         pausedAt: o.paused_at,
         finalCheck: o.final_check_result,
@@ -597,7 +604,6 @@ function RepairsPageContent() {
     { value: 'Chờ kỹ thuật', label: 'Chờ kỹ thuật' },
     { value: 'Đã nhận đơn', label: 'Đã nhận đơn' },
     { value: 'Đang kiểm tra', label: 'Đang kiểm tra' },
-    { value: 'Chờ khách duyệt', label: 'Chờ khách duyệt' },
     { value: 'Đang sửa', label: 'Đang sửa' },
     { value: 'Chờ linh kiện', label: 'Chờ linh kiện' },
     { value: 'Chờ QC', label: 'Chờ QC' },
@@ -804,15 +810,15 @@ function RepairsPageContent() {
               onClick={() => setOrderTypeFilter('special_parts')}
               className={`px-3.5 py-1.5 rounded-[8px] text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
                 orderTypeFilter === 'special_parts'
-                  ? 'bg-[#d97706] text-white shadow-sm'
-                  : 'bg-[#fef3c7] text-[#92400e] hover:bg-[#fde68a]'
+                  ? 'bg-red-600 text-white shadow-sm'
+                  : 'bg-red-50 text-red-700 border border-red-300 font-bold hover:bg-red-100'
               }`}
             >
-              <Icon name="cart" size={14} />
+              <Icon name="bell" size={14} />
               <span>Cần mua ngoài</span>
               <span
                 className={`text-[10px] px-1.5 py-0.5 rounded-full font-mono ${
-                  orderTypeFilter === 'special_parts' ? 'bg-white/25 text-white' : 'bg-[#fde68a] text-[#78350f]'
+                  orderTypeFilter === 'special_parts' ? 'bg-white/25 text-white' : 'bg-red-100 text-red-700 border border-red-300 font-bold'
                 }`}
               >
                 {orderCounts.specialParts}
@@ -1120,10 +1126,10 @@ function RepairsPageContent() {
                           {(o.special_parts_status === 'pending' || o.specialPartsStatus === 'pending') ? (
                             <div
                               data-testid={`badge-special-part-pending-${o.id}`}
-                              className="inline-flex items-center gap-1 text-[11px] font-bold text-[#b45309] bg-[#fef3c7] px-2 py-0.5 rounded border border-[#fde68a] max-w-[210px] truncate"
+                              className="inline-flex items-center gap-1 text-[11px] font-bold text-red-700 bg-red-50 px-2 py-0.5 rounded border border-red-300 max-w-[210px] truncate shadow-2xs"
                               title={`Linh kiện cần mua ngoài: ${o.special_parts_needed || o.specialPartsNeeded || 'Chưa cập nhật'}`}
                             >
-                              <Icon name="cart" size={12} className="text-[#b45309]" />
+                              <Icon name="bell" size={12} className="text-red-600 flex-none" />
                               <span className="truncate">Cần mua ngoài: {o.special_parts_needed || o.specialPartsNeeded || 'Cần tìm mua'}</span>
                             </div>
                           ) : (o.special_parts_status === 'purchased' || o.specialPartsStatus === 'purchased') ? (
@@ -1375,11 +1381,30 @@ function RepairsPageContent() {
 
             {/* Khối thông tin nổi bật cảnh báo: Yêu cầu mua linh kiện ngoài */}
             {Boolean(selectedOrder.special_parts_needed || selectedOrder.specialPartsNeeded || selectedOrder.special_parts_status) && (
-              <div data-testid="drawer-special-parts-warning" className="p-4 bg-[#fffbeb] rounded-[10px] border-2 border-[#f59e0b] space-y-3 shadow-xs">
-                <div className="flex items-center justify-between pb-2 border-b border-[#fde68a]">
+              <div
+                data-testid="drawer-special-parts-warning"
+                className={`p-4 rounded-[10px] border-2 space-y-3 shadow-xs ${
+                  (selectedOrder.special_parts_status === 'purchased' || selectedOrder.specialPartsStatus === 'purchased')
+                    ? 'bg-[#f4faf7] border-[#28805e]'
+                    : 'bg-red-50/60 border-red-400 ring-1 ring-red-400/20'
+                }`}
+              >
+                <div className={`flex items-center justify-between pb-2 border-b ${
+                  (selectedOrder.special_parts_status === 'purchased' || selectedOrder.specialPartsStatus === 'purchased')
+                    ? 'border-[#c2e4d3]'
+                    : 'border-red-200'
+                }`}>
                   <div className="flex items-center gap-2">
-                    <Icon name="cart" size={16} className="text-[#b45309]" />
-                    <h4 className="text-xs font-bold text-[#b45309] uppercase tracking-wide m-0">
+                    <Icon
+                      name={(selectedOrder.special_parts_status === 'purchased' || selectedOrder.specialPartsStatus === 'purchased') ? "cart" : "bell"}
+                      size={16}
+                      className={(selectedOrder.special_parts_status === 'purchased' || selectedOrder.specialPartsStatus === 'purchased') ? "text-[#28805e]" : "text-red-600"}
+                    />
+                    <h4 className={`text-xs font-bold uppercase tracking-wide m-0 ${
+                      (selectedOrder.special_parts_status === 'purchased' || selectedOrder.specialPartsStatus === 'purchased')
+                        ? 'text-[#28805e]'
+                        : 'text-red-700'
+                    }`}>
                       YÊU CẦU MUA LINH KIỆN NGOÀI (KTV BÁO QUẦY)
                     </h4>
                   </div>
@@ -1388,7 +1413,7 @@ function RepairsPageContent() {
                     className={`px-2.5 py-0.5 rounded-full text-xs font-bold ${
                       (selectedOrder.special_parts_status === 'purchased' || selectedOrder.specialPartsStatus === 'purchased')
                         ? 'bg-[#eaf5ef] text-[#28805e] border border-[#c2e4d3]'
-                        : 'bg-[#fef3c7] text-[#b45309] border border-[#fde68a]'
+                        : 'bg-red-50 text-red-700 border border-red-300 font-bold'
                     }`}
                   >
                     {(selectedOrder.special_parts_status === 'purchased' || selectedOrder.specialPartsStatus === 'purchased')

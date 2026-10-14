@@ -143,6 +143,8 @@ export default function PrintReceiptPage() {
         accessories: o.accessories || 'Không gửi kèm',
         testNote: o.test_note || o.testNote || (Array.isArray(o.intake_checklists) ? o.intake_checklists.find((c: any) => c.note)?.note : '') || '',
         test_note: o.test_note || o.testNote || '',
+        warranty_terms_days: o.warranty_terms_days ?? (o.warranty_months ? Number(o.warranty_months) * 30 : 90),
+        warranty_months: o.warranty_months ?? (o.warranty_terms_days ? Math.round(Number(o.warranty_terms_days) / 30) : 3),
         checks: mappedChecks,
         photos: mappedPhotos,
         createdBy: o.created_by_user?.name || o.createdBy || 'FIXO',

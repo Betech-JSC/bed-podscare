@@ -13,7 +13,7 @@ import {
   Icon,
 } from '@podscare/ui';
 import type { RepairOrder } from '@podscare/types';
-import { repairService, inventoryService } from '@podscare/api-client';
+import { repairService } from '@podscare/api-client';
 import { normalizeStatusCode } from '../repairs/fsm';
 import { useSilentPrint } from './print';
 import { HandoverTechModal } from './HandoverTechModal';
@@ -57,9 +57,6 @@ export const TechOrderDetailModal: React.FC<TechOrderDetailModalProps> = ({
   const [partsNote, setPartsNote] = useState('');
   const [isSavingPartsNote, setIsSavingPartsNote] = useState(false);
   const [isRequestingParts, setIsRequestingParts] = useState(false);
-  const [inventoryParts, setInventoryParts] = useState<any[]>([]);
-  const [isSearchingInventory, setIsSearchingInventory] = useState(false);
-  const [showSuggestions, setShowSuggestions] = useState(false);
   const [isSpecialPartsModalOpen, setIsSpecialPartsModalOpen] = useState(false);
 
   // Reset form when order changes
@@ -75,41 +72,6 @@ export const TechOrderDetailModal: React.FC<TechOrderDetailModalProps> = ({
       setFormError('');
     }
   }, [order, isOpen]);
-
-  // Tìm kiếm gợi ý từ kho linh kiện
-  useEffect(() => {
-    let active = true;
-    if (!isOpen) return;
-
-    const timer = setTimeout(async () => {
-      try {
-        setIsSearchingInventory(true);
-        const res = await inventoryService.getParts({
-          q: partsNeeded.trim() || undefined,
-          per_page: 15,
-        });
-        const list = Array.isArray(res?.data?.data)
-          ? res.data.data
-          : Array.isArray(res?.data)
-          ? res.data
-          : Array.isArray(res)
-          ? res
-          : [];
-        if (active) {
-          setInventoryParts(list);
-        }
-      } catch (err) {
-        console.warn('Could not fetch inventory parts:', err);
-      } finally {
-        if (active) setIsSearchingInventory(false);
-      }
-    }, 250);
-
-    return () => {
-      active = false;
-      clearTimeout(timer);
-    };
-  }, [partsNeeded, isOpen]);
 
   if (!order) return null;
 
@@ -666,68 +628,16 @@ export const TechOrderDetailModal: React.FC<TechOrderDetailModalProps> = ({
                 )}
               </div>
 
-              {/* Combobox chọn linh kiện kho + hỗ trợ gõ tự do */}
-              <div className="relative">
+              {/* Ô nhập tên linh kiện cần yêu cầu tự do */}
+              <div>
                 <label className="block text-xs font-bold text-[#2d3d35] mb-1">
                   Linh kiện cần yêu cầu:
                 </label>
-                <div className="relative">
-                  <Input
-                    value={partsNeeded}
-                    onChange={(e) => {
-                      setPartsNeeded(e.target.value);
-                      setShowSuggestions(true);
-                    }}
-                    onFocus={() => setShowSuggestions(true)}
-                    onBlur={() => {
-                      setTimeout(() => setShowSuggestions(false), 250);
-                    }}
-                    placeholder="Gõ tên linh kiện tự do hoặc tìm kiếm theo SKU kho linh kiện..."
-                  />
-                  {isSearchingInventory && (
-                    <span className="absolute right-3 top-2.5 text-xs text-[#72827a] animate-pulse">
-                      Đang tìm...
-                    </span>
-                  )}
-                </div>
-
-                {/* Dropdown Gợi Ý Từ Kho */}
-                {showSuggestions && (
-                  <div className="absolute left-0 right-0 top-full mt-1 bg-white border border-[#cbe0d5] rounded-[8px] shadow-lg max-h-52 overflow-y-auto z-30 divide-y divide-[#f0f5f2]">
-                    {inventoryParts.length > 0 ? (
-                      inventoryParts.map((part) => (
-                        <div
-                          key={part.id}
-                          onMouseDown={() => {
-                            setPartsNeeded(`${part.name} (SKU: ${part.sku})`);
-                            setShowSuggestions(false);
-                          }}
-                          className="p-2.5 hover:bg-[#f2f8f4] cursor-pointer text-xs flex items-center justify-between transition-colors"
-                        >
-                          <div>
-                            <span className="font-semibold text-[#1c302b] block">{part.name}</span>
-                            <span className="text-[11px] font-mono text-[#5b6e64]">SKU: {part.sku}</span>
-                          </div>
-                          <span
-                            className={`px-2 py-0.5 rounded text-[11px] font-bold ${
-                              (part.stock_quantity ?? 0) > 0
-                                ? 'bg-[#e2f3ea] text-[#176b58]'
-                                : 'bg-[#fee2e2] text-[#b91c1c]'
-                            }`}
-                          >
-                            Còn {part.stock_quantity ?? 0} cái
-                          </span>
-                        </div>
-                      ))
-                    ) : (
-                      <div className="p-3 text-xs text-[#73847c]">
-                        {partsNeeded.trim()
-                          ? `Không tìm thấy trong kho. Nhấn ngoài để dùng tên tự do: "${partsNeeded}"`
-                          : 'Gõ từ khóa để tìm kiếm linh kiện trong kho...'}
-                      </div>
-                    )}
-                  </div>
-                )}
+                <Input
+                  value={partsNeeded}
+                  onChange={(e) => setPartsNeeded(e.target.value)}
+                  placeholder="Nhập tên linh kiện cần yêu cầu hoặc ghi chú linh kiện thay thế..."
+                />
               </div>
 
               {/* Textarea Ghi chú gửi Quầy / Admin */}
@@ -772,20 +682,51 @@ export const TechOrderDetailModal: React.FC<TechOrderDetailModalProps> = ({
           {/* KHU VỰC: LINH KIỆN ĐẶC BIỆT CẦN MUA NGOÀI                                   */}
           {/* ========================================================================= */}
           {isActive && (
-            <div data-testid="tech-special-parts-section" className="p-4 bg-[#fdfaf5] rounded-[10px] border border-[#f5ebdb] space-y-3 shadow-xs">
-              <div className="flex items-center justify-between pb-2 border-b border-[#f0e2cd]">
+            <div
+              data-testid="tech-special-parts-section"
+              className={`p-4 rounded-[10px] space-y-3 shadow-xs border ${
+                (order.special_parts_status === 'pending' || order.specialPartsStatus === 'pending')
+                  ? 'bg-red-50/60 border-red-300 ring-1 ring-red-400/20'
+                  : 'bg-[#fdfaf5] border-[#f5ebdb]'
+              }`}
+            >
+              <div
+                className={`flex items-center justify-between pb-2 border-b ${
+                  (order.special_parts_status === 'pending' || order.specialPartsStatus === 'pending')
+                    ? 'border-red-200'
+                    : 'border-[#f0e2cd]'
+                }`}
+              >
                 <div className="flex items-center gap-2">
-                  <Icon name="cart" size={15} className="text-[#b45309]" />
-                  <h5 className="text-xs font-bold text-[#b45309] uppercase tracking-[0.8px] m-0">
+                  <Icon
+                    name={(order.special_parts_status === 'pending' || order.specialPartsStatus === 'pending') ? "bell" : "cart"}
+                    size={15}
+                    className={(order.special_parts_status === 'pending' || order.specialPartsStatus === 'pending') ? "text-red-600" : "text-[#b45309]"}
+                  />
+                  <h5
+                    className={`text-xs font-bold uppercase tracking-[0.8px] m-0 ${
+                      (order.special_parts_status === 'pending' || order.specialPartsStatus === 'pending')
+                        ? 'text-red-700'
+                        : 'text-[#b45309]'
+                    }`}
+                  >
                     LINH KIỆN ĐẶC BIỆT (CẦN MUA NGOÀI)
                   </h5>
                 </div>
                 {(order.special_parts_status === 'pending' || order.specialPartsStatus === 'pending') ? (
-                  <span data-testid="special-parts-status-pending" className="text-[11px] font-bold text-[#b45309] bg-[#fef3c7] px-2.5 py-0.5 rounded-full border border-[#fde68a]">
+                  <span
+                    data-testid="special-parts-status-pending"
+                    className="text-[11px] font-bold text-red-700 bg-red-50 px-2.5 py-0.5 rounded-full border border-red-300 flex items-center gap-1 shadow-2xs"
+                  >
+                    <Icon name="bell" size={12} className="text-red-600" />
                     Đang chờ Quầy mua ngoài
                   </span>
                 ) : (order.special_parts_status === 'purchased' || order.specialPartsStatus === 'purchased') ? (
-                  <span data-testid="special-parts-status-purchased" className="text-[11px] font-bold text-[#28805e] bg-[#eaf5ef] px-2.5 py-0.5 rounded-full border border-[#c2e4d3]">
+                  <span
+                    data-testid="special-parts-status-purchased"
+                    className="text-[11px] font-bold text-[#28805e] bg-[#eaf5ef] px-2.5 py-0.5 rounded-full border border-[#c2e4d3] flex items-center gap-1"
+                  >
+                    <Icon name="check" size={12} className="text-[#28805e]" />
                     Quầy đã mua linh kiện
                   </span>
                 ) : null}

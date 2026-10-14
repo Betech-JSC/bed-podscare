@@ -276,10 +276,21 @@ export const A4ReceiptTemplate: React.FC<A4ReceiptTemplateProps> = ({ order: sin
             </div>
           </div>
 
-          <p className="text-[6pt] text-[#666666] leading-tight my-0.5">
-            * Chi phí trên là dự kiến tại thời điểm tiếp nhận. <b>Thời hạn bảo hành: {warrantyMonths} tháng (Đến ngày {formattedExpiryDate})</b>. FIXO sẽ chủ động liên hệ quý khách xác
-            nhận trước khi can thiệp nếu có phát sinh linh kiện. Quý khách vui lòng giữ phiếu để đối chiếu.
-          </p>
+          {/* Standardized Warranty Terms Section */}
+          <div className="my-1.5 p-2 bg-[#f9faf9] border border-[#d2ded5] rounded text-[6.5pt] leading-tight text-[#333333]">
+            <div className="font-bold text-[#176b58] uppercase text-[7pt] mb-1 flex items-center justify-between">
+              <span>ĐIỀU KHOẢN VÀ CHÍNH SÁCH BẢO HÀNH TIÊU CHUẨN</span>
+              <span className="font-semibold text-[#176b58] normal-case">
+                Thời hạn bảo hành: <b>{warrantyMonths} tháng</b> (Đến ngày {formattedExpiryDate})
+              </span>
+            </div>
+            <div className="grid grid-cols-2 gap-x-3 gap-y-0.5 text-[6.5pt]">
+              <div>• <b>Điều kiện bảo hành:</b> Máy còn nguyên tem bảo hành của PodsCare, không có dấu hiệu tẩy xóa, rách rời.</div>
+              <div>• <b>Phạm vi áp dụng:</b> Bảo hành đúng hạng mục linh kiện và chức năng đã sửa chữa/thay thế được ghi trên phiếu.</div>
+              <div>• <b>Từ chối bảo hành:</b> Các lỗi phát sinh do rơi vỡ, cấn móp, biến dạng vật lý, hoặc chất lỏng/nước xâm nhập.</div>
+              <div>• <b>Tra cứu điện tử:</b> Tra cứu tiến độ và bảo hành điện tử realtime qua Số điện thoại hoặc quét mã QR.</div>
+            </div>
+          </div>
         </div>
 
         {/* Signatures & Footer */}

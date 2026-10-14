@@ -164,7 +164,7 @@ export const CloseShiftModal: React.FC<CloseShiftModalProps> = ({
         )}
 
         {/* Thông tin số liệu hệ thống ghi nhận trong ca */}
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 p-3.5 bg-[#f6f8f6] border border-[#e9eeeb] rounded-[8px]">
+        <div className="grid grid-cols-2 sm:grid-cols-5 gap-2.5 p-3.5 bg-[#f6f8f6] border border-[#e9eeeb] rounded-[8px]">
           <div>
             <div className="text-[10px] font-bold text-[#81908a] uppercase tracking-[0.8px]">
               Tiền đầu ca
@@ -197,6 +197,26 @@ export const CloseShiftModal: React.FC<CloseShiftModalProps> = ({
               {moneyFormatted(expectedCash)}
             </div>
           </div>
+          <div className="border-l border-[#e9eeeb] pl-2.5">
+            <div className="text-[10px] font-bold text-[#0066cc] uppercase tracking-[0.8px]">
+              Chuyển khoản (VietQR)
+            </div>
+            <div className="font-bold text-sm text-[#0066cc] mt-0.5 font-mono">
+              {moneyFormatted(shift.vietqr_total || (shift as any).vietqr_in || 0)}
+            </div>
+          </div>
+        </div>
+
+        {/* Tổng doanh thu Chuyển khoản VietQR tách biệt với tiền két */}
+        <div className="flex items-center justify-between p-3 bg-[#f0f7ff] border border-[#b9d5f7] rounded-[8px] text-xs">
+          <div className="flex items-center gap-2">
+            <div className="w-2 h-2 rounded-full bg-[#0066cc]" />
+            <span className="font-bold text-[#004085]">Doanh thu Chuyển khoản (VietQR / CK) trong ca:</span>
+            <span className="text-[#426c96] text-[11px]">(Đã vào tài khoản ngân hàng, không nằm trong két)</span>
+          </div>
+          <span className="font-bold font-mono text-sm text-[#004085]">
+            {moneyFormatted(shift.vietqr_total || (shift as any).vietqr_in || 0)}
+          </span>
         </div>
 
         {/* DUY NHẤT 1 Ô NHẬP TIỀN THỰC TẾ THEO ĐÚNG CHỈ ĐẠO CỐT LÕI */}

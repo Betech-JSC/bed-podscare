@@ -108,7 +108,6 @@ export function getStatusCodeLabel(codeOrLabel?: string | null): string {
  */
 export const FSM_QUICK_ACTIONS: Record<string, QuickTransitionAction[]> = {
   inspecting: [
-    { label: 'Chờ khách duyệt', targetStatus: 'waiting_approval', statusType: 'wait', variant: 'secondary' },
     { label: 'Chờ kỹ thuật', targetStatus: 'waiting_tech', statusType: 'new', variant: 'secondary' },
     { label: 'Đã hủy', targetStatus: 'cancelled', statusType: 'gray', variant: 'danger' },
   ],

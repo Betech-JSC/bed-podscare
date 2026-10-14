@@ -4,6 +4,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { useRouter, usePathname } from 'next/navigation';
 import {
   AppSidebar,
+  rolePermissions,
   Topbar,
   NotificationPopover,
   type NotificationItem,
@@ -11,6 +12,7 @@ import {
   Button,
   Icon,
   Modal,
+  useToast,
 } from '@podscare/ui';
 import type { UserProfile } from '@podscare/types';
 import { saasService } from '@podscare/api-client';
@@ -120,6 +122,7 @@ export const AppShell: React.FC<AppShellProps> = ({ children, crumbName = 'Tổn
     isLoadingAuth,
     logout,
   } = usePodsCare();
+  const { toast } = useToast();
 
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [searchVal, setSearchVal] = useState('');
@@ -198,12 +201,51 @@ export const AppShell: React.FC<AppShellProps> = ({ children, crumbName = 'Tổn
         const isPlatformRoute = pathname.startsWith('/platform');
         if (currentUser?.role === 'super_admin' && !isPlatformRoute) {
           router.replace('/platform');
+          return;
         } else if (currentUser?.role !== 'super_admin' && isPlatformRoute) {
           router.replace('/dashboard');
+          return;
+        }
+
+        // Hidden & Streamlined Route Guard for direct URL access
+        const hiddenRouteMap: Record<string, string> = {
+          '/quotes': 'quotes',
+          '/inventory': 'inventory',
+          '/shipments': 'shipments',
+          '/partners': 'partners',
+          '/devices': 'devices',
+        };
+
+        const matchingPrefix = Object.keys(hiddenRouteMap).find(
+          (prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`)
+        );
+
+        if (matchingPrefix) {
+          const moduleKey = hiddenRouteMap[matchingPrefix];
+          const rawRole = (currentUser?.role || 'admin') as string;
+          const normalizedRole: 'admin' | 'cskh' | 'tech' | 'qc' | 'inventory' | 'super_admin' =
+            rawRole === 'super_admin'
+              ? 'super_admin'
+              : rawRole === 'technician' || rawRole === 'tech'
+              ? 'tech'
+              : rawRole === 'cskh'
+              ? 'cskh'
+              : rawRole === 'qc'
+              ? 'qc'
+              : rawRole === 'inventory'
+              ? 'inventory'
+              : 'admin';
+
+          const allowedModules = rolePermissions[normalizedRole] || [];
+          if (!allowedModules.includes(moduleKey)) {
+            toast('Tính năng này đã được tinh gọn hoặc bạn không có quyền truy cập.', 'error');
+            router.replace('/dashboard');
+            return;
+          }
         }
       }
     }
-  }, [isLoadingAuth, isAuthenticated, currentUser?.role, pathname, router]);
+  }, [isLoadingAuth, isAuthenticated, currentUser?.role, pathname, router, toast]);
 
   const currentNav =
     pathname === '/dashboard' || pathname === '/'

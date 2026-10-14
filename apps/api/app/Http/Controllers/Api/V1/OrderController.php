@@ -176,12 +176,12 @@ class OrderController extends Controller
                 $todayStart = Carbon::today($tz)->startOfDay();
                 $todayEnd = Carbon::today($tz)->endOfDay();
                 if ($isTechnician && ! $isCompletedDate) {
-                    // KTV xem ca hôm nay: Bao gồm các đơn hôm nay HOẶC các đơn dở dang từ 3 ngày gần nhất (hôm nay, hôm qua, hôm kia)
-                    $threeDaysAgoStart = Carbon::today($tz)->subDays(2)->startOfDay();
-                    $query->where(function ($q) use ($todayStart, $todayEnd, $threeDaysAgoStart) {
+                    // KTV xem ca hôm nay: Bao gồm các đơn hôm nay HOẶC các đơn dở dang từ 7 ngày gần nhất (hôm nay và 6 ngày trước)
+                    $sevenDaysAgoStart = Carbon::today($tz)->subDays(6)->startOfDay();
+                    $query->where(function ($q) use ($todayStart, $todayEnd, $sevenDaysAgoStart) {
                         $q->whereBetween('created_at', [$todayStart, $todayEnd])
-                          ->orWhere(function ($sub) use ($threeDaysAgoStart) {
-                              $sub->where('created_at', '>=', $threeDaysAgoStart)
+                          ->orWhere(function ($sub) use ($sevenDaysAgoStart) {
+                              $sub->where('created_at', '>=', $sevenDaysAgoStart)
                                   ->whereNotIn('status', ['completed', 'cancelled', 'rejected']);
                           });
                     });
@@ -195,12 +195,12 @@ class OrderController extends Controller
             } elseif ($dateFilter === '3_days') {
                 $filterDateFrom($query, Carbon::today($tz)->subDays(2)->startOfDay());
             } elseif ($dateFilter === '7_days') {
-                $filterDateFrom($query, Carbon::now($tz)->subDays(7)->startOfDay());
+                $filterDateFrom($query, Carbon::today($tz)->subDays(6)->startOfDay());
             } elseif ($dateFilter === '30_days') {
                 $filterDateFrom($query, Carbon::now($tz)->subDays(30)->startOfDay());
             } elseif ($dateFilter === 'all') {
                 if ($isTechnician && ! $isCompletedDate) {
-                    $query->where('created_at', '>=', Carbon::today($tz)->subDays(2)->startOfDay());
+                    $query->where('created_at', '>=', Carbon::today($tz)->subDays(6)->startOfDay());
                 }
             }
         }

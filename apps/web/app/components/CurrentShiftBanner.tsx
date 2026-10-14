@@ -148,7 +148,7 @@ export const CurrentShiftBanner: React.FC<CurrentShiftBannerProps> = ({
       </div>
 
       {/* Số liệu thống kê chi tiết két tiền mặt trong ca */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 pt-3">
+      <div className="grid grid-cols-2 sm:grid-cols-5 gap-3 pt-3">
         <div className="bg-[#f6f8f6] p-2.5 rounded-[8px]">
           <div className="text-[10px] font-bold text-[#81908a] uppercase tracking-[0.6px]">
             Tiền đầu ca
@@ -182,6 +182,15 @@ export const CurrentShiftBanner: React.FC<CurrentShiftBannerProps> = ({
           </div>
           <div className="text-base font-bold text-[#176b51] font-mono mt-0.5">
             {moneyFormatted(expectedCash)}
+          </div>
+        </div>
+
+        <div className="bg-[#f0f7ff] p-2.5 rounded-[8px] border border-[#d0e3f7]">
+          <div className="text-[10px] font-bold text-[#0066cc] uppercase tracking-[0.6px]">
+            Chuyển khoản (VietQR)
+          </div>
+          <div className="text-base font-bold text-[#0066cc] font-mono mt-0.5">
+            {moneyFormatted(Number(currentShift.vietqr_total || 0))}
           </div>
         </div>
       </div>

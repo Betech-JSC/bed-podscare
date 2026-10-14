@@ -9,6 +9,9 @@ import {
   EmptyState,
   ErrorFallback,
   useToast,
+  Input,
+  Textarea,
+  Icon,
 } from '@podscare/ui';
 import { AppShell } from '../components/AppShell';
 import { IntakeWizardModal } from '../components/IntakeWizardModal';
@@ -33,20 +36,27 @@ interface CustomerViewModel {
 export default function CustomersPage() {
   const { toast } = useToast();
   const [search, setSearch] = useState('');
+  const [page, setPage] = useState<number>(1);
+  const [perPage, setPerPage] = useState<number | 'all'>(15);
   const [selectedCustomerId, setSelectedCustomerId] = useState<number | null>(null);
   const [intakeModalOpen, setIntakeModalOpen] = useState(false);
   const [newIntakeCustomer, setNewIntakeCustomer] = useState<{ name: string; phone: string } | null>(null);
 
-  // Nạp danh sách khách hàng trực tiếp từ API và tìm kiếm động
+  // Nạp danh sách khách hàng trực tiếp từ API kèm phân trang và tìm kiếm động
   const {
     data: apiCustomersData,
     isLoading,
     isError,
     refetch,
   } = useQuery({
-    queryKey: ['customers', search],
+    queryKey: ['customers', search.trim(), page, perPage],
     queryFn: async () => {
-      const res = await customerService.getCustomers(search.trim() || undefined);
+      const res = await customerService.getCustomers({
+        q: search.trim() || undefined,
+        page: perPage === 'all' ? 1 : page,
+        per_page: perPage,
+        all: perPage === 'all' ? true : undefined,
+      });
       return res?.data || res;
     },
   });
@@ -201,6 +211,78 @@ export default function CustomersPage() {
     setIntakeModalOpen(true);
   };
 
+  // Edit Customer State & Handlers
+  const [editingCustomer, setEditingCustomer] = useState<any | null>(null);
+  const [editName, setEditName] = useState('');
+  const [editPhone, setEditPhone] = useState('');
+  const [editAddress, setEditAddress] = useState('');
+  const [editEmail, setEditEmail] = useState('');
+  const [isSubmittingEdit, setIsSubmittingEdit] = useState(false);
+  const [editError, setEditError] = useState<string | null>(null);
+
+  const handleOpenEditModal = (c: any) => {
+    if (!c) return;
+    setEditingCustomer(c);
+    setEditName(c.name || '');
+    setEditPhone(c.phone === 'Chưa cập nhật SĐT' ? '' : c.phone || '');
+    setEditAddress(c.address || c.shipping_address || c.raw?.address || '');
+    setEditEmail(c.email || '');
+    setEditError(null);
+  };
+
+  const handleSaveEditCustomer = async () => {
+    if (!editingCustomer) return;
+    if (!editName.trim()) {
+      setEditError('Họ và tên khách hàng không được để trống.');
+      return;
+    }
+    if (!editPhone.trim()) {
+      setEditError('Số điện thoại không được để trống.');
+      return;
+    }
+
+    setIsSubmittingEdit(true);
+    setEditError(null);
+    try {
+      await customerService.updateCustomer(editingCustomer.id, {
+        name: editName.trim(),
+        phone: editPhone.trim(),
+        address: editAddress.trim() || undefined,
+        email: editEmail.trim() || undefined,
+      });
+
+      toast('Cập nhật thông tin khách hàng thành công!', 'success');
+      setEditingCustomer(null);
+      await refetch();
+    } catch (err: any) {
+      const msg = err?.data?.message || err?.message || 'Có lỗi xảy ra khi lưu thông tin khách hàng.';
+      setEditError(msg);
+    } finally {
+      setIsSubmittingEdit(false);
+    }
+  };
+
+  // Thông tin phân trang từ response API
+  const total = apiCustomersData?.total ?? customers.length;
+  const currentPage = apiCustomersData?.current_page ?? page;
+  const lastPage = apiCustomersData?.last_page ?? 1;
+  const from = apiCustomersData?.from ?? (customers.length > 0 ? 1 : 0);
+  const to = apiCustomersData?.to ?? customers.length;
+
+  const pageNumbers = useMemo(() => {
+    const pages: number[] = [];
+    const maxPagesToShow = 5;
+    let startPage = Math.max(1, currentPage - 2);
+    const endPage = Math.min(lastPage, startPage + maxPagesToShow - 1);
+    if (endPage - startPage + 1 < maxPagesToShow) {
+      startPage = Math.max(1, endPage - maxPagesToShow + 1);
+    }
+    for (let p = startPage; p <= endPage; p++) {
+      pages.push(p);
+    }
+    return pages;
+  }, [currentPage, lastPage]);
+
   return (
     <AppShell crumbName="Khách hàng">
       <div className="space-y-5">
@@ -237,7 +319,10 @@ export default function CustomersPage() {
         <div className="bg-white rounded-[10px] border border-[#e5ece8] p-4 sm:p-5 shadow-xs">
           <FilterBar
             searchValue={search}
-            onSearchChange={setSearch}
+            onSearchChange={(val: string) => {
+              setSearch(val);
+              setPage(1);
+            }}
             searchPlaceholder="Tìm theo họ tên hoặc số điện thoại..."
           />
 
@@ -251,67 +336,161 @@ export default function CustomersPage() {
               description="Thử tìm kiếm với số điện thoại hoặc họ tên khác."
             />
           ) : (
-            <div
-              data-testid="compact-customer-list"
-              className="mt-3 border border-[#e5ece8] rounded-[8px] overflow-hidden divide-y divide-[#edf1ee] bg-white shadow-xs"
-            >
-              {customers.map((c) => (
-                <div
-                  key={c.id || c.phone}
-                  onClick={() => setSelectedCustomerId(c.id)}
-                  data-testid={`customer-row-${c.id}`}
-                  className="group flex items-center justify-between px-3 py-2 sm:px-4 hover:bg-[#f3f9f6] transition-colors cursor-pointer min-h-[48px] max-h-[52px]"
-                >
-                  {/* Cột trái: Avatar 32px + Họ tên & SĐT */}
-                  <div className="flex items-center gap-2.5 min-w-0 flex-1 mr-2">
-                    <div className="w-8 h-8 rounded-full bg-[#eaf4ef] text-[#176b58] font-bold text-xs flex items-center justify-center flex-shrink-0 border border-[#b8d7c8]">
-                      {c.initials}
-                    </div>
-                    <div className="min-w-0 flex-1">
-                      <div className="flex items-center gap-2">
-                        <span
-                          data-testid={`customer-name-${c.id}`}
-                          className="font-bold text-sm text-[#111827] truncate group-hover:text-[#176b58] transition-colors"
-                        >
-                          {c.name}
-                        </span>
-                        {c.email && (
-                          <span className="hidden md:inline-block text-[11px] text-[#86968f] truncate max-w-[160px]">
-                            · {c.email}
+            <>
+              <div
+                data-testid="compact-customer-list"
+                className="mt-3 border border-[#e5ece8] rounded-[8px] overflow-hidden divide-y divide-[#edf1ee] bg-white shadow-xs"
+              >
+                {customers.map((c) => (
+                  <div
+                    key={c.id || c.phone}
+                    onClick={() => setSelectedCustomerId(c.id)}
+                    data-testid={`customer-row-${c.id}`}
+                    className="group flex items-center justify-between px-3 py-2 sm:px-4 hover:bg-[#f3f9f6] transition-colors cursor-pointer min-h-[48px] max-h-[52px]"
+                  >
+                    {/* Cột trái: Avatar 32px + Họ tên & SĐT */}
+                    <div className="flex items-center gap-2.5 min-w-0 flex-1 mr-2">
+                      <div className="w-8 h-8 rounded-full bg-[#eaf4ef] text-[#176b58] font-bold text-xs flex items-center justify-center flex-shrink-0 border border-[#b8d7c8]">
+                        {c.initials}
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center gap-2">
+                          <span
+                            data-testid={`customer-name-${c.id}`}
+                            className="font-bold text-sm text-[#111827] truncate group-hover:text-[#176b58] transition-colors"
+                          >
+                            {c.name}
                           </span>
-                        )}
+                          {c.email && (
+                            <span className="hidden md:inline-block text-[11px] text-[#86968f] truncate max-w-[160px]">
+                              · {c.email}
+                            </span>
+                          )}
+                        </div>
+                        <div className="font-mono text-xs text-[#667a70] truncate leading-tight">
+                          {c.phone}
+                        </div>
                       </div>
-                      <div className="font-mono text-xs text-[#667a70] truncate leading-tight">
-                        {c.phone}
-                      </div>
+                    </div>
+
+                    {/* Cột phải: Chỉnh sửa + Số đơn + Tổng chi tiêu + Chevron */}
+                    <div className="flex items-center gap-2 sm:gap-2.5 flex-shrink-0">
+                      <button
+                        type="button"
+                        data-testid={`btn-edit-customer-${c.id}`}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleOpenEditModal(c);
+                        }}
+                        className="px-2 py-1 rounded-[6px] text-xs font-semibold text-[#176b58] bg-[#f0f7f3] hover:bg-[#d8ece1] border border-[#cbe3d5] transition-colors flex items-center gap-1 cursor-pointer"
+                        title="Chỉnh sửa thông tin khách hàng"
+                      >
+                        <Icon name="edit" size={12} />
+                        <span className="hidden sm:inline">Chỉnh sửa</span>
+                      </button>
+                      <span className="px-2 py-0.5 rounded text-[11px] font-medium bg-[#eaf4ef] text-[#176b58] whitespace-nowrap">
+                        {c.orders} đơn
+                      </span>
+                      <span className="font-bold font-mono text-xs text-[#111827] min-w-[75px] sm:min-w-[90px] text-right whitespace-nowrap">
+                        {c.spent}
+                      </span>
+                      <svg
+                        className="w-4 h-4 text-[#9ca3af] group-hover:text-[#176b58] transition-colors flex-shrink-0"
+                        fill="none"
+                        viewBox="0 0 24 24"
+                        stroke="currentColor"
+                      >
+                        <path
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          strokeWidth={2}
+                          d="M9 5l7 7-7 7"
+                        />
+                      </svg>
                     </div>
                   </div>
+                ))}
+              </div>
 
-                  {/* Cột phải: Số đơn + Tổng chi tiêu + Chevron */}
-                  <div className="flex items-center gap-2 sm:gap-3 flex-shrink-0">
-                    <span className="px-2 py-0.5 rounded text-[11px] font-medium bg-[#eaf4ef] text-[#176b58] whitespace-nowrap">
-                      {c.orders} đơn
-                    </span>
-                    <span className="font-bold font-mono text-xs text-[#111827] min-w-[75px] sm:min-w-[90px] text-right whitespace-nowrap">
-                      {c.spent}
-                    </span>
-                    <svg
-                      className="w-4 h-4 text-[#9ca3af] group-hover:text-[#176b58] transition-colors flex-shrink-0"
-                      fill="none"
-                      viewBox="0 0 24 24"
-                      stroke="currentColor"
+              {/* Thanh điều hướng phân trang (Pagination Bar) chuẩn thiết kế Calm Jade */}
+              <div
+                data-testid="customers-pagination-bar"
+                className="mt-4 pt-3.5 border-t border-[#edf1ee] flex flex-wrap items-center justify-between gap-3 text-xs text-[#596962]"
+              >
+                <div className="flex flex-wrap items-center gap-3">
+                  <span>
+                    Hiển thị <b className="text-[#1c302b]">{from} - {to}</b> trên tổng{' '}
+                    <b className="text-[#176b58]">{total}</b> khách hàng
+                  </span>
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-[#7e8d85]">Số dòng:</span>
+                    <select
+                      data-testid="customers-per-page-select"
+                      value={perPage}
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        setPerPage(val === 'all' ? 'all' : Number(val));
+                        setPage(1);
+                      }}
+                      className="text-xs border border-[#d8e2dc] rounded-[7px] px-2.5 py-1 bg-white text-[#1c302b] font-semibold outline-none focus:border-[#176b58] cursor-pointer"
                     >
-                      <path
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                        strokeWidth={2}
-                        d="M9 5l7 7-7 7"
-                      />
-                    </svg>
+                      <option value={15}>15 / trang</option>
+                      <option value={30}>30 / trang</option>
+                      <option value={50}>50 / trang</option>
+                      <option value={100}>100 / trang</option>
+                      <option value="all">Tất cả</option>
+                    </select>
                   </div>
                 </div>
-              ))}
-            </div>
+
+                <div className="flex items-center gap-1.5">
+                  <button
+                    type="button"
+                    data-testid="customers-prev-page"
+                    disabled={currentPage <= 1 || perPage === 'all'}
+                    onClick={() => setPage((prev) => Math.max(1, prev - 1))}
+                    className={`px-2.5 py-1 rounded-[7px] font-semibold border transition-colors ${
+                      currentPage <= 1 || perPage === 'all'
+                        ? 'bg-[#f6f8f7] text-[#9ca8a2] border-[#e5ece8] cursor-not-allowed'
+                        : 'bg-white text-[#1c302b] border-[#d8e2dc] hover:bg-[#eaf4ef] hover:text-[#176b58] hover:border-[#b8d7c8] cursor-pointer'
+                    }`}
+                  >
+                    Trước
+                  </button>
+
+                  {pageNumbers.map((p) => (
+                    <button
+                      key={p}
+                      type="button"
+                      data-testid={`customers-page-${p}`}
+                      disabled={perPage === 'all'}
+                      onClick={() => setPage(p)}
+                      className={`min-w-[28px] h-7 px-2 rounded-[7px] font-bold text-xs transition-all cursor-pointer ${
+                        p === currentPage
+                          ? 'bg-[#176b58] text-white shadow-xs'
+                          : 'bg-white text-[#4b5b53] border border-[#d8e2dc] hover:bg-[#eaf4ef] hover:text-[#176b58]'
+                      }`}
+                    >
+                      {p}
+                    </button>
+                  ))}
+
+                  <button
+                    type="button"
+                    data-testid="customers-next-page"
+                    disabled={currentPage >= lastPage || perPage === 'all'}
+                    onClick={() => setPage((prev) => Math.min(lastPage, prev + 1))}
+                    className={`px-2.5 py-1 rounded-[7px] font-semibold border transition-colors ${
+                      currentPage >= lastPage || perPage === 'all'
+                        ? 'bg-[#f6f8f7] text-[#9ca8a2] border-[#e5ece8] cursor-not-allowed'
+                        : 'bg-white text-[#1c302b] border-[#d8e2dc] hover:bg-[#eaf4ef] hover:text-[#176b58] hover:border-[#b8d7c8] cursor-pointer'
+                    }`}
+                  >
+                    Sau
+                  </button>
+                </div>
+              </div>
+            </>
           )}
         </div>
       </div>
@@ -360,8 +539,20 @@ export default function CustomersPage() {
                     {activeCustomer?.initials || 'KH'}
                   </div>
                   <div>
-                    <div className="font-bold text-base text-[#111827]">
-                      {activeCustomer?.name}
+                    <div className="flex items-center gap-2">
+                      <span className="font-bold text-base text-[#111827]">
+                        {activeCustomer?.name}
+                      </span>
+                      <button
+                        type="button"
+                        data-testid="detail-btn-edit-customer"
+                        onClick={() => handleOpenEditModal(activeCustomer)}
+                        className="px-2 py-0.5 rounded text-xs font-semibold text-[#176b58] bg-white border border-[#b8d7c8] hover:bg-[#eaf4ef] transition-colors cursor-pointer flex items-center gap-1"
+                        title="Chỉnh sửa thông tin khách hàng"
+                      >
+                        <Icon name="edit" size={12} />
+                        <span>Chỉnh sửa</span>
+                      </button>
                     </div>
                     <div className="flex items-center gap-2 mt-0.5">
                       <span className="font-mono text-sm text-[#176b58] font-semibold">
@@ -579,6 +770,79 @@ export default function CustomersPage() {
                 </div>
               )}
             </div>
+          </div>
+        </Modal>
+      )}
+
+      {/* Modal Chỉnh sửa thông tin khách hàng */}
+      {editingCustomer && (
+        <Modal
+          isOpen={Boolean(editingCustomer)}
+          onClose={() => setEditingCustomer(null)}
+          title="Chỉnh sửa thông tin khách hàng"
+          eyebrow="CẬP NHẬT HỒ SƠ · FIXO CRM"
+          maxWidth="md"
+          footer={
+            <div className="flex items-center justify-end gap-2.5 w-full">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setEditingCustomer(null)}
+                disabled={isSubmittingEdit}
+              >
+                Hủy bỏ
+              </Button>
+              <Button
+                variant="primary"
+                size="sm"
+                data-testid="btn-save-customer-edit"
+                loading={isSubmittingEdit}
+                disabled={isSubmittingEdit}
+                onClick={handleSaveEditCustomer}
+              >
+                Lưu thay đổi
+              </Button>
+            </div>
+          }
+        >
+          <div className="space-y-3.5">
+            {editError && (
+              <div className="p-3 bg-[#fbefed] border border-[#f5c7c2] rounded-[8px] text-[#bc5b52] text-xs">
+                {editError}
+              </div>
+            )}
+            <Input
+              label="Họ và tên khách hàng *"
+              value={editName}
+              onChange={(e) => {
+                setEditName(e.target.value);
+                if (editError) setEditError(null);
+              }}
+              placeholder="Nhập họ và tên..."
+            />
+            <Input
+              label="Số điện thoại *"
+              value={editPhone}
+              onChange={(e) => {
+                setEditPhone(e.target.value);
+                if (editError) setEditError(null);
+              }}
+              placeholder="Nhập số điện thoại..."
+            />
+            <Input
+              label="Email"
+              type="email"
+              value={editEmail}
+              onChange={(e) => setEditEmail(e.target.value)}
+              placeholder="example@gmail.com"
+            />
+            <Textarea
+              label="Địa chỉ"
+              value={editAddress}
+              onChange={(e) => setEditAddress(e.target.value)}
+              placeholder="Số nhà, tên đường, phường/xã, quận/huyện, tỉnh/thành phố..."
+              rows={2}
+            />
           </div>
         </Modal>
       )}

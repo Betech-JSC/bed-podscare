@@ -12,6 +12,7 @@ import {
 } from '@podscare/ui';
 import type { RepairOrder } from '@podscare/types';
 import { repairService } from '@podscare/api-client';
+import { useShift } from '../providers/ShiftProvider';
 
 export interface CheckoutHandoverModalProps {
   isOpen: boolean;
@@ -44,6 +45,7 @@ export const CheckoutHandoverModal: React.FC<CheckoutHandoverModalProps> = ({
   onSuccess,
 }) => {
   const { toast } = useToast();
+  const { refreshShift } = useShift();
   const [paymentMethod, setPaymentMethod] = useState<'cash' | 'bank_transfer'>('cash');
   const [transactionRef, setTransactionRef] = useState('');
   const [notes, setNotes] = useState('');
@@ -152,6 +154,8 @@ export const CheckoutHandoverModal: React.FC<CheckoutHandoverModalProps> = ({
       } catch {
         // ignore audio failure
       }
+
+      await refreshShift().catch(() => {});
 
       toast(`Đã thu ${moneyFormatted(finalAmount)} và hoàn tất giao máy cho đơn ${order.id}!`, 'success');
 
@@ -560,17 +564,52 @@ export const CheckoutHandoverModal: React.FC<CheckoutHandoverModalProps> = ({
           </div>
         </div>
 
-        {/* Mã tham chiếu nếu chuyển khoản */}
+        {/* Mã QR động VietQR & Mã tham chiếu nếu chuyển khoản */}
         {paymentMethod === 'bank_transfer' && (
-          <div>
-            <label className="block text-xs font-bold text-[#2d3d35] mb-1">
-              Mã tham chiếu ngân hàng / Mã giao dịch (tùy chọn):
-            </label>
-            <Input
-              placeholder="Ví dụ: FT2610079988 hoặc 4 số cuối mã GD..."
-              value={transactionRef}
-              onChange={(e) => setTransactionRef(e.target.value)}
-            />
+          <div className="space-y-3">
+            <div
+              data-testid="checkout-vietqr-box"
+              className="p-4 rounded-[10px] border-2 border-[#176b58]/30 bg-[#f4faf7] flex flex-col sm:flex-row items-center gap-4"
+            >
+              <div className="bg-white p-2 rounded-[8px] border border-[#cde4d8] shadow-2xs flex-none">
+                <img
+                  src={`https://img.vietqr.io/image/MB-0987654321-compact2.png?amount=${finalAmount}&addInfo=${encodeURIComponent(`PODSCARE ${order.id}`)}`}
+                  alt={`VietQR ${order.id}`}
+                  className="w-36 h-36 object-contain"
+                />
+              </div>
+              <div className="space-y-1.5 text-xs flex-1">
+                <span className="inline-block px-2 py-0.5 rounded bg-[#176b58] text-white font-bold text-[10px] uppercase tracking-wider">
+                  Quét mã VietQR tự động điền tiền & nội dung
+                </span>
+                <div className="text-[#1c302b]">
+                  <span className="text-[#5c6e65]">Số tiền chuyển khoản: </span>
+                  <b className="text-base font-bold text-[#176b58] font-mono">
+                    {moneyFormatted(finalAmount)}
+                  </b>
+                </div>
+                <div className="text-[#1c302b]">
+                  <span className="text-[#5c6e65]">Nội dung chuyển khoản: </span>
+                  <b className="font-mono font-bold text-[#176b58] bg-white px-2 py-0.5 rounded border border-[#b8d9cb]">
+                    PODSCARE {order.id}
+                  </b>
+                </div>
+                <p className="text-[11px] text-[#62756d] m-0">
+                  Khách quét mã QR trên màn hình, kiểm tra đúng số tiền và nội dung trước khi xác nhận bàn giao.
+                </p>
+              </div>
+            </div>
+
+            <div>
+              <label className="block text-xs font-bold text-[#2d3d35] mb-1">
+                Mã tham chiếu ngân hàng / Mã giao dịch (tùy chọn):
+              </label>
+              <Input
+                placeholder="Ví dụ: FT2610079988 hoặc 4 số cuối mã GD..."
+                value={transactionRef}
+                onChange={(e) => setTransactionRef(e.target.value)}
+              />
+            </div>
           </div>
         )}
 

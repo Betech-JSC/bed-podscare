@@ -109,6 +109,8 @@ Route::prefix('v1')->group(function () {
         Route::get('/customers', [CustomerController::class, 'index'])->name('api.v1.customers.index');
         Route::post('/customers', [CustomerController::class, 'store'])->name('api.v1.customers.store');
         Route::get('/customers/{id}', [CustomerController::class, 'show'])->name('api.v1.customers.show');
+        Route::put('/customers/{id}', [CustomerController::class, 'update'])->name('api.v1.customers.update');
+        Route::patch('/customers/{id}', [CustomerController::class, 'update'])->name('api.v1.customers.patch');
         Route::get('/customers/{id}/history', [CustomerController::class, 'history'])->name('api.v1.customers.history');
 
         // Repair Orders & FSM Workflow

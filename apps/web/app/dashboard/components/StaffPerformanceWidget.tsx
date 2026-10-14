@@ -15,6 +15,22 @@ export interface StaffPerformanceWidgetProps {
 }
 
 type TabKey = 'technicians' | 'cskh';
+type SortDirection = 'asc' | 'desc';
+type TechSortKey =
+  | 'name'
+  | 'total_orders'
+  | 'completed'
+  | 'warranty_rate'
+  | 'qc_pass_rate'
+  | 'avg_processing_time_minutes'
+  | 'revenue_generated';
+type CskhSortKey =
+  | 'name'
+  | 'orders_created_count'
+  | 'orders_completed_count'
+  | 'conversion_rate'
+  | 'efficiency'
+  | 'revenue_generated';
 
 export const StaffPerformanceWidget: React.FC<StaffPerformanceWidgetProps> = ({
   branchId,
@@ -24,6 +40,10 @@ export const StaffPerformanceWidget: React.FC<StaffPerformanceWidgetProps> = ({
   className = '',
 }) => {
   const [activeTab, setActiveTab] = useState<TabKey>('technicians');
+  const [techSortKey, setTechSortKey] = useState<TechSortKey>('completed');
+  const [techSortDir, setTechSortDir] = useState<SortDirection>('desc');
+  const [cskhSortKey, setCskhSortKey] = useState<CskhSortKey>('orders_created_count');
+  const [cskhSortDir, setCskhSortDir] = useState<SortDirection>('desc');
 
   const { data, isLoading, isError, refetch, isFetching } = useQuery({
     queryKey: ['staff-kpi', branchId, selectedDate, period],
@@ -60,6 +80,114 @@ export const StaffPerformanceWidget: React.FC<StaffPerformanceWidgetProps> = ({
     return [];
   }, [data]);
 
+  const getTechWarrantyRate = (tech: TechnicianKpiItem): number => {
+    if (tech.warranty_rate !== undefined && tech.warranty_rate !== null) {
+      return Number(tech.warranty_rate);
+    }
+    const completed = Number(tech.completed) || 0;
+    const rework = Number(tech.warranty_count ?? tech.rework_needed) || 0;
+    return completed > 0 ? Math.round((rework / completed) * 1000) / 10 : 0;
+  };
+
+  const handleTechSort = (key: TechSortKey) => {
+    if (techSortKey === key) {
+      setTechSortDir((prev) => (prev === 'asc' ? 'desc' : 'asc'));
+    } else {
+      setTechSortKey(key);
+      setTechSortDir(key === 'name' ? 'asc' : 'desc');
+    }
+  };
+
+  const handleCskhSort = (key: CskhSortKey) => {
+    if (cskhSortKey === key) {
+      setCskhSortDir((prev) => (prev === 'asc' ? 'desc' : 'asc'));
+    } else {
+      setCskhSortKey(key);
+      setCskhSortDir(key === 'name' ? 'asc' : 'desc');
+    }
+  };
+
+  const sortedTechnicians = useMemo(() => {
+    const list = [...technicians];
+    list.sort((a, b) => {
+      if (techSortKey === 'name') {
+        const cmp = (a.name || '').localeCompare(b.name || '', 'vi');
+        return techSortDir === 'asc' ? cmp : -cmp;
+      }
+      const getVal = (item: TechnicianKpiItem): number => {
+        switch (techSortKey) {
+          case 'total_orders':
+            return Number(item.total_orders ?? 0);
+          case 'completed':
+            return Number(item.completed ?? 0);
+          case 'warranty_rate':
+            return getTechWarrantyRate(item);
+          case 'qc_pass_rate':
+            return item.qc_pass_rate !== null && item.qc_pass_rate !== undefined
+              ? Number(item.qc_pass_rate)
+              : -1;
+          case 'avg_processing_time_minutes':
+            return item.avg_processing_time_minutes !== null &&
+              item.avg_processing_time_minutes !== undefined
+              ? Number(item.avg_processing_time_minutes)
+              : -1;
+          case 'revenue_generated':
+            return item.revenue_generated !== null && item.revenue_generated !== undefined
+              ? Number(item.revenue_generated)
+              : -1;
+          default:
+            return 0;
+        }
+      };
+      const valA = getVal(a);
+      const valB = getVal(b);
+      return techSortDir === 'asc' ? valA - valB : valB - valA;
+    });
+    return list;
+  }, [technicians, techSortKey, techSortDir]);
+
+  const sortedCskhStaff = useMemo(() => {
+    const list = [...cskhStaff];
+    list.sort((a, b) => {
+      if (cskhSortKey === 'name') {
+        const cmp = (a.name || '').localeCompare(b.name || '', 'vi');
+        return cskhSortDir === 'asc' ? cmp : -cmp;
+      }
+      const getVal = (item: CskhKpiItem): number => {
+        switch (cskhSortKey) {
+          case 'orders_created_count':
+            return Number(item.orders_created_count ?? 0);
+          case 'orders_completed_count':
+            return Number(item.orders_completed_count ?? 0);
+          case 'conversion_rate':
+          case 'efficiency':
+            return Number(item.conversion_rate ?? 0);
+          case 'revenue_generated':
+            return item.revenue_generated !== null && item.revenue_generated !== undefined
+              ? Number(item.revenue_generated)
+              : -1;
+          default:
+            return 0;
+        }
+      };
+      const valA = getVal(a);
+      const valB = getVal(b);
+      return cskhSortDir === 'asc' ? valA - valB : valB - valA;
+    });
+    return list;
+  }, [cskhStaff, cskhSortKey, cskhSortDir]);
+
+  const renderSortIcon = (active: boolean, dir: SortDirection) => {
+    if (!active) {
+      return <span className="ml-1 text-[10px] text-[#b4c2bb]">↕</span>;
+    }
+    return (
+      <span className="ml-1 text-[10px] text-[#176b58]">
+        {dir === 'asc' ? '▲' : '▼'}
+      </span>
+    );
+  };
+
   const summary = data?.summary;
 
   const canViewRevenue = useMemo(() => {
@@ -94,7 +222,7 @@ export const StaffPerformanceWidget: React.FC<StaffPerformanceWidgetProps> = ({
               Bảng theo dõi năng suất & chất lượng
             </h3>
             <p className="text-xs text-[#7e8d85] mt-0.5 mb-0">
-              Đo lường khối lượng đơn tiếp nhận, tỷ lệ hoàn tất sửa chữa, tiêu chuẩn QC và doanh thu theo vai trò.
+              Đo lường khối lượng đơn tiếp nhận, tỷ lệ bảo hành, tiêu chuẩn QC và doanh thu theo vai trò.
             </p>
           </div>
 
@@ -122,6 +250,13 @@ export const StaffPerformanceWidget: React.FC<StaffPerformanceWidgetProps> = ({
               </span>
             </div>
             <div>
+              <span className="text-[11px] text-[#7d8d85] block">Tỷ lệ bảo hành:</span>
+              <span className="font-heading font-bold text-sm text-[#bc5b52]">
+                {summary.warranty_rate_formatted ||
+                  `${summary.warranty_rate ?? 0}%`}
+              </span>
+            </div>
+            <div>
               <span className="text-[11px] text-[#7d8d85] block">Tỷ lệ QC đạt chuẩn:</span>
               <span className="font-heading font-bold text-sm text-[#176b58]">
                 {summary.qc_pass_rate !== null && summary.qc_pass_rate !== undefined ? `${summary.qc_pass_rate}%` : '—'}
@@ -131,12 +266,6 @@ export const StaffPerformanceWidget: React.FC<StaffPerformanceWidgetProps> = ({
               <span className="text-[11px] text-[#7d8d85] block">Thời gian xử lý TB:</span>
               <span className="font-heading font-bold text-sm text-[#2d3d35]">
                 {summary.avg_processing_time_formatted || '—'}
-              </span>
-            </div>
-            <div>
-              <span className="text-[11px] text-[#7d8d85] block">Đơn sửa lại (Rework):</span>
-              <span className="font-heading font-bold text-sm text-[#bc5b52]">
-                {summary.total_rework ?? summary.rework_needed ?? 0} đơn
               </span>
             </div>
           </div>
@@ -195,27 +324,78 @@ export const StaffPerformanceWidget: React.FC<StaffPerformanceWidgetProps> = ({
           </div>
         ) : activeTab === 'technicians' ? (
           /* TAB 1: KỸ THUẬT VIÊN */
-          technicians.length === 0 ? (
+          sortedTechnicians.length === 0 ? (
             <div className="py-8 text-center text-xs text-[#7e8d85] bg-[#fafbfa] rounded-[10px] border border-[#f0f3f1]">
               Chưa có dữ liệu phân công kỹ thuật viên trong khoảng thời gian này.
             </div>
           ) : (
             <div className="overflow-x-auto -mx-5 sm:mx-0">
-              <table className="w-full text-left border-collapse min-w-[680px]">
+              <table className="w-full text-left border-collapse min-w-[740px]">
                 <thead>
                   <tr className="border-y border-[#f0f3f1] bg-[#fafbfa] text-xs font-bold text-[#809088] uppercase tracking-wider h-9">
-                    <th className="px-4">Kỹ thuật viên</th>
-                    <th className="px-3 text-center">Đơn phụ trách</th>
-                    <th className="px-3 text-center">Đã sửa xong</th>
-                    <th className="px-3 text-center">Tỷ lệ QC</th>
-                    <th className="px-3 text-center">Xử lý TB</th>
-                    <th className="px-4 text-right">Doanh thu tạo ra</th>
+                    <th
+                      data-testid="sort-tech-name"
+                      onClick={() => handleTechSort('name')}
+                      className="px-4 cursor-pointer select-none hover:text-[#176b58] transition-colors"
+                    >
+                      <span>Kỹ thuật viên</span>
+                      {renderSortIcon(techSortKey === 'name', techSortDir)}
+                    </th>
+                    <th
+                      data-testid="sort-tech-total_orders"
+                      onClick={() => handleTechSort('total_orders')}
+                      className="px-3 text-center cursor-pointer select-none hover:text-[#176b58] transition-colors"
+                    >
+                      <span>Đơn phụ trách</span>
+                      {renderSortIcon(techSortKey === 'total_orders', techSortDir)}
+                    </th>
+                    <th
+                      data-testid="sort-tech-completed"
+                      onClick={() => handleTechSort('completed')}
+                      className="px-3 text-center cursor-pointer select-none hover:text-[#176b58] transition-colors"
+                    >
+                      <span>Đã sửa xong</span>
+                      {renderSortIcon(techSortKey === 'completed', techSortDir)}
+                    </th>
+                    <th
+                      data-testid="sort-tech-warranty_rate"
+                      onClick={() => handleTechSort('warranty_rate')}
+                      className="px-3 text-center cursor-pointer select-none hover:text-[#176b58] transition-colors"
+                    >
+                      <span>Tỷ lệ bảo hành</span>
+                      {renderSortIcon(techSortKey === 'warranty_rate', techSortDir)}
+                    </th>
+                    <th
+                      data-testid="sort-tech-qc_pass_rate"
+                      onClick={() => handleTechSort('qc_pass_rate')}
+                      className="px-3 text-center cursor-pointer select-none hover:text-[#176b58] transition-colors"
+                    >
+                      <span>Tỷ lệ QC</span>
+                      {renderSortIcon(techSortKey === 'qc_pass_rate', techSortDir)}
+                    </th>
+                    <th
+                      data-testid="sort-tech-avg_processing_time_minutes"
+                      onClick={() => handleTechSort('avg_processing_time_minutes')}
+                      className="px-3 text-center cursor-pointer select-none hover:text-[#176b58] transition-colors"
+                    >
+                      <span>Xử lý TB</span>
+                      {renderSortIcon(techSortKey === 'avg_processing_time_minutes', techSortDir)}
+                    </th>
+                    <th
+                      data-testid="sort-tech-revenue_generated"
+                      onClick={() => handleTechSort('revenue_generated')}
+                      className="px-4 text-right cursor-pointer select-none hover:text-[#176b58] transition-colors"
+                    >
+                      <span>Doanh thu tạo ra</span>
+                      {renderSortIcon(techSortKey === 'revenue_generated', techSortDir)}
+                    </th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-[#f1f3f2] text-xs">
-                  {technicians.map((tech, idx) => {
+                  {sortedTechnicians.map((tech, idx) => {
                     const formattedRev = moneyFormatted(tech.revenue_generated, tech.revenue_generated_formatted);
                     const qcRate = tech.qc_pass_rate;
+                    const warrantyRate = getTechWarrantyRate(tech);
 
                     return (
                       <tr key={tech.id || idx} className="h-13 hover:bg-[#fafcfa] transition-colors">
@@ -250,6 +430,21 @@ export const StaffPerformanceWidget: React.FC<StaffPerformanceWidgetProps> = ({
                             {tech.completed}
                           </span>
                           <span className="text-[10px] text-[#7e8d85] block">hoàn tất</span>
+                        </td>
+
+                        <td className="px-3 text-center">
+                          <span
+                            className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full font-bold text-[11px] ${
+                              warrantyRate === 0
+                                ? 'bg-[#eaf5ef] text-[#28805e]'
+                                : warrantyRate <= 5
+                                ? 'bg-[#faf3e7] text-[#b77a21]'
+                                : 'bg-[#fbefed] text-[#bc5b52]'
+                            }`}
+                          >
+                            <span className="w-1.5 h-1.5 rounded-full bg-current" />
+                            {tech.warranty_rate_formatted || `${warrantyRate}%`}
+                          </span>
                         </td>
 
                         <td className="px-3 text-center">
@@ -308,7 +503,7 @@ export const StaffPerformanceWidget: React.FC<StaffPerformanceWidgetProps> = ({
           )
         ) : (
           /* TAB 2: CSKH / TIẾP NHẬN */
-          cskhStaff.length === 0 ? (
+          sortedCskhStaff.length === 0 ? (
             <div className="py-8 text-center text-xs text-[#7e8d85] bg-[#fafbfa] rounded-[10px] border border-[#f0f3f1]">
               Chưa có dữ liệu tiếp nhận của nhân sự CSKH trong khoảng thời gian này.
             </div>
@@ -317,16 +512,58 @@ export const StaffPerformanceWidget: React.FC<StaffPerformanceWidgetProps> = ({
               <table className="w-full text-left border-collapse min-w-[680px]">
                 <thead>
                   <tr className="border-y border-[#f0f3f1] bg-[#fafbfa] text-xs font-bold text-[#809088] uppercase tracking-wider h-9">
-                    <th className="px-4">Nhân sự CSKH</th>
-                    <th className="px-3 text-center">Đơn tiếp nhận</th>
-                    <th className="px-3 text-center">Đã hoàn tất</th>
-                    <th className="px-3 text-center">Tỷ lệ chốt</th>
-                    <th className="px-3 text-center">Hiệu suất</th>
-                    <th className="px-4 text-right">Doanh thu tiếp nhận</th>
+                    <th
+                      data-testid="sort-cskh-name"
+                      onClick={() => handleCskhSort('name')}
+                      className="px-4 cursor-pointer select-none hover:text-[#176b58] transition-colors"
+                    >
+                      <span>Nhân sự CSKH</span>
+                      {renderSortIcon(cskhSortKey === 'name', cskhSortDir)}
+                    </th>
+                    <th
+                      data-testid="sort-cskh-orders_created_count"
+                      onClick={() => handleCskhSort('orders_created_count')}
+                      className="px-3 text-center cursor-pointer select-none hover:text-[#176b58] transition-colors"
+                    >
+                      <span>Đơn tiếp nhận</span>
+                      {renderSortIcon(cskhSortKey === 'orders_created_count', cskhSortDir)}
+                    </th>
+                    <th
+                      data-testid="sort-cskh-orders_completed_count"
+                      onClick={() => handleCskhSort('orders_completed_count')}
+                      className="px-3 text-center cursor-pointer select-none hover:text-[#176b58] transition-colors"
+                    >
+                      <span>Đã hoàn tất</span>
+                      {renderSortIcon(cskhSortKey === 'orders_completed_count', cskhSortDir)}
+                    </th>
+                    <th
+                      data-testid="sort-cskh-conversion_rate"
+                      onClick={() => handleCskhSort('conversion_rate')}
+                      className="px-3 text-center cursor-pointer select-none hover:text-[#176b58] transition-colors"
+                    >
+                      <span>Tỷ lệ chốt</span>
+                      {renderSortIcon(cskhSortKey === 'conversion_rate', cskhSortDir)}
+                    </th>
+                    <th
+                      data-testid="sort-cskh-efficiency"
+                      onClick={() => handleCskhSort('efficiency')}
+                      className="px-3 text-center cursor-pointer select-none hover:text-[#176b58] transition-colors"
+                    >
+                      <span>Hiệu suất</span>
+                      {renderSortIcon(cskhSortKey === 'efficiency', cskhSortDir)}
+                    </th>
+                    <th
+                      data-testid="sort-cskh-revenue_generated"
+                      onClick={() => handleCskhSort('revenue_generated')}
+                      className="px-4 text-right cursor-pointer select-none hover:text-[#176b58] transition-colors"
+                    >
+                      <span>Doanh thu tiếp nhận</span>
+                      {renderSortIcon(cskhSortKey === 'revenue_generated', cskhSortDir)}
+                    </th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-[#f1f3f2] text-xs">
-                  {cskhStaff.map((staff, idx) => {
+                  {sortedCskhStaff.map((staff, idx) => {
                     const formattedRev = moneyFormatted(staff.revenue_generated, staff.revenue_generated_formatted);
                     const convRate = staff.conversion_rate;
 

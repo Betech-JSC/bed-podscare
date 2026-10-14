@@ -162,9 +162,9 @@ class OrderTestNoteAndTechScopeTest extends TestCase
     }
 
     /**
-     * Test 3: Kỹ thuật viên xem ca hôm nay (today) tự động gom các đơn dở dang từ 3 ngày gần nhất (hôm nay, hôm qua, hôm kia).
+     * Test 3: Kỹ thuật viên xem ca hôm nay (today) tự động gom các đơn dở dang từ 7 ngày gần nhất (hôm nay và 6 ngày trước).
      */
-    public function test_technician_today_filter_automatically_includes_unfinished_orders_from_last_3_days(): void
+    public function test_technician_today_filter_automatically_includes_unfinished_orders_from_last_7_days(): void
     {
         // 1. Đơn hôm nay (đang sửa)
         $todayOrder = RepairOrder::create([
@@ -195,20 +195,20 @@ class OrderTestNoteAndTechScopeTest extends TestCase
             'created_at' => Carbon::today($this->tz)->subDay()->addHours(3),
         ]);
 
-        // 3. Đơn hôm kia DỞ DANG (assigned)
-        $dayBeforeUnfinishedOrder = RepairOrder::create([
+        // 3. Đơn 5 ngày trước DỞ DANG (assigned) -> nằm trong phạm vi 7 ngày dở dang mới
+        $fiveDaysAgoOrder = RepairOrder::create([
             'tenant_id'          => $this->tenant->id,
             'branch_id'          => $this->branch->id,
             'customer_id'        => $this->customer->id,
             'device_model_id'    => $this->device->id,
-            'order_code'         => 'FX' . date('y') . '-DUN-' . rand(1000, 9999),
-            'issue_description'  => 'Đơn hôm kia thợ đã nhận',
+            'order_code'         => 'FX' . date('y') . '-5DY-' . rand(1000, 9999),
+            'issue_description'  => 'Đơn 5 ngày trước dở dang',
             'estimated_price'    => 350000,
             'status'             => 'assigned',
             'created_by_user_id' => $this->cskhUser->id,
         ]);
-        DB::table('repair_orders')->where('id', $dayBeforeUnfinishedOrder->id)->update([
-            'created_at' => Carbon::today($this->tz)->subDays(2)->addHours(2),
+        DB::table('repair_orders')->where('id', $fiveDaysAgoOrder->id)->update([
+            'created_at' => Carbon::today($this->tz)->subDays(5)->addHours(2),
         ]);
 
         // 4. Đơn hôm qua ĐÃ HOÀN TẤT (completed) -> không nằm trong scope dở dang hôm nay của thợ
@@ -227,20 +227,20 @@ class OrderTestNoteAndTechScopeTest extends TestCase
             'created_at' => Carbon::today($this->tz)->subDay()->addHours(1),
         ]);
 
-        // 5. Đơn dở dang quá cũ (5 ngày trước) -> không gom vào ca 3 ngày
+        // 5. Đơn dở dang quá cũ (8 ngày trước) -> không gom vào ca 7 ngày
         $tooOldOrder = RepairOrder::create([
             'tenant_id'          => $this->tenant->id,
             'branch_id'          => $this->branch->id,
             'customer_id'        => $this->customer->id,
             'device_model_id'    => $this->device->id,
             'order_code'         => 'FX' . date('y') . '-OLD-' . rand(1000, 9999),
-            'issue_description'  => 'Đơn 5 ngày trước',
+            'issue_description'  => 'Đơn 8 ngày trước',
             'estimated_price'    => 400000,
             'status'             => 'waiting_tech',
             'created_by_user_id' => $this->cskhUser->id,
         ]);
         DB::table('repair_orders')->where('id', $tooOldOrder->id)->update([
-            'created_at' => Carbon::today($this->tz)->subDays(5),
+            'created_at' => Carbon::today($this->tz)->subDays(8),
         ]);
 
         $techToken = $this->techUser->createToken('tech_token')->plainTextToken;
@@ -253,12 +253,12 @@ class OrderTestNoteAndTechScopeTest extends TestCase
 
         $returnedCodes = collect($response->json('data.data'))->pluck('order_code')->toArray();
 
-        // Thợ thấy: Đơn hôm nay, đơn dở dang hôm qua, đơn dở dang hôm kia
+        // Thợ thấy: Đơn hôm nay, đơn dở dang hôm qua, đơn dở dang 5 ngày trước
         $this->assertContains($todayOrder->order_code, $returnedCodes);
         $this->assertContains($yesterdayUnfinishedOrder->order_code, $returnedCodes);
-        $this->assertContains($dayBeforeUnfinishedOrder->order_code, $returnedCodes);
+        $this->assertContains($fiveDaysAgoOrder->order_code, $returnedCodes);
 
-        // Thợ KHÔNG thấy: Đơn hôm qua đã hoàn tất, đơn quá 3 ngày
+        // Thợ KHÔNG thấy: Đơn hôm qua đã hoàn tất, đơn quá 7 ngày
         $this->assertNotContains($yesterdayCompletedOrder->order_code, $returnedCodes);
         $this->assertNotContains($tooOldOrder->order_code, $returnedCodes);
     }

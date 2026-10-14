@@ -48,6 +48,7 @@ class KpiController extends Controller
         $totalSystemOrders = 0;
         $totalSystemCompleted = 0;
         $totalSystemRework = 0;
+        $totalSystemWarranty = 0;
         $allSystemDurations = [];
         $totalSystemQcTotal = 0;
         $totalSystemQcPassed = 0;
@@ -134,6 +135,19 @@ class KpiController extends Controller
                 });
                 $reworkCount = $reworkOrders->count();
 
+                // Tỷ lệ bảo hành / sửa lại của KTV
+                $techWarrantyCount = $techOrders->filter(function ($order) {
+                    return $order->status === 'rework_needed'
+                        || ($order->order_type ?? '') === 'warranty'
+                        || ! empty($order->is_warranty_claim)
+                        || ! empty($order->claim_id)
+                        || ! empty($order->parent_order_id)
+                        || $order->qcInspections->contains('result', 'fail');
+                })->count();
+                $techWarrantyRate = $completedCount > 0
+                    ? round(($techWarrantyCount / $completedCount) * 100, 1)
+                    : 0.0;
+
                 // Tỉ lệ đạt QC
                 $allQc = $techOrders->flatMap->qcInspections;
                 $qcTotal = $allQc->count();
@@ -180,6 +194,7 @@ class KpiController extends Controller
                 $totalSystemOrders += $orderCount;
                 $totalSystemCompleted += $completedCount;
                 $totalSystemRework += $reworkCount;
+                $totalSystemWarranty += $techWarrantyCount;
                 $totalSystemQcTotal += $qcTotal;
                 $totalSystemQcPassed += $qcPassed;
                 foreach ($durations as $d) {
@@ -219,6 +234,9 @@ class KpiController extends Controller
                     'total_orders'                 => $orderCount,
                     'completed'                    => $completedCount,
                     'rework_needed'                => $reworkCount,
+                    'warranty_count'               => $techWarrantyCount,
+                    'warranty_rate'                => $techWarrantyRate,
+                    'warranty_rate_formatted'      => "{$techWarrantyRate}%",
                     'in_repair'                    => $techOrders->whereIn('status', ['assigned', 'in_repair', 'waiting_parts', 'waiting_qc'])->count(),
                     'qc_passed'                    => $qcPassed,
                     'qc_total'                     => $qcTotal,
@@ -335,6 +353,10 @@ class KpiController extends Controller
             $customerSatisfaction = str_replace('.', ',', (string) $csScore) . ' / 5';
         }
 
+        $systemWarrantyRate = $totalSystemCompleted > 0
+            ? round(($totalSystemWarranty / $totalSystemCompleted) * 100, 1)
+            : 0.0;
+
         $summary = [
             'total_technicians'            => count($technicians),
             'total_cskh'                   => count($cskhUsers),
@@ -343,6 +365,9 @@ class KpiController extends Controller
             'completed'                    => $totalSystemCompleted,
             'total_rework'                 => $totalSystemRework,
             'rework_needed'                => $totalSystemRework,
+            'warranty_count'               => $totalSystemWarranty,
+            'warranty_rate'                => $systemWarrantyRate,
+            'warranty_rate_formatted'      => "{$systemWarrantyRate}%",
             'qc_pass_rate'                 => $systemQcRate,
             'avg_processing_time_minutes'  => $systemAvgMinutes,
             'avg_processing_time_hours'    => $systemAvgHours,
@@ -700,6 +725,19 @@ class KpiController extends Controller
             ? round(($completedOrders / $totalOrders) * 100, 1)
             : 0.0;
 
+        // 6b. Tỷ lệ bảo hành / khiếu nại (Warranty Return Rate %)
+        // Đếm số đơn bảo hành/khiếu nại (order_type = 'warranty' hoặc có claim_id)
+        $warrantyClaimsCount = (clone $baseQuery)
+            ->where(function ($q) {
+                $q->where('order_type', 'warranty')
+                  ->orWhereNotNull('claim_id');
+            })
+            ->count();
+
+        $warrantyRate = $completedOrders > 0
+            ? round(($warrantyClaimsCount / $completedOrders) * 100, 1)
+            : 0.0;
+
         // 5. Phân bổ theo trạng thái (Bao phủ 13 trạng thái chuẩn + gộp alias)
         $allStatuses = [
             'inspecting',
@@ -975,6 +1013,8 @@ class KpiController extends Controller
             'selected_date'                  => $targetDateStr,
             'selected_date_completed_orders' => $selectedDateCompletedOrders,
             'completion_rate'                => $completionRate,
+            'warranty_rate'                  => $warrantyRate,
+            'warranty_claims_count'          => $warrantyClaimsCount,
             'total_orders'                   => $totalOrders,
             'completed_orders'               => $completedOrders,
             'reconciliation'                 => $reconciliation,
@@ -1019,6 +1059,8 @@ class KpiController extends Controller
             'selected_date_completed_orders'  => $selectedDateCompletedOrders,
             'reconciliation'                  => $reconciliation,
             'completion_rate'                 => $completionRate,
+            'warranty_rate'                   => $warrantyRate,
+            'warranty_claims_count'           => $warrantyClaimsCount,
             'total_orders'                    => $totalOrders,
             'completed_orders'                => $completedOrders,
             'status_distribution'            => $statusDistribution,

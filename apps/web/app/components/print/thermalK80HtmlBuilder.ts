@@ -848,9 +848,16 @@ export function buildCustomerCopyHtml(order: RepairOrder, origin?: string, brand
       <div class="k80-price-amount">${formatMoney(finalPriceVal)}</div>
     </div>
 
-    <div class="k80-warranty-badge" style="text-align: center; margin-top: 6px; padding: 4px 2px; border: 1px dashed #444444; border-radius: 4px; background: #fafafa;">
-      <div style="font-size: 9.5px; font-weight: 800; color: #000000;">BẢO HÀNH ĐIỆN TỬ: ${warrantyMonths} THÁNG</div>
-      <div style="font-size: 8.5px; margin-top: 1px; color: #333333;">Thời hạn bảo hành: ${warrantyMonths} tháng (Đến ngày ${formattedExpiryDate})</div>
+    <div class="k80-warranty-badge" style="margin-top: 6px; padding: 4px 6px; border: 1px dashed #444444; border-radius: 4px; background: #fafafa; font-size: 8.5px; line-height: 1.25; color: #222222;">
+      <div style="font-size: 9.5px; font-weight: 800; color: #000000; text-align: center; text-transform: uppercase;">BẢO HÀNH ĐIỆN TỬ: ${warrantyMonths} THÁNG</div>
+      <div style="font-size: 8.5px; font-weight: bold; margin-top: 2px; color: #176b58; text-align: center;">Thời hạn bảo hành: ${warrantyMonths} tháng (Đến ngày ${formattedExpiryDate})</div>
+      <div style="font-size: 8px; color: #444444; margin-top: 4px; border-top: 1px dotted #cccccc; padding-top: 3px; text-align: left;">
+        <div style="font-weight: 800; text-align: center; margin-bottom: 2px; text-transform: uppercase;">ĐIỀU KHOẢN & CHÍNH SÁCH BẢO HÀNH</div>
+        <div style="margin-bottom: 1.5px;">• <b>Tem niêm phong:</b> Thiết bị còn nguyên tem PodsCare, không có dấu hiệu tẩy xóa, rách rời.</div>
+        <div style="margin-bottom: 1.5px;">• <b>Từ chối bảo hành:</b> Rơi vỡ, cấn móp, biến dạng vật lý hoặc chất lỏng/nước xâm nhập.</div>
+        <div style="margin-bottom: 1.5px;">• <b>Phạm vi:</b> Chỉ bảo hành đúng linh kiện & chức năng thay thế/sửa chữa ghi trên phiếu.</div>
+        <div>• <b>Tra cứu:</b> Tra cứu bảo hành điện tử bằng SĐT hoặc quét mã QR bên dưới.</div>
+      </div>
     </div>
 
     <div class="k80-qr-wrapper">
@@ -1021,6 +1028,21 @@ export function buildCombinedCustomerCopyHtml(
   const totalPrice = orders.reduce((sum, o) => sum + (Number((o as any).total_price || o.price) || 0), 0);
   const allOrderCodes = orders.map((o) => o.id).join(', ');
 
+  const warrantyDays = primaryOrder.warranty_terms_days
+    || (primaryOrder.warranty_months ? (primaryOrder.warranty_months === 12 ? 365 : primaryOrder.warranty_months * 30) : null)
+    || 90;
+  const warrantyMonths = primaryOrder.warranty_months
+    || (warrantyDays === 365 ? 12 : Math.round(warrantyDays / 30))
+    || 3;
+
+  const expiryDate = new Date();
+  expiryDate.setDate(expiryDate.getDate() + warrantyDays);
+  const formattedExpiryDate = new Intl.DateTimeFormat('vi-VN', {
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric',
+  }).format(expiryDate);
+
   const devicesHtml = orders
     .map((dev, idx) => {
       const checks = Array.isArray(dev.checks) ? dev.checks : [];
@@ -1141,6 +1163,18 @@ export function buildCombinedCustomerCopyHtml(
         <div style="font-size: 8.5px; color: #555555;">(${orders.length} thiết bị gửi sửa)</div>
       </div>
       <div class="k80-price-amount" style="font-size: 16px; font-weight: 700; color: #000000;">${formatMoney(totalPrice)}</div>
+    </div>
+
+    <div class="k80-warranty-badge" style="margin-top: 6px; padding: 4px 6px; border: 1px dashed #444444; border-radius: 4px; background: #fafafa; font-size: 8.5px; line-height: 1.25; color: #222222;">
+      <div style="font-size: 9.5px; font-weight: 800; color: #000000; text-align: center; text-transform: uppercase;">BẢO HÀNH ĐIỆN TỬ: ${warrantyMonths} THÁNG</div>
+      <div style="font-size: 8.5px; font-weight: bold; margin-top: 2px; color: #176b58; text-align: center;">Thời hạn bảo hành: ${warrantyMonths} tháng (Đến ngày ${formattedExpiryDate})</div>
+      <div style="font-size: 8px; color: #444444; margin-top: 4px; border-top: 1px dotted #cccccc; padding-top: 3px; text-align: left;">
+        <div style="font-weight: 800; text-align: center; margin-bottom: 2px; text-transform: uppercase;">ĐIỀU KHOẢN VÀ CHÍNH SÁCH BẢO HÀNH TIÊU CHUẨN</div>
+        <div style="margin-bottom: 1.5px;">• <b>Tem niêm phong:</b> Thiết bị còn nguyên tem PodsCare, không có dấu hiệu tẩy xóa, rách rời.</div>
+        <div style="margin-bottom: 1.5px;">• <b>Từ chối bảo hành:</b> Rơi vỡ, cấn móp, biến dạng vật lý hoặc chất lỏng/nước xâm nhập.</div>
+        <div style="margin-bottom: 1.5px;">• <b>Phạm vi:</b> Chỉ bảo hành đúng linh kiện & chức năng thay thế/sửa chữa ghi trên phiếu.</div>
+        <div>• <b>Tra cứu:</b> Tra cứu bảo hành điện tử bằng SĐT hoặc quét mã QR bên dưới.</div>
+      </div>
     </div>
 
     <div class="k80-qr-wrapper">

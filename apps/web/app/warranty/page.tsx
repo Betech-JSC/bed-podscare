@@ -705,9 +705,12 @@ export default function WarrantyPage() {
                   variant="secondary"
                   size="sm"
                   icon="payments"
+                  data-testid="warranty-reprint-receipt-btn"
                   onClick={() => {
-                    toast('Đang chuẩn bị in lại phiếu bảo hành...');
-                    window.print();
+                    if (!selectedWarranty?.orderCode) return;
+                    setHistoryDrawerOpen(false);
+                    toast('Đang mở trang in phiếu tiếp nhận & bảo hành K80...', 'info');
+                    router.push(`/print/${encodeURIComponent(selectedWarranty.orderCode)}`);
                   }}
                 >
                   In lại phiếu bảo hành
@@ -716,10 +719,11 @@ export default function WarrantyPage() {
                   variant="primary"
                   size="sm"
                   icon="wrench"
+                  data-testid="warranty-create-rework-order-btn"
                   onClick={() => {
                     setHistoryDrawerOpen(false);
-                    router.push('/repairs');
-                    toast('Chuyển sang hàng tiếp nhận bảo hành / sửa lại', 'info');
+                    router.push('/repairs?intake=warranty');
+                    toast('Chuyển sang tiếp nhận đơn bảo hành (0 ₫)', 'info');
                   }}
                 >
                   Tạo đơn bảo hành / Sửa lại

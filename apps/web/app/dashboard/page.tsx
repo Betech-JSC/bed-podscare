@@ -20,6 +20,7 @@ import { ActionableTasksCenter } from './components/ActionableTasksCenter';
 import { StaffPerformanceWidget } from './components/StaffPerformanceWidget';
 import { ShiftCashbookSnapshot } from './components/ShiftCashbookSnapshot';
 import { usePodsCare } from '../providers';
+import { useShift } from '../providers/ShiftProvider';
 import type { RepairOrder } from '@podscare/types';
 import { kpiService, repairService } from '@podscare/api-client';
 import { useQuery } from '@tanstack/react-query';
@@ -30,6 +31,7 @@ export default function DashboardPage() {
   const router = useRouter();
   const { toast } = useToast();
   const { role, currentUser, orders, updateOrder, branchId, branch, invalidateOrders } = usePodsCare();
+  const { refreshShift } = useShift();
 
   const [intakeModalOpen, setIntakeModalOpen] = useState(false);
   const [initialIntakeType, setInitialIntakeType] = useState<'in_store' | 'cod' | 'warranty'>('in_store');
@@ -70,7 +72,7 @@ export default function DashboardPage() {
   const [isTechSubmitting, setIsTechSubmitting] = useState(false);
   const { printReceipt, isPrinting: isSilentPrinting } = useSilentPrint();
 
-  // Checkout Handover Modal State for Admin Action Center
+  // Checkout Handover Modal State for Admin Action Center & CSKH Dashboard
   const [checkoutModalOpen, setCheckoutModalOpen] = useState(false);
   const [checkoutOrder, setCheckoutOrder] = useState<RepairOrder | null>(null);
 
@@ -101,30 +103,42 @@ export default function DashboardPage() {
     );
   }, [orders, branchId, branch]);
 
+  // CSKH Ready-for-Return calculations
+  const cskhReadyOrders = React.useMemo(() => {
+    return branchOrders.filter((o) => {
+      const code = normalizeStatusCode(o.status);
+      return (
+        code === 'ready_for_return' ||
+        code === 'waiting_pickup' ||
+        o.status === 'Sẵn sàng trả' ||
+        o.status === 'Chờ khách nhận'
+      );
+    });
+  }, [branchOrders]);
+
   // CSKH Pending calculations
   const cskhPendingOrders = branchOrders
     .filter((o) => !['Hoàn tất', 'Đã hủy', 'Đã trả máy'].includes(o.status))
     .sort((a, b) => {
       const priority: Record<string, number> = {
-        'Chờ khách duyệt': 1,
+        'Sẵn sàng trả': 1,
+        'Chờ khách nhận': 1,
         'Cần sửa lại': 2,
-        'Sẵn sàng trả': 3,
-        'Chờ QC': 4,
-        'Chờ kỹ thuật': 5,
-        'Đã nhận đơn': 6,
-        'Đang sửa': 7,
+        'Chờ QC': 3,
+        'Chờ kỹ thuật': 4,
+        'Đã nhận đơn': 5,
+        'Đang sửa': 6,
       };
       return (priority[a.status] || 9) - (priority[b.status] || 9);
     });
 
   const getCskhNextAction = (o: RepairOrder) => {
     switch (o.status) {
-      case 'Chờ khách duyệt':
-        return 'Nhắc khách xác nhận báo giá';
       case 'Cần sửa lại':
         return 'Theo dõi kỹ thuật sửa lại';
       case 'Sẵn sàng trả':
-        return 'Liên hệ khách đến nhận máy';
+      case 'Chờ khách nhận':
+        return 'Thu tiền & Bàn giao máy cho khách';
       case 'Chờ QC':
         return 'Theo dõi kết quả kiểm định QC';
       case 'Chờ kỹ thuật':
@@ -176,8 +190,38 @@ export default function DashboardPage() {
     });
   }, [branchOrders, currentUser?.role, currentUserId]);
 
-  // Thao tác cho Admin Action Center
-  const handleOpenOrderDetail = (orderCode: string, orderId?: number) => {
+  // Máy chưa xong chi tiết tại xưởng (in_repair, waiting_parts, assigned, rework_needed)
+  const unfinishedTechOrders = React.useMemo(() => {
+    return branchOrders.filter((o) => {
+      const code = normalizeStatusCode(o.status);
+      return ['in_repair', 'waiting_parts', 'assigned', 'rework_needed'].includes(code);
+    });
+  }, [branchOrders]);
+
+  const formatWorkshopDuration = (createdAtStr?: string) => {
+    if (!createdAtStr) return '—';
+    try {
+      const created = new Date(createdAtStr);
+      if (isNaN(created.getTime())) return createdAtStr;
+      const diffMs = Math.max(0, Date.now() - created.getTime());
+      const hours = Math.floor(diffMs / (1000 * 60 * 60));
+      const days = Math.floor(hours / 24);
+      const remHours = hours % 24;
+      if (days > 0) {
+        return `${days} ngày ${remHours > 0 ? `${remHours}h` : ''}`.trim();
+      }
+      if (hours > 0) {
+        return `${hours} giờ`;
+      }
+      const mins = Math.max(1, Math.floor(diffMs / (1000 * 60)));
+      return `${mins} phút`;
+    } catch {
+      return '—';
+    }
+  };
+
+  // Thao tác cho Admin Action Center & Bảng chi tiết
+  const handleOpenOrderDetail = async (orderCode: string, orderId?: number) => {
     const found = branchOrders.find(
       (o) =>
         String(o.id) === String(orderCode) ||
@@ -186,8 +230,67 @@ export default function DashboardPage() {
         (o as any).orderCode === orderCode
     );
     if (found) {
-      setSelectedTechOrder(found);
+      const enriched: RepairOrder = {
+        ...found,
+        checks: found.checks || [],
+        photos: found.photos || [],
+        accessories: found.accessories,
+        appearance: found.appearance,
+        testNote: found.testNote || found.test_note || '',
+        parts_needed: found.parts_needed || found.partsNeeded,
+        special_parts_needed: found.special_parts_needed || found.specialPartsNeeded,
+        special_parts_status: found.special_parts_status || found.specialPartsStatus,
+        additional_services: found.additional_services || found.additionalServices || [],
+        order_type: found.order_type || found.orderType || 'in_store',
+        warranty_terms_days: found.warranty_terms_days,
+        warranty_months: found.warranty_months,
+      };
+      setSelectedTechOrder(enriched);
       setTechModalOpen(true);
+
+      // Nếu thiếu checks hoặc photos từ danh sách rút gọn, nạp bổ sung chi tiết từ API
+      if ((!enriched.checks || enriched.checks.length === 0) && (!enriched.photos || enriched.photos.length === 0)) {
+        try {
+          const detailRes = await repairService.getRepairById(found.id);
+          const raw = detailRes?.data || detailRes;
+          if (raw && (raw.order_code || raw.id)) {
+            const mappedChecks = Array.isArray(raw.intake_checklists)
+              ? raw.intake_checklists.map((c: any) => ({
+                  label: c.item_label || c.label || c.item_key,
+                  status:
+                    c.status === 'good' || c.status === 'ok' || c.status === 'Hoạt động'
+                      ? 'Hoạt động'
+                      : c.status === 'broken' || c.status === 'error' || c.status === 'Lỗi'
+                      ? 'Lỗi'
+                      : 'Chưa rõ',
+                }))
+              : enriched.checks || [];
+            const mappedPhotos = Array.isArray(raw.intake_photos)
+              ? raw.intake_photos.map((p: any) => ({
+                  name: p.photo_type || p.name || 'Ảnh thiết bị',
+                  url: p.photo_url || p.file_path || p.url,
+                }))
+              : enriched.photos || [];
+            setSelectedTechOrder((prev) =>
+              prev && prev.id === enriched.id
+                ? {
+                    ...prev,
+                    checks: mappedChecks,
+                    photos: mappedPhotos,
+                    accessories: raw.accessories ?? prev.accessories,
+                    appearance: raw.appearance_notes ?? prev.appearance,
+                    testNote: raw.test_note || raw.testNote || prev.testNote || '',
+                    parts_needed: raw.parts_needed ?? prev.parts_needed,
+                    special_parts_needed: raw.special_parts_needed ?? prev.special_parts_needed,
+                    special_parts_status: raw.special_parts_status ?? prev.special_parts_status,
+                  }
+                : prev
+            );
+          }
+        } catch {
+          // ignore fallback error
+        }
+      }
     } else {
       router.push(`/repairs?search=${encodeURIComponent(orderCode)}`);
     }
@@ -304,13 +407,6 @@ export default function DashboardPage() {
     kpiData?.completed_orders ??
     kpiData?.summary?.completed_orders ??
     branchOrders.filter((o) => o.status === 'Hoàn tất').length;
-
-  const completionRateDisplay =
-    kpiData?.completion_rate !== undefined
-      ? `${kpiData.completion_rate}%`.replace('.', ',')
-      : branchOrders.length > 0
-      ? ((completedCount / branchOrders.length) * 100).toFixed(1).replace('.', ',') + '%'
-      : '0%';
 
   const inspectingCount =
     kpiData?.workload_by_status?.inspecting ??
@@ -610,8 +706,8 @@ export default function DashboardPage() {
 
       {/* Stats Cards (Khu vực A: Phân quyền tài chính RBAC) */}
       {role === 'admin' ? (
-        /* Khi role === 'admin': 7 thẻ tài chính chuyên sâu */
-        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-7 gap-3.5">
+        /* Khi role === 'admin': 4 thẻ chỉ số tài chính & vận hành tinh gọn */
+        <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-4 gap-3.5">
           <StatCard
             label="Doanh thu ngày chọn"
             value={
@@ -633,27 +729,6 @@ export default function DashboardPage() {
             foot={`Tháng ${new Date().getMonth() + 1}, ${new Date().getFullYear()}`}
           />
           <StatCard
-            label="Giá vốn hàng bán"
-            value={
-              kpiData?.selected_date_cogs_formatted ||
-              kpiData?.monthly_cogs_formatted ||
-              '0 ₫'
-            }
-            icon="inventory_2"
-            foot="COGS theo đơn hoàn tất"
-          />
-          <StatCard
-            label="Lợi nhuận gộp"
-            value={
-              kpiData?.selected_date_gross_profit_formatted ||
-              kpiData?.monthly_gross_profit_formatted ||
-              '0 ₫'
-            }
-            icon="trending_up"
-            foot={`Tỷ suất ${kpiData?.selected_date_gross_profit_margin ?? kpiData?.gross_profit_margin ?? 0}%`}
-            trend="up"
-          />
-          <StatCard
             label="Công nợ phải thu"
             value={
               kpiData?.accounts_receivable_formatted ||
@@ -664,17 +739,11 @@ export default function DashboardPage() {
             foot="Đơn bàn giao chưa thu đủ"
           />
           <StatCard
-            label="Tiền NCC còn phải trả"
-            value={kpiData?.accounts_payable_formatted || '0 ₫'}
-            icon="receipt_long"
-            foot="Tổng nợ NCC đang hoạt động"
-            onClick={() => router.push('/suppliers')}
-          />
-          <StatCard
-            label="Tỷ lệ hoàn thành"
-            value={completionRateDisplay}
-            icon="check"
-            foot={`${completedCount} đơn đã hoàn tất`}
+            label="Tỉ lệ bảo hành"
+            value={`${kpiData?.summary?.warranty_rate ?? kpiData?.warranty_rate ?? 0}%`}
+            icon="shield"
+            foot="Tỷ lệ máy bảo hành trong kỳ"
+            onClick={() => router.push('/repairs?intake_type=warranty')}
           />
         </div>
       ) : (
@@ -694,16 +763,11 @@ export default function DashboardPage() {
             foot="Cập nhật theo ngày thực tế"
           />
           <StatCard
-            label="Chờ duyệt báo giá"
-            value={String(
-              kpiData?.operational_summary?.waiting_approval_count ??
-              kpiData?.actionable_tasks?.waiting_approval?.length ??
-              waitingApprovalCount ??
-              0
-            ).padStart(2, '0')}
-            icon="description"
-            foot="Cần phản hồi từ khách"
-            onClick={() => router.push('/repairs?status=waiting_approval')}
+            label="Đang kiểm tra / sửa chữa"
+            value={String(repairingCount ?? 0).padStart(2, '0')}
+            icon="wrench"
+            foot="Máy đang xử lý tại xưởng"
+            onClick={() => router.push('/repairs?status=in_repair')}
           />
           <StatCard
             label="Chờ kiểm định QC"
@@ -729,10 +793,11 @@ export default function DashboardPage() {
             onClick={() => router.push('/repairs?status=waiting_pickup')}
           />
           <StatCard
-            label="Tỷ lệ hoàn thành"
-            value={completionRateDisplay}
-            icon="check"
-            foot={`${completedCount} đơn đã hoàn tất`}
+            label="Tỉ lệ bảo hành"
+            value={`${kpiData?.summary?.warranty_rate ?? kpiData?.warranty_rate ?? 0}%`}
+            icon="shield"
+            foot="Tỷ lệ máy bảo hành trong kỳ"
+            onClick={() => router.push('/repairs?intake_type=warranty')}
           />
         </div>
       )}
@@ -938,21 +1003,21 @@ export default function DashboardPage() {
 
               <div className="grid grid-cols-[30px_1fr_30px] gap-3 items-center">
                 <div className="w-[30px] h-[30px] rounded-[8px] bg-[#fbf3e5] text-[#a4722f] grid place-items-center">
-                  <Icon name="description" size={15} />
+                  <Icon name="clock" size={15} />
                 </div>
                 <div>
                   <div className="flex justify-between text-xs mb-1">
-                    <span className="font-medium text-[#2d3d35]">Chờ khách duyệt</span>
-                    <span className="text-[#7c8982]">{String(waitingApprovalCount).padStart(2, '0')} đơn</span>
+                    <span className="font-medium text-[#2d3d35]">Chờ kỹ thuật nhận</span>
+                    <span className="text-[#7c8982]">{String(techAvailableOrders.length).padStart(2, '0')} đơn</span>
                   </div>
                   <div className="h-2 bg-[#f0f3f1] rounded-full overflow-hidden">
                     <div
                       className="h-full bg-[#d2a25d] rounded-full"
-                      style={{ width: `${branchOrders.length > 0 ? (waitingApprovalCount / branchOrders.length) * 100 : 0}%` }}
+                      style={{ width: `${branchOrders.length > 0 ? (techAvailableOrders.length / branchOrders.length) * 100 : 0}%` }}
                     />
                   </div>
                 </div>
-                <b className="text-xs text-right text-[#1c302b]">{waitingApprovalCount}</b>
+                <b className="text-xs text-right text-[#1c302b]">{techAvailableOrders.length}</b>
               </div>
 
               <div className="grid grid-cols-[30px_1fr_30px] gap-3 items-center">
@@ -1028,20 +1093,20 @@ export default function DashboardPage() {
               <div className="font-heading font-bold text-2xl text-[#1c302b]">
                 {String(inspectingCount).padStart(2, '0')} <small className="text-xs font-normal text-[#6b7c74]">đơn</small>
               </div>
-              <div className="mt-2 text-[11px] text-[#5c7066]">Chờ chẩn đoán & lên báo giá</div>
+              <div className="mt-2 text-[11px] text-[#5c7066]">Chờ kiểm tra lỗi ban đầu</div>
             </div>
 
             <div className="p-4 rounded-[10px] bg-[#fbf3e5] border border-[#ebd9bd]">
               <div className="flex items-center justify-between text-xs text-[#8c6527] font-semibold mb-2">
-                <span>CHỜ KHÁCH DUYỆT</span>
+                <span>CHỜ KỸ THUẬT</span>
                 <span className="w-7 h-7 rounded-[7px] bg-white text-[#a4722f] grid place-items-center">
-                  <Icon name="description" size={15} />
+                  <Icon name="clock" size={15} />
                 </span>
               </div>
               <div className="font-heading font-bold text-2xl text-[#915e1b]">
-                {String(waitingApprovalCount).padStart(2, '0')} <small className="text-xs font-normal text-[#915e1b]/70">đơn</small>
+                {String(techAvailableOrders.length).padStart(2, '0')} <small className="text-xs font-normal text-[#915e1b]/70">đơn</small>
               </div>
-              <div className="mt-2 text-[11px] text-[#8c6527]">Chờ khách xác nhận phương án</div>
+              <div className="mt-2 text-[11px] text-[#8c6527]">Chờ kỹ thuật viên nhận máy</div>
             </div>
 
             <div className="p-4 rounded-[10px] bg-[#edf4f7] border border-[#cadce6]">
@@ -1257,6 +1322,88 @@ export default function DashboardPage() {
         </div>
       </div>
 
+      {/* Khối Không gian Kỹ thuật - Máy chưa xong chi tiết */}
+      <div className="bg-white rounded-[12px] border border-[#e5ece8] p-5 sm:p-6 shadow-xs">
+        <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
+          <div className="flex items-center gap-3">
+            <span className="w-8 h-8 rounded-[8px] bg-[#eaf4ef] text-[#176b58] grid place-items-center flex-none">
+              <Icon name="wrench" size={17} />
+            </span>
+            <div>
+              <h3 className="font-heading font-bold text-base text-[#1c302b] m-0">
+                Không gian Kỹ thuật - Máy chưa xong chi tiết
+              </h3>
+              <p className="text-xs text-[#809088] mt-0.5 mb-0">
+                Danh sách các thiết bị đang xử lý dở dang tại xưởng ({unfinishedTechOrders.length} máy)
+              </p>
+            </div>
+          </div>
+          <Button
+            variant="secondary"
+            size="sm"
+            onClick={() => router.push('/tech')}
+            className="flex items-center gap-1.5"
+          >
+            <span>Mở Không gian Kỹ thuật</span>
+            <span>↗</span>
+          </Button>
+        </div>
+
+        {unfinishedTechOrders.length === 0 ? (
+          <div className="p-8 text-center rounded-[10px] border border-dashed border-[#d8e3dc] bg-[#fafcfa] text-xs text-[#667a70]">
+            Không có máy nào đang xử lý dở dang tại xưởng. Tất cả đơn đã được hoàn tất hoặc chuyển sang các khâu tiếp theo.
+          </div>
+        ) : (
+          <div className="overflow-x-auto -mx-5 sm:mx-0">
+            <table className="w-full text-left border-collapse min-w-[760px]">
+              <thead>
+                <tr className="border-y border-[#f0f3f1] bg-[#fafbfa] text-xs font-bold text-[#809088] uppercase tracking-wider h-9">
+                  <th className="px-4">Mã đơn</th>
+                  <th className="px-4">Khách hàng</th>
+                  <th className="px-4">Thiết bị</th>
+                  <th className="px-4">KTV phụ trách</th>
+                  <th className="px-4">Trạng thái</th>
+                  <th className="px-4 text-right">Thời gian lưu tại xưởng</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-[#f1f3f2] text-sm">
+                {unfinishedTechOrders.map((o, i) => (
+                  <tr
+                    key={o.id}
+                    onClick={() => handleOpenOrderDetail(o.id)}
+                    className="h-12 hover:bg-[#fafcfa] cursor-pointer transition-colors"
+                  >
+                    <td className="px-4 font-mono font-bold text-[#176b58]">{o.id}</td>
+                    <td className="px-4">
+                      <div className="flex items-center gap-2">
+                        <Avatar initials={o.name} variant={(i % 4) as any} size="sm" />
+                        <div>
+                          <span className="font-semibold text-[#273730] block">{o.name}</span>
+                          {o.phone && <span className="font-mono text-xs text-[#7e8e86]">{o.phone}</span>}
+                        </div>
+                      </div>
+                    </td>
+                    <td className="px-4 font-medium text-[#4b5b53]">{o.device}</td>
+                    <td className="px-4">
+                      <span className="inline-flex items-center gap-1.5 font-medium text-[#2d3d35] text-xs">
+                        <span className="w-2 h-2 rounded-full bg-[#176b58]" />
+                        {o.tech || 'Chưa phân công'}
+                      </span>
+                    </td>
+                    <td className="px-4">
+                      <StatusTag label={o.status} type={o.statusType} />
+                    </td>
+                    <td className="px-4 text-right font-mono text-xs text-[#52635a] font-semibold">
+                      {formatWorkshopDuration(o.createdAt || o.date)}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+
       {/* Recent Orders table preview */}
       <div className="bg-white rounded-[12px] border border-[#e5ece8] p-5 sm:p-6 shadow-xs">
         <div className="flex items-center justify-between mb-4">
@@ -1289,7 +1436,7 @@ export default function DashboardPage() {
               {branchOrders.slice(0, 5).map((o, i) => (
                 <tr
                   key={o.id}
-                  onClick={() => router.push('/repairs')}
+                  onClick={() => handleOpenOrderDetail(o.id)}
                   className="h-12 hover:bg-[#fafcfa] cursor-pointer transition-colors"
                 >
                   <td className="px-4 font-mono font-bold text-[#176b58]">{o.id}</td>
@@ -1317,7 +1464,7 @@ export default function DashboardPage() {
         <h3 className="font-heading font-bold text-base text-[#1c302b] mb-4">
           Thao tác nhanh
         </h3>
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
           <button
             onClick={() => setIntakeModalOpen(true)}
             className="p-3.5 rounded-[10px] border border-[#edf1ee] bg-white hover:bg-[#f7faf8] hover:border-[#b4d6c4] flex items-center gap-3 text-left transition-all"
@@ -1356,19 +1503,6 @@ export default function DashboardPage() {
               <small className="text-xs text-[#87968f]">Dành cho khách hàng</small>
             </div>
           </button>
-
-          <button
-            onClick={() => router.push('/devices')}
-            className="p-3.5 rounded-[10px] border border-[#edf1ee] bg-white hover:bg-[#f7faf8] hover:border-[#b4d6c4] flex items-center gap-3 text-left transition-all"
-          >
-            <div className="w-9 h-9 rounded-[8px] bg-[#eaf4ef] text-[#176b58] grid place-items-center flex-none">
-              <Icon name="headphones" size={18} />
-            </div>
-            <div>
-              <b className="text-sm text-[#1c302b] block font-bold">Cấu hình máy</b>
-              <small className="text-xs text-[#87968f]">Checklist động</small>
-            </div>
-          </button>
         </div>
       </div>
     </div>
@@ -1389,7 +1523,7 @@ export default function DashboardPage() {
             Chào buổi sáng, {currentUser?.name || 'Nhân viên'}
           </h1>
           <p className="text-sm text-[#7e8d85] mt-1 mb-0">
-            Bảng công việc CSKH · Tập trung tiếp nhận, báo giá và chăm sóc khách hàng.
+            Bảng công việc CSKH · Tập trung tiếp nhận, trả máy và chăm sóc khách hàng.
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -1429,11 +1563,10 @@ export default function DashboardPage() {
           foot={`${branchOrders.length} đơn tại chi nhánh`}
         />
         <StatCard
-          label="Chờ khách phản hồi"
-          value={String(waitingApprovalCount).padStart(2, '0')}
-          icon="clock"
-          foot="Cần nhắc khách duyệt"
-          trend="down"
+          label="Máy sẵn sàng trả"
+          value={String(cskhReadyOrders.length).padStart(2, '0')}
+          icon="check"
+          foot="Sẵn sàng thu tiền & bàn giao"
         />
         <StatCard
           label="Cần cập nhật tiến độ"
@@ -1449,6 +1582,74 @@ export default function DashboardPage() {
           trend="down"
           onClick={() => setCskhPendingModalOpen(true)}
         />
+      </div>
+
+      {/* Panel: "Máy sẵn sàng trả" (Thu tiền & Bàn giao ngay trên Dashboard CSKH) */}
+      <div
+        data-testid="cskh-ready-orders-panel"
+        className="bg-white rounded-[12px] border border-[#c5e1d4] p-5 sm:p-6 shadow-xs"
+      >
+        <div className="flex items-center justify-between mb-4">
+          <div>
+            <h3 className="font-heading font-bold text-base text-[#176b58] m-0 flex items-center gap-2">
+              <Icon name="check" size={18} className="text-[#176b58]" />
+              <span>Máy sẵn sàng trả ({cskhReadyOrders.length})</span>
+            </h3>
+            <p className="text-xs text-[#64786e] mt-0.5 mb-0">
+              Thiết bị đã sửa xong & kiểm định đạt, sẵn sàng thu tiền và bàn giao cho khách hàng.
+            </p>
+          </div>
+          <span className="text-xs font-bold text-[#176b58] bg-[#eaf4ef] px-3 py-1 rounded-[10px]">
+            {cskhReadyOrders.length} máy chờ giao
+          </span>
+        </div>
+
+        {cskhReadyOrders.length === 0 ? (
+          <div className="p-4 rounded-[10px] bg-[#f8faf9] border border-dashed border-[#d8e3dc] text-center text-xs text-[#73857d]">
+            Hiện không có thiết bị nào đang chờ bàn giao cho khách.
+          </div>
+        ) : (
+          <div className="divide-y divide-[#edf1ee]">
+            {cskhReadyOrders.map((o) => (
+              <div
+                key={o.id}
+                className="py-3.5 flex flex-wrap items-center justify-between gap-3 hover:bg-[#fafcfa] transition-colors"
+              >
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-[10px] bg-[#eaf4ef] text-[#176b58] grid place-items-center flex-none">
+                    <Icon name="headphones" size={18} />
+                  </div>
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <b className="text-sm text-[#1c302b]">{o.device}</b>
+                      <span className="font-mono text-xs text-[#176b58] font-bold">{o.id}</span>
+                    </div>
+                    <div className="text-xs text-[#7e8e86] mt-0.5">
+                      {o.name} ({o.phone}) · <span className="text-[#176b58] font-bold">{moneyFormatted(o.total_price ?? o.price)}</span>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <StatusTag label={o.status} type={o.statusType} />
+                  <Button
+                    variant="primary"
+                    size="sm"
+                    icon="payments"
+                    data-testid={`cskh-btn-checkout-${o.id}`}
+                    onClick={() => {
+                      setCheckoutOrder(o);
+                      setCheckoutModalOpen(true);
+                    }}
+                    className="bg-[#176b58] hover:bg-[#125848] text-white font-bold text-xs shadow-xs"
+                  >
+                    Thu tiền & Trả máy
+                  </Button>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
 
       {/* Panel: "Máy còn cần xử lý hôm nay" */}
@@ -1468,38 +1669,61 @@ export default function DashboardPage() {
         </div>
 
         <div className="divide-y divide-[#edf1ee]">
-          {cskhPendingOrders.slice(0, 6).map((o) => (
-            <div
-              key={o.id}
-              onClick={() => router.push('/repairs')}
-              className="py-3.5 flex flex-wrap items-center justify-between gap-3 hover:bg-[#fafcfa] cursor-pointer transition-colors"
-            >
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-[10px] bg-[#eaf4ef] text-[#176b58] grid place-items-center flex-none">
-                  <Icon name="headphones" size={18} />
-                </div>
-                <div>
-                  <div className="flex items-center gap-2">
-                    <b className="text-sm text-[#1c302b]">{o.device}</b>
-                    <span className="font-mono text-xs text-[#176b58] font-bold">{o.id}</span>
-                  </div>
-                  <div className="text-xs text-[#7e8e86] mt-0.5">
-                    {o.name} · <span className="text-[#495952]">{o.issue}</span>
-                  </div>
-                  <div className="text-xs text-[#287452] font-semibold mt-1">
-                    Việc tiếp theo: <b>{getCskhNextAction(o)}</b>
-                  </div>
-                </div>
-              </div>
+          {cskhPendingOrders.slice(0, 6).map((o) => {
+            const isReadyToReturn =
+              normalizeStatusCode(o.status) === 'ready_for_return' ||
+              normalizeStatusCode(o.status) === 'waiting_pickup' ||
+              o.status === 'Sẵn sàng trả' ||
+              o.status === 'Chờ khách nhận';
 
-              <div className="flex items-center gap-2.5">
-                <StatusTag label={o.status} type={o.statusType} />
-                <Button variant="secondary" size="sm">
-                  Mở phiếu ↗
-                </Button>
+            return (
+              <div
+                key={o.id}
+                onClick={() => router.push('/repairs')}
+                className="py-3.5 flex flex-wrap items-center justify-between gap-3 hover:bg-[#fafcfa] cursor-pointer transition-colors"
+              >
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-[10px] bg-[#eaf4ef] text-[#176b58] grid place-items-center flex-none">
+                    <Icon name="headphones" size={18} />
+                  </div>
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <b className="text-sm text-[#1c302b]">{o.device}</b>
+                      <span className="font-mono text-xs text-[#176b58] font-bold">{o.id}</span>
+                    </div>
+                    <div className="text-xs text-[#7e8e86] mt-0.5">
+                      {o.name} · <span className="text-[#495952]">{o.issue}</span>
+                    </div>
+                    <div className="text-xs text-[#287452] font-semibold mt-1">
+                      Việc tiếp theo: <b>{getCskhNextAction(o)}</b>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-2.5">
+                  <StatusTag label={o.status} type={o.statusType} />
+                  {isReadyToReturn && (
+                    <Button
+                      variant="primary"
+                      size="sm"
+                      icon="payments"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setCheckoutOrder(o);
+                        setCheckoutModalOpen(true);
+                      }}
+                      className="bg-[#176b58] hover:bg-[#125848] text-white font-bold text-xs"
+                    >
+                      Thu tiền & Trả máy
+                    </Button>
+                  )}
+                  <Button variant="secondary" size="sm">
+                    Mở phiếu ↗
+                  </Button>
+                </div>
               </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
       </div>
     </div>
@@ -2059,37 +2283,62 @@ export default function DashboardPage() {
         }
       >
         <div className="space-y-3 max-h-[60vh] overflow-y-auto pr-1">
-          {cskhPendingOrders.map((o) => (
-            <div
-              key={o.id}
-              className="p-3.5 bg-white rounded-[10px] border border-[#e5ece8] flex flex-col gap-2"
-            >
-              <div className="flex justify-between items-center">
-                <div className="flex items-center gap-2.5">
-                  <b className="text-sm text-[#1c302b]">{o.device}</b>
-                  <span className="font-mono text-xs text-[#176b58] font-bold">{o.id}</span>
+          {cskhPendingOrders.map((o) => {
+            const isReadyToReturn =
+              normalizeStatusCode(o.status) === 'ready_for_return' ||
+              normalizeStatusCode(o.status) === 'waiting_pickup' ||
+              o.status === 'Sẵn sàng trả' ||
+              o.status === 'Chờ khách nhận';
+
+            return (
+              <div
+                key={o.id}
+                className="p-3.5 bg-white rounded-[10px] border border-[#e5ece8] flex flex-col gap-2"
+              >
+                <div className="flex justify-between items-center">
+                  <div className="flex items-center gap-2.5">
+                    <b className="text-sm text-[#1c302b]">{o.device}</b>
+                    <span className="font-mono text-xs text-[#176b58] font-bold">{o.id}</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <StatusTag label={o.status} type={o.statusType} />
+                    {isReadyToReturn && (
+                      <Button
+                        variant="primary"
+                        size="sm"
+                        icon="payments"
+                        onClick={() => {
+                          setCskhPendingModalOpen(false);
+                          setCheckoutOrder(o);
+                          setCheckoutModalOpen(true);
+                        }}
+                        className="bg-[#176b58] hover:bg-[#125848] text-white font-bold text-xs"
+                      >
+                        Thu tiền & Trả máy
+                      </Button>
+                    )}
+                  </div>
                 </div>
-                <StatusTag label={o.status} type={o.statusType} />
-              </div>
-              <div className="grid grid-cols-2 gap-2 text-xs text-[#4e5e56]">
-                <div>
-                  <span className="text-[#84948c] block">Chủ máy:</span>
-                  <b>
-                    {o.name} · {o.phone}
-                  </b>
+                <div className="grid grid-cols-2 gap-2 text-xs text-[#4e5e56]">
+                  <div>
+                    <span className="text-[#84948c] block">Chủ máy:</span>
+                    <b>
+                      {o.name} · {o.phone}
+                    </b>
+                  </div>
+                  <div>
+                    <span className="text-[#84948c] block">Kỹ thuật viên giữ máy:</span>
+                    <b className={o.tech !== 'Chưa phân công' ? 'text-[#176b58]' : 'text-[#a4722f]'}>
+                      {o.tech}
+                    </b>
+                  </div>
                 </div>
-                <div>
-                  <span className="text-[#84948c] block">Kỹ thuật viên giữ máy:</span>
-                  <b className={o.tech !== 'Chưa phân công' ? 'text-[#176b58]' : 'text-[#a4722f]'}>
-                    {o.tech}
-                  </b>
+                <div className="text-xs text-[#287452] pt-1.5 border-t border-[#f0f3f1]">
+                  Việc tiếp theo: <b>{getCskhNextAction(o)}</b>
                 </div>
               </div>
-              <div className="text-xs text-[#287452] pt-1.5 border-t border-[#f0f3f1]">
-                Việc tiếp theo: <b>{getCskhNextAction(o)}</b>
-              </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
       </Modal>
 
@@ -2114,7 +2363,7 @@ export default function DashboardPage() {
         }}
       />
 
-      {/* Checkout Handover Modal for Admin Action Center */}
+      {/* Checkout Handover Modal for Admin Action Center & CSKH Dashboard */}
       {checkoutOrder && (
         <CheckoutHandoverModal
           isOpen={checkoutModalOpen}
@@ -2126,6 +2375,7 @@ export default function DashboardPage() {
           onSuccess={(updatedOrder) => {
             if (updateOrder) updateOrder(updatedOrder);
             if (invalidateOrders) invalidateOrders();
+            refreshShift().catch(() => {});
             setCheckoutModalOpen(false);
             setCheckoutOrder(null);
             toast('Đã thanh toán và bàn giao thiết bị thành công!');

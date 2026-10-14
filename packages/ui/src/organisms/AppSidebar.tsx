@@ -23,6 +23,53 @@ export const mainNavItems: NavItemDef[] = [
   { id: 'tech', label: 'Không gian Kỹ thuật', icon: 'wrench', href: '/tech' },
 ];
 
+// Role menu item permissions matrix
+export const rolePermissions: Record<'admin' | 'cskh' | 'tech' | 'qc' | 'inventory' | 'super_admin', string[]> = {
+  admin: [
+    'dashboard',
+    'repairs',
+    'customers',
+    'timeline',
+    'tech',
+    'qc',
+    'warranty',
+    'branches',
+    'branding',
+    'users',
+    'payments',
+    'shifts',
+    'subscription',
+    'kpi',
+    'audit',
+  ],
+  super_admin: [],
+  cskh: [
+    'dashboard',
+    'repairs',
+    'customers',
+    'timeline',
+    'warranty',
+    'shifts',
+  ],
+  tech: [
+    'tech',
+  ],
+  qc: [
+    'dashboard',
+    'repairs',
+    'qc',
+    'devices',
+    'timeline',
+  ],
+  inventory: [
+    'dashboard',
+    'repairs',
+    'inventory',
+    'partners',
+    'devices',
+  ],
+};
+
 export interface AppSidebarProps {
   currentPath: string;
   onNavigate: (path: string) => void;
@@ -109,61 +156,6 @@ export const AppSidebar: React.FC<AppSidebarProps> = ({
       ? 'inventory'
       : 'admin';
 
-
-  // Role menu item permissions matrix
-  const rolePermissions: Record<'admin' | 'cskh' | 'tech' | 'qc' | 'inventory' | 'super_admin', string[]> = {
-    admin: [
-      'dashboard',
-      'repairs',
-      'customers',
-      'devices',
-      'quotes',
-      'timeline',
-      'tech',
-      'qc',
-      'inventory',
-      'shipments',
-      'partners',
-      'warranty',
-      'branches',
-      'branding',
-      'users',
-      'payments',
-      'shifts',
-      'subscription',
-      'kpi',
-      'audit',
-    ],
-    super_admin: [],
-    cskh: [
-      'dashboard',
-      'repairs',
-      'customers',
-      'devices',
-      'quotes',
-      'timeline',
-      'shipments',
-      'warranty',
-      'shifts',
-    ],
-    tech: [
-      'tech',
-    ],
-    qc: [
-      'dashboard',
-      'repairs',
-      'qc',
-      'devices',
-      'timeline',
-    ],
-    inventory: [
-      'dashboard',
-      'repairs',
-      'inventory',
-      'partners',
-      'devices',
-    ],
-  };
 
   const allowedIds = rolePermissions[normalizedRole] || rolePermissions.admin;
 

@@ -7,6 +7,7 @@ import type {
   CskhKpiItem,
   StaffKpiItem,
   StaffKpiSummary,
+  StaffPerformanceSummary,
   StaffPerformanceData,
   StaffKpiFilterParams,
   ApiResponse,
@@ -20,6 +21,7 @@ export type {
   CskhKpiItem,
   StaffKpiItem,
   StaffKpiSummary,
+  StaffPerformanceSummary,
   StaffPerformanceData,
   StaffKpiFilterParams,
 };
@@ -31,6 +33,9 @@ export interface KpiSummary {
   completed?: number;
   total_rework?: number;
   rework_needed?: number;
+  warranty_count?: number;
+  warranty_rate?: number;
+  warranty_rate_formatted?: string;
   qc_pass_rate?: number;
   avg_processing_time_minutes?: number;
   avg_processing_time_hours?: number;

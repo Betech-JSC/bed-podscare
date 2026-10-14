@@ -195,8 +195,12 @@ export const ShiftReceiptPrintModal: React.FC<ShiftReceiptPrintModalProps> = ({
                     <span>3. Tổng chi mặt:</span>
                     <span className="font-semibold">-{moneyFormatted(totals?.system_cash_out)}</span>
                   </div>
+                  <div className="flex justify-between text-[#0066cc]">
+                    <span>4. Thu Chuyển khoản:</span>
+                    <span className="font-semibold font-mono">+{moneyFormatted(shift?.vietqr_total || (totals as any)?.vietqr_total || 0)}</span>
+                  </div>
                   <div className="flex justify-between font-bold pt-1 border-t border-dotted border-[#d2ded8]">
-                    <span>Két lý thuyết:</span>
+                    <span>Két lý thuyết (mặt):</span>
                     <span>{moneyFormatted(totals?.expected_cash)}</span>
                   </div>
                   <div className="flex justify-between font-bold text-xs pt-0.5">
@@ -417,10 +421,25 @@ export const ShiftReceiptPrintModal: React.FC<ShiftReceiptPrintModalProps> = ({
                   </table>
                 </div>
 
+                {/* Thống kê Doanh thu Chuyển khoản VietQR */}
+                <div className="mb-4 p-3 bg-[#f0f7ff] border border-[#b9d5f7] rounded-[8px] flex items-center justify-between text-xs">
+                  <div>
+                    <div className="font-bold text-[#004085] uppercase">
+                      II. Doanh thu Chuyển khoản qua Ngân hàng (VietQR / CK) trong ca
+                    </div>
+                    <div className="text-[11px] text-[#426c96] mt-0.5">
+                      Thanh toán qua mã QR động và chuyển khoản trực tiếp vào tài khoản ngân hàng chi nhánh (không nằm trong két)
+                    </div>
+                  </div>
+                  <div className="font-bold text-base font-mono text-[#004085]">
+                    {moneyFormatted(shift?.vietqr_total || (totals as any)?.vietqr_total || 0)}
+                  </div>
+                </div>
+
                 {/* Bảng phân bổ tiền mặt */}
                 <div className="mb-4">
                   <div className="text-xs font-bold uppercase text-[#17231f] mb-2">
-                    II. Phân bổ bàn giao tiền mặt
+                    III. Phân bổ bàn giao tiền mặt
                   </div>
                   <div className="grid grid-cols-2 gap-3 p-3 bg-[#f6f8f6] border border-[#e9eeeb] rounded-[8px]">
                     <div>
@@ -446,7 +465,7 @@ export const ShiftReceiptPrintModal: React.FC<ShiftReceiptPrintModalProps> = ({
                 {shift?.reconciliation_notes && (
                   <div className="mb-6 p-3 bg-[#faf7f2] border border-[#e8dfcf] rounded-[8px]">
                     <div className="text-xs font-bold text-[#8c6729] mb-1">
-                      III. Giải trình chênh lệch két tiền mặt:
+                      IV. Giải trình chênh lệch két tiền mặt:
                     </div>
                     <div className="text-xs italic text-[#556961]">
                       &ldquo;{shift.reconciliation_notes}&rdquo;

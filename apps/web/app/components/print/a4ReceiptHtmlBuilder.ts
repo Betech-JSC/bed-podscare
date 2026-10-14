@@ -233,9 +233,18 @@ export function renderA4ReceiptHTML(
         </div>
       </div>
 
-      <!-- Terms -->
-      <div class="a4-terms">
-        * Chi phí trên là dự kiến tại thời điểm tiếp nhận. <b>Thời hạn bảo hành: ${warrantyMonths} tháng (Đến ngày ${formattedExpiryDate})</b>. FIXO sẽ chủ động liên hệ quý khách xác nhận trước khi can thiệp nếu có phát sinh linh kiện. Quý khách vui lòng giữ phiếu này để đối chiếu khi nhận lại thiết bị.
+      <!-- Standardized Warranty Terms Section -->
+      <div class="a4-warranty-policy" style="margin-top: 4px; margin-bottom: 4px; padding: 4px 6px; background: #f9faf9; border: 1px solid #d2ded5; border-radius: 4px; font-size: 6.5pt; line-height: 1.25; color: #333333;">
+        <div style="font-weight: bold; color: #176b58; text-transform: uppercase; font-size: 7pt; margin-bottom: 2px; display: flex; justify-content: space-between;">
+          <span>ĐIỀU KHOẢN VÀ CHÍNH SÁCH BẢO HÀNH TIÊU CHUẨN</span>
+          <span style="font-weight: 600; text-transform: none;">Thời hạn bảo hành: <b>${warrantyMonths} tháng</b> (Đến ngày ${formattedExpiryDate})</span>
+        </div>
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 2px 8px; font-size: 6.5pt;">
+          <div>• <b>Điều kiện bảo hành:</b> Máy còn nguyên tem bảo hành của PodsCare, không có dấu hiệu tẩy xóa, rách rời.</div>
+          <div>• <b>Phạm vi áp dụng:</b> Bảo hành đúng hạng mục linh kiện và chức năng đã sửa chữa/thay thế được ghi trên phiếu.</div>
+          <div>• <b>Từ chối bảo hành:</b> Lỗi do rơi vỡ, cấn móp, biến dạng vật lý, hoặc chất lỏng/nước xâm nhập.</div>
+          <div>• <b>Tra cứu điện tử:</b> Tra cứu tiến độ và bảo hành điện tử realtime qua Số điện thoại hoặc quét mã QR.</div>
+        </div>
       </div>
 
       <!-- Signatures -->
@@ -707,9 +716,18 @@ export function renderCombinedA4ReceiptHTML(
         </div>
       </div>
 
-      <!-- Terms -->
-      <div class="a4-terms">
-        * Chi phí trên là dự kiến tại thời điểm tiếp nhận. FIXO sẽ chủ động liên hệ quý khách xác nhận trước khi can thiệp nếu có phát sinh linh kiện. Quý khách vui lòng giữ phiếu này để đối chiếu khi nhận lại thiết bị.
+      <!-- Standardized Warranty Terms Section -->
+      <div class="a4-warranty-policy" style="margin-top: 4px; margin-bottom: 4px; padding: 4px 6px; background: #f9faf9; border: 1px solid #d2ded5; border-radius: 4px; font-size: 6.5pt; line-height: 1.25; color: #333333;">
+        <div style="font-weight: bold; color: #176b58; text-transform: uppercase; font-size: 7pt; margin-bottom: 2px; display: flex; justify-content: space-between;">
+          <span>ĐIỀU KHOẢN VÀ CHÍNH SÁCH BẢO HÀNH TIÊU CHUẨN</span>
+          <span style="font-weight: 600; text-transform: none;">Bảo hành điện tử tiêu chuẩn 90 ngày (nguyên tem)</span>
+        </div>
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 2px 8px; font-size: 6.5pt;">
+          <div>• <b>Điều kiện bảo hành:</b> Máy còn nguyên tem bảo hành của PodsCare, không có dấu hiệu tẩy xóa, rách rời.</div>
+          <div>• <b>Phạm vi áp dụng:</b> Bảo hành đúng hạng mục linh kiện và chức năng đã sửa chữa/thay thế được ghi trên phiếu.</div>
+          <div>• <b>Từ chối bảo hành:</b> Lỗi do rơi vỡ, cấn móp, biến dạng vật lý, hoặc chất lỏng/nước xâm nhập.</div>
+          <div>• <b>Tra cứu điện tử:</b> Tra cứu tiến độ và bảo hành điện tử realtime qua Số điện thoại hoặc quét mã QR.</div>
+        </div>
       </div>
 
       <!-- Signatures -->

@@ -149,6 +149,10 @@ export default function ShiftsPage() {
     ? Number(currentShift.system_cash_out || 0)
     : cashBalance?.system_cash_out || 0;
 
+  const currentVietQrTotal = currentShift
+    ? Number(currentShift.vietqr_total || 0)
+    : Number((cashBalance as any)?.vietqr_total || (cashBalance as any)?.total_bank_transfer || 0);
+
   return (
     <AppShell crumbName="Sổ quỹ & Ca trực">
       <div className="space-y-6">
@@ -197,7 +201,7 @@ export default function ShiftsPage() {
         <CurrentShiftBanner />
 
         {/* Financial StatCards */}
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
           <StatCard
             label="Tồn két tiền mặt chi nhánh"
             value={moneyFormatted(currentCashInDrawer)}
@@ -218,6 +222,13 @@ export default function ShiftsPage() {
             foot="Thu bổ sung float hoặc khoản thu khác"
             periodLabel=""
             trend="neutral"
+          />
+          <StatCard
+            label="Doanh thu Chuyển khoản (VietQR / CK)"
+            value={moneyFormatted(currentVietQrTotal)}
+            foot="Doanh thu thanh toán QR/CK trong ca"
+            periodLabel=""
+            trend="up"
           />
         </div>
 
@@ -248,13 +259,15 @@ export default function ShiftsPage() {
             </button>
           </div>
 
-          <Link
-            href="/payments"
-            className="text-xs font-semibold text-[#176b51] hover:underline pb-3 flex items-center gap-1"
-          >
-            <span>Sang Quản lý Thanh toán đơn hàng</span>
-            <span>→</span>
-          </Link>
+          {currentUser?.role !== 'cskh' && (
+            <Link
+              href="/payments"
+              className="text-xs font-semibold text-[#176b51] hover:underline pb-3 flex items-center gap-1"
+            >
+              <span>Sang Quản lý Thanh toán đơn hàng</span>
+              <span>→</span>
+            </Link>
+          )}
         </div>
 
         {/* TAB 1: SỔ QUỸ TIỀN MẶT */}
@@ -517,6 +530,8 @@ export default function ShiftsPage() {
                       <th className="px-3">Thời gian mở</th>
                       <th className="px-3">Thời gian đóng</th>
                       <th className="px-3 text-right">Tiền đầu ca</th>
+                      <th className="px-3 text-right">Thu tiền mặt</th>
+                      <th className="px-3 text-right">Doanh thu CK (VietQR)</th>
                       <th className="px-3 text-right">Két lý thuyết</th>
                       <th className="px-3 text-right">Thực kiểm</th>
                       <th className="px-3 text-right">Chênh lệch</th>
@@ -564,6 +579,12 @@ export default function ShiftsPage() {
                           <td className="px-3 py-3 text-[#60736b]">{closedFormatted}</td>
                           <td className="px-3 py-3 text-right font-mono font-semibold">
                             {moneyFormatted(s.opening_cash)}
+                          </td>
+                          <td className="px-3 py-3 text-right font-mono font-semibold text-[#176b51]">
+                            {moneyFormatted(Number(s.system_cash_in ?? 0))}
+                          </td>
+                          <td className="px-3 py-3 text-right font-mono font-semibold text-[#176b51]">
+                            {moneyFormatted(Number((s as any).vietqr_total ?? 0))}
                           </td>
                           <td className="px-3 py-3 text-right font-mono font-semibold text-[#176b51]">
                             {moneyFormatted(s.expected_cash)}

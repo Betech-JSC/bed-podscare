@@ -76,6 +76,15 @@ const DEFAULT_COMMON_ISSUES: Record<string, CommonIssueItem[]> = {
   ],
 };
 
+export const QUICK_POPULAR_MODELS = [
+  { label: 'AirPods 2', category: 'AirPods', name: 'AirPods 2', code: 'A2031/A2032' },
+  { label: 'AirPods 3', category: 'AirPods', name: 'AirPods 3', code: 'A2564/A2565' },
+  { label: 'AirPods Pro 1', category: 'AirPods', name: 'AirPods Pro 1', code: 'A2083/A2084' },
+  { label: 'AirPods Pro 2', category: 'AirPods', name: 'AirPods Pro 2', code: 'A2698/A2699' },
+  { label: 'AirPods Max', category: 'AirPods', name: 'AirPods Max', code: 'A2096' },
+  { label: 'Khác', category: 'Khác', name: 'Khác', code: 'Dòng máy khác' },
+];
+
 const createDefaultDevice = (id = 'dev-1', defaultCategory = 'AirPods', defaultModel = 'AirPods Pro 2'): IntakeDeviceItem => ({
   id,
   category: defaultCategory,
@@ -178,6 +187,7 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
   const [photos, setPhotos] = useState<DevicePhoto[]>([]);
   const [price, setPrice] = useState<number | ''>('');
   const [priceNote, setPriceNote] = useState('');
+  const [warrantyMonths, setWarrantyMonths] = useState<3 | 6 | 9 | 12>(3);
   const [consent, setConsent] = useState(true);
 
   // Satisfy TS compiler unused variables check while preserving test compatibility
@@ -237,6 +247,7 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
     setPhotos([]);
     setPrice('');
     setPriceNote('');
+    setWarrantyMonths(3);
     setConsent(true);
     setShippingAddress('');
 
@@ -835,6 +846,8 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
           appearance_notes: dev.appearance.trim() || undefined,
           test_note: dev.testNote.trim() || undefined,
           estimated_price: devPrice,
+          warranty_months: warrantyMonths,
+          warranty_terms_days: warrantyMonths * 30,
           checklists: backendChecklists,
           intake_batch_code: batchCode,
           created_by_user_id: selectedCskhId ? Number(selectedCskhId) : undefined,
@@ -883,10 +896,13 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
           branch: branchObj.name,
           branchId: branchObj.id,
           branchName: branchObj.name,
-          status: 'Chờ khách duyệt',
-          statusType: 'wait',
+          status: 'Chờ kỹ thuật',
+          statusType: 'new',
           price: devPrice,
           priceNote: dev.priceNote.trim(),
+          warranty_months: warrantyMonths,
+          warranty_terms_days: warrantyMonths * 30,
+          warrantyTerm: `${warrantyMonths} tháng`,
           tech: 'Chưa phân công',
           date: new Intl.DateTimeFormat('vi-VN').format(new Date()),
           checks: checksForDev,
@@ -1326,6 +1342,72 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
                       )}
                     </div>
 
+                    {/* Thẻ chọn nhanh dòng máy phổ biến (1-Click Selection) */}
+                    <div className="mb-3.5">
+                      <div className="flex items-center justify-between mb-2">
+                        <label className="text-xs font-bold text-[#1c302b] uppercase tracking-[0.5px]">
+                          Chọn nhanh thiết bị *
+                        </label>
+                        <span className="text-[11px] text-[#718279]">
+                          1-click chọn nhanh model phổ biến
+                        </span>
+                      </div>
+                      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-2">
+                        {QUICK_POPULAR_MODELS.map((item) => {
+                          const isKhac = item.name === 'Khác';
+                          const isSelected = isKhac
+                            ? (dev.category !== 'AirPods' || !QUICK_POPULAR_MODELS.some((q) => q.name === dev.device && q.name !== 'Khác'))
+                            : (dev.device === item.name);
+
+                          return (
+                            <button
+                              key={item.label}
+                              type="button"
+                              data-testid={`quick-device-btn-${item.label.toLowerCase().replace(/\s+/g, '-')}`}
+                              onClick={() => {
+                                if (isKhac) {
+                                  if (dev.category === 'AirPods') {
+                                    handleCategoryChangeForDevice(categories.find((c) => c !== 'AirPods') || 'Apple Watch', devIdx);
+                                  }
+                                } else {
+                                  updateDevice(devIdx, { category: 'AirPods', device: item.name });
+                                  if (devIdx === 0) {
+                                    setSelectedCategory('AirPods');
+                                    setSelectedDevice(item.name);
+                                  }
+                                  setErrors((prev) => {
+                                    const next = { ...prev };
+                                    delete next[`category_${dev.id}`];
+                                    delete next[`device_${dev.id}`];
+                                    if (devIdx === 0) {
+                                      delete next.category;
+                                      delete next.device;
+                                    }
+                                    return next;
+                                  });
+                                }
+                              }}
+                              className={`p-2.5 rounded-[9px] border text-center transition-all cursor-pointer flex flex-col items-center justify-center gap-1 ${
+                                isSelected
+                                  ? 'bg-[#eaf4ef] border-[#176b58] ring-2 ring-[#176b58]/20 text-[#176b58] font-bold shadow-xs'
+                                  : 'bg-[#fafcfa] border-[#d8e2dc] text-[#33443d] hover:bg-[#f3f7f5] hover:border-[#b2cdc0]'
+                              }`}
+                            >
+                              <Icon
+                                name={isKhac ? 'spark' : 'headphones'}
+                                size={18}
+                                className={isSelected ? 'text-[#176b58]' : 'text-[#6a7d74]'}
+                              />
+                              <span className="text-xs font-bold block truncate w-full">{item.label}</span>
+                              <span className="text-[10px] text-[#7d8f86] font-mono block truncate w-full">
+                                {item.code}
+                              </span>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                       <Select
                         label="Loại thiết bị *"
@@ -1662,7 +1744,7 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
                           placeholder={orderType === 'warranty' ? '0' : '0 (hoặc ví dụ 350.000)'}
                         />
                         <Input
-                          label="Ghi chú báo giá"
+                          label="Ghi chú tiếp nhận"
                           value={dev.priceNote}
                           onChange={(e) => {
                             const val = e.target.value;
@@ -1675,6 +1757,38 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
                     </div>
                   );
                 })}
+              </div>
+
+              {/* Bộ chọn nhanh thời hạn bảo hành (3 / 6 / 9 / 12 tháng) */}
+              <div
+                data-testid="intake-warranty-months-selector"
+                className="p-3.5 mb-4 bg-white border border-[#dce8e1] rounded-[8px] space-y-2"
+              >
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-bold text-[#1c302b] uppercase tracking-wide">
+                    Thời hạn bảo hành cam kết (in trên phiếu):
+                  </span>
+                  <span className="text-xs font-semibold text-[#176b58]">
+                    {warrantyMonths} tháng ({warrantyMonths * 30} ngày)
+                  </span>
+                </div>
+                <div className="grid grid-cols-4 gap-2">
+                  {([3, 6, 9, 12] as const).map((m) => (
+                    <button
+                      key={m}
+                      type="button"
+                      data-testid={`intake-warranty-btn-${m}`}
+                      onClick={() => setWarrantyMonths(m)}
+                      className={`py-2 px-3 rounded-[8px] text-xs font-bold border transition-all cursor-pointer ${
+                        warrantyMonths === m
+                          ? 'bg-[#176b58] text-white border-[#176b58] shadow-xs'
+                          : 'bg-[#f4f7f5] text-[#405249] border-[#d8e3dc] hover:bg-[#eaf4ef]'
+                      }`}
+                    >
+                      {m} tháng
+                    </button>
+                  ))}
+                </div>
               </div>
 
               {/* Cumulative Total Cost */}

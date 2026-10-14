@@ -256,10 +256,21 @@ const CustomerSlip: React.FC<{
         <b className="text-sm font-semibold tabular-nums tracking-[0.5px]">{formatMoney(finalPriceVal)}</b>
       </div>
 
-      {/* Warranty Badge */}
-      <div className="text-center mt-2 p-1.5 border border-dashed border-gray-600 rounded bg-gray-50">
-        <div className="text-[9.5px] font-extrabold text-black">BẢO HÀNH ĐIỆN TỬ: {warrantyMonths} THÁNG</div>
-        <div className="text-[8.5px] text-gray-700 mt-0.5">Thời hạn bảo hành: {warrantyMonths} tháng (Đến ngày {formattedExpiryDate})</div>
+      {/* Warranty Policy Box */}
+      <div className="mt-2 p-1.5 border border-dashed border-black rounded-[4px] bg-gray-50 text-[8.5px] leading-tight text-gray-800">
+        <div className="text-[9.5px] font-extrabold text-black text-center uppercase tracking-wide">
+          BẢO HÀNH ĐIỆN TỬ: {warrantyMonths} THÁNG
+        </div>
+        <div className="text-[8.5px] font-bold text-center text-[#176b58] my-0.5">
+          Thời hạn bảo hành: {warrantyMonths} tháng (Đến ngày {formattedExpiryDate})
+        </div>
+        <div className="text-[8px] text-gray-700 space-y-0.5 mt-1 border-t border-dotted border-gray-300 pt-1">
+          <div className="font-extrabold text-center uppercase mb-0.5">ĐIỀU KHOẢN & CHÍNH SÁCH BẢO HÀNH</div>
+          <div>• <b>Tem niêm phong:</b> Thiết bị còn nguyên tem bảo hành PodsCare, không có dấu hiệu tẩy xóa, rách rời.</div>
+          <div>• <b>Từ chối bảo hành:</b> Không bảo hành lỗi rơi vỡ, cấn móp, biến dạng vật lý, hoặc chất lỏng/nước xâm nhập.</div>
+          <div>• <b>Phạm vi:</b> Chỉ bảo hành đúng linh kiện & chức năng thay thế/sửa chữa ghi trên phiếu.</div>
+          <div>• <b>Tra cứu:</b> Tra cứu lịch sử & thời hạn bảo hành điện tử qua SĐT hoặc quét mã QR dưới đây.</div>
+        </div>
       </div>
 
       {/* QR Code */}

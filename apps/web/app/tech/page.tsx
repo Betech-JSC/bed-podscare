@@ -34,7 +34,7 @@ export default function TechnicianQueuePage() {
     updateOrder,
   } = usePodsCare();
 
-  const [dateFilter, setDateFilter] = useState<'today' | '3_days'>('today');
+  const [dateFilter, setDateFilter] = useState<'today' | '3_days' | '7_days'>('today');
   const [activeTab, setActiveTab] = useState<'my_orders' | 'available' | 'completed' | 'special_parts'>('my_orders');
   const [selectedOrder, setSelectedOrder] = useState<RepairOrder | null>(null);
   const [detailModalOpen, setDetailModalOpen] = useState(false);
@@ -374,6 +374,41 @@ export default function TechnicianQueuePage() {
           )}
         </div>
 
+        {/* Top Red Alert Banner khi có linh kiện đặc biệt đang chờ mua ngoài */}
+        {mySpecialPartsOrders.some(
+          (o) => (o.special_parts_status || o.specialPartsStatus) === 'pending'
+        ) && (
+          <div
+            data-testid="tech-special-parts-red-alert-banner"
+            onClick={() => setActiveTab('special_parts')}
+            className="bg-red-50 border border-red-300 rounded-[12px] p-3.5 px-4 flex flex-wrap items-center justify-between gap-3 cursor-pointer hover:bg-red-100/70 transition-all shadow-2xs"
+          >
+            <div className="flex items-center gap-2.5 text-red-700">
+              <span className="w-8 h-8 rounded-[8px] bg-red-600 text-white grid place-items-center flex-none">
+                <Icon name="bell" size={16} />
+              </span>
+              <div>
+                <b className="text-xs sm:text-sm font-bold block text-red-800">
+                  CẢNH BÁO: Có{' '}
+                  {
+                    mySpecialPartsOrders.filter(
+                      (o) => (o.special_parts_status || o.specialPartsStatus) === 'pending'
+                    ).length
+                  }{' '}
+                  đơn đang chờ Quầy mua linh kiện đặc biệt bên ngoài!
+                </b>
+                <span className="text-xs text-red-700">
+                  Bấm vào đây để chuyển ngay sang tab Linh kiện đặc biệt và theo dõi tiến độ mua hàng.
+                </span>
+              </div>
+            </div>
+            <span className="px-3 py-1.5 rounded-[8px] bg-red-600 text-white text-xs font-bold flex items-center gap-1.5">
+              <span>Xem danh sách</span>
+              <span>→</span>
+            </span>
+          </div>
+        )}
+
         {/* 4 Thẻ KPI tương tác chuyển Tab */}
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3.5">
           <StatCard
@@ -416,7 +451,13 @@ export default function TechnicianQueuePage() {
           />
 
           <StatCard
-            label="Đã sửa xong hôm nay"
+            label={
+              dateFilter === 'today'
+                ? 'Đã sửa xong hôm nay'
+                : dateFilter === '3_days'
+                ? 'Đã sửa xong (3 ngày)'
+                : 'Đã sửa xong (7 ngày)'
+            }
             value={String(myCompletedTodayOrders.length).padStart(2, '0')}
             icon="check"
             foot="Sẵn sàng bàn giao CSKH"
@@ -458,7 +499,19 @@ export default function TechnicianQueuePage() {
                     : 'bg-[#f4f7f5] text-[#556960] hover:bg-[#eaf0ec]'
                 }`}
               >
-                <span>3 ngày qua (Tối đa 3 ngày)</span>
+                <span>3 ngày qua</span>
+              </button>
+              <button
+                type="button"
+                data-testid="tech-date-filter-7_days"
+                onClick={() => setDateFilter('7_days')}
+                className={`px-3 py-1.5 rounded-[8px] text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
+                  dateFilter === '7_days'
+                    ? 'bg-[#176b58] text-white shadow-xs'
+                    : 'bg-[#f4f7f5] text-[#556960] hover:bg-[#eaf0ec]'
+                }`}
+              >
+                <span>7 ngày qua (Tối đa 7 ngày)</span>
               </button>
             </div>
           </div>
@@ -468,10 +521,15 @@ export default function TechnicianQueuePage() {
                 <span className="w-1.5 h-1.5 rounded-full bg-[#176b58] animate-pulse" />
                 Đơn ca hôm nay & các đơn dở dang tồn lại
               </span>
+            ) : dateFilter === '3_days' ? (
+              <span className="text-[#176b58] bg-[#eaf4ef] px-2.5 py-1 rounded font-medium flex items-center gap-1.5 border border-[#cbe3d6]">
+                <Icon name="alert" size={14} className="text-[#176b58]" />
+                <span>Hiển thị các máy nhận trong 3 ngày qua để theo dõi và hoàn tất sửa chữa.</span>
+              </span>
             ) : (
               <span className="text-[#176b58] bg-[#eaf4ef] px-2.5 py-1 rounded font-medium flex items-center gap-1.5 border border-[#cbe3d6]">
                 <Icon name="alert" size={14} className="text-[#176b58]" />
-                <span>Chọn &quot;3 ngày qua&quot; để xem lại các máy nhận từ hôm qua, hôm kia và bấm Hoàn thành sửa chữa.</span>
+                <span>Mở rộng phạm vi 7 ngày qua: Theo dõi toàn bộ máy dở dang và hoàn thành trong tuần.</span>
               </span>
             )}
           </div>
@@ -530,7 +588,13 @@ export default function TechnicianQueuePage() {
                 : 'bg-white text-[#52635a] hover:bg-[#f0f4f2] border border-[#e5ece8]'
             }`}
           >
-            <span>Đã sửa xong hôm nay</span>
+            <span>
+              {dateFilter === 'today'
+                ? 'Đã sửa xong hôm nay'
+                : dateFilter === '3_days'
+                ? 'Đã sửa xong (3 ngày)'
+                : 'Đã sửa xong (7 ngày)'}
+            </span>
             <span
               className={`px-2 py-0.5 rounded-full text-xs font-bold ${
                 activeTab === 'completed'
@@ -558,7 +622,7 @@ export default function TechnicianQueuePage() {
               className={`px-2 py-0.5 rounded-full text-xs font-bold ${
                 activeTab === 'special_parts'
                   ? 'bg-white/20 text-white'
-                  : 'bg-[#fef3c7] text-[#92400e]'
+                  : 'bg-red-100 text-red-700 border border-red-300 font-bold'
               }`}
             >
               {mySpecialPartsOrders.length}
@@ -589,11 +653,16 @@ export default function TechnicianQueuePage() {
                   const code = normalizeStatusCode(order.status);
                   const isWaitingParts = code === 'waiting_parts';
                   const isAssignedOrRework = code === 'assigned' || code === 'rework_needed';
+                  const isSpecialPartsPending = order.special_parts_status === 'pending' || order.specialPartsStatus === 'pending';
 
                   return (
                     <article
                       key={order.id}
-                      className="bg-white border border-[#e5ece8] hover:border-[#176b58] rounded-[12px] p-5 flex flex-col justify-between shadow-2xs hover:shadow-xs transition-all cursor-pointer group"
+                      className={`bg-white border rounded-[12px] p-5 flex flex-col justify-between shadow-2xs hover:shadow-xs transition-all cursor-pointer group ${
+                        isSpecialPartsPending
+                          ? 'border-red-400 ring-1 ring-red-400/20 bg-red-50/10'
+                          : 'border-[#e5ece8] hover:border-[#176b58]'
+                      }`}
                       onClick={() => handleOpenDetailModal(order)}
                     >
                       <div className="space-y-3">
@@ -663,13 +732,13 @@ export default function TechnicianQueuePage() {
                         )}
 
                         {/* Badges linh kiện đặc biệt (mua ngoài) */}
-                        {(order.special_parts_status === 'pending' || order.specialPartsStatus === 'pending') && (
+                        {isSpecialPartsPending && (
                           <div
                             data-testid={`card-special-parts-pending-${order.id}`}
-                            className="bg-[#fef3c7] border border-[#fde68a] rounded-[8px] p-2 text-xs text-[#92400e] flex items-center gap-1.5"
+                            className="bg-red-50 text-red-700 border border-red-300 font-bold rounded-[8px] p-2 text-xs flex items-center gap-1.5 shadow-2xs"
                           >
-                            <Icon name="cart" size={13} className="text-[#b45309]" />
-                            <span className="font-semibold truncate">Cần mua ngoài: {order.special_parts_needed || order.specialPartsNeeded}</span>
+                            <Icon name="bell" size={13} className="text-red-600 flex-none" />
+                            <span className="truncate">Cần mua ngoài: {order.special_parts_needed || order.specialPartsNeeded}</span>
                           </div>
                         )}
                         {(order.special_parts_status === 'purchased' || order.specialPartsStatus === 'purchased') && (
@@ -1090,7 +1159,7 @@ export default function TechnicianQueuePage() {
                     <article
                       key={order.id}
                       className={`bg-white border rounded-[12px] p-5 flex flex-col justify-between shadow-2xs hover:shadow-xs transition-all cursor-pointer group ${
-                        isPurchased ? 'border-[#a7d9c0] hover:border-[#176b58]' : 'border-[#fde68a] hover:border-[#f59e0b]'
+                        isPurchased ? 'border-[#a7d9c0] hover:border-[#176b58]' : 'border-red-400 ring-1 ring-red-400/20 bg-red-50/10 hover:border-red-500'
                       }`}
                       onClick={() => handleOpenDetailModal(order)}
                     >
@@ -1121,9 +1190,9 @@ export default function TechnicianQueuePage() {
                             ) : (
                               <span
                                 data-testid={`tech-pending-badge-${order.id}`}
-                                className="inline-flex items-center gap-1 px-2.5 py-1 rounded-[20px] text-[10px] font-bold text-[#b45309] bg-[#fef3c7] border border-[#fde68a]"
+                                className="inline-flex items-center gap-1 px-2.5 py-1 rounded-[20px] text-[10px] font-bold text-red-700 bg-red-50 border border-red-300 shadow-2xs"
                               >
-                                <Icon name="clock" size={12} className="text-[#b45309]" />
+                                <Icon name="bell" size={12} className="text-red-600" />
                                 Đang chờ Quầy mua
                               </span>
                             )}
@@ -1143,10 +1212,10 @@ export default function TechnicianQueuePage() {
 
                         {/* Ghi chú linh kiện cần mua ngoài */}
                         <div className={`p-3 rounded-[8px] border text-xs leading-relaxed ${
-                          isPurchased ? 'bg-[#f4faf7] border-[#d2eadc] text-[#1c302b]' : 'bg-[#fffbeb] border-[#fde68a] text-[#78350f]'
+                          isPurchased ? 'bg-[#f4faf7] border-[#d2eadc] text-[#1c302b]' : 'bg-red-50 text-red-700 border-red-300'
                         }`}>
                           <span className="font-bold block mb-1 flex items-center gap-1">
-                            <Icon name="cart" size={12} />
+                            <Icon name={isPurchased ? "cart" : "bell"} size={12} className={isPurchased ? "" : "text-red-600"} />
                             Linh kiện cần mua ngoài:
                           </span>
                           <p className="m-0 font-medium whitespace-pre-wrap">

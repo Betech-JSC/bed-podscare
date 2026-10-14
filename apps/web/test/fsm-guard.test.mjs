@@ -66,7 +66,7 @@ describe('OpenSpec: friendly-fsm-status-messages-and-ui-guard Group 2 Verificati
   test('Task 2.1: FSM_QUICK_ACTIONS matrix matches exact lifecycle transitions', () => {
     // inspecting
     const inspectingLabels = getQuickActionsForStatus('inspecting').map((a) => a.label);
-    assert.deepStrictEqual(inspectingLabels, ['Chờ khách duyệt', 'Chờ kỹ thuật', 'Đã hủy']);
+    assert.deepStrictEqual(inspectingLabels, ['Chờ kỹ thuật', 'Đã hủy']);
 
     // waiting_approval
     const approvalLabels = getQuickActionsForStatus('waiting_approval').map((a) => a.label);

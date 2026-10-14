@@ -11,7 +11,7 @@ export interface ActionableTasksCenterProps {
   onNavigate?: (path: string) => void;
 }
 
-type TabType = 'all' | 'overdue' | 'approval' | 'qc' | 'pickup' | 'inventory';
+type TabType = 'all' | 'overdue' | 'qc' | 'pickup';
 
 export const ActionableTasksCenter: React.FC<ActionableTasksCenterProps> = ({
   actionableTasks,
@@ -22,10 +22,6 @@ export const ActionableTasksCenter: React.FC<ActionableTasksCenterProps> = ({
   const [activeTab, setActiveTab] = useState<TabType>('all');
 
   const overdueList = useMemo(() => actionableTasks?.overdue || [], [actionableTasks]);
-  const approvalList = useMemo(
-    () => actionableTasks?.waiting_approval || actionableTasks?.pending_quotes || [],
-    [actionableTasks]
-  );
   const qcList = useMemo(
     () => actionableTasks?.waiting_qc || actionableTasks?.pending_qc || [],
     [actionableTasks]
@@ -34,14 +30,11 @@ export const ActionableTasksCenter: React.FC<ActionableTasksCenterProps> = ({
     () => actionableTasks?.waiting_pickup || actionableTasks?.ready_pickup || [],
     [actionableTasks]
   );
-  const lowStockList = useMemo(() => actionableTasks?.low_stock_parts || [], [actionableTasks]);
 
   const totalCount =
     overdueList.length +
-    approvalList.length +
     qcList.length +
-    pickupList.length +
-    lowStockList.length;
+    pickupList.length;
 
   const formatMoney = (n?: number) =>
     n ? new Intl.NumberFormat('vi-VN').format(n) + ' ₫' : '—';
@@ -49,29 +42,23 @@ export const ActionableTasksCenter: React.FC<ActionableTasksCenterProps> = ({
   const tabs = [
     { key: 'all' as TabType, label: 'Tất cả', count: totalCount },
     { key: 'overdue' as TabType, label: 'Quá hạn', count: overdueList.length, alert: overdueList.length > 0 },
-    { key: 'approval' as TabType, label: 'Chờ duyệt giá', count: approvalList.length },
     { key: 'qc' as TabType, label: 'Chờ QC', count: qcList.length },
     { key: 'pickup' as TabType, label: 'Sẵn sàng trả máy', count: pickupList.length },
-    { key: 'inventory' as TabType, label: 'Linh kiện sắp hết', count: lowStockList.length, alert: lowStockList.length > 0 },
   ];
 
   const hasItemsInTab = useMemo(() => {
     switch (activeTab) {
       case 'overdue':
         return overdueList.length > 0;
-      case 'approval':
-        return approvalList.length > 0;
       case 'qc':
         return qcList.length > 0;
       case 'pickup':
         return pickupList.length > 0;
-      case 'inventory':
-        return lowStockList.length > 0;
       case 'all':
       default:
         return totalCount > 0;
     }
-  }, [activeTab, overdueList, approvalList, qcList, pickupList, lowStockList, totalCount]);
+  }, [activeTab, overdueList, qcList, pickupList, totalCount]);
 
   return (
     <div className="bg-white rounded-[14px] border border-[#e5ece8] p-5 sm:p-6 shadow-xs">
@@ -141,7 +128,7 @@ export const ActionableTasksCenter: React.FC<ActionableTasksCenterProps> = ({
               Toàn bộ công việc trong mục này đã được xử lý xong!
             </div>
             <p className="mt-1 text-[#7c8982]">
-              Không có đơn hàng nào bị trễ hạn, chờ duyệt giá, chờ QC hay tồn kho nguy cấp.
+              Không có đơn hàng nào bị trễ hạn, chờ QC hay chờ bàn giao máy.
             </p>
           </div>
         ) : (
@@ -194,6 +181,15 @@ export const ActionableTasksCenter: React.FC<ActionableTasksCenterProps> = ({
                   </div>
 
                   <div className="flex items-center gap-2 flex-none w-full sm:w-auto justify-end">
+                    {item.customer_phone && (
+                      <a
+                        href={`tel:${item.customer_phone}`}
+                        className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-[7px] text-xs font-bold bg-[#fcfaf5] text-[#915e1b] border border-[#ebd9bd] hover:bg-[#f7f0e2] transition-colors"
+                      >
+                        <Icon name="comment" size={13} />
+                        <span>Gọi khách</span>
+                      </a>
+                    )}
                     <Button
                       variant="outline"
                       size="sm"
@@ -207,76 +203,7 @@ export const ActionableTasksCenter: React.FC<ActionableTasksCenterProps> = ({
                 </div>
               ))}
 
-            {/* 2. ĐƠN CHỜ DUYỆT BÁO GIÁ */}
-            {(activeTab === 'all' || activeTab === 'approval') &&
-              approvalList.map((item) => (
-                <div
-                  key={`approval-${item.id}`}
-                  className="pt-2.5 first:pt-0 flex flex-wrap sm:flex-nowrap items-center justify-between gap-3 hover:bg-[#fafcfa] p-2 rounded-[8px] transition-colors"
-                >
-                  <div className="flex items-start gap-3 min-w-0">
-                    <div className="w-9 h-9 rounded-[8px] bg-[#fcfaf5] text-[#915e1b] border border-[#ebd9bd] grid place-items-center flex-none mt-0.5">
-                      <Icon name="quotes" size={16} />
-                    </div>
-                    <div className="min-w-0">
-                      <div className="flex flex-wrap items-center gap-2 mb-1">
-                        <span className="px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider bg-[#fcfaf5] text-[#915e1b] border border-[#ebd9bd]">
-                          Chờ duyệt
-                        </span>
-                        <span className="font-mono font-bold text-xs text-[#176b58]">
-                          {item.order_code}
-                        </span>
-                        <span className="font-semibold text-xs text-[#1c302b]">
-                          {item.device_model}
-                        </span>
-                      </div>
-                      <div className="text-xs text-[#6e7f77] flex flex-wrap items-center gap-1.5">
-                        <span>
-                          Khách: <b className="text-[#2b3c35]">{item.customer_name}</b>
-                        </span>
-                        {item.customer_phone && (
-                          <span className="text-[#7c8982]">({item.customer_phone})</span>
-                        )}
-                        <span>·</span>
-                        <span>
-                          Báo giá: <b className="text-[#915e1b] font-bold">{formatMoney(item.total_price)}</b>
-                        </span>
-                        {item.hours_pending !== undefined && (
-                          <span className="text-[#8c7456] flex items-center gap-1">
-                            · <Icon name="clock" size={11} /> {item.hours_pending}h
-                          </span>
-                        )}
-                      </div>
-                      {item.issue_description && (
-                        <div className="text-[11px] text-[#86968f] truncate max-w-[320px] mt-0.5">
-                          {item.issue_description}
-                        </div>
-                      )}
-                    </div>
-                  </div>
-
-                  <div className="flex items-center gap-2 flex-none w-full sm:w-auto justify-end">
-                    {item.customer_phone && (
-                      <a
-                        href={`tel:${item.customer_phone}`}
-                        className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-[7px] text-xs font-bold bg-[#eaf4ef] text-[#176b58] border border-[#c5e1d4] hover:bg-[#d8ede1] transition-colors"
-                      >
-                        <Icon name="comment" size={13} />
-                        <span>Gọi khách</span>
-                      </a>
-                    )}
-                    <Button
-                      variant="secondary"
-                      size="sm"
-                      onClick={() => onOpenOrderDetail?.(item.order_code, item.id)}
-                    >
-                      Mở báo giá
-                    </Button>
-                  </div>
-                </div>
-              ))}
-
-            {/* 3. ĐƠN CHỜ KIỂM ĐỊNH QC */}
+            {/* 2. ĐƠN CHỜ KIỂM ĐỊNH QC */}
             {(activeTab === 'all' || activeTab === 'qc') &&
               qcList.map((item) => (
                 <div
@@ -325,7 +252,7 @@ export const ActionableTasksCenter: React.FC<ActionableTasksCenterProps> = ({
                 </div>
               ))}
 
-            {/* 4. ĐƠN CHỜ KHÁCH NHẬN MÁY */}
+            {/* 3. ĐƠN CHỜ KHÁCH NHẬN MÁY */}
             {(activeTab === 'all' || activeTab === 'pickup') &&
               pickupList.map((item) => (
                 <div
@@ -372,59 +299,6 @@ export const ActionableTasksCenter: React.FC<ActionableTasksCenterProps> = ({
                       onClick={() => onOpenCheckout?.(item)}
                     >
                       Thu tiền & Trả máy
-                    </Button>
-                  </div>
-                </div>
-              ))}
-
-            {/* 5. LINH KIỆN SẮP HẾT TỒN KHO */}
-            {(activeTab === 'all' || activeTab === 'inventory') &&
-              lowStockList.map((item) => (
-                <div
-                  key={`part-${item.id}`}
-                  className="pt-2.5 first:pt-0 flex flex-wrap sm:flex-nowrap items-center justify-between gap-3 hover:bg-[#fafcfa] p-2 rounded-[8px] transition-colors"
-                >
-                  <div className="flex items-start gap-3 min-w-0">
-                    <div className="w-9 h-9 rounded-[8px] bg-[#fbefed] text-[#bc5b52] border border-[#f5c7c2] grid place-items-center flex-none mt-0.5">
-                      <Icon name="inventory" size={16} />
-                    </div>
-                    <div className="min-w-0">
-                      <div className="flex flex-wrap items-center gap-2 mb-1">
-                        <span className="px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider bg-[#fbefed] text-[#bc5b52] border border-[#f5c7c2]">
-                          Cảnh báo kho
-                        </span>
-                        <span className="font-mono font-bold text-xs text-[#bc5b52]">
-                          {item.sku}
-                        </span>
-                        <span className="font-semibold text-xs text-[#1c302b]">
-                          {item.name}
-                        </span>
-                      </div>
-                      <div className="text-xs text-[#6e7f77] flex flex-wrap items-center gap-1.5">
-                        <span>
-                          Vị trí: <b className="text-[#2b3c35]">{item.storage_location || 'Kho phụ tùng'}</b>
-                        </span>
-                        <span>·</span>
-                        <span>
-                          Loại: <b className="text-[#2b3c35]">{item.category}</b>
-                        </span>
-                        <span>·</span>
-                        <span className="text-[#bc5b52] font-bold">
-                          Còn {item.stock_quantity} {item.unit} (Ngưỡng: {item.min_stock_alert} {item.unit})
-                        </span>
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="flex items-center gap-2 flex-none w-full sm:w-auto justify-end">
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      icon="arrow"
-                      onClick={() => onNavigate?.('/inventory')}
-                      className="border-[#d8e2dc] text-[#55665e] hover:bg-[#f0f4f2]"
-                    >
-                      Vào kho phụ tùng ↗
                     </Button>
                   </div>
                 </div>

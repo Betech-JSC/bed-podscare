@@ -38,15 +38,9 @@ test('OpenSpec: tech-parts-request-and-admin-resume Test Suite', async (t) => {
     );
   });
 
-  await t.test('Task 4.1 & 4.2: TechOrderDetailModal tích hợp Combobox kho linh kiện và khối Yêu cầu linh kiện', () => {
+  await t.test('Task 4.1 & 4.2: TechOrderDetailModal tích hợp ô nhập tự do linh kiện yêu cầu và khối Yêu cầu linh kiện', () => {
     assert.ok(fs.existsSync(techModalPath), 'TechOrderDetailModal.tsx phải tồn tại');
     const modalContent = fs.readFileSync(techModalPath, 'utf-8');
-
-    // Import inventoryService
-    assert.ok(
-      modalContent.includes('inventoryService'),
-      'TechOrderDetailModal phải import inventoryService từ @podscare/api-client'
-    );
 
     // Tiêu đề khối chuyên dụng
     assert.ok(
@@ -54,14 +48,14 @@ test('OpenSpec: tech-parts-request-and-admin-resume Test Suite', async (t) => {
       'Khối 2 phải có tiêu đề YÊU CẦU & GHI CHÚ LINH KIỆN'
     );
 
-    // Combobox và dropdown suggestions
+    // Ô nhập tự do partsNeeded và không còn gọi inventoryService.getParts
     assert.ok(
-      modalContent.includes('inventoryParts') && modalContent.includes('showSuggestions'),
-      'Modal phải có state quản lý danh sách và hiển thị dropdown linh kiện kho'
+      modalContent.includes('partsNeeded') && modalContent.includes('setPartsNeeded'),
+      'Modal phải có state quản lý ô nhập tự do partsNeeded'
     );
     assert.ok(
-      modalContent.includes('inventoryService.getParts'),
-      'Modal phải gọi inventoryService.getParts để tìm kiếm linh kiện trong kho'
+      !modalContent.includes('inventoryService.getParts'),
+      'Modal không còn gọi inventoryService.getParts sau khi lược bỏ module Kho'
     );
   });
 

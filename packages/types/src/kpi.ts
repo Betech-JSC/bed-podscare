@@ -49,6 +49,9 @@ export interface DashboardSummary {
   accounts_payable?: number;
   accounts_payable_formatted?: string;
   completion_rate: number;
+  warranty_rate?: number;
+  warranty_rate_formatted?: string;
+  warranty_count?: number;
   total_orders: number;
   completed_orders: number;
   reconciliation?: OperationalReconciliation;
@@ -86,6 +89,9 @@ export interface DashboardKpiResponse {
   accounts_payable_formatted?: string;
   reconciliation: OperationalReconciliation;
   completion_rate: number;
+  warranty_rate?: number;
+  warranty_rate_formatted?: string;
+  warranty_count?: number;
   total_orders?: number;
   completed_orders?: number;
   status_distribution: Record<string, number>;
@@ -189,6 +195,9 @@ export interface TechnicianKpiItem {
   total_orders: number;
   completed: number;
   rework_needed: number;
+  warranty_count?: number;
+  warranty_rate?: number;
+  warranty_rate_formatted?: string;
   in_repair?: number;
   qc_passed?: number;
   qc_total?: number;
@@ -220,6 +229,9 @@ export interface CskhKpiItem {
   orders_completed_count: number;
   conversion_rate: number;
   conversion_rate_formatted: string;
+  warranty_count?: number;
+  warranty_rate?: number;
+  warranty_rate_formatted?: string;
   qcPass?: string | null;
   rating?: string | null;
   trend?: string | null;
@@ -237,6 +249,9 @@ export interface StaffKpiSummary {
   completed?: number;
   total_rework?: number;
   rework_needed?: number;
+  warranty_count?: number;
+  warranty_rate?: number;
+  warranty_rate_formatted?: string;
   qc_pass_rate?: number | null;
   avg_processing_time_minutes?: number;
   avg_processing_time_hours?: number;
@@ -244,6 +259,8 @@ export interface StaffKpiSummary {
   avg_repair_days?: string | null;
   customer_satisfaction?: string | null;
 }
+
+export type StaffPerformanceSummary = StaffKpiSummary;
 
 export interface StaffPerformanceData {
   summary: StaffKpiSummary;
