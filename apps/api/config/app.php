@@ -65,7 +65,7 @@ return [
     |
     */
 
-    'timezone' => env('APP_TIMEZONE', 'Asia/Ho_Chi_Minh'),
+    'timezone' => in_array(env('APP_TIMEZONE'), [null, '', 'UTC'], true) ? 'Asia/Ho_Chi_Minh' : env('APP_TIMEZONE'),
 
     /*
     |--------------------------------------------------------------------------

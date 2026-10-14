@@ -106,7 +106,7 @@ class OrderController extends Controller
         }
 
         // Xử lý bộ lọc thời gian và phân quyền phạm vi lịch sử (Shift Scope & RBAC)
-        $tz = config('app.timezone', 'Asia/Ho_Chi_Minh');
+        $tz = 'Asia/Ho_Chi_Minh';
         $dateFilter = (string) $request->input('date_filter', 'today');
         $dateType = (string) $request->input('date_type', 'created_at');
         $isCompletedDate = in_array($dateType, ['completed_at', 'handed_over_at'], true);

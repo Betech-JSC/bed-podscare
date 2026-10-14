@@ -443,7 +443,7 @@ class KpiController extends Controller
             ->count();
 
         // 2. Tiếp nhận hôm nay
-        $tz = config('app.timezone', 'Asia/Ho_Chi_Minh');
+        $tz = 'Asia/Ho_Chi_Minh';
         $today = Carbon::today($tz);
         $intakeToday = (clone $baseQuery)
             ->whereDate('created_at', $today)
@@ -772,14 +772,26 @@ class KpiController extends Controller
                 ->orderByDesc(DB::raw('COALESCE(handed_over_at, updated_at)'))
                 ->get();
 
+            $targetDmy = $targetDate->format('dmy');
+
             $selectedDateFinishedOrders = (clone $baseQuery)
-                ->whereIn('status', $finishedStatuses)
-                ->where(function ($q) use ($targetDateStart, $targetDateEnd) {
-                    $q->whereBetween('handed_over_at', [$targetDateStart, $targetDateEnd])
-                      ->orWhere(function ($sq) use ($targetDateStart, $targetDateEnd) {
-                          $sq->whereNull('handed_over_at')
-                             ->whereBetween('updated_at', [$targetDateStart, $targetDateEnd]);
-                      });
+                ->where(function ($query) use ($targetDateStart, $targetDateEnd, $targetDmy) {
+                    $query->where(function ($cq) use ($targetDateStart, $targetDateEnd) {
+                        $cq->where('status', 'completed')
+                           ->where(function ($q) use ($targetDateStart, $targetDateEnd) {
+                               $q->whereBetween('handed_over_at', [$targetDateStart, $targetDateEnd])
+                                 ->orWhere(function ($sq) use ($targetDateStart, $targetDateEnd) {
+                                     $sq->whereNull('handed_over_at')
+                                        ->whereBetween('updated_at', [$targetDateStart, $targetDateEnd]);
+                                 });
+                           });
+                    })->orWhere(function ($wq) use ($targetDateStart, $targetDateEnd, $targetDmy) {
+                        $wq->whereIn('status', ['ready_for_return', 'waiting_pickup'])
+                           ->where(function ($q) use ($targetDateStart, $targetDateEnd, $targetDmy) {
+                               $q->whereBetween('created_at', [$targetDateStart, $targetDateEnd])
+                                 ->orWhere('order_code', 'like', "PC%{$targetDmy}__");
+                           });
+                    });
                 })
                 ->with([
                     'payments' => function ($q) {
@@ -791,7 +803,17 @@ class KpiController extends Controller
                     'deviceModel',
                 ])
                 ->orderByDesc(DB::raw('COALESCE(handed_over_at, updated_at)'))
-                ->get();
+                ->get()
+                ->filter(function (RepairOrder $order) use ($targetDmy) {
+                    if ($order->status !== 'completed') {
+                        $code = (string) ($order->order_code ?? '');
+                        if (preg_match('/^PC.*(\d{6})\d{2}$/', $code, $matches)) {
+                            return $matches[1] === $targetDmy;
+                        }
+                    }
+                    return true;
+                })
+                ->values();
 
             $monthlyPeriodStats = $buildPeriodBreakdown($monthlyFinishedOrders);
             $monthlyTotalRevenue = $monthlyPeriodStats['total_revenue'];

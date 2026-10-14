@@ -27,6 +27,14 @@ import { useQuery } from '@tanstack/react-query';
 import { normalizeStatusCode } from '../repairs/fsm';
 import { useSilentPrint } from '../components/print';
 
+const formatDateInGmt7 = (date: Date): string =>
+  new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Asia/Ho_Chi_Minh',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).format(date);
+
 export default function DashboardPage() {
   const router = useRouter();
   const { toast } = useToast();
@@ -38,32 +46,16 @@ export default function DashboardPage() {
   const [cskhPendingModalOpen, setCskhPendingModalOpen] = useState(false);
   const [period, setPeriod] = useState<'7_days' | '14_days' | '30_days'>('14_days');
 
-  const todayStr = React.useMemo(() => {
-    const d = new Date();
-    const y = d.getFullYear();
-    const m = String(d.getMonth() + 1).padStart(2, '0');
-    const day = String(d.getDate()).padStart(2, '0');
-    return `${y}-${m}-${day}`;
-  }, []);
+  const todayStr = React.useMemo(() => formatDateInGmt7(new Date()), []);
 
   const yesterdayStr = React.useMemo(() => {
-    const d = new Date();
-    d.setDate(d.getDate() - 1);
-    const y = d.getFullYear();
-    const m = String(d.getMonth() + 1).padStart(2, '0');
-    const day = String(d.getDate()).padStart(2, '0');
-    return `${y}-${m}-${day}`;
+    const d = new Date(Date.now() - 24 * 60 * 60 * 1000);
+    return formatDateInGmt7(d);
   }, []);
 
   const [activePreset, setActivePreset] = useState<'today' | 'yesterday' | '7_days' | '30_days' | 'custom'>('today');
 
-  const [selectedDate, setSelectedDate] = useState<string>(() => {
-    const d = new Date();
-    const y = d.getFullYear();
-    const m = String(d.getMonth() + 1).padStart(2, '0');
-    const day = String(d.getDate()).padStart(2, '0');
-    return `${y}-${m}-${day}`;
-  });
+  const [selectedDate, setSelectedDate] = useState<string>(() => formatDateInGmt7(new Date()));
 
   // Technician Workspace State
   const [techTab, setTechTab] = useState<'my_orders' | 'available' | 'completed'>('my_orders');
@@ -512,20 +504,19 @@ export default function DashboardPage() {
 
     const extractIsoDate = (raw?: string | null): string => {
       if (!raw) return todayStr;
-      if (raw === 'Hôm nay') return todayStr;
-      if (raw === 'Hôm qua') return yesterdayStr;
-      if (/^\d{4}-\d{2}-\d{2}/.test(raw)) return raw.slice(0, 10);
-      const dmyMatch = raw.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})/);
+      const s = raw.trim();
+      if (s === 'Hôm nay') return todayStr;
+      if (s === 'Hôm qua') return yesterdayStr;
+      if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s.slice(0, 10);
+      const dmyMatch = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})/);
       if (dmyMatch) {
         return `${dmyMatch[3]}-${dmyMatch[2].padStart(2, '0')}-${dmyMatch[1].padStart(2, '0')}`;
       }
-      const parsed = new Date(raw);
+      const parsed = new Date(s);
       if (!isNaN(parsed.getTime())) {
-        const y = parsed.getFullYear();
-        const m = String(parsed.getMonth() + 1).padStart(2, '0');
-        const d = String(parsed.getDate()).padStart(2, '0');
-        return `${y}-${m}-${d}`;
+        return formatDateInGmt7(parsed);
       }
+      if (/^\d{4}-\d{2}-\d{2}/.test(s)) return raw.slice(0, 10);
       return todayStr;
     };
 
@@ -581,12 +572,26 @@ export default function DashboardPage() {
         uncollectedAmount = Math.max(0, totalPrice - collectedAmount);
       }
 
-      const refDateRaw =
-        (o as any).handed_over_at ||
-        (o as any).completed_at ||
-        (o as any).updated_at ||
-        o.createdAt ||
-        o.date;
+      const isWaitingPickup =
+        code === 'ready_for_return' ||
+        code === 'waiting_pickup' ||
+        o.status === 'Chờ khách nhận' ||
+        o.status === 'Sẵn sàng trả';
+
+      const orderCodeStr = String((o as any).order_code || o.id || '');
+      const pcMatch =
+        orderCodeStr.match(/^PC.*(\d{2})(\d{2})(\d{2})\d{2}$/) ||
+        orderCodeStr.match(/^PC.*?(\d{2})(\d{2})(\d{2})\d{2,}$/);
+      const pcCodeDate = pcMatch ? `20${pcMatch[3]}-${pcMatch[2]}-${pcMatch[1]}` : null;
+
+      const refDateRaw = isWaitingPickup
+        ? pcCodeDate || o.createdAt || (o as any).created_at || o.date
+        : (o as any).handed_over_at ||
+          (o as any).completed_at ||
+          (o as any).updated_at ||
+          o.createdAt ||
+          (o as any).created_at ||
+          o.date;
       const isoDate = extractIsoDate(refDateRaw);
       const custKey = (o.phone || o.name || '').trim();
 
@@ -2959,8 +2964,9 @@ export default function DashboardPage() {
             >
               <div className="flex items-center justify-between text-xs font-bold uppercase tracking-wider text-[#915e1b]">
                 <span>Công nợ chưa thu</span>
+                {/* Badge: {periodUncollectedCount} ĐƠN CHỜ KHÁCH NHẬN */}
                 <span className="px-2 py-0.5 rounded-full bg-[#fbf3e5] text-[#915e1b] border border-[#ebd9bd]">
-                  {periodUncollectedCount} đơn chưa thu đủ
+                  {periodUncollectedCount} đơn chờ khách nhận
                 </span>
               </div>
               <div

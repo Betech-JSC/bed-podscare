@@ -168,6 +168,43 @@ describe('OpenSpec: admin-dashboard-four-revenue-and-debt-cards Frontend Verific
       content.includes('Thu tiền') && content.includes('Hồ sơ khách'),
       'Must provide quick action buttons for Thu tiền and Hồ sơ khách'
     );
+
+    // Synchronized badge label in Tier 1 box 3
+    assert.ok(
+      content.includes('{periodUncollectedCount} đơn chờ khách nhận') &&
+        !content.includes('{periodUncollectedCount} đơn chưa thu đủ'),
+      'Tier 1 box 3 badge in drilldown modal must display "{periodUncollectedCount} đơn chờ khách nhận"'
+    );
+  });
+
+  test('Task 3.1 & 3.2 (GMT+7 & Daily Order Filter): DashboardPage uses Asia/Ho_Chi_Minh timezone for date initialization and extractIsoDate, and prioritizes PC order code / createdAt for waiting-pickup fallback', () => {
+    const dashboardPath = path.join(webRoot, 'app/dashboard/page.tsx');
+    const content = fs.readFileSync(dashboardPath, 'utf-8');
+
+    assert.ok(
+      content.includes("const formatDateInGmt7 = (date: Date): string =>") &&
+        content.includes("new Intl.DateTimeFormat('en-CA'") &&
+        content.includes("timeZone: 'Asia/Ho_Chi_Minh'"),
+      'DashboardPage must define formatDateInGmt7 using Intl.DateTimeFormat en-CA with Asia/Ho_Chi_Minh timezone'
+    );
+
+    assert.ok(
+      content.includes('const todayStr = React.useMemo(() => formatDateInGmt7(new Date()), []);') &&
+        content.includes('const [selectedDate, setSelectedDate] = useState<string>(() => formatDateInGmt7(new Date()));'),
+      'todayStr and selectedDate must initialize using formatDateInGmt7'
+    );
+
+    assert.ok(
+      content.includes('/^\\d{4}-\\d{2}-\\d{2}$/.test(s)') &&
+        content.includes('return formatDateInGmt7(parsed);'),
+      'extractIsoDate must only slice pure YYYY-MM-DD strings and format ISO timestamps with formatDateInGmt7'
+    );
+
+    assert.ok(
+      content.includes('/^PC.*?(\\d{2})(\\d{2})(\\d{2})\\d{2,}$/') &&
+        content.includes('? pcCodeDate || o.createdAt || (o as any).created_at || o.date'),
+      'toBreakdownItem must prioritize PC...DDMMYY.. order code date or createdAt over updated_at for waiting-pickup orders'
+    );
   });
 
   test('Task 3.1 & 3.2: Technician views (/tech, renderTechDashboard, TechOrderDetailModal, /repairs) hide all price figures', () => {

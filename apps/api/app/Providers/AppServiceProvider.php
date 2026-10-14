@@ -19,6 +19,9 @@ class AppServiceProvider extends ServiceProvider
      */
     public function boot(): void
     {
+        config(['app.timezone' => 'Asia/Ho_Chi_Minh']);
+        date_default_timezone_set('Asia/Ho_Chi_Minh');
+
         \Illuminate\Database\Eloquent\Relations\Relation::morphMap([
             // Branch & Aliases
             'Branch'               => \App\Models\Branch::class,

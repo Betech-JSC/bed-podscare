@@ -23,7 +23,7 @@ class OrderCodeService
         $branchCode = trim($rawCode);
 
         // 2. Định dạng ngày tháng: DDMMYY 6 chữ số (ngày 2 số, tháng 2 số, 2 số cuối của năm)
-        $dateFormatted = $date ? $date->format('dmy') : date('dmy');
+        $dateFormatted = $date ? $date->format('dmy') : \Carbon\Carbon::now('Asia/Ho_Chi_Minh')->format('dmy');
 
         // 3. Tiền tố: PC{branch_code}{DDMMYY}
         $prefix = "PC{$branchCode}{$dateFormatted}";

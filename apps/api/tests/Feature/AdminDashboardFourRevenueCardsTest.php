@@ -106,7 +106,11 @@ class AdminDashboardFourRevenueCardsTest extends TestCase
         $year = date('y');
         $randomNum = str_pad((string) random_int(1000, 99999), 5, '0', STR_PAD_LEFT);
 
-        return RepairOrder::create(array_merge([
+        $createdAt = $attributes['created_at'] ?? null;
+        $updatedAt = $attributes['updated_at'] ?? null;
+        unset($attributes['created_at'], $attributes['updated_at']);
+
+        $order = RepairOrder::create(array_merge([
             'tenant_id'           => $this->tenant->id,
             'branch_id'           => $this->branch->id,
             'customer_id'         => $this->customerVip->id,
@@ -119,8 +123,19 @@ class AdminDashboardFourRevenueCardsTest extends TestCase
             'initial_price'       => 500000,
             'warranty_terms_days' => 90,
             'created_by_user_id'  => $this->adminUser->id,
-            'created_at'          => Carbon::now($this->tz),
         ], $attributes));
+
+        if ($createdAt || $updatedAt) {
+            if ($createdAt) {
+                $order->created_at = $createdAt;
+            }
+            if ($updatedAt) {
+                $order->updated_at = $updatedAt;
+            }
+            $order->saveQuietly();
+        }
+
+        return $order;
     }
 
     /**
@@ -172,9 +187,9 @@ class AdminDashboardFourRevenueCardsTest extends TestCase
             'status'          => 'ready_for_return',
             'total_price'     => 600000,
             'handed_over_at'  => null,
+            'created_at'      => Carbon::parse($targetDateStr . ' 09:30:00', $this->tz),
+            'updated_at'      => Carbon::parse($targetDateStr . ' 15:30:00', $this->tz),
         ]);
-        $orderDayPartial->updated_at = Carbon::parse($targetDateStr . ' 15:30:00', $this->tz);
-        $orderDayPartial->saveQuietly();
 
         Payment::create([
             'payment_code'        => 'PAY_PART_' . uniqid(),
@@ -194,9 +209,9 @@ class AdminDashboardFourRevenueCardsTest extends TestCase
             'status'          => 'waiting_pickup',
             'total_price'     => 450000,
             'handed_over_at'  => null,
+            'created_at'      => Carbon::parse($targetDateStr . ' 11:00:00', $this->tz),
+            'updated_at'      => Carbon::parse($targetDateStr . ' 17:00:00', $this->tz),
         ]);
-        $orderDayUnpaid->updated_at = Carbon::parse($targetDateStr . ' 17:00:00', $this->tz);
-        $orderDayUnpaid->saveQuietly();
 
         // --- ĐƠN KHÁC TRONG CÙNG THÁNG 10/2026 (2026-10-05) ---
         // Đơn 4: Ready for return ngày 05/10, giá 1.500.000 ₫, mới cọc 1.000.000 ₫ tiền mặt, còn nợ 500.000 ₫
@@ -207,6 +222,8 @@ class AdminDashboardFourRevenueCardsTest extends TestCase
             'status'          => 'ready_for_return',
             'total_price'     => 1500000,
             'handed_over_at'  => $earlierInMonth,
+            'created_at'      => $earlierInMonth,
+            'updated_at'      => $earlierInMonth,
         ]);
         Payment::create([
             'payment_code'        => 'PAY_M_CASH_' . uniqid(),
@@ -378,9 +395,9 @@ class AdminDashboardFourRevenueCardsTest extends TestCase
             'status'         => 'waiting_pickup',
             'total_price'    => 350000,
             'handed_over_at' => null,
+            'created_at'     => Carbon::parse($targetDateStr . ' 10:00:00', $this->tz),
+            'updated_at'     => Carbon::parse($targetDateStr . ' 14:00:00', $this->tz),
         ]);
-        $orderWaitingPickup->updated_at = Carbon::parse($targetDateStr . ' 14:00:00', $this->tz);
-        $orderWaitingPickup->saveQuietly();
 
         $response = $this->actingAs($this->adminUser, 'sanctum')
             ->getJson("/api/v1/kpi/dashboard?branch_id={$this->branch->id}&date={$targetDateStr}");
@@ -461,5 +478,105 @@ class AdminDashboardFourRevenueCardsTest extends TestCase
             $this->assertArrayNotHasKey($field, $data);
             $this->assertArrayNotHasKey($field, $data['summary'] ?? []);
         }
+    }
+
+    /**
+     * Test 4 (Task 2.2): Đơn chờ khách lấy từ ngày hôm trước (PCQUAN1013102608 - kể cả khi created_at bị lệch sang 14/10 01:00)
+     * và đơn cũ (FX26-43210 tạo ngày 10/10) được kỹ thuật sửa xong ngày 14/10 KHÔNG bị lọt vào Công nợ chưa thu theo ngày 14/10,
+     * nhưng vẫn nằm đầy đủ trong Công nợ chưa thu ở tháng và xuất hiện đúng ở ngày 13/10.
+     */
+    public function test_previous_day_and_legacy_uncollected_orders_repaired_today_do_not_leak_into_selected_date_breakdown(): void
+    {
+        $this->assertSame('Asia/Ho_Chi_Minh', config('app.timezone'));
+        $this->assertSame('Asia/Ho_Chi_Minh', date_default_timezone_get());
+
+        // 1. Đơn ngày 13/10 (PCQUAN1013102608) bị lệch created_at sang 14/10 01:00:00 do DB_TIMEZONE cũ,
+        // và được kỹ thuật sửa xong ngày 14/10 lúc 10:00:00 (waiting_pickup, giá 450.000 ₫)
+        $orderPrevDayPc = $this->createOrder([
+            'order_code'     => 'PCQUAN1013102608',
+            'status'         => 'waiting_pickup',
+            'total_price'    => 450000,
+            'handed_over_at' => null,
+            'created_at'     => Carbon::parse('2026-10-14 01:00:00', $this->tz),
+            'updated_at'     => Carbon::parse('2026-10-14 10:00:00', $this->tz),
+        ]);
+
+        // 2. Đơn cũ FX26-43210 tạo ngày 10/10/2026, kỹ thuật sửa xong ngày 14/10 lúc 10:00:00 (ready_for_return, giá 600.000 ₫)
+        $orderLegacyFx = $this->createOrder([
+            'order_code'     => 'FX26-43210',
+            'status'         => 'ready_for_return',
+            'total_price'    => 600000,
+            'handed_over_at' => null,
+            'created_at'     => Carbon::parse('2026-10-10 09:00:00', $this->tz),
+            'updated_at'     => Carbon::parse('2026-10-14 10:00:00', $this->tz),
+        ]);
+
+        // 3. Đơn tiếp nhận đúng ngày 14/10 (PCQUAN1014102623, ready_for_return, giá 350.000 ₫)
+        $orderTodayWaiting = $this->createOrder([
+            'order_code'     => 'PCQUAN1014102623',
+            'status'         => 'ready_for_return',
+            'total_price'    => 350000,
+            'handed_over_at' => null,
+            'created_at'     => Carbon::parse('2026-10-14 09:15:00', $this->tz),
+            'updated_at'     => Carbon::parse('2026-10-14 11:30:00', $this->tz),
+        ]);
+
+        // 4. Đơn completed bàn giao đúng ngày 14/10 (PCQUAN1014102601, completed, giá 500.000 ₫)
+        $orderTodayCompleted = $this->createOrder([
+            'order_code'     => 'PCQUAN1014102601',
+            'status'         => 'completed',
+            'total_price'    => 500000,
+            'handed_over_at' => Carbon::parse('2026-10-14 15:00:00', $this->tz),
+            'created_at'     => Carbon::parse('2026-10-14 08:30:00', $this->tz),
+            'updated_at'     => Carbon::parse('2026-10-14 15:00:00', $this->tz),
+        ]);
+
+        // --- KIỂM TRA LỌC NGÀY 2026-10-14 ---
+        $resOct14 = $this->actingAs($this->adminUser, 'sanctum')
+            ->getJson("/api/v1/kpi/dashboard?branch_id={$this->branch->id}&date=2026-10-14");
+
+        $resOct14->assertStatus(200);
+        $dataOct14 = $resOct14->json('data');
+
+        $oct14Codes = collect($dataOct14['selected_date_orders_breakdown'])->pluck('order_code')->all();
+
+        // Đơn ngày 14/10 (PCQUAN1014102623 và PCQUAN1014102601) PHẢI có mặt
+        $this->assertContains('PCQUAN1014102623', $oct14Codes);
+        $this->assertContains('PCQUAN1014102601', $oct14Codes);
+
+        // Đơn ngày 13/10 (PCQUAN1013102608) và đơn cũ (FX26-43210) TUYỆT ĐỐI KHÔNG được lọt vào ngày 14/10
+        $this->assertNotContains('PCQUAN1013102608', $oct14Codes);
+        $this->assertNotContains('FX26-43210', $oct14Codes);
+
+        // Kiểm tra số tiền và số lượng đơn của ngày 14/10: chỉ có 1 đơn completed (500k) và 1 đơn chờ lấy (350k)
+        $this->assertEquals(1, $dataOct14['selected_date_completed_orders_count']);
+        $this->assertEquals(1, $dataOct14['selected_date_uncollected_orders_count']);
+        $this->assertEquals(350000.0, (float) $dataOct14['selected_date_uncollected_amount']);
+        $this->assertEquals(500000.0, (float) $dataOct14['selected_date_collected_amount']);
+        $this->assertEquals(850000.0, (float) $dataOct14['selected_date_total_revenue']);
+
+        // Nhưng trong THÁNG 10/2026 (monthly_orders_breakdown & monthly_uncollected_amount), cả 3 đơn chờ lấy đều phải được tính đủ!
+        $monthlyCodes = collect($dataOct14['monthly_orders_breakdown'])->pluck('order_code')->all();
+        $this->assertContains('PCQUAN1013102608', $monthlyCodes);
+        $this->assertContains('FX26-43210', $monthlyCodes);
+        $this->assertContains('PCQUAN1014102623', $monthlyCodes);
+        $this->assertContains('PCQUAN1014102601', $monthlyCodes);
+        $this->assertEquals(3, $dataOct14['monthly_uncollected_orders_count']);
+        // 450.000 + 600.000 + 350.000 = 1.400.000 ₫
+        $this->assertEquals(1400000.0, (float) $dataOct14['monthly_uncollected_amount']);
+
+        // --- KIỂM TRA LỌC NGÀY 2026-10-13 ---
+        $resOct13 = $this->actingAs($this->adminUser, 'sanctum')
+            ->getJson("/api/v1/kpi/dashboard?branch_id={$this->branch->id}&date=2026-10-13");
+
+        $resOct13->assertStatus(200);
+        $dataOct13 = $resOct13->json('data');
+
+        $oct13Codes = collect($dataOct13['selected_date_orders_breakdown'])->pluck('order_code')->all();
+        $this->assertContains('PCQUAN1013102608', $oct13Codes);
+        $this->assertNotContains('PCQUAN1014102623', $oct13Codes);
+        $this->assertNotContains('FX26-43210', $oct13Codes);
+        $this->assertEquals(1, $dataOct13['selected_date_uncollected_orders_count']);
+        $this->assertEquals(450000.0, (float) $dataOct13['selected_date_uncollected_amount']);
     }
 }
