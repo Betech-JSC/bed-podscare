@@ -39,7 +39,7 @@ function RepairsPageContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const { toast } = useToast();
-  const { orders, updateOrder, branch, branchId, setBranch, branches, role, invalidateOrders } =
+  const { orders, updateOrder, branch, branchId, setBranch, branches, role, currentUser, invalidateOrders } =
     usePodsCare();
 
   const initialDate = searchParams.get('date') || '';
@@ -411,6 +411,12 @@ function RepairsPageContent() {
 
   const moneyFormatted = (n: number) =>
     n ? new Intl.NumberFormat('vi-VN').format(n) + ' ₫' : '—';
+
+  const isTechRole =
+    role === 'tech' ||
+    (role as string) === 'technician' ||
+    currentUser?.role === 'tech' ||
+    currentUser?.role === 'technician';
 
   const canManageAdditionalServices = role === 'cskh' || role === 'admin' || (role as string) === 'super_admin';
   const canManageShippingAddress = role === 'cskh' || role === 'admin' || (role as string) === 'super_admin';
@@ -1059,7 +1065,7 @@ function RepairsPageContent() {
                     <th className="px-4">Khách hàng</th>
                     <th className="px-4">Thiết bị & lỗi</th>
                     <th className="px-4">Trạng thái</th>
-                    <th className="px-4">Chi phí</th>
+                    {!isTechRole && <th className="px-4">Chi phí</th>}
                     <th className="px-4">Kỹ thuật viên</th>
                     <th className="px-4">Ngày nhận & Kho</th>
                     <th className="px-4 text-right">Thao tác</th>
@@ -1152,9 +1158,11 @@ function RepairsPageContent() {
                           ) : null}
                         </div>
                       </td>
-                      <td className="px-4 font-semibold text-[#405048]">
-                        {moneyFormatted(o.price)}
-                      </td>
+                      {!isTechRole && (
+                        <td className="px-4 font-semibold text-[#405048]">
+                          {moneyFormatted(o.price)}
+                        </td>
+                      )}
                       <td className="px-4 text-[#5e6f66]">{o.tech}</td>
                       <td className="px-4 text-[#7b8a82]">
                         <span className="block font-medium">{o.date}</span>
@@ -1527,17 +1535,19 @@ function RepairsPageContent() {
             )}
 
             {/* Status overview strip */}
-            <div className="grid grid-cols-3 gap-3 p-4 bg-[#fafbfa] rounded-[10px] border border-[#edf1ee]">
+            <div className={`grid ${isTechRole ? 'grid-cols-2' : 'grid-cols-3'} gap-3 p-4 bg-[#fafbfa] rounded-[10px] border border-[#edf1ee]`}>
               <div>
                 <span className="text-[#7e8e86] block text-xs mb-1">Trạng thái</span>
                 <StatusTag label={selectedOrder.status} type={selectedOrder.statusType} />
               </div>
-              <div>
-                <span className="text-[#7e8e86] block text-xs mb-0.5">Chi phí sửa chữa</span>
-                <b className="text-base text-[#176b58] font-heading font-bold">
-                  {moneyFormatted(selectedOrder.price)}
-                </b>
-              </div>
+              {!isTechRole && (
+                <div>
+                  <span className="text-[#7e8e86] block text-xs mb-0.5">Chi phí sửa chữa</span>
+                  <b className="text-base text-[#176b58] font-heading font-bold">
+                    {moneyFormatted(selectedOrder.price)}
+                  </b>
+                </div>
+              )}
               <div>
                 <span className="text-[#7e8e86] block text-xs mb-0.5">Kỹ thuật viên</span>
                 <b className="text-sm text-[#1c302b]">{selectedOrder.tech}</b>
@@ -1548,7 +1558,8 @@ function RepairsPageContent() {
             <div className="p-4 bg-[#fbfdfc] rounded-[10px] border border-[#dce8e1] space-y-3.5 shadow-xs">
               <div className="flex items-center justify-between pb-2 border-b border-[#e8f1ec]">
                 <h4 className="text-xs font-bold text-[#176b58] uppercase tracking-[0.8px] m-0 flex items-center gap-1.5">
-                  <Icon name="receipt" size={14} className="text-[#176b58]" /> BẢNG KÊ DỊCH VỤ SỬA CHỮA & CHI PHÍ
+                  <Icon name="receipt" size={14} className="text-[#176b58]" />{' '}
+                  {isTechRole ? 'BẢNG KÊ DỊCH VỤ SỬA CHỮA' : 'BẢNG KÊ DỊCH VỤ SỬA CHỮA & CHI PHÍ'}
                 </h4>
                 {canManageAdditionalServices && !['completed', 'cancelled'].includes(normalizeStatusCode(selectedOrder.status)) && !showAddServiceForm && (
                   <Button
@@ -1693,18 +1704,20 @@ function RepairsPageContent() {
                       Lỗi ghi nhận: {selectedOrder.issue}
                     </span>
                   </div>
-                  <div className="text-right">
-                    <span className="font-bold text-sm text-[#2d3d35] font-mono">
-                      {moneyFormatted(
-                        selectedOrder.initial_price !== undefined && selectedOrder.initial_price !== null
-                          ? selectedOrder.initial_price
-                          : selectedOrder.initialPrice !== undefined && selectedOrder.initialPrice !== null
-                          ? selectedOrder.initialPrice
-                          : selectedOrder.price
-                      )}
-                    </span>
-                    <span className="block text-[10px] text-[#72837b]">Giá ban đầu</span>
-                  </div>
+                  {!isTechRole && (
+                    <div className="text-right">
+                      <span className="font-bold text-sm text-[#2d3d35] font-mono">
+                        {moneyFormatted(
+                          selectedOrder.initial_price !== undefined && selectedOrder.initial_price !== null
+                            ? selectedOrder.initial_price
+                            : selectedOrder.initialPrice !== undefined && selectedOrder.initialPrice !== null
+                            ? selectedOrder.initialPrice
+                            : selectedOrder.price
+                        )}
+                      </span>
+                      <span className="block text-[10px] text-[#72837b]">Giá ban đầu</span>
+                    </div>
+                  )}
                 </div>
 
                 {/* 2. Dịch vụ sửa thêm */}
@@ -1724,9 +1737,11 @@ function RepairsPageContent() {
                             <span className="font-bold text-[#1c302b] text-sm">
                               #{idx + 2}. {srv.name}
                             </span>
-                            <span className="text-xs font-bold text-[#176b58] font-mono bg-white px-2 py-0.5 rounded border border-[#b8d9cb]">
-                              +{moneyFormatted(srv.price)}
-                            </span>
+                            {!isTechRole && (
+                              <span className="text-xs font-bold text-[#176b58] font-mono bg-white px-2 py-0.5 rounded border border-[#b8d9cb]">
+                                +{moneyFormatted(srv.price)}
+                              </span>
+                            )}
                           </div>
                           {srv.note && (
                             <p className="text-[#556960] italic m-0 text-xs flex items-center gap-1">
@@ -1763,14 +1778,16 @@ function RepairsPageContent() {
                 )}
 
                 {/* 3. Dòng Tổng cộng thanh toán */}
-                <div className="p-3 bg-[#eaf4ef] rounded-[8px] border-2 border-[#176b58] flex items-center justify-between">
-                  <span className="font-bold text-xs uppercase tracking-wide text-[#176b58]">
-                    TỔNG CỘNG THANH TOÁN:
-                  </span>
-                  <b className="text-lg font-bold text-[#176b58] font-heading">
-                    {moneyFormatted(selectedOrder.total_price !== undefined ? selectedOrder.total_price : selectedOrder.price)}
-                  </b>
-                </div>
+                {!isTechRole && (
+                  <div className="p-3 bg-[#eaf4ef] rounded-[8px] border-2 border-[#176b58] flex items-center justify-between">
+                    <span className="font-bold text-xs uppercase tracking-wide text-[#176b58]">
+                      TỔNG CỘNG THANH TOÁN:
+                    </span>
+                    <b className="text-lg font-bold text-[#176b58] font-heading">
+                      {moneyFormatted(selectedOrder.total_price !== undefined ? selectedOrder.total_price : selectedOrder.price)}
+                    </b>
+                  </div>
+                )}
               </div>
             </div>
 

@@ -57,6 +57,7 @@ export interface DashboardSummary {
   selected_date_uncollected_amount?: number;
   selected_date_uncollected_amount_formatted?: string;
   selected_date_completed_orders?: number;
+  selected_date_completed_orders_count?: number;
   selected_date_finished_orders_count?: number;
   selected_date_uncollected_orders_count?: number;
   selected_date_orders_breakdown?: RevenueOrderBreakdownItem[];
@@ -69,6 +70,7 @@ export interface DashboardSummary {
   monthly_uncollected_amount?: number;
   monthly_uncollected_amount_formatted?: string;
   monthly_completed_orders?: number;
+  monthly_completed_orders_count?: number;
   monthly_finished_orders_count?: number;
   monthly_uncollected_orders_count?: number;
   monthly_orders_breakdown?: RevenueOrderBreakdownItem[];
@@ -98,6 +100,8 @@ export interface DashboardSummary {
   actionable_tasks?: ActionableTasks;
 }
 
+export type KpiSummary = DashboardSummary;
+
 export interface DashboardKpiResponse {
   summary: DashboardSummary;
   active_orders: number;
@@ -115,6 +119,7 @@ export interface DashboardKpiResponse {
   selected_date_uncollected_amount?: number;
   selected_date_uncollected_amount_formatted?: string;
   selected_date_completed_orders?: number;
+  selected_date_completed_orders_count?: number;
   selected_date_finished_orders_count?: number;
   selected_date_uncollected_orders_count?: number;
   selected_date_orders_breakdown?: RevenueOrderBreakdownItem[];
@@ -127,6 +132,7 @@ export interface DashboardKpiResponse {
   monthly_uncollected_amount?: number;
   monthly_uncollected_amount_formatted?: string;
   monthly_completed_orders?: number;
+  monthly_completed_orders_count?: number;
   monthly_finished_orders_count?: number;
   monthly_uncollected_orders_count?: number;
   monthly_orders_breakdown?: RevenueOrderBreakdownItem[];
@@ -163,6 +169,8 @@ export interface DashboardKpiResponse {
   operational_summary?: OperationalSummary;
   actionable_tasks?: ActionableTasks;
 }
+
+export type KpiDashboardData = DashboardKpiResponse;
 
 export interface ActionableTaskOverdue {
   id: number;

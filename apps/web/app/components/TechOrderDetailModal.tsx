@@ -80,9 +80,6 @@ export const TechOrderDetailModal: React.FC<TechOrderDetailModalProps> = ({
   const isCompleted = ['ready_for_return', 'waiting_qc', 'waiting_pickup', 'completed'].includes(code);
   const isActive = ['assigned', 'in_repair', 'waiting_parts', 'rework_needed'].includes(code);
 
-  const moneyFormatted = (n: number) =>
-    n ? new Intl.NumberFormat('vi-VN').format(n) + ' ₫' : '—';
-
   const additionalServicesList = (order.additional_services || order.additionalServices || []) as any[];
   const hasAdditionalServices = Array.isArray(additionalServicesList) && additionalServicesList.length > 0;
 
@@ -294,7 +291,7 @@ export const TechOrderDetailModal: React.FC<TechOrderDetailModalProps> = ({
               data-testid="tech-modal-warranty-badge"
               className="px-2 py-0.5 rounded text-[10px] font-black uppercase tracking-wider bg-[#d9383a] text-white shadow-xs"
             >
-              BẢO HÀNH (0 ₫)
+              BẢO HÀNH
             </span>
           )}
           <StatusTag label={order.status} type={order.statusType} />
@@ -372,9 +369,6 @@ export const TechOrderDetailModal: React.FC<TechOrderDetailModalProps> = ({
               <span className="px-2 py-0.5 rounded font-black text-[10px] uppercase bg-[#b91c1c] text-white">
                 ĐƠN BẢO HÀNH
               </span>
-              <span className="font-bold text-[#b91c1c]">
-                Chi phí khách: 0 ₫ (Bảo hành máy)
-              </span>
             </div>
             <div className="flex items-center gap-1.5 font-bold text-[#991b1b]">
               <Icon name="alert" size={14} className="text-[#b91c1c]" />
@@ -397,7 +391,7 @@ export const TechOrderDetailModal: React.FC<TechOrderDetailModalProps> = ({
           </div>
 
           {/* Grid thông tin chung */}
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 bg-[#fafbfa] p-4 rounded-[10px] border border-[#edf1ee] text-xs">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 bg-[#fafbfa] p-4 rounded-[10px] border border-[#edf1ee] text-xs">
             <div>
               <span className="text-[#84948c] block mb-0.5">Mã đơn sửa:</span>
               <b className="font-mono text-sm text-[#176b58] font-bold">{order.id}</b>
@@ -412,18 +406,6 @@ export const TechOrderDetailModal: React.FC<TechOrderDetailModalProps> = ({
               <b className="font-mono text-[#2f3f37] block">
                 {order.serial && order.serial !== 'Chưa cập nhật' ? order.serial : 'Không có'}
               </b>
-            </div>
-            <div>
-              <span className="text-[#84948c] block mb-0.5">Báo giá tiếp nhận:</span>
-              {(order.order_type === 'warranty' || order.orderType === 'warranty') ? (
-                <b className="text-sm text-[#176b58] font-bold">
-                  0 ₫ <small className="text-[11px] font-normal text-[#809088]">(Bảo hành)</small>
-                </b>
-              ) : (
-                <b className="text-sm text-[#176b58] font-bold">
-                  {moneyFormatted(order.price)}
-                </b>
-              )}
             </div>
           </div>
 
@@ -578,9 +560,6 @@ export const TechOrderDetailModal: React.FC<TechOrderDetailModalProps> = ({
                       )}
                     </span>
                   </div>
-                  <span className="text-xs font-bold text-[#176b58] bg-white px-2.5 py-1 rounded border border-[#b8d9cb] flex-none">
-                    Đã thu/báo giá: {moneyFormatted(srv.price)}
-                  </span>
                 </div>
               ))}
             </div>

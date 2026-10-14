@@ -636,6 +636,7 @@ class KpiController extends Controller
         $monthlyRevenueFullFormatted = '0 ₫';
         $monthlyCollectedAmount = 0.0;
         $monthlyCollectedAmountFormatted = '0 ₫';
+        $monthlyCompletedOrdersCount = 0;
         $monthlyFinishedOrdersCount = 0;
         $monthlyUncollectedAmount = 0.0;
         $monthlyUncollectedAmountFormatted = '0 ₫';
@@ -647,6 +648,7 @@ class KpiController extends Controller
         $selectedDateRevenueFullFormatted = '0 ₫';
         $selectedDateCollectedAmount = 0.0;
         $selectedDateCollectedAmountFormatted = '0 ₫';
+        $selectedDateCompletedOrdersCount = 0;
         $selectedDateFinishedOrdersCount = 0;
         $selectedDateUncollectedAmount = 0.0;
         $selectedDateUncollectedAmountFormatted = '0 ₫';
@@ -659,22 +661,37 @@ class KpiController extends Controller
             $buildPeriodBreakdown = function ($orders) use ($formatCurrency): array {
                 $totalRevenue = 0.0;
                 $collectedAmount = 0.0;
+                $completedOrdersCount = 0;
                 $uncollectedOrdersCount = 0;
                 $breakdown = [];
 
                 foreach ($orders as $order) {
                     $orderTotal = (float) ($order->total_price > 0 ? $order->total_price : ($order->initial_price ?? 0));
                     $paidPayments = $order->payments->whereIn('status', ['paid', 'completed']);
-                    $orderCollected = (float) $paidPayments->sum('amount');
+                    $paidSum = (float) $paidPayments->sum('amount');
                     $orderCash = (float) $paidPayments->where('payment_method', 'cash')->sum('amount');
                     $orderTransfer = (float) $paidPayments->whereIn('payment_method', ['bank_transfer', 'transfer', 'vietqr', 'sepay'])->sum('amount');
-                    $orderUncollected = max(0.0, $orderTotal - $orderCollected);
 
-                    $totalRevenue += $orderTotal;
-                    $collectedAmount += $orderCollected;
-                    if ($orderUncollected > 0) {
-                        $uncollectedOrdersCount++;
+                    if ($order->status === 'completed') {
+                        $orderCollected = $paidSum > 0 ? $paidSum : $orderTotal;
+                        if ($paidSum <= 0 && $orderCollected > 0) {
+                            $orderCash = $orderCollected;
+                            $orderTransfer = 0.0;
+                        }
+                        $orderUncollected = 0.0;
+                        $effectiveOrderTotal = $orderCollected;
+                        $completedOrdersCount++;
+                    } else {
+                        $orderCollected = $paidSum;
+                        $orderUncollected = max(0.0, $orderTotal - $orderCollected);
+                        $effectiveOrderTotal = $orderTotal;
+                        if ($orderUncollected > 0) {
+                            $uncollectedOrdersCount++;
+                        }
                     }
+
+                    $totalRevenue += $effectiveOrderTotal;
+                    $collectedAmount += $orderCollected;
 
                     $customerOrdersCount = max(
                         (int) ($order->customer?->orders_count ?? 0),
@@ -693,8 +710,8 @@ class KpiController extends Controller
                         'customer_orders_count'        => $customerOrdersCount,
                         'device_name'                  => $order->deviceModel?->name ?? $order->device_name ?? 'Thiết bị',
                         'status'                       => $order->status,
-                        'total_price'                  => $orderTotal,
-                        'total_price_formatted'        => $formatCurrency($orderTotal),
+                        'total_price'                  => $effectiveOrderTotal,
+                        'total_price_formatted'        => $formatCurrency($effectiveOrderTotal),
                         'collected_amount'             => $orderCollected,
                         'collected_amount_formatted'   => $formatCurrency($orderCollected),
                         'cash_amount'                  => $orderCash,
@@ -710,20 +727,38 @@ class KpiController extends Controller
                     'total_revenue'            => $totalRevenue,
                     'collected_amount'         => $collectedAmount,
                     'uncollected_amount'       => max(0.0, $totalRevenue - $collectedAmount),
+                    'completed_orders_count'   => $completedOrdersCount,
                     'finished_orders_count'    => $orders->count(),
                     'uncollected_orders_count' => $uncollectedOrdersCount,
                     'orders_breakdown'         => $breakdown,
                 ];
             };
 
+            $isCurrentMonth = $targetDate->isSameMonth(Carbon::now($tz));
+
             $monthlyFinishedOrders = (clone $baseQuery)
-                ->whereIn('status', $finishedStatuses)
-                ->where(function ($q) use ($startOfMonth, $endOfMonth) {
-                    $q->whereBetween('handed_over_at', [$startOfMonth, $endOfMonth])
-                      ->orWhere(function ($sq) use ($startOfMonth, $endOfMonth) {
-                          $sq->whereNull('handed_over_at')
-                             ->whereBetween('updated_at', [$startOfMonth, $endOfMonth]);
-                      });
+                ->where(function ($query) use ($startOfMonth, $endOfMonth, $isCurrentMonth) {
+                    $query->where(function ($cq) use ($startOfMonth, $endOfMonth) {
+                        $cq->where('status', 'completed')
+                           ->where(function ($q) use ($startOfMonth, $endOfMonth) {
+                               $q->whereBetween('handed_over_at', [$startOfMonth, $endOfMonth])
+                                 ->orWhere(function ($sq) use ($startOfMonth, $endOfMonth) {
+                                     $sq->whereNull('handed_over_at')
+                                        ->whereBetween('updated_at', [$startOfMonth, $endOfMonth]);
+                                 });
+                           });
+                    })->orWhere(function ($wq) use ($startOfMonth, $endOfMonth, $isCurrentMonth) {
+                        $wq->whereIn('status', ['ready_for_return', 'waiting_pickup']);
+                        if (! $isCurrentMonth) {
+                            $wq->where(function ($q) use ($startOfMonth, $endOfMonth) {
+                                $q->whereBetween('handed_over_at', [$startOfMonth, $endOfMonth])
+                                  ->orWhere(function ($sq) use ($startOfMonth, $endOfMonth) {
+                                      $sq->whereNull('handed_over_at')
+                                         ->whereBetween('updated_at', [$startOfMonth, $endOfMonth]);
+                                  });
+                            });
+                        }
+                    });
                 })
                 ->with([
                     'payments' => function ($q) {
@@ -764,6 +799,7 @@ class KpiController extends Controller
             $monthlyRevenueFullFormatted = $formatCurrency($monthlyTotalRevenue);
             $monthlyCollectedAmount = $monthlyPeriodStats['collected_amount'];
             $monthlyCollectedAmountFormatted = $formatCurrency($monthlyCollectedAmount);
+            $monthlyCompletedOrdersCount = $monthlyPeriodStats['completed_orders_count'];
             $monthlyFinishedOrdersCount = $monthlyPeriodStats['finished_orders_count'];
             $monthlyUncollectedAmount = $monthlyPeriodStats['uncollected_amount'];
             $monthlyUncollectedAmountFormatted = $formatCurrency($monthlyUncollectedAmount);
@@ -776,6 +812,7 @@ class KpiController extends Controller
             $selectedDateRevenueFullFormatted = $formatCurrency($selectedDateTotalRevenue);
             $selectedDateCollectedAmount = $selectedDatePeriodStats['collected_amount'];
             $selectedDateCollectedAmountFormatted = $formatCurrency($selectedDateCollectedAmount);
+            $selectedDateCompletedOrdersCount = $selectedDatePeriodStats['completed_orders_count'];
             $selectedDateFinishedOrdersCount = $selectedDatePeriodStats['finished_orders_count'];
             $selectedDateUncollectedAmount = $selectedDatePeriodStats['uncollected_amount'];
             $selectedDateUncollectedAmountFormatted = $formatCurrency($selectedDateUncollectedAmount);
@@ -1186,6 +1223,7 @@ class KpiController extends Controller
                 'monthly_revenue_full_formatted'           => $monthlyRevenueFullFormatted,
                 'monthly_collected_amount'                 => $monthlyCollectedAmount,
                 'monthly_collected_amount_formatted'       => $monthlyCollectedAmountFormatted,
+                'monthly_completed_orders_count'           => $monthlyCompletedOrdersCount,
                 'monthly_finished_orders_count'            => $monthlyFinishedOrdersCount,
                 'monthly_uncollected_amount'               => $monthlyUncollectedAmount,
                 'monthly_uncollected_amount_formatted'     => $monthlyUncollectedAmountFormatted,
@@ -1196,6 +1234,7 @@ class KpiController extends Controller
                 'selected_date_revenue_full_formatted'     => $selectedDateRevenueFullFormatted,
                 'selected_date_collected_amount'           => $selectedDateCollectedAmount,
                 'selected_date_collected_amount_formatted' => $selectedDateCollectedAmountFormatted,
+                'selected_date_completed_orders_count'     => $selectedDateCompletedOrdersCount,
                 'selected_date_finished_orders_count'      => $selectedDateFinishedOrdersCount,
                 'selected_date_uncollected_amount'         => $selectedDateUncollectedAmount,
                 'selected_date_uncollected_amount_formatted'=> $selectedDateUncollectedAmountFormatted,

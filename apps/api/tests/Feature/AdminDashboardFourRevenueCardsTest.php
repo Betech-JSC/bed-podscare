@@ -199,12 +199,12 @@ class AdminDashboardFourRevenueCardsTest extends TestCase
         $orderDayUnpaid->saveQuietly();
 
         // --- ĐƠN KHÁC TRONG CÙNG THÁNG 10/2026 (2026-10-05) ---
-        // Đơn 4: Completed ngày 05/10, giá 1.500.000 ₫, mới thu 1.000.000 ₫ tiền mặt, còn nợ 500.000 ₫
+        // Đơn 4: Ready for return ngày 05/10, giá 1.500.000 ₫, mới cọc 1.000.000 ₫ tiền mặt, còn nợ 500.000 ₫
         $orderMonthEarlier = $this->createOrder([
             'customer_id'     => $this->customerNew->id,
             'device_model_id' => $this->deviceMax->id,
             'order_code'      => 'PC26-MONTH-EARLIER',
-            'status'          => 'completed',
+            'status'          => 'ready_for_return',
             'total_price'     => 1500000,
             'handed_over_at'  => $earlierInMonth,
         ]);
@@ -244,9 +244,9 @@ class AdminDashboardFourRevenueCardsTest extends TestCase
 
         // =====================================================================
         // KIỂM TRA Ô 3 & Ô 4: THEO NGÀY ĐÃ CHỌN (2026-10-15)
-        // Tổng ngày = 1.250.000 + 600.000 + 450.000 = 2.300.000 ₫ (3 đơn xong)
+        // Tổng ngày = 1.250.000 + 600.000 + 450.000 = 2.300.000 ₫ (3 đơn xong: 1 completed + 2 chờ nhận)
         // Thực thu ngày = 1.250.000 + 200.000 + 0 = 1.450.000 ₫
-        // Công nợ chưa thu theo ngày = 2.300.000 - 1.450.000 = 850.000 ₫ (2 đơn còn nợ)
+        // Công nợ chưa thu theo ngày = 2.300.000 - 1.450.000 = 850.000 ₫ (2 đơn chờ nhận còn nợ)
         // =====================================================================
         $this->assertEquals(2300000.0, (float) $data['selected_date_total_revenue']);
         $this->assertEquals('2.300.000 ₫', $data['selected_date_total_revenue_formatted']);
@@ -255,6 +255,8 @@ class AdminDashboardFourRevenueCardsTest extends TestCase
 
         $this->assertEquals(1450000.0, (float) $data['selected_date_collected_amount']);
         $this->assertEquals('1.450.000 ₫', $data['selected_date_collected_amount_formatted']);
+        $this->assertEquals(1, $data['selected_date_completed_orders_count']);
+        $this->assertEquals($data['selected_date_completed_orders'], $data['selected_date_completed_orders_count']);
         $this->assertEquals(3, $data['selected_date_finished_orders_count']);
 
         $this->assertEquals(850000.0, (float) $data['selected_date_uncollected_amount']);
@@ -263,9 +265,9 @@ class AdminDashboardFourRevenueCardsTest extends TestCase
 
         // =====================================================================
         // KIỂM TRA Ô 1 & Ô 2: THEO THÁNG ĐÃ CHỌN (10/2026)
-        // Tổng tháng = 2.300.000 (ngày 15/10) + 1.500.000 (ngày 05/10) = 3.800.000 ₫ (4 đơn xong)
+        // Tổng tháng = 2.300.000 (ngày 15/10) + 1.500.000 (ngày 05/10) = 3.800.000 ₫ (4 đơn xong: 1 completed + 3 chờ nhận)
         // Thực thu tháng = 1.450.000 + 1.000.000 = 2.450.000 ₫
-        // Công nợ chưa thu ở tháng = 3.800.000 - 2.450.000 = 1.350.000 ₫ (3 đơn còn nợ)
+        // Công nợ chưa thu ở tháng = 3.800.000 - 2.450.000 = 1.350.000 ₫ (3 đơn chờ nhận còn nợ)
         // =====================================================================
         $this->assertEquals(3800000.0, (float) $data['monthly_total_revenue']);
         $this->assertEquals('3.800.000 ₫', $data['monthly_total_revenue_formatted']);
@@ -274,6 +276,7 @@ class AdminDashboardFourRevenueCardsTest extends TestCase
 
         $this->assertEquals(2450000.0, (float) $data['monthly_collected_amount']);
         $this->assertEquals('2.450.000 ₫', $data['monthly_collected_amount_formatted']);
+        $this->assertEquals(1, $data['monthly_completed_orders_count']);
         $this->assertEquals(4, $data['monthly_finished_orders_count']);
 
         $this->assertEquals(1350000.0, (float) $data['monthly_uncollected_amount']);
@@ -285,9 +288,11 @@ class AdminDashboardFourRevenueCardsTest extends TestCase
         $this->assertEquals(3800000.0, (float) $summary['monthly_total_revenue']);
         $this->assertEquals('3.800.000 ₫', $summary['monthly_total_revenue_formatted']);
         $this->assertEquals(2450000.0, (float) $summary['monthly_collected_amount']);
+        $this->assertEquals(1, $summary['monthly_completed_orders_count']);
         $this->assertEquals(1350000.0, (float) $summary['monthly_uncollected_amount']);
         $this->assertEquals(2300000.0, (float) $summary['selected_date_total_revenue']);
         $this->assertEquals(1450000.0, (float) $summary['selected_date_collected_amount']);
+        $this->assertEquals(1, $summary['selected_date_completed_orders_count']);
         $this->assertEquals(850000.0, (float) $summary['selected_date_uncollected_amount']);
 
         // =====================================================================
@@ -333,7 +338,96 @@ class AdminDashboardFourRevenueCardsTest extends TestCase
     }
 
     /**
-     * Test 2: Non-Admin (Technician) không được phép nhìn thấy các trường tài chính mới.
+     * Test 2: Đơn completed không có dòng Payment (seeded/chuyển trạng thái trực tiếp) hoặc có giảm giá khi checkout
+     * luôn được tính 100% vào Thực thu (uncollected_amount = 0), không phát sinh công nợ ảo.
+     */
+    public function test_completed_orders_without_payments_or_with_checkout_discounts_have_zero_uncollected_debt(): void
+    {
+        $targetDate = Carbon::create(2026, 10, 14, 12, 0, 0, $this->tz);
+        $targetDateStr = $targetDate->toDateString();
+
+        // 1. Đơn completed KHÔNG có bản ghi Payment (giá 500.000 ₫) -> Thực thu = 500.000 ₫ (mặc định tiền mặt), Công nợ = 0 ₫
+        $orderSeededCompleted = $this->createOrder([
+            'order_code'     => 'PC26-SEED-COMP',
+            'status'         => 'completed',
+            'total_price'    => 500000,
+            'handed_over_at' => Carbon::parse($targetDateStr . ' 09:00:00', $this->tz),
+        ]);
+
+        // 2. Đơn completed CÓ giảm giá tại quầy (total_price = 1.000.000 ₫, khách thực trả 900.000 ₫ chuyển khoản)
+        // -> Thực thu = 900.000 ₫, total_price hiệu lực = 900.000 ₫, Công nợ = 0 ₫
+        $orderDiscountedCompleted = $this->createOrder([
+            'order_code'     => 'PC26-DISC-COMP',
+            'status'         => 'completed',
+            'total_price'    => 1000000,
+            'handed_over_at' => Carbon::parse($targetDateStr . ' 11:00:00', $this->tz),
+        ]);
+        Payment::create([
+            'payment_code'        => 'PAY_DISC_' . uniqid(),
+            'repair_order_id'     => $orderDiscountedCompleted->id,
+            'amount'              => 900000,
+            'payment_method'      => 'bank_transfer',
+            'status'              => 'paid',
+            'paid_at'             => Carbon::parse($targetDateStr . ' 11:05:00', $this->tz),
+            'received_by_user_id' => $this->adminUser->id,
+        ]);
+
+        // 3. Đơn waiting_pickup (chờ khách nhận, giá 350.000 ₫, chưa thanh toán) -> Thực thu = 0 ₫, Công nợ = 350.000 ₫
+        $orderWaitingPickup = $this->createOrder([
+            'order_code'     => 'PC26-WAIT-PICK',
+            'status'         => 'waiting_pickup',
+            'total_price'    => 350000,
+            'handed_over_at' => null,
+        ]);
+        $orderWaitingPickup->updated_at = Carbon::parse($targetDateStr . ' 14:00:00', $this->tz);
+        $orderWaitingPickup->saveQuietly();
+
+        $response = $this->actingAs($this->adminUser, 'sanctum')
+            ->getJson("/api/v1/kpi/dashboard?branch_id={$this->branch->id}&date={$targetDateStr}");
+
+        $response->assertStatus(200);
+        $data = $response->json('data');
+
+        // Kiểm tra số lượng đơn hoàn tất vs đơn chờ khách nhận
+        $this->assertEquals(2, $data['selected_date_completed_orders']);
+        $this->assertEquals(2, $data['selected_date_completed_orders_count']);
+        $this->assertEquals(1, $data['selected_date_uncollected_orders_count']);
+        $this->assertEquals(3, $data['selected_date_finished_orders_count']);
+
+        // Thực thu = 500.000 + 900.000 = 1.400.000 ₫
+        // Công nợ chưa thu = 350.000 ₫ (chỉ từ đơn waiting_pickup)
+        // Tổng = Thực thu + Công nợ = 1.750.000 ₫
+        $this->assertEquals(1400000.0, (float) $data['selected_date_collected_amount']);
+        $this->assertEquals(350000.0, (float) $data['selected_date_uncollected_amount']);
+        $this->assertEquals(1750000.0, (float) $data['selected_date_total_revenue']);
+
+        $breakdownByCode = collect($data['selected_date_orders_breakdown'])->keyBy('order_code');
+
+        $seededItem = $breakdownByCode->get('PC26-SEED-COMP');
+        $this->assertNotNull($seededItem);
+        $this->assertEquals(500000.0, (float) $seededItem['total_price']);
+        $this->assertEquals(500000.0, (float) $seededItem['collected_amount']);
+        $this->assertEquals(500000.0, (float) $seededItem['cash_amount']);
+        $this->assertEquals(0.0, (float) $seededItem['transfer_amount']);
+        $this->assertEquals(0.0, (float) $seededItem['uncollected_amount']);
+
+        $discountedItem = $breakdownByCode->get('PC26-DISC-COMP');
+        $this->assertNotNull($discountedItem);
+        $this->assertEquals(900000.0, (float) $discountedItem['total_price']);
+        $this->assertEquals(900000.0, (float) $discountedItem['collected_amount']);
+        $this->assertEquals(0.0, (float) $discountedItem['cash_amount']);
+        $this->assertEquals(900000.0, (float) $discountedItem['transfer_amount']);
+        $this->assertEquals(0.0, (float) $discountedItem['uncollected_amount']);
+
+        $waitingItem = $breakdownByCode->get('PC26-WAIT-PICK');
+        $this->assertNotNull($waitingItem);
+        $this->assertEquals(350000.0, (float) $waitingItem['total_price']);
+        $this->assertEquals(0.0, (float) $waitingItem['collected_amount']);
+        $this->assertEquals(350000.0, (float) $waitingItem['uncollected_amount']);
+    }
+
+    /**
+     * Test 3: Non-Admin (Technician) không được phép nhìn thấy các trường tài chính mới.
      */
     public function test_non_admin_does_not_receive_four_revenue_card_fields_or_breakdowns(): void
     {
@@ -353,10 +447,12 @@ class AdminDashboardFourRevenueCardsTest extends TestCase
             'monthly_total_revenue',
             'monthly_total_revenue_formatted',
             'monthly_collected_amount',
+            'monthly_completed_orders_count',
             'monthly_uncollected_amount',
             'monthly_orders_breakdown',
             'selected_date_total_revenue',
             'selected_date_collected_amount',
+            'selected_date_completed_orders_count',
             'selected_date_uncollected_amount',
             'selected_date_orders_breakdown',
         ];

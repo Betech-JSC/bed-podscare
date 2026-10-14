@@ -75,9 +75,6 @@ export default function TechnicianQueuePage() {
   const branchString = typeof branch === 'string' ? branch : ((branch as any)?.name || 'Chi nhánh FIXO');
   const displayBranchText = branchString.startsWith('FIXO') ? branchString : `FIXO · ${branchString}`;
 
-  const moneyFormatted = (n: number) =>
-    n ? new Intl.NumberFormat('vi-VN').format(n) + ' ₫' : '—';
-
   const mappedApiOrders: RepairOrder[] = useMemo(() => {
     const raw = apiOrdersData?.data || apiOrdersData;
     if (!Array.isArray(raw)) {
@@ -708,16 +705,6 @@ export default function TechnicianQueuePage() {
                             <span className="text-[#809088]">Chi nhánh:</span>
                             <span>{order.branch}</span>
                           </div>
-                          <div className="flex items-center justify-between pt-1 border-t border-[#f0f3f1]">
-                            <span className="text-[#809088]">Báo giá:</span>
-                            {(order.order_type === 'warranty' || order.orderType === 'warranty') ? (
-                              <b className="text-[#176b58] font-bold">
-                                0 ₫ <small className="text-[11px] font-normal text-[#809088]">(Bảo hành máy)</small>
-                              </b>
-                            ) : (
-                              <b className="text-[#176b58] font-bold">{moneyFormatted(order.price)}</b>
-                            )}
-                          </div>
                         </div>
 
                         {/* QC Guardrail Alert cho đơn bảo hành */}
@@ -947,12 +934,6 @@ export default function TechnicianQueuePage() {
                           <span className="text-[#809088]">Tiếp nhận lúc:</span>
                           <span>{order.date}</span>
                         </div>
-                        {(order.order_type === 'warranty' || order.orderType === 'warranty') && (
-                          <div className="flex items-center justify-between">
-                            <span className="text-[#809088]">Báo giá:</span>
-                            <b className="text-[#176b58] font-bold">0 ₫ <small className="text-[11px] font-normal text-[#809088]">(Bảo hành máy)</small></b>
-                          </div>
-                        )}
                         {order.accessories && order.accessories !== 'Không gửi kèm' && (
                           <div className="flex items-center justify-between">
                             <span className="text-[#809088]">Phụ kiện:</span>
@@ -1069,16 +1050,6 @@ export default function TechnicianQueuePage() {
                         <div className="flex items-center justify-between">
                           <span className="text-[#809088]">Khách hàng:</span>
                           <b className="text-[#1c302b]">{order.name} ({order.phone})</b>
-                        </div>
-                        <div className="flex items-center justify-between">
-                          <span className="text-[#809088]">Chi phí:</span>
-                          {(order.order_type === 'warranty' || order.orderType === 'warranty') ? (
-                            <b className="text-[#176b58] font-bold">
-                              0 ₫ <small className="text-[11px] font-normal text-[#809088]">(Bảo hành máy)</small>
-                            </b>
-                          ) : (
-                            <b className="text-[#176b58] font-bold">{moneyFormatted(order.price)}</b>
-                          )}
                         </div>
                       </div>
                     </div>

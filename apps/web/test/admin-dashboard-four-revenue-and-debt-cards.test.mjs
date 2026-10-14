@@ -24,10 +24,12 @@ describe('OpenSpec: admin-dashboard-four-revenue-and-debt-cards Frontend Verific
     const requiredFields = [
       'monthly_collected_amount?: number;',
       'monthly_uncollected_amount?: number;',
+      'monthly_completed_orders_count?: number;',
       'monthly_uncollected_orders_count?: number;',
       'monthly_orders_breakdown?: RevenueOrderBreakdownItem[];',
       'selected_date_collected_amount?: number;',
       'selected_date_uncollected_amount?: number;',
+      'selected_date_completed_orders_count?: number;',
       'selected_date_uncollected_orders_count?: number;',
       'selected_date_orders_breakdown?: RevenueOrderBreakdownItem[];',
     ];
@@ -37,7 +39,7 @@ describe('OpenSpec: admin-dashboard-four-revenue-and-debt-cards Frontend Verific
     }
   });
 
-  test('Task 2.2: DashboardPage (/dashboard) renders the exact 4 top financial cards in order with full VND values and keeps lower sections intact', () => {
+  test('Task 2.2: DashboardPage (/dashboard) renders the exact 4 top financial cards in order with synchronized completed/waiting-pickup counts and status-aware fallback', () => {
     const dashboardPath = path.join(webRoot, 'app/dashboard/page.tsx');
     assert.ok(fs.existsSync(dashboardPath), 'apps/web/app/dashboard/page.tsx must exist');
 
@@ -66,6 +68,32 @@ describe('OpenSpec: admin-dashboard-four-revenue-and-debt-cards Frontend Verific
     assert.ok(content.includes('formatVND(selectedDateTotalRevenue)'), 'Card 3 must format selectedDateTotalRevenue with formatVND');
     assert.ok(content.includes('formatVND(selectedDateCollectedAmount)'), 'Card 3 sub-line must format selectedDateCollectedAmount with formatVND');
     assert.ok(content.includes('formatVND(selectedDateUncollectedAmount)'), 'Card 4 must format selectedDateUncollectedAmount with formatVND');
+
+    // Verify synchronized sub-lines on Cards 1-4
+    assert.ok(
+      content.includes('Thực thu: {formatVND(monthlyCollectedAmount)} · {monthlyCompletedCount} đơn hoàn tất ({selectedMonthLabel})'),
+      'Card 1 sub-line must display monthlyCompletedCount đơn hoàn tất'
+    );
+    assert.ok(
+      content.includes('{monthlyUncollectedCount} đơn chờ khách nhận ({selectedMonthLabel})'),
+      'Card 2 sub-line must display monthlyUncollectedCount đơn chờ khách nhận'
+    );
+    assert.ok(
+      content.includes('Thực thu: {formatVND(selectedDateCollectedAmount)} · {selectedDateCompletedCount} đơn hoàn tất'),
+      'Card 3 sub-line must display selectedDateCompletedCount đơn hoàn tất matching the date badge'
+    );
+    assert.ok(
+      content.includes('{selectedDateUncollectedCount} đơn chờ khách nhận ngày {selectedDateDisplay}'),
+      'Card 4 sub-line must display selectedDateUncollectedCount đơn chờ khách nhận ngày {selectedDateDisplay}'
+    );
+
+    // Verify status-aware toBreakdownItem fallback sets uncollectedAmount = 0 for completed orders
+    assert.ok(
+      content.includes("if (code === 'completed' || o.status === 'Hoàn tất')") &&
+        content.includes('uncollectedAmount = 0;') &&
+        content.includes('totalPrice = collectedAmount;'),
+      'toBreakdownItem must treat completed orders as settled with uncollectedAmount = 0 and totalPrice = collectedAmount'
+    );
 
     // Verify lower sections remain 100% intact
     assert.ok(
@@ -140,5 +168,39 @@ describe('OpenSpec: admin-dashboard-four-revenue-and-debt-cards Frontend Verific
       content.includes('Thu tiền') && content.includes('Hồ sơ khách'),
       'Must provide quick action buttons for Thu tiền and Hồ sơ khách'
     );
+  });
+
+  test('Task 3.1 & 3.2: Technician views (/tech, renderTechDashboard, TechOrderDetailModal, /repairs) hide all price figures', () => {
+    const techPagePath = path.join(webRoot, 'app/tech/page.tsx');
+    const techModalPath = path.join(webRoot, 'app/components/TechOrderDetailModal.tsx');
+    const dashboardPath = path.join(webRoot, 'app/dashboard/page.tsx');
+    const repairsPath = path.join(webRoot, 'app/repairs/page.tsx');
+
+    const techPageContent = fs.readFileSync(techPagePath, 'utf-8');
+    const techModalContent = fs.readFileSync(techModalPath, 'utf-8');
+    const dashboardContent = fs.readFileSync(dashboardPath, 'utf-8');
+    const repairsContent = fs.readFileSync(repairsPath, 'utf-8');
+
+    // 1. /tech page must not render Báo giá: or Chi phí: or moneyFormatted(order.price)
+    assert.ok(!techPageContent.includes('Báo giá:'), 'tech/page.tsx must not display "Báo giá:"');
+    assert.ok(!techPageContent.includes('Chi phí:'), 'tech/page.tsx must not display "Chi phí:"');
+    assert.ok(!techPageContent.includes('moneyFormatted(order.price)'), 'tech/page.tsx must not format order.price');
+
+    // 2. renderTechDashboard in dashboard/page.tsx must not render Báo giá: or Chi phí:
+    const techDashboardSlice = dashboardContent.slice(dashboardContent.indexOf('const renderTechDashboard'));
+    assert.ok(!techDashboardSlice.includes('Báo giá:'), 'renderTechDashboard must not display "Báo giá:"');
+    assert.ok(!techDashboardSlice.includes('Chi phí:'), 'renderTechDashboard must not display "Chi phí:"');
+    assert.ok(!techDashboardSlice.includes('moneyFormatted(order.price)'), 'renderTechDashboard must not format order.price');
+
+    // 3. TechOrderDetailModal must not render Báo giá tiếp nhận, Đã thu/báo giá, BẢO HÀNH (0 ₫), or Chi phí khách: 0 ₫
+    assert.ok(!techModalContent.includes('Báo giá tiếp nhận'), 'TechOrderDetailModal must not display "Báo giá tiếp nhận"');
+    assert.ok(!techModalContent.includes('Đã thu/báo giá'), 'TechOrderDetailModal must not display "Đã thu/báo giá"');
+    assert.ok(!techModalContent.includes('BẢO HÀNH (0 ₫)'), 'TechOrderDetailModal must not display "BẢO HÀNH (0 ₫)"');
+    assert.ok(!techModalContent.includes('Chi phí khách: 0 ₫'), 'TechOrderDetailModal must not display "Chi phí khách: 0 ₫"');
+    assert.ok(!techModalContent.includes('moneyFormatted('), 'TechOrderDetailModal must not call moneyFormatted');
+
+    // 4. repairs/page.tsx must guard Chi phí column and modal pricing blocks with !isTechRole
+    assert.ok(repairsContent.includes('const isTechRole ='), 'repairs/page.tsx must define isTechRole');
+    assert.ok(repairsContent.includes('{!isTechRole && <th className="px-4">Chi phí</th>}'), 'repairs/page.tsx must hide Chi phí header for tech role');
   });
 });

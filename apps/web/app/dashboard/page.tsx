@@ -539,10 +539,10 @@ export default function DashboardPage() {
 
     const toBreakdownItem = (o: RepairOrder): RevenueOrderBreakdownItem & { _isoDate: string } => {
       const code = normalizeStatusCode(o.status);
-      const totalPrice = Number(o.total_price ?? o.price ?? 0);
+      let totalPrice = Number(o.total_price ?? o.price ?? 0);
       const rawPayments = Array.isArray((o as any).payments) ? (o as any).payments : [];
 
-      let collectedAmount = 0;
+      let paidSum = 0;
       let cashAmount = 0;
       let transferAmount = 0;
 
@@ -550,7 +550,7 @@ export default function DashboardPage() {
         rawPayments.forEach((p: any) => {
           if (!p.status || p.status === 'paid' || p.status === 'completed') {
             const amt = Number(p.amount || 0);
-            collectedAmount += amt;
+            paidSum += amt;
             const method = String(p.payment_method || p.method || '').toLowerCase();
             if (method.includes('transfer') || method.includes('bank') || method.includes('qr')) {
               transferAmount += amt;
@@ -560,15 +560,27 @@ export default function DashboardPage() {
           }
         });
       } else if ((o as any).collected_amount !== undefined || (o as any).paid_amount !== undefined) {
-        collectedAmount = Number((o as any).collected_amount ?? (o as any).paid_amount ?? 0);
-        cashAmount = Number((o as any).cash_amount ?? collectedAmount);
+        paidSum = Number((o as any).collected_amount ?? (o as any).paid_amount ?? 0);
+        cashAmount = Number((o as any).cash_amount ?? paidSum);
         transferAmount = Number((o as any).transfer_amount ?? 0);
-      } else if (code === 'completed' || o.status === 'Hoàn tất') {
-        collectedAmount = totalPrice;
-        cashAmount = totalPrice;
       }
 
-      const uncollectedAmount = Math.max(0, totalPrice - collectedAmount);
+      let collectedAmount = 0;
+      let uncollectedAmount = 0;
+
+      if (code === 'completed' || o.status === 'Hoàn tất') {
+        collectedAmount = paidSum > 0 ? paidSum : totalPrice;
+        if (paidSum <= 0 && collectedAmount > 0) {
+          cashAmount = collectedAmount;
+          transferAmount = 0;
+        }
+        uncollectedAmount = 0;
+        totalPrice = collectedAmount;
+      } else {
+        collectedAmount = paidSum;
+        uncollectedAmount = Math.max(0, totalPrice - collectedAmount);
+      }
+
       const refDateRaw =
         (o as any).handed_over_at ||
         (o as any).completed_at ||
@@ -657,6 +669,14 @@ export default function DashboardPage() {
       monthlyOrdersBreakdown.length
   );
 
+  const monthlyCompletedCount = Number(
+    kpiData?.monthly_completed_orders_count ??
+      kpiSummary?.monthly_completed_orders_count ??
+      kpiData?.monthly_completed_orders ??
+      kpiSummary?.monthly_completed_orders ??
+      monthlyOrdersBreakdown.filter((i) => i.status === 'completed' || i.status === 'Hoàn tất').length
+  );
+
   const monthlyUncollectedCount = Number(
     kpiData?.monthly_uncollected_orders_count ??
       kpiSummary?.monthly_uncollected_orders_count ??
@@ -690,6 +710,14 @@ export default function DashboardPage() {
       kpiData?.selected_date_completed_orders ??
       kpiSummary?.selected_date_completed_orders ??
       selectedDateOrdersBreakdown.length
+  );
+
+  const selectedDateCompletedCount = Number(
+    kpiData?.selected_date_completed_orders_count ??
+      kpiSummary?.selected_date_completed_orders_count ??
+      kpiData?.selected_date_completed_orders ??
+      kpiSummary?.selected_date_completed_orders ??
+      selectedDateOrdersBreakdown.filter((i) => i.status === 'completed' || i.status === 'Hoàn tất').length
   );
 
   const selectedDateUncollectedCount = Number(
@@ -1052,7 +1080,7 @@ export default function DashboardPage() {
 
             <div className="flex items-center justify-between gap-1 text-xs text-[#287452] font-semibold pt-1.5 border-t border-[#edf4f0] w-full">
               <span>
-                Thực thu: {formatVND(monthlyCollectedAmount)} · {monthlyOrdersCount} đơn ({selectedMonthLabel})
+                Thực thu: {formatVND(monthlyCollectedAmount)} · {monthlyCompletedCount} đơn hoàn tất ({selectedMonthLabel})
               </span>
               <Icon name="arrow" size={12} className="text-[#176b58] flex-none" />
             </div>
@@ -1100,7 +1128,7 @@ export default function DashboardPage() {
                     : 'text-[#687871] font-medium'
                 }
               >
-                {monthlyUncollectedCount} đơn chưa thu đủ ({selectedMonthLabel})
+                {monthlyUncollectedCount} đơn chờ khách nhận ({selectedMonthLabel})
               </span>
               <Icon
                 name="arrow"
@@ -1132,7 +1160,7 @@ export default function DashboardPage() {
 
             <div className="flex items-center justify-between gap-1 text-xs text-[#287452] font-semibold pt-1.5 border-t border-[#edf4f0] w-full">
               <span>
-                Thực thu: {formatVND(selectedDateCollectedAmount)} · {selectedDateOrdersCount} đơn hoàn tất
+                Thực thu: {formatVND(selectedDateCollectedAmount)} · {selectedDateCompletedCount} đơn hoàn tất
               </span>
               <Icon name="arrow" size={12} className="text-[#176b58] flex-none" />
             </div>
@@ -1180,7 +1208,7 @@ export default function DashboardPage() {
                     : 'text-[#687871] font-medium'
                 }
               >
-                {selectedDateUncollectedCount} đơn chưa thu đủ ngày {selectedDateDisplay}
+                {selectedDateUncollectedCount} đơn chờ khách nhận ngày {selectedDateDisplay}
               </span>
               <Icon
                 name="arrow"
@@ -2389,12 +2417,6 @@ export default function DashboardPage() {
                           <span className="text-[#809088]">Chi nhánh:</span>
                           <span>{order.branch || order.branchName}</span>
                         </div>
-                        {order.price ? (
-                          <div className="flex items-center justify-between pt-1 border-t border-[#f0f3f1]">
-                            <span className="text-[#809088]">Báo giá:</span>
-                            <b className="text-[#176b58] font-bold">{moneyFormatted(order.price)}</b>
-                          </div>
-                        ) : null}
                       </div>
                     </div>
 
@@ -2637,10 +2659,6 @@ export default function DashboardPage() {
                       <div className="flex items-center justify-between">
                         <span className="text-[#809088]">Khách hàng:</span>
                         <b className="text-[#1c302b]">{order.name} ({order.phone})</b>
-                      </div>
-                      <div className="flex items-center justify-between">
-                        <span className="text-[#809088]">Chi phí:</span>
-                        <b className="text-[#176b58] font-bold">{moneyFormatted(order.price)}</b>
                       </div>
                     </div>
                   </div>
