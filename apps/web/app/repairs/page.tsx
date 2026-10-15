@@ -42,6 +42,14 @@ function RepairsPageContent() {
   const { orders, updateOrder, branch, branchId, setBranch, branches, role, currentUser, invalidateOrders } =
     usePodsCare();
 
+  const normalizeVndPrice = (raw: unknown): number => {
+    const val = Number(raw) || 0;
+    if (val <= 1) return 0;
+    const rounded = Math.round(val);
+    if (rounded > 1000 && rounded % 1000 === 1) return rounded - 1;
+    return rounded;
+  };
+
   const initialDate = searchParams.get('date') || '';
   const initialDateTypeParam = searchParams.get('date_type');
   const initialDateType =
@@ -49,11 +57,16 @@ function RepairsPageContent() {
       ? 'completed_at'
       : 'created_at';
   const initialStatusParam = searchParams.get('status') || '';
+  const initialFilterParam = searchParams.get('filter') || '';
+  const initialDateFilterParam = searchParams.get('date_filter') as OrderDateFilter | null;
   const initialOrderTypeParam = (searchParams.get('order_type') as any) || 'all';
   const initialBranchParam = searchParams.get('branch_id');
   const initialOrderIdParam = searchParams.get('id') || searchParams.get('order_id');
 
   const backendToStatusLabelMap: Record<string, string> = {
+    open: 'Đơn đang mở',
+    in_workshop: 'Đang sửa trong xưởng',
+    overdue: 'Trễ thời hạn (>24h)',
     inspecting: 'Đang kiểm tra',
     waiting_tech: 'Chờ kỹ thuật',
     assigned: 'Đã nhận đơn',
@@ -69,12 +82,15 @@ function RepairsPageContent() {
     cancelled: 'Đã hủy',
   };
 
+  const resolvedInitialStatus =
+    initialStatusParam || (initialFilterParam === 'overdue' ? 'overdue' : initialFilterParam);
+
   const [dateFilter, setDateFilter] = useState<OrderDateFilter>('today');
   const [selectedDate, setSelectedDate] = useState<string>(initialDate);
   const [dateType, setDateType] = useState<'created_at' | 'completed_at'>(initialDateType);
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState(
-    backendToStatusLabelMap[initialStatusParam] || initialStatusParam
+    backendToStatusLabelMap[resolvedInitialStatus] || resolvedInitialStatus
   );
   const [orderTypeFilter, setOrderTypeFilter] = useState<'all' | 'in_store' | 'cod' | 'warranty' | 'special_parts'>(
     ['all', 'in_store', 'cod', 'warranty', 'special_parts'].includes(initialOrderTypeParam)
@@ -111,6 +127,10 @@ function RepairsPageContent() {
 
   // Map label to backend status code
   const statusToBackendMap: Record<string, string> = {
+    'Đơn đang mở': 'open',
+    'Đang sửa trong xưởng': 'in_workshop',
+    'Chờ khách nhận': 'waiting_pickup',
+    'Trễ thời hạn (>24h)': 'overdue',
     'Tiếp nhận mới': 'inspecting',
     'Chờ kỹ thuật': 'waiting_tech',
     'Đã nhận đơn': 'assigned',
@@ -122,6 +142,23 @@ function RepairsPageContent() {
     'Sẵn sàng trả': 'ready_for_return',
     'Hoàn tất': 'completed',
   };
+
+  // Đồng bộ URL query params (status, filter, date_filter) và mặc định dateFilter='all' cho Admin
+  React.useEffect(() => {
+    const statusParam = searchParams.get('status') || '';
+    const filterParam = searchParams.get('filter') || '';
+    const rawStatus = statusParam || (filterParam === 'overdue' ? 'overdue' : filterParam);
+    if (rawStatus) {
+      setStatusFilter(backendToStatusLabelMap[rawStatus] || rawStatus);
+    }
+    const dfParam = searchParams.get('date_filter') as OrderDateFilter | null;
+    const validDateFilters: OrderDateFilter[] = ['all', 'today', 'yesterday', '3_days', '7_days', '30_days'];
+    if (dfParam && validDateFilters.includes(dfParam)) {
+      setDateFilter(dfParam);
+    } else if (rawStatus || role === 'admin' || currentUser?.role === 'admin') {
+      setDateFilter('all');
+    }
+  }, [searchParams, role, currentUser?.role]);
 
   // Khởi tạo branch_id và intake=warranty từ URL nếu có
   React.useEffect(() => {
@@ -145,7 +182,16 @@ function RepairsPageContent() {
   } = useQuery({
     queryKey: ['repairs', branchId, statusFilter, search, orderTypeFilter, dateFilter, selectedDate, dateType],
     queryFn: async () => {
-      const params: Record<string, any> = { per_page: 50 };
+      const isAdminScope = role === 'admin' || currentUser?.role === 'admin';
+      const params: Record<string, any> = {
+        per_page:
+          isAdminScope ||
+          dateFilter === 'all' ||
+          initialDateFilterParam === 'all' ||
+          Boolean(resolvedInitialStatus)
+            ? 500
+            : 50,
+      };
       if (selectedDate) {
         params.date = selectedDate;
       } else {
@@ -157,7 +203,11 @@ function RepairsPageContent() {
         params.branch_id = branchId;
       }
       if (statusFilter && statusToBackendMap[statusFilter]) {
-        params.status = statusToBackendMap[statusFilter];
+        const mappedBackendStatus = statusToBackendMap[statusFilter];
+        params.status = mappedBackendStatus;
+        if (mappedBackendStatus === 'overdue') {
+          params.filter = 'overdue';
+        }
       }
       if (search.trim()) {
         params.q = search.trim();
@@ -224,7 +274,7 @@ function RepairsPageContent() {
       rejected: { label: 'Từ chối sửa', type: 'danger' },
       cancelled: { label: 'Đã hủy', type: 'gray' },
     };
-    return list.map((o: any) => {
+    const mappedList: RepairOrder[] = list.map((o: any) => {
       const rawStatus = o.status === 'qc_pending' ? 'waiting_qc' : o.status;
       const mappedStatus = statusMap[rawStatus] || statusMap[o.status] || {
         label: o.status || 'Tiếp nhận mới',
@@ -234,24 +284,32 @@ function RepairsPageContent() {
         id: o.order_code || String(o.id),
         order_type: o.order_type || o.orderType || 'in_store',
         orderType: o.order_type || o.orderType || 'in_store',
-        name: o.customer?.name || 'Khách lẻ',
-        phone: o.customer?.phone || '',
-        deviceCategory: o.device_model?.category || 'AirPods',
-        device: o.device_model?.name || 'AirPods',
-        serial: o.serial_number || 'Chưa cập nhật',
-        issue: o.issue_description || 'Kiểm tra',
+        name: o.customer?.name || o.name || 'Khách lẻ',
+        phone: o.customer?.phone || o.phone || '',
+        deviceCategory: o.device_model?.category || o.deviceCategory || 'AirPods',
+        device: o.device_model?.name || o.device || 'AirPods',
+        serial: o.serial_number || o.serial || 'Chưa cập nhật',
+        issue: o.issue_description || o.issue || 'Kiểm tra',
         status: mappedStatus.label,
         statusType: mappedStatus.type,
-        price: Number(o.total_price) || Number(o.estimated_price) || 0,
-        total_price: Number(o.total_price) || Number(o.price) || 0,
-        initial_price: o.initial_price !== null && o.initial_price !== undefined ? Number(o.initial_price) : (Number(o.total_price) || Number(o.price) || 0),
-        initialPrice: o.initial_price !== null && o.initial_price !== undefined ? Number(o.initial_price) : (Number(o.total_price) || Number(o.price) || 0),
+        price: normalizeVndPrice(Number(o.total_price) || Number(o.estimated_price) || Number(o.price) || 0),
+        total_price: normalizeVndPrice(Number(o.total_price) || Number(o.price) || 0),
+        initial_price: normalizeVndPrice(
+          o.initial_price !== null && o.initial_price !== undefined
+            ? Number(o.initial_price)
+            : Number(o.total_price) || Number(o.price) || 0
+        ),
+        initialPrice: normalizeVndPrice(
+          o.initial_price !== null && o.initial_price !== undefined
+            ? Number(o.initial_price)
+            : Number(o.total_price) || Number(o.price) || 0
+        ),
         additional_services: Array.isArray(o.additional_services) ? o.additional_services : (Array.isArray(o.additionalServices) ? o.additionalServices : []),
         additionalServices: Array.isArray(o.additional_services) ? o.additional_services : (Array.isArray(o.additionalServices) ? o.additionalServices : []),
         device_model_id: o.device_model_id || o.device_model?.id || null,
-        tech: o.technician?.name || 'Chưa phân công',
-        technicianId: o.technician_id ?? o.technician?.id ?? null,
-        technician_id: o.technician_id ?? o.technician?.id ?? null,
+        tech: o.technician?.name || o.tech || 'Chưa phân công',
+        technicianId: o.technician_id ?? o.technician?.id ?? o.technicianId ?? null,
+        technician_id: o.technician_id ?? o.technician?.id ?? o.technician_id ?? null,
         date: (() => {
           const dateVal =
             dateType === 'completed_at'
@@ -259,42 +317,90 @@ function RepairsPageContent() {
               : o.created_at;
           return dateVal
             ? new Intl.DateTimeFormat('vi-VN').format(new Date(dateVal))
-            : 'Hôm nay';
+            : o.date || 'Hôm nay';
         })(),
-        branch: o.branch?.name || 'Chi nhánh FIXO',
-        branchId: o.branch_id || o.branch?.id || 1,
-        branchName: o.branch?.name || 'Chi nhánh FIXO',
+        branch: o.branch?.name || o.branch || 'Chi nhánh FIXO',
+        branchId: o.branch_id || o.branch?.id || o.branchId || 1,
+        branchName: o.branch?.name || o.branchName || 'Chi nhánh FIXO',
         accessories: o.accessories,
-        appearance: o.appearance_notes,
+        appearance: o.appearance_notes || o.appearance,
         testNote: o.test_note || o.testNote || (Array.isArray(o.intake_checklists) ? o.intake_checklists.find((c: any) => c.note)?.note : '') || '',
         test_note: o.test_note || o.testNote || '',
-        repairNote: o.repair_note,
-        partsUsed: o.parts_used_summary,
-        parts_needed: o.parts_needed,
-        partsNeeded: o.parts_needed,
-        special_parts_needed: o.special_parts_needed,
-        specialPartsNeeded: o.special_parts_needed,
-        special_parts_status: o.special_parts_status,
-        specialPartsStatus: o.special_parts_status,
-        special_parts_requested_at: o.special_parts_requested_at,
-        specialPartsRequestedAt: o.special_parts_requested_at,
-        special_parts_fulfilled_at: o.special_parts_fulfilled_at,
-        specialPartsFulfilledAt: o.special_parts_fulfilled_at,
+        repairNote: o.repair_note || o.repairNote,
+        partsUsed: o.parts_used_summary || o.partsUsed,
+        parts_needed: o.parts_needed ?? o.partsNeeded,
+        partsNeeded: o.parts_needed ?? o.partsNeeded,
+        special_parts_needed: o.special_parts_needed ?? o.specialPartsNeeded,
+        specialPartsNeeded: o.special_parts_needed ?? o.specialPartsNeeded,
+        special_parts_status: o.special_parts_status ?? o.specialPartsStatus,
+        specialPartsStatus: o.special_parts_status ?? o.specialPartsStatus,
+        special_parts_requested_at: o.special_parts_requested_at ?? o.specialPartsRequestedAt,
+        specialPartsRequestedAt: o.special_parts_requested_at ?? o.specialPartsRequestedAt,
+        special_parts_fulfilled_at: o.special_parts_fulfilled_at ?? o.specialPartsFulfilledAt,
+        specialPartsFulfilledAt: o.special_parts_fulfilled_at ?? o.specialPartsFulfilledAt,
         warranty_terms_days: o.warranty_terms_days ?? (o.warranty_months ? Number(o.warranty_months) * 30 : undefined),
         warranty_months: o.warranty_months ?? (o.warranty_terms_days ? Math.round(Number(o.warranty_terms_days) / 30) : undefined),
-        paused_at: o.paused_at,
-        pausedAt: o.paused_at,
-        finalCheck: o.final_check_result,
-        qcIssue: o.qc_note,
-        acceptedAt: o.tech_accepted_at,
-        startedAt: o.repair_started_at,
-        completedAt: o.repair_completed_at,
-        customerApprovedAt: o.customer_approved_at,
-        createdAt: o.created_at,
+        paused_at: o.paused_at ?? o.pausedAt,
+        pausedAt: o.paused_at ?? o.pausedAt,
+        finalCheck: o.final_check_result || o.finalCheck,
+        qcIssue: o.qc_note || o.qcIssue,
+        acceptedAt: o.tech_accepted_at || o.acceptedAt,
+        startedAt: o.repair_started_at || o.startedAt,
+        completedAt: o.repair_completed_at || o.completedAt,
+        customerApprovedAt: o.customer_approved_at || o.customerApprovedAt,
+        createdAt: o.created_at || o.createdAt,
         intake_batch_code: o.intake_batch_code,
         batchOrders: o.batch_orders || o.batchOrders,
       };
     });
+
+    if (statusFilter === 'Đơn đang mở') {
+      return mappedList.filter(
+        (item) => !['Hoàn tất', 'Đã hủy', 'Từ chối sửa'].includes(item.status)
+      );
+    }
+    if (statusFilter === 'Đang sửa trong xưởng') {
+      return mappedList.filter(
+        (item) =>
+          ![
+            'Hoàn tất',
+            'Đã hủy',
+            'Từ chối sửa',
+            'Sẵn sàng trả',
+            'Chờ khách nhận',
+          ].includes(item.status)
+      );
+    }
+    if (statusFilter === 'Chờ khách nhận' || statusFilter === 'Sẵn sàng trả') {
+      return mappedList.filter((item) =>
+        ['Chờ khách nhận', 'Sẵn sàng trả'].includes(item.status)
+      );
+    }
+    if (statusFilter === 'Trễ thời hạn (>24h)') {
+      const cutoffMs = Date.now() - 24 * 3600 * 1000;
+      return mappedList.filter((item) => {
+        if (
+          [
+            'Hoàn tất',
+            'Đã hủy',
+            'Từ chối sửa',
+            'Sẵn sàng trả',
+            'Chờ khách nhận',
+          ].includes(item.status)
+        ) {
+          return false;
+        }
+        if (item.createdAt) {
+          const ts = new Date(item.createdAt).getTime();
+          if (!isNaN(ts)) {
+            return ts <= cutoffMs;
+          }
+        }
+        return true;
+      });
+    }
+
+    return mappedList;
   }, [apiOrdersData, orders, search, statusFilter, orderTypeFilter, dateType]);
 
   // Lắng nghe sự kiện realtime cập nhật trạng thái đơn (kèm chuông Audio Chime)
@@ -534,16 +640,25 @@ function RepairsPageContent() {
             },
           ];
 
-      const newTotalPrice = updatedRaw.total_price !== undefined
-        ? Number(updatedRaw.total_price)
-        : (Number(selectedOrder.initial_price || selectedOrder.price) + newAdditional.reduce((s: number, i: any) => s + (Number(i.price) || 0), 0));
+      const newTotalPrice = normalizeVndPrice(
+        updatedRaw.total_price !== undefined
+          ? Number(updatedRaw.total_price)
+          : normalizeVndPrice(selectedOrder.initial_price ?? selectedOrder.price) +
+              newAdditional.reduce((s: number, i: any) => s + (Number(i.price) || 0), 0)
+      );
+
+      const normalizedInitialPrice = normalizeVndPrice(
+        updatedRaw.initial_price !== undefined
+          ? Number(updatedRaw.initial_price)
+          : selectedOrder.initial_price ?? selectedOrder.price
+      );
 
       const updatedOrder: RepairOrder = {
         ...selectedOrder,
         price: newTotalPrice,
         total_price: newTotalPrice,
-        initial_price: updatedRaw.initial_price !== undefined ? Number(updatedRaw.initial_price) : (selectedOrder.initial_price || selectedOrder.price),
-        initialPrice: updatedRaw.initial_price !== undefined ? Number(updatedRaw.initial_price) : (selectedOrder.initial_price || selectedOrder.price),
+        initial_price: normalizedInitialPrice,
+        initialPrice: normalizedInitialPrice,
         additional_services: newAdditional,
         additionalServices: newAdditional,
       };
@@ -580,9 +695,12 @@ function RepairsPageContent() {
         ? updatedRaw.additional_services
         : (selectedOrder.additional_services || []).filter((s) => s.id !== serviceToDelete.id);
 
-      const newTotalPrice = updatedRaw.total_price !== undefined
-        ? Number(updatedRaw.total_price)
-        : (Number(selectedOrder.initial_price || selectedOrder.price) + newAdditional.reduce((s: number, i: any) => s + (Number(i.price) || 0), 0));
+      const newTotalPrice = normalizeVndPrice(
+        updatedRaw.total_price !== undefined
+          ? Number(updatedRaw.total_price)
+          : normalizeVndPrice(selectedOrder.initial_price ?? selectedOrder.price) +
+              newAdditional.reduce((s: number, i: any) => s + (Number(i.price) || 0), 0)
+      );
 
       const updatedOrder: RepairOrder = {
         ...selectedOrder,
@@ -606,6 +724,10 @@ function RepairsPageContent() {
   };
 
   const statusOptions = [
+    { value: 'Đơn đang mở', label: 'Đơn đang mở' },
+    { value: 'Đang sửa trong xưởng', label: 'Đang sửa trong xưởng' },
+    { value: 'Chờ khách nhận', label: 'Chờ khách nhận' },
+    { value: 'Trễ thời hạn (>24h)', label: 'Trễ thời hạn (>24h)' },
     { value: 'Tiếp nhận mới', label: 'Tiếp nhận mới' },
     { value: 'Chờ kỹ thuật', label: 'Chờ kỹ thuật' },
     { value: 'Đã nhận đơn', label: 'Đã nhận đơn' },
@@ -1708,11 +1830,13 @@ function RepairsPageContent() {
                     <div className="text-right">
                       <span className="font-bold text-sm text-[#2d3d35] font-mono">
                         {moneyFormatted(
-                          selectedOrder.initial_price !== undefined && selectedOrder.initial_price !== null
-                            ? selectedOrder.initial_price
-                            : selectedOrder.initialPrice !== undefined && selectedOrder.initialPrice !== null
-                            ? selectedOrder.initialPrice
-                            : selectedOrder.price
+                          normalizeVndPrice(
+                            selectedOrder.initial_price !== undefined && selectedOrder.initial_price !== null
+                              ? selectedOrder.initial_price
+                              : selectedOrder.initialPrice !== undefined && selectedOrder.initialPrice !== null
+                              ? selectedOrder.initialPrice
+                              : selectedOrder.price
+                          )
                         )}
                       </span>
                       <span className="block text-[10px] text-[#72837b]">Giá ban đầu</span>
@@ -1784,7 +1908,11 @@ function RepairsPageContent() {
                       TỔNG CỘNG THANH TOÁN:
                     </span>
                     <b className="text-lg font-bold text-[#176b58] font-heading">
-                      {moneyFormatted(selectedOrder.total_price !== undefined ? selectedOrder.total_price : selectedOrder.price)}
+                      {moneyFormatted(
+                        normalizeVndPrice(
+                          selectedOrder.total_price !== undefined ? selectedOrder.total_price : selectedOrder.price
+                        )
+                      )}
                     </b>
                   </div>
                 )}

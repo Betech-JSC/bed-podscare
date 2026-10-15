@@ -650,4 +650,199 @@ class AdminDashboardFourRevenueCardsTest extends TestCase
         $this->assertEquals(1, $dataOct12['selected_date_uncollected_orders_count']);
         $this->assertEquals(600000.0, (float) $dataOct12['selected_date_uncollected_amount']);
     }
+
+    /**
+     * Test 5: RepairOrder::normalizeVndAmount và addAdditionalService khử triệt để giá mồi 1đ và số lẻ ...001đ.
+     */
+    public function test_normalize_vnd_amount_and_additional_service_eliminates_1_vnd_placeholder_and_001_remainder(): void
+    {
+        $this->assertSame(0.0, RepairOrder::normalizeVndAmount(0));
+        $this->assertSame(0.0, RepairOrder::normalizeVndAmount(1));
+        $this->assertSame(0.0, RepairOrder::normalizeVndAmount(0.5));
+        $this->assertSame(350000.0, RepairOrder::normalizeVndAmount(350001));
+        $this->assertSame(500000.0, RepairOrder::normalizeVndAmount(500001));
+        $this->assertSame(500000.0, RepairOrder::normalizeVndAmount(500000));
+
+        // Đơn có initial_price = 1đ, khi cộng dịch vụ 500.000đ phải ra đúng 500.000đ (không phải 500.001đ)
+        $order = $this->createOrder([
+            'order_code'    => 'PC26-NORM-01',
+            'status'        => 'in_repair',
+            'initial_price' => 1,
+            'total_price'   => 1,
+        ]);
+
+        $order->addAdditionalService([
+            'name'  => 'Thay pin AirPods Pro 2',
+            'price' => 500000,
+        ], $this->adminUser);
+
+        $order->refresh();
+        $this->assertEquals(0.0, (float) $order->initial_price);
+        $this->assertEquals(500000.0, (float) $order->total_price);
+    }
+
+    /**
+     * Test 6: overdue_orders loại trừ ready_for_return / waiting_pickup và khớp 1-1 với bộ lọc OrderController::index
+     * (open, in_workshop, waiting_pickup, waiting_parts, overdue).
+     */
+    public function test_overdue_orders_excludes_ready_for_return_and_waiting_pickup_and_matches_orders_index_filters(): void
+    {
+        $now = Carbon::now($this->tz);
+
+        // 2 đơn đang sửa trong xưởng quá 24h (overdue + in_workshop + open)
+        $overdue1 = $this->createOrder([
+            'order_code' => 'PC26-OVD-01',
+            'status'     => 'in_repair',
+            'created_at' => $now->copy()->subHours(30),
+            'updated_at' => $now->copy()->subHours(10),
+        ]);
+        $overdue2 = $this->createOrder([
+            'order_code' => 'PC26-OVD-02',
+            'status'     => 'inspecting',
+            'created_at' => $now->copy()->subHours(36),
+            'updated_at' => $now->copy()->subHours(12),
+        ]);
+
+        // 2 đơn chờ linh kiện vừa tạo < 24h (waiting_parts + in_workshop + open, không overdue)
+        $waitingPart1 = $this->createOrder([
+            'order_code' => 'PC26-WP-01',
+            'status'     => 'waiting_parts',
+            'created_at' => $now->copy()->subHours(5),
+            'updated_at' => $now->copy()->subHours(2),
+        ]);
+        $waitingPart2 = $this->createOrder([
+            'order_code'           => 'PC26-WP-02',
+            'status'               => 'in_repair',
+            'special_parts_status' => 'pending',
+            'created_at'           => $now->copy()->subHours(4),
+            'updated_at'           => $now->copy()->subHours(1),
+        ]);
+
+        // 2 đơn đã sửa xong chờ khách nhận tạo từ 48h trước (waiting_pickup + open, KHÔNG thuộc in_workshop, KHÔNG thuộc overdue)
+        $pickup1 = $this->createOrder([
+            'order_code' => 'PC26-PK-01',
+            'status'     => 'ready_for_return',
+            'created_at' => $now->copy()->subHours(48),
+            'updated_at' => $now->copy()->subHours(3),
+        ]);
+        $pickup2 = $this->createOrder([
+            'order_code' => 'PC26-PK-02',
+            'status'     => 'waiting_pickup',
+            'created_at' => $now->copy()->subHours(50),
+            'updated_at' => $now->copy()->subHours(2),
+        ]);
+
+        // 1 đơn đã hoàn tất từ 72h trước (không thuộc open)
+        $this->createOrder([
+            'order_code' => 'PC26-DONE-01',
+            'status'     => 'completed',
+            'created_at' => $now->copy()->subHours(72),
+            'updated_at' => $now->copy()->subHours(24),
+        ]);
+
+        // 1. Kiểm tra KPI Dashboard
+        $kpiRes = $this->actingAs($this->adminUser, 'sanctum')
+            ->getJson("/api/v1/kpi/dashboard?branch_id={$this->branch->id}");
+        $kpiRes->assertOk();
+        $kpiData = $kpiRes->json('data');
+
+        $this->assertEquals(6, $kpiData['operational_summary']['active_orders']);
+        $this->assertEquals(4, $kpiData['reconciliation']['in_workshop_count']);
+        $this->assertEquals(2, $kpiData['operational_summary']['waiting_pickup_orders']);
+        $this->assertEquals(2, $kpiData['operational_summary']['waiting_parts_orders']);
+        $this->assertEquals(2, $kpiData['operational_summary']['overdue_orders']);
+        $this->assertCount(2, $kpiData['actionable_tasks']['overdue']);
+
+        // 2. Kiểm tra OrderController::index với các bộ lọc tổ hợp khớp 1-1
+        $openRes = $this->actingAs($this->adminUser, 'sanctum')
+            ->getJson("/api/v1/orders?branch_id={$this->branch->id}&status=open&date_filter=all&per_page=100");
+        $openRes->assertOk();
+        $this->assertCount(6, $openRes->json('data.data'));
+
+        $workshopRes = $this->actingAs($this->adminUser, 'sanctum')
+            ->getJson("/api/v1/orders?branch_id={$this->branch->id}&status=in_workshop&date_filter=all&per_page=100");
+        $workshopRes->assertOk();
+        $this->assertCount(4, $workshopRes->json('data.data'));
+
+        $pickupRes = $this->actingAs($this->adminUser, 'sanctum')
+            ->getJson("/api/v1/orders?branch_id={$this->branch->id}&status=waiting_pickup&date_filter=all&per_page=100");
+        $pickupRes->assertOk();
+        $this->assertCount(2, $pickupRes->json('data.data'));
+
+        $partsRes = $this->actingAs($this->adminUser, 'sanctum')
+            ->getJson("/api/v1/orders?branch_id={$this->branch->id}&status=waiting_parts&date_filter=all&per_page=100");
+        $partsRes->assertOk();
+        $this->assertCount(2, $partsRes->json('data.data'));
+
+        $overdueRes = $this->actingAs($this->adminUser, 'sanctum')
+            ->getJson("/api/v1/orders?branch_id={$this->branch->id}&filter=overdue&date_filter=all&per_page=100");
+        $overdueRes->assertOk();
+        $overdueCodes = collect($overdueRes->json('data.data'))->pluck('order_code')->all();
+        $this->assertCount(2, $overdueCodes);
+        $this->assertContains($overdue1->order_code, $overdueCodes);
+        $this->assertContains($overdue2->order_code, $overdueCodes);
+        $this->assertNotContains($pickup1->order_code, $overdueCodes);
+        $this->assertNotContains($pickup2->order_code, $overdueCodes);
+    }
+
+    /**
+     * Test 7: Command orders:normalize-codes-and-prices đổi sạch mã FX... sang PC{branch_code}{DDMMYY}{STT}
+     * và khử sạch giá 1đ / ...001đ.
+     */
+    public function test_normalize_order_codes_and_prices_command_cleans_1_vnd_and_converts_fx_codes_to_pc(): void
+    {
+        $fxOrder1 = $this->createOrder([
+            'order_code'          => 'FX26-TEST01',
+            'status'              => 'waiting_pickup',
+            'initial_price'       => 1,
+            'total_price'         => 350001,
+            'additional_services' => [
+                [
+                    'id'    => 'srv_test_1',
+                    'name'  => 'Vệ sinh màng loa',
+                    'price' => 350000,
+                ],
+            ],
+            'created_at'          => Carbon::parse('2026-10-12 09:00:00', $this->tz),
+            'updated_at'          => Carbon::parse('2026-10-12 10:00:00', $this->tz),
+        ]);
+
+        $fxOrder2 = $this->createOrder([
+            'order_code'    => 'FX26-TEST02',
+            'status'        => 'inspecting',
+            'initial_price' => 1,
+            'total_price'   => 1,
+            'created_at'    => Carbon::parse('2026-10-12 09:30:00', $this->tz),
+            'updated_at'    => Carbon::parse('2026-10-12 09:30:00', $this->tz),
+        ]);
+
+        $payment = Payment::create([
+            'payment_code'        => 'PAY_FX_TEST_' . uniqid(),
+            'repair_order_id'     => $fxOrder1->id,
+            'amount'              => 350001,
+            'payment_method'      => 'cash',
+            'status'              => 'paid',
+            'paid_at'             => Carbon::parse('2026-10-12 11:00:00', $this->tz),
+            'received_by_user_id' => $this->adminUser->id,
+        ]);
+
+        $this->artisan('orders:normalize-codes-and-prices')
+            ->assertExitCode(0);
+
+        $fxOrder1->refresh();
+        $fxOrder2->refresh();
+        $payment->refresh();
+
+        $this->assertStringStartsWith("PC{$this->branch->code}121026", $fxOrder1->order_code);
+        $this->assertStringStartsWith("PC{$this->branch->code}121026", $fxOrder2->order_code);
+        $this->assertNotEquals($fxOrder1->order_code, $fxOrder2->order_code);
+
+        $this->assertEquals(0.0, (float) $fxOrder1->initial_price);
+        $this->assertEquals(350000.0, (float) $fxOrder1->total_price);
+
+        $this->assertEquals(0.0, (float) $fxOrder2->initial_price);
+        $this->assertEquals(0.0, (float) $fxOrder2->total_price);
+
+        $this->assertEquals(350000.0, (float) $payment->amount);
+    }
 }

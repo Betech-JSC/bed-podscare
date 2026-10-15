@@ -41,8 +41,16 @@ export const AdminEditOrderModal: React.FC<AdminEditOrderModalProps> = ({
   const [shippingAddress, setShippingAddress] = useState(
     order.shipping_address || (order as any).shippingAddress || ''
   );
+  const normalizeVndPrice = (raw: unknown): number => {
+    const val = Number(raw) || 0;
+    if (val <= 1) return 0;
+    const rounded = Math.round(val);
+    if (rounded > 1000 && rounded % 1000 === 1) return rounded - 1;
+    return rounded;
+  };
+
   const [totalPrice, setTotalPrice] = useState<number | string>(
-    order.total_price !== undefined ? order.total_price : order.price || 0
+    normalizeVndPrice(order.total_price !== undefined ? order.total_price : order.price || 0)
   );
   const [selectedBranchId, setSelectedBranchId] = useState<string | number>(
     (order as any).branch_id || (order as any).branchId || 1
@@ -70,7 +78,7 @@ export const AdminEditOrderModal: React.FC<AdminEditOrderModalProps> = ({
       setAppearanceNotes(order.appearance || '');
       setOrderType((order.order_type as any) || (order.orderType as any) || 'in_store');
       setShippingAddress(order.shipping_address || (order as any).shippingAddress || '');
-      setTotalPrice(order.total_price !== undefined ? order.total_price : order.price || 0);
+      setTotalPrice(normalizeVndPrice(order.total_price !== undefined ? order.total_price : order.price || 0));
       setSelectedBranchId((order as any).branch_id || (order as any).branchId || 1);
       setSelectedTechId((order as any).technician_id ? String((order as any).technician_id) : '');
       setWarrantyDays((order as any).warranty_terms_days || 90);

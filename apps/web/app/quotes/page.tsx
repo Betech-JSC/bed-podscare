@@ -54,8 +54,18 @@ export default function QuotesPage() {
     ['Chờ khách duyệt', 'Đang kiểm tra', 'Tiếp nhận mới'].includes(o.status)
   );
 
-  const moneyFormatted = (n: number) =>
-    n ? new Intl.NumberFormat('vi-VN').format(n) + ' ₫' : '—';
+  const normalizeVndPrice = (raw: unknown): number => {
+    const val = Number(raw) || 0;
+    if (val <= 1) return 0;
+    const rounded = Math.round(val);
+    if (rounded > 1000 && rounded % 1000 === 1) return rounded - 1;
+    return rounded;
+  };
+
+  const moneyFormatted = (n: number) => {
+    const norm = normalizeVndPrice(n);
+    return norm ? new Intl.NumberFormat('vi-VN').format(norm) + ' ₫' : '—';
+  };
 
   const findQuoteForOrder = (order: RepairOrder): QuoteRecord | undefined => {
     if (!quotes || !Array.isArray(quotes)) return undefined;
@@ -68,7 +78,8 @@ export default function QuotesPage() {
 
   const openQuoteModal = (order: RepairOrder) => {
     setSelectedOrder(order);
-    setQuoteAmount(order.price || '');
+    const normalizedPrice = normalizeVndPrice(order.price);
+    setQuoteAmount(normalizedPrice > 1 ? normalizedPrice : '');
     setQuoteNote(order.priceNote || '');
     setQuoteModalOpen(true);
   };
@@ -256,7 +267,7 @@ export default function QuotesPage() {
                       <td className="px-3 text-right">
                         <div className="flex justify-end gap-1.5">
                           <Button variant="secondary" size="sm" onClick={() => openQuoteModal(o)}>
-                            {o.price > 0 ? 'Sửa giá' : 'Tạo giá'}
+                            {normalizeVndPrice(o.price) > 0 ? 'Sửa giá' : 'Tạo giá'}
                           </Button>
                           {o.status === 'Chờ khách duyệt' && (
                             <>

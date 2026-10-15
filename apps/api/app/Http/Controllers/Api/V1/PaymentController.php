@@ -89,6 +89,8 @@ class PaymentController extends Controller
             'warranty_terms_days' => 'nullable|integer|min:1',
         ]);
 
+        $validated['amount'] = RepairOrder::normalizeVndAmount($validated['amount']);
+
         return DB::transaction(function () use ($request, $validated) {
             $order = RepairOrder::findOrFail($validated['repair_order_id']);
 
@@ -110,11 +112,18 @@ class PaymentController extends Controller
             }
 
             if ($request->has('service_price')) {
-                $newPrice = (float) $request->input('service_price');
+                $newPrice = RepairOrder::normalizeVndAmount($request->input('service_price'));
                 $order->total_price = $newPrice;
-                if (! $order->initial_price || $order->initial_price <= 0) {
-                    $order->initial_price = $newPrice;
+                if (! $order->initial_price || (float) $order->initial_price <= 1) {
+                    $additionalSum = 0.0;
+                    foreach (($order->additional_services ?? []) as $srv) {
+                        $additionalSum += RepairOrder::normalizeVndAmount($srv['price'] ?? 0);
+                    }
+                    $order->initial_price = max(0.0, RepairOrder::normalizeVndAmount($newPrice - $additionalSum));
                 }
+            } elseif ($order->initial_price !== null && (float) $order->initial_price <= 1) {
+                $order->initial_price = 0.0;
+                $order->recalculateTotalPrice();
             }
 
             $year = date('y');

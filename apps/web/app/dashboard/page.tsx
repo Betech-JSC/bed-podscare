@@ -471,6 +471,16 @@ export default function DashboardPage() {
       '0 ₫',
   };
 
+  const waitingPickupCount =
+    kpiData?.operational_summary?.waiting_pickup_orders ??
+    kpiData?.reconciliation?.ready_for_pickup_count ??
+    0;
+  const activeOrdersTotal =
+    kpiData?.operational_summary?.active_orders ?? activeOrdersCount;
+  const inWorkshopCount =
+    kpiData?.reconciliation?.in_workshop_count ??
+    Math.max(0, activeOrdersTotal - waitingPickupCount);
+
   // Chuẩn hóa nhãn Tháng & Ngày đang chọn
   const selectedMonthLabel = React.useMemo(() => {
     const parts = (selectedDate || todayStr).split('-');
@@ -1111,7 +1121,7 @@ export default function DashboardPage() {
 
             <div className="flex items-center justify-between gap-1 text-xs text-[#287452] font-semibold pt-1.5 border-t border-[#edf4f0] w-full">
               <span>
-                Thực thu: {formatVND(monthlyCollectedAmount)} · {monthlyCompletedCount} đơn hoàn tất ({selectedMonthLabel})
+                Thực thu: {formatVND(monthlyCollectedAmount)} · {monthlyCompletedCount} đơn hoàn tất · Chờ thu: {formatVND(monthlyUncollectedAmount)} ({monthlyUncollectedCount} đơn chờ lấy) ({selectedMonthLabel})
               </span>
               <Icon name="arrow" size={12} className="text-[#176b58] flex-none" />
             </div>
@@ -1191,7 +1201,7 @@ export default function DashboardPage() {
 
             <div className="flex items-center justify-between gap-1 text-xs text-[#287452] font-semibold pt-1.5 border-t border-[#edf4f0] w-full">
               <span>
-                Thực thu: {formatVND(selectedDateCollectedAmount)} · {selectedDateCompletedCount} đơn hoàn tất
+                Thực thu: {formatVND(selectedDateCollectedAmount)} · {selectedDateCompletedCount} đơn hoàn tất · Chờ thu: {formatVND(selectedDateUncollectedAmount)} ({selectedDateUncollectedCount} đơn chờ lấy)
               </span>
               <Icon name="arrow" size={12} className="text-[#176b58] flex-none" />
             </div>
@@ -1324,7 +1334,11 @@ export default function DashboardPage() {
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-3.5">
           {/* 1. Đơn đang mở */}
           <div
-            onClick={() => router.push('/repairs')}
+            onClick={() =>
+              role === 'admin'
+                ? router.push('/repairs?status=open&date_filter=all')
+                : router.push('/repairs')
+            }
             className="bg-white border border-[#e5ece8] rounded-[12px] p-4 shadow-xs hover:border-[#c5e1d4] hover:shadow-sm transition-all cursor-pointer flex flex-col justify-between"
           >
             <div className="flex items-center justify-between text-sm font-medium text-[#687871]">
@@ -1337,14 +1351,18 @@ export default function DashboardPage() {
               {kpiData?.operational_summary?.active_orders ?? activeOrdersCount}
             </div>
             <div className="flex items-center justify-between text-xs text-[#7c8982]">
-              <span>Đang xử lý trong quy trình</span>
+              <span>{inWorkshopCount} đang sửa trong xưởng · {waitingPickupCount} chờ khách nhận</span>
               <Icon name="arrow" size={12} className="text-[#176b58]" />
             </div>
           </div>
 
           {/* 2. Chờ khách nhận máy */}
           <div
-            onClick={() => router.push('/repairs?status=waiting_pickup')}
+            onClick={() =>
+              role === 'admin'
+                ? router.push('/repairs?status=waiting_pickup&date_filter=all')
+                : router.push('/repairs?status=waiting_pickup')
+            }
             className="bg-white border border-[#e5ece8] rounded-[12px] p-4 shadow-xs hover:border-[#c5e1d4] hover:shadow-sm transition-all cursor-pointer flex flex-col justify-between"
           >
             <div className="flex items-center justify-between text-sm font-medium text-[#687871]">
@@ -1364,7 +1382,11 @@ export default function DashboardPage() {
 
           {/* 3. Chờ linh kiện */}
           <div
-            onClick={() => router.push('/repairs?status=waiting_parts')}
+            onClick={() =>
+              role === 'admin'
+                ? router.push('/repairs?status=waiting_parts&date_filter=all')
+                : router.push('/repairs?status=waiting_parts')
+            }
             className="bg-white border border-[#e5ece8] rounded-[12px] p-4 shadow-xs hover:border-[#ebd9bd] hover:shadow-sm transition-all cursor-pointer flex flex-col justify-between"
           >
             <div className="flex items-center justify-between text-sm font-medium text-[#687871]">
@@ -1384,7 +1406,11 @@ export default function DashboardPage() {
 
           {/* 4. Trễ thời hạn cam kết */}
           <div
-            onClick={() => router.push('/repairs?filter=overdue')}
+            onClick={() =>
+              role === 'admin'
+                ? router.push('/repairs?filter=overdue&date_filter=all')
+                : router.push('/repairs?filter=overdue')
+            }
             className={`border rounded-[12px] p-4 shadow-xs transition-all cursor-pointer flex flex-col justify-between ${
               (kpiData?.operational_summary?.overdue_orders ?? 0) > 0
                 ? 'bg-[#fbefed] border-[#f5c7c2] hover:border-[#ea9d94]'
@@ -1410,9 +1436,7 @@ export default function DashboardPage() {
             </div>
             <div className="flex items-center justify-between text-xs">
               <span className={(kpiData?.operational_summary?.overdue_orders ?? 0) > 0 ? 'text-[#bc5b52] font-medium' : 'text-[#7c8982]'}>
-                {(kpiData?.operational_summary?.overdue_orders ?? 0) > 0
-                  ? 'Cần can thiệp ngay trong ca'
-                  : 'Đúng tiến độ cam kết'}
+                Máy đang sửa quá 24h trong xưởng
               </span>
               <Icon
                 name="arrow"
@@ -1761,7 +1785,10 @@ export default function DashboardPage() {
                   {/* 2 dòng phân rã chi tiết theo Phương án A */}
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-3">
                     {/* Dòng 1: Đã sửa xong chờ lấy / Chờ giao */}
-                    <div className="p-3.5 bg-white rounded-[9px] border border-[#eddcc4] shadow-2xs">
+                    <div
+                      onClick={() => router.push('/repairs?status=waiting_pickup&date_filter=all')}
+                      className="p-3.5 bg-white rounded-[9px] border border-[#eddcc4] shadow-2xs cursor-pointer hover:border-[#176b58]/40 transition-colors"
+                    >
                       <div className="flex items-center justify-between mb-1.5">
                         <span className="text-xs font-bold text-[#915e1b]">Đã sửa xong chờ lấy / Chờ giao</span>
                         <span className="px-2 py-0.5 rounded-full text-[11px] font-bold bg-[#fbf3e5] text-[#915e1b]">
@@ -1778,7 +1805,10 @@ export default function DashboardPage() {
                     </div>
 
                     {/* Dòng 2: Đang sửa trong xưởng */}
-                    <div className="p-3.5 bg-white rounded-[9px] border border-[#e5ece8] shadow-2xs">
+                    <div
+                      onClick={() => router.push('/repairs?status=in_workshop&date_filter=all')}
+                      className="p-3.5 bg-white rounded-[9px] border border-[#e5ece8] shadow-2xs cursor-pointer hover:border-[#d97706]/40 transition-colors"
+                    >
                       <div className="flex items-center justify-between mb-1.5">
                         <span className="text-xs font-bold text-[#2d3d35]">Đang sửa trong xưởng</span>
                         <span className="px-2 py-0.5 rounded-full text-[11px] font-bold bg-[#edf5f0] text-[#176b58]">
@@ -1800,7 +1830,7 @@ export default function DashboardPage() {
               <div className="pt-3 border-t border-[#ede2ce]">
                 <button
                   type="button"
-                  onClick={() => router.push('/repairs')}
+                  onClick={() => router.push('/repairs?status=open&date_filter=all')}
                   className="w-full py-2.5 px-3 bg-[#f5ede0] hover:bg-[#ece2d1] text-[#7a4e16] text-xs font-bold rounded-[8px] transition-all flex items-center justify-center gap-1.5 cursor-pointer border border-[#ebd9bd]"
                 >
                   <span>Xem danh sách đơn chưa giao tại shop</span>

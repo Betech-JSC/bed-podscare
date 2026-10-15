@@ -52,12 +52,20 @@ export const CheckoutHandoverModal: React.FC<CheckoutHandoverModalProps> = ({
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
 
+  const normalizeVndPrice = (raw: unknown): number => {
+    const val = Number(raw) || 0;
+    if (val <= 1) return 0;
+    const rounded = Math.round(val);
+    if (rounded > 1000 && rounded % 1000 === 1) return rounded - 1;
+    return rounded;
+  };
+
   // 1. Service Price State (Nếu đơn chưa báo giá hoặc <= 1đ thì mặc định 0đ)
-  const initialRawPrice = Number(order.total_price !== undefined ? order.total_price : order.price) || 0;
+  const initialRawPrice = normalizeVndPrice(order.total_price !== undefined ? order.total_price : order.price);
   const [servicePrice, setServicePrice] = useState<number>(initialRawPrice <= 1 ? 0 : initialRawPrice);
 
   useEffect(() => {
-    const raw = Number(order.total_price !== undefined ? order.total_price : order.price) || 0;
+    const raw = normalizeVndPrice(order.total_price !== undefined ? order.total_price : order.price);
     setServicePrice(raw <= 1 ? 0 : raw);
   }, [order]);
 

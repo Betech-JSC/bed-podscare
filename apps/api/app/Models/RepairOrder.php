@@ -130,23 +130,39 @@ class RepairOrder extends Model
         return $query->where('special_parts_status', 'purchased');
     }
 
+    public static function normalizeVndAmount(mixed $amount): float
+    {
+        $val = (float) ($amount ?? 0);
+        if ($val <= 1.0) {
+            return 0.0;
+        }
+        $rounded = (int) round($val);
+        if ($rounded > 1000 && ($rounded % 1000 === 1)) {
+            return (float) ($rounded - 1);
+        }
+        return (float) $rounded;
+    }
+
     public function recalculateTotalPrice(): float
     {
-        $base = $this->initial_price !== null ? (float) $this->initial_price : (float) $this->total_price;
+        if ($this->initial_price !== null && (float) $this->initial_price <= 1) {
+            $this->initial_price = 0.0;
+        }
+        $base = self::normalizeVndAmount($this->initial_price !== null ? (float) $this->initial_price : (float) $this->total_price);
         $services = $this->additional_services ?? [];
         $additionalSum = 0.0;
         foreach ($services as $srv) {
-            $additionalSum += (float) ($srv['price'] ?? 0);
+            $additionalSum += self::normalizeVndAmount($srv['price'] ?? 0);
         }
-        $newTotal = $base + $additionalSum;
+        $newTotal = self::normalizeVndAmount($base + $additionalSum);
         $this->total_price = $newTotal;
         return $newTotal;
     }
 
     public function addAdditionalService(array $serviceData, ?User $user = null): array
     {
-        if ($this->initial_price === null) {
-            $this->initial_price = $this->total_price ?? 0.00;
+        if ($this->initial_price === null || (float) $this->initial_price <= 1) {
+            $this->initial_price = self::normalizeVndAmount($this->total_price ?? 0.00);
         }
 
         $services = $this->additional_services ?? [];
@@ -155,7 +171,7 @@ class RepairOrder extends Model
         $newItem = [
             'id' => $serviceId,
             'name' => $serviceData['name'],
-            'price' => (float) $serviceData['price'],
+            'price' => self::normalizeVndAmount($serviceData['price'] ?? 0),
             'service_id' => isset($serviceData['service_id']) && $serviceData['service_id'] !== '' ? (int) $serviceData['service_id'] : null,
             'note' => $serviceData['note'] ?? null,
             'created_at' => now()->toIso8601String(),

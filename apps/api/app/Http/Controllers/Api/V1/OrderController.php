@@ -38,9 +38,28 @@ class OrderController extends Controller
     {
         $query = RepairOrder::with(['customer', 'deviceModel', 'branch', 'technician', 'qcInspector', 'createdByUser:id,name,role']);
 
-        if ($status = $request->input('status')) {
+        $status = $request->input('status');
+        $filter = $request->input('filter');
+
+        if ($filter === 'overdue' || $status === 'overdue') {
+            $query->whereNotIn('status', ['completed', 'cancelled', 'rejected', 'ready_for_return', 'waiting_pickup'])
+                  ->where('created_at', '<=', Carbon::now('Asia/Ho_Chi_Minh')->subHours(24));
+        }
+
+        if ($status && $status !== 'overdue') {
             if ($status === 'special_parts') {
                 $query->specialPartsPending();
+            } elseif ($status === 'open') {
+                $query->whereNotIn('status', ['completed', 'cancelled', 'rejected']);
+            } elseif ($status === 'in_workshop') {
+                $query->whereNotIn('status', ['completed', 'cancelled', 'rejected', 'ready_for_return', 'waiting_pickup']);
+            } elseif (in_array($status, ['waiting_pickup', 'ready_for_return'], true)) {
+                $query->whereIn('status', ['waiting_pickup', 'ready_for_return']);
+            } elseif ($status === 'waiting_parts') {
+                $query->where(function ($q) {
+                    $q->where('status', 'waiting_parts')
+                      ->orWhere('special_parts_status', 'pending');
+                })->whereNotIn('status', ['completed', 'cancelled', 'rejected']);
             } else {
                 $normalized = $this->normalizeStatus($status);
                 if ($normalized === 'waiting_qc') {
@@ -50,6 +69,19 @@ class OrderController extends Controller
                 } else {
                     $query->where('status', $status);
                 }
+            }
+        } elseif ($filter && $filter !== 'overdue') {
+            if ($filter === 'open') {
+                $query->whereNotIn('status', ['completed', 'cancelled', 'rejected']);
+            } elseif ($filter === 'in_workshop') {
+                $query->whereNotIn('status', ['completed', 'cancelled', 'rejected', 'ready_for_return', 'waiting_pickup']);
+            } elseif (in_array($filter, ['waiting_pickup', 'ready_for_return'], true)) {
+                $query->whereIn('status', ['waiting_pickup', 'ready_for_return']);
+            } elseif ($filter === 'waiting_parts') {
+                $query->where(function ($q) {
+                    $q->where('status', 'waiting_parts')
+                      ->orWhere('special_parts_status', 'pending');
+                })->whereNotIn('status', ['completed', 'cancelled', 'rejected']);
             }
         }
 
@@ -159,7 +191,11 @@ class OrderController extends Controller
         }
 
         if (! $hasSpecificDate) {
-            $hasSpecialPartsFilter = $request->has('special_parts_status') || $request->boolean('special_parts') || $request->input('special_parts') === 'true' || $request->input('status') === 'special_parts';
+            $hasSpecialPartsFilter = $request->has('special_parts_status')
+                || $request->boolean('special_parts')
+                || $request->input('special_parts') === 'true'
+                || in_array($status, ['special_parts', 'open', 'in_workshop', 'waiting_pickup', 'ready_for_return', 'waiting_parts', 'overdue'], true)
+                || in_array($filter, ['open', 'in_workshop', 'waiting_pickup', 'ready_for_return', 'waiting_parts', 'overdue'], true);
             if ($hasSpecialPartsFilter && ! $request->has('date_filter')) {
                 $dateFilter = 'all';
             } elseif ($isTechnician) {
@@ -251,7 +287,7 @@ class OrderController extends Controller
         ];
 
         $validated = $request->validate($rules);
-        $validated['estimated_price'] = (float) ($validated['estimated_price'] ?? 0);
+        $validated['estimated_price'] = RepairOrder::normalizeVndAmount($validated['estimated_price'] ?? 0);
 
         if ($isStaff && $user->branch_id) {
             $validated['branch_id'] = $user->branch_id;
@@ -536,11 +572,27 @@ class OrderController extends Controller
                     return ! in_array($k, ['customer_name', 'customer_phone'], true);
                 }, ARRAY_FILTER_USE_KEY);
 
+                foreach (['estimated_price', 'total_price', 'initial_price'] as $priceKey) {
+                    if (array_key_exists($priceKey, $orderUpdates) && $orderUpdates[$priceKey] !== null) {
+                        $orderUpdates[$priceKey] = RepairOrder::normalizeVndAmount($orderUpdates[$priceKey]);
+                    }
+                }
+
                 if (isset($orderUpdates['estimated_price'])) {
                     if (! isset($orderUpdates['total_price'])) {
                         $orderUpdates['total_price'] = $orderUpdates['estimated_price'];
                     }
                     unset($orderUpdates['estimated_price']);
+                }
+
+                if (isset($orderUpdates['total_price']) && ! isset($orderUpdates['initial_price'])) {
+                    if ($order->initial_price === null || (float) $order->initial_price <= 1) {
+                        if (empty($order->additional_services)) {
+                            $orderUpdates['initial_price'] = $orderUpdates['total_price'];
+                        } else {
+                            $orderUpdates['initial_price'] = 0.0;
+                        }
+                    }
                 }
 
                 $oldPrice = (float) ($order->total_price ?? 0);

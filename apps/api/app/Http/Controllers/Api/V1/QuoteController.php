@@ -73,8 +73,9 @@ class QuoteController extends Controller
             // Tính tổng tiền
             $totalAmount = 0;
             foreach ($validated['items'] as $item) {
-                $totalAmount += $item['quantity'] * $item['unit_price'];
+                $totalAmount += $item['quantity'] * RepairOrder::normalizeVndAmount($item['unit_price']);
             }
+            $totalAmount = RepairOrder::normalizeVndAmount($totalAmount);
 
             $quote = RepairQuote::create([
                 'repair_order_id'     => $order->id,
@@ -88,22 +89,27 @@ class QuoteController extends Controller
             ]);
 
             foreach ($validated['items'] as $item) {
+                $unitPrice = RepairOrder::normalizeVndAmount($item['unit_price']);
                 QuoteItem::create([
                     'quote_id'    => $quote->id,
                     'service_id'  => $item['service_id'] ?? null,
                     'part_id'     => $item['part_id'] ?? null,
                     'description' => $item['description'],
                     'quantity'    => $item['quantity'],
-                    'unit_price'  => $item['unit_price'],
-                    'amount'      => $item['quantity'] * $item['unit_price'],
+                    'unit_price'  => $unitPrice,
+                    'amount'      => RepairOrder::normalizeVndAmount($item['quantity'] * $unitPrice),
                 ]);
             }
 
             // Cập nhật giá trên đơn hàng
-            $order->update([
+            $orderUpdates = [
                 'total_price' => $totalAmount,
                 'status'      => 'waiting_approval',
-            ]);
+            ];
+            if ($order->initial_price === null || (float) $order->initial_price <= 1) {
+                $orderUpdates['initial_price'] = $totalAmount;
+            }
+            $order->update($orderUpdates);
 
             // Tạo thông báo vận hành khi lập báo giá
             $notif = Notification::create([
@@ -155,11 +161,16 @@ class QuoteController extends Controller
 
             $order = $quote->repairOrder;
             if ($order) {
-                $order->update([
+                $normalizedQuoteAmount = RepairOrder::normalizeVndAmount($quote->total_amount);
+                $orderUpdates = [
                     'status'               => 'waiting_tech',
                     'customer_approved_at' => Carbon::now(),
-                    'total_price'          => $quote->total_amount,
-                ]);
+                    'total_price'          => $normalizedQuoteAmount,
+                ];
+                if ($order->initial_price === null || (float) $order->initial_price <= 1) {
+                    $orderUpdates['initial_price'] = $normalizedQuoteAmount;
+                }
+                $order->update($orderUpdates);
 
                 AuditLog::create([
                     'user_id'        => $request->user()->id,

@@ -539,21 +539,17 @@ class KpiController extends Controller
         }
 
         // 5. Khối đối chiếu máy đã lấy vs máy chưa lấy (Reconciliation)
-        $handedOverCount = (int) (clone $baseQuery)
+        $handedOverOrdersList = (clone $baseQuery)
             ->where('status', 'completed')
-            ->count();
+            ->get(['total_price']);
+        $handedOverCount = (int) $handedOverOrdersList->count();
+        $handedOverRevenue = (float) $handedOverOrdersList->sum(fn ($o) => RepairOrder::normalizeVndAmount($o->total_price));
 
-        $handedOverRevenue = (float) (clone $baseQuery)
-            ->where('status', 'completed')
-            ->sum('total_price');
-
-        $readyForPickupCount = (int) (clone $baseQuery)
+        $readyForPickupOrdersList = (clone $baseQuery)
             ->whereIn('status', ['ready_for_return', 'waiting_pickup'])
-            ->count();
-
-        $readyForPickupAmount = (float) (clone $baseQuery)
-            ->whereIn('status', ['ready_for_return', 'waiting_pickup'])
-            ->sum('total_price');
+            ->get(['total_price']);
+        $readyForPickupCount = (int) $readyForPickupOrdersList->count();
+        $readyForPickupAmount = (float) $readyForPickupOrdersList->sum(fn ($o) => RepairOrder::normalizeVndAmount($o->total_price));
 
         $inWorkshopStatuses = [
             'inspecting',
@@ -570,13 +566,14 @@ class KpiController extends Controller
             'qc_inspecting',
         ];
 
-        $inWorkshopCount = (int) (clone $baseQuery)
+        $inWorkshopOrdersList = (clone $baseQuery)
             ->whereIn('status', $inWorkshopStatuses)
-            ->count();
-
-        $inWorkshopAmount = (float) (clone $baseQuery)
-            ->whereIn('status', $inWorkshopStatuses)
-            ->sum(DB::raw('COALESCE(NULLIF(total_price, 0), initial_price, 0)'));
+            ->get(['total_price', 'initial_price']);
+        $inWorkshopCount = (int) $inWorkshopOrdersList->count();
+        $inWorkshopAmount = (float) $inWorkshopOrdersList->sum(function ($o) {
+            $raw = (float) ($o->total_price ?? 0) > 1 ? $o->total_price : ($o->initial_price ?? 0);
+            return RepairOrder::normalizeVndAmount($raw);
+        });
 
         $formatCurrency = function (float $amount): string {
             return number_format($amount, 0, ',', '.') . ' ₫';
@@ -666,11 +663,21 @@ class KpiController extends Controller
                 $breakdown = [];
 
                 foreach ($orders as $order) {
-                    $orderTotal = (float) ($order->total_price > 0 ? $order->total_price : ($order->initial_price ?? 0));
+                    $rawTotal = (float) ($order->total_price > 1 ? $order->total_price : ($order->initial_price ?? 0));
+                    $orderTotal = RepairOrder::normalizeVndAmount($rawTotal);
                     $paidPayments = $order->payments->whereIn('status', ['paid', 'completed']);
-                    $paidSum = (float) $paidPayments->sum('amount');
-                    $orderCash = (float) $paidPayments->where('payment_method', 'cash')->sum('amount');
-                    $orderTransfer = (float) $paidPayments->whereIn('payment_method', ['bank_transfer', 'transfer', 'vietqr', 'sepay'])->sum('amount');
+                    $paidSum = 0.0;
+                    $orderCash = 0.0;
+                    $orderTransfer = 0.0;
+                    foreach ($paidPayments as $p) {
+                        $normAmt = RepairOrder::normalizeVndAmount($p->amount);
+                        $paidSum += $normAmt;
+                        if ($p->payment_method === 'cash') {
+                            $orderCash += $normAmt;
+                        } elseif (in_array($p->payment_method, ['bank_transfer', 'transfer', 'vietqr', 'sepay'], true)) {
+                            $orderTransfer += $normAmt;
+                        }
+                    }
 
                     if ($order->status === 'completed') {
                         $orderCollected = $paidSum > 0 ? $paidSum : $orderTotal;
@@ -1073,7 +1080,7 @@ class KpiController extends Controller
 
         $twentyFourHoursAgo = Carbon::now($tz)->subHours(24);
         $overdueOrdersCount = (clone $baseQuery)
-            ->whereNotIn('status', ['completed', 'cancelled', 'rejected'])
+            ->whereNotIn('status', ['completed', 'cancelled', 'rejected', 'ready_for_return', 'waiting_pickup'])
             ->where('created_at', '<=', $twentyFourHoursAgo)
             ->count();
 
@@ -1086,7 +1093,7 @@ class KpiController extends Controller
 
         // 9. Danh sách công việc cần xử lý trong ca (Actionable Tasks)
         $overdueOrders = (clone $baseQuery)
-            ->whereNotIn('status', ['completed', 'cancelled', 'rejected'])
+            ->whereNotIn('status', ['completed', 'cancelled', 'rejected', 'ready_for_return', 'waiting_pickup'])
             ->where('created_at', '<=', $twentyFourHoursAgo)
             ->with(['customer', 'technician', 'deviceModel'])
             ->orderBy('created_at', 'asc')
@@ -1105,7 +1112,7 @@ class KpiController extends Controller
                     'hours_overdue'    => $hoursOverdue,
                     'status'           => $order->status,
                     'issue_description'=> $order->issue_description ?? '',
-                    'total_price'      => (float) ($order->total_price ?? 0),
+                    'total_price'      => RepairOrder::normalizeVndAmount($order->total_price ?? 0),
                 ];
             })
             ->values()
@@ -1119,6 +1126,7 @@ class KpiController extends Controller
             ->get()
             ->map(function (RepairOrder $order) use ($tz) {
                 $hoursPending = max(0, (int) Carbon::parse($order->updated_at ?? $order->created_at, $tz)->diffInHours(Carbon::now($tz)));
+                $rawPrice = (float) ($order->total_price ?? 0) > 1 ? $order->total_price : ($order->initial_price ?? 0);
                 return [
                     'id'               => $order->id,
                     'order_code'       => $order->order_code,
@@ -1126,7 +1134,7 @@ class KpiController extends Controller
                     'customer_phone'   => $order->customer?->phone ?? '',
                     'device_model'     => $order->deviceModel?->name ?? 'Thiết bị',
                     'technician_name'  => $order->technician?->name ?? 'Chưa phân công',
-                    'total_price'      => (float) ($order->total_price ?? $order->initial_price ?? 0),
+                    'total_price'      => RepairOrder::normalizeVndAmount($rawPrice),
                     'issue_description'=> $order->issue_description ?? '',
                     'hours_pending'    => $hoursPending,
                     'status'           => $order->status,
@@ -1155,7 +1163,7 @@ class KpiController extends Controller
                     'hours_waiting'       => $hoursWaiting,
                     'status'              => $order->status,
                     'issue_description'   => $order->issue_description ?? '',
-                    'total_price'         => (float) ($order->total_price ?? 0),
+                    'total_price'         => RepairOrder::normalizeVndAmount($order->total_price ?? 0),
                 ];
             })
             ->values()
@@ -1175,7 +1183,7 @@ class KpiController extends Controller
                     'customer_phone'   => $order->customer?->phone ?? '',
                     'device_model'     => $order->deviceModel?->name ?? 'Thiết bị',
                     'technician_name'  => $order->technician?->name ?? 'Chưa phân công',
-                    'total_price'      => (float) ($order->total_price ?? 0),
+                    'total_price'      => RepairOrder::normalizeVndAmount($order->total_price ?? 0),
                     'status'           => $order->status,
                     'issue_description'=> $order->issue_description ?? '',
                 ];

@@ -437,7 +437,15 @@ export const Providers: React.FC<{ children: React.ReactNode }> = ({ children })
     if (!isAuthenticated || !token) return;
     try {
       const activeBranchId = targetBranchId !== undefined ? targetBranchId : branchId;
+      const isAdminUser =
+        userProfile?.role === 'admin' ||
+        userProfile?.role === 'super_admin' ||
+        role === 'admin';
       const params: Record<string, any> = { per_page: 50, date_filter: dateFilter };
+      if (isAdminUser) {
+        params.per_page = 500;
+        params.date_filter = 'all';
+      }
       if (activeBranchId && activeBranchId !== 'all') {
         params.branch_id = activeBranchId;
       }
@@ -563,7 +571,7 @@ export const Providers: React.FC<{ children: React.ReactNode }> = ({ children })
       console.warn('Could not fetch orders from API:', e);
       setOrders([]);
     }
-  }, [branchId, isAuthenticated, token]);
+  }, [branchId, isAuthenticated, token, userProfile?.role, role]);
 
   useEffect(() => {
     if (isAuthenticated && token) {
@@ -582,8 +590,8 @@ export const Providers: React.FC<{ children: React.ReactNode }> = ({ children })
     } catch {
       // ignore
     }
-    await fetchOrders(branchId, 'today');
-  }, [queryClient, fetchOrders, branchId]);
+    await fetchOrders(branchId, role === 'admin' ? 'all' : 'today');
+  }, [queryClient, fetchOrders, branchId, role]);
 
   const setBranch = (newBranchName: string, newBranchId?: string | number) => {
     // Non-Admin không được phép thay đổi chi nhánh (Strict Branch Isolation)

@@ -796,7 +796,7 @@ class SystemE2ELifecycleTest extends TestCase
         // Kiểm tra AuditLog
         $this->assertDatabaseHas('audit_logs', [
             'action'         => 'Lệch két chốt ca',
-            'auditable_type' => WorkShift::class,
+            'auditable_type' => $shift->getMorphClass(),
             'auditable_id'   => $shift->id,
         ]);
     }

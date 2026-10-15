@@ -71,16 +71,20 @@ describe('OpenSpec: admin-dashboard-four-revenue-and-debt-cards Frontend Verific
 
     // Verify synchronized sub-lines on Cards 1-4
     assert.ok(
-      content.includes('Thực thu: {formatVND(monthlyCollectedAmount)} · {monthlyCompletedCount} đơn hoàn tất ({selectedMonthLabel})'),
-      'Card 1 sub-line must display monthlyCompletedCount đơn hoàn tất'
+      content.includes(
+        'Thực thu: {formatVND(monthlyCollectedAmount)} · {monthlyCompletedCount} đơn hoàn tất · Chờ thu: {formatVND(monthlyUncollectedAmount)} ({monthlyUncollectedCount} đơn chờ lấy) ({selectedMonthLabel})'
+      ),
+      'Card 1 sub-line must display explicit formula: Thực thu + Chờ thu'
     );
     assert.ok(
       content.includes('{monthlyUncollectedCount} đơn chờ khách nhận ({selectedMonthLabel})'),
       'Card 2 sub-line must display monthlyUncollectedCount đơn chờ khách nhận'
     );
     assert.ok(
-      content.includes('Thực thu: {formatVND(selectedDateCollectedAmount)} · {selectedDateCompletedCount} đơn hoàn tất'),
-      'Card 3 sub-line must display selectedDateCompletedCount đơn hoàn tất matching the date badge'
+      content.includes(
+        'Thực thu: {formatVND(selectedDateCollectedAmount)} · {selectedDateCompletedCount} đơn hoàn tất · Chờ thu: {formatVND(selectedDateUncollectedAmount)} ({selectedDateUncollectedCount} đơn chờ lấy)'
+      ),
+      'Card 3 sub-line must display explicit formula: Thực thu + Chờ thu matching the date badge'
     );
     assert.ok(
       content.includes('{selectedDateUncollectedCount} đơn chờ khách nhận ngày {selectedDateDisplay}'),
@@ -253,5 +257,53 @@ describe('OpenSpec: admin-dashboard-four-revenue-and-debt-cards Frontend Verific
     // 4. repairs/page.tsx must guard Chi phí column and modal pricing blocks with !isTechRole
     assert.ok(repairsContent.includes('const isTechRole ='), 'repairs/page.tsx must define isTechRole');
     assert.ok(repairsContent.includes('{!isTechRole && <th className="px-4">Chi phí</th>}'), 'repairs/page.tsx must hide Chi phí header for tech role');
+  });
+
+  test('Tasks 3.1, 3.2, 3.3 (admin-self-explanatory-kpi-and-data-normalization): Operational breakdown, Admin Sidebar all-orders scope, Repairs composite filters, and VND price normalization', () => {
+    const dashboardContent = fs.readFileSync(path.join(webRoot, 'app/dashboard/page.tsx'), 'utf-8');
+    const providersContent = fs.readFileSync(path.join(webRoot, 'app/providers.tsx'), 'utf-8');
+    const repairsContent = fs.readFileSync(path.join(webRoot, 'app/repairs/page.tsx'), 'utf-8');
+    const checkoutContent = fs.readFileSync(path.join(webRoot, 'app/components/CheckoutHandoverModal.tsx'), 'utf-8');
+    const quotesContent = fs.readFileSync(path.join(webRoot, 'app/quotes/page.tsx'), 'utf-8');
+    const adminEditContent = fs.readFileSync(path.join(webRoot, 'app/components/AdminEditOrderModal.tsx'), 'utf-8');
+
+    // Task 3.1: Operational breakdown & reconciliation links
+    assert.ok(
+      dashboardContent.includes('{inWorkshopCount} đang sửa trong xưởng · {waitingPickupCount} chờ khách nhận'),
+      'Active orders card must show inWorkshopCount + waitingPickupCount breakdown'
+    );
+    assert.ok(
+      dashboardContent.includes('Máy đang sửa quá 24h trong xưởng'),
+      'Overdue card must state "Máy đang sửa quá 24h trong xưởng"'
+    );
+    assert.ok(
+      dashboardContent.includes("router.push('/repairs?status=open&date_filter=all')") &&
+        dashboardContent.includes("router.push('/repairs?status=waiting_pickup&date_filter=all')") &&
+        dashboardContent.includes("router.push('/repairs?status=in_workshop&date_filter=all')") &&
+        dashboardContent.includes("router.push('/repairs?filter=overdue&date_filter=all')"),
+      'Dashboard cards and reconciliation blocks must link to /repairs with date_filter=all'
+    );
+
+    // Task 3.2: Providers Admin scope (per_page: 500, date_filter: all)
+    assert.ok(
+      providersContent.includes('params.per_page = 500;') &&
+        providersContent.includes("params.date_filter = 'all';"),
+      'providers.tsx must set per_page=500 and date_filter=all for Admin'
+    );
+
+    // Task 3.3: Repairs composite status mapping & normalizeVndPrice across frontend
+    assert.ok(
+      repairsContent.includes("open: 'Đơn đang mở'") &&
+        repairsContent.includes("in_workshop: 'Đang sửa trong xưởng'") &&
+        repairsContent.includes("overdue: 'Trễ thời hạn (>24h)'"),
+      'repairs/page.tsx must map open, in_workshop, and overdue status params'
+    );
+    assert.ok(
+      repairsContent.includes('normalizeVndPrice') &&
+        checkoutContent.includes('normalizeVndPrice') &&
+        quotesContent.includes('normalizeVndPrice') &&
+        adminEditContent.includes('normalizeVndPrice'),
+      'normalizeVndPrice must be applied in repairs/page.tsx, CheckoutHandoverModal.tsx, quotes/page.tsx, and AdminEditOrderModal.tsx'
+    );
   });
 });
