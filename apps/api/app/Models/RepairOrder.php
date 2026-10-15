@@ -137,8 +137,10 @@ class RepairOrder extends Model
             return 0.0;
         }
         $rounded = (int) round($val);
-        if ($rounded > 1000 && ($rounded % 1000 === 1)) {
-            return (float) ($rounded - 1);
+        $remainder = $rounded % 1000;
+        if ($rounded >= 500 && $remainder !== 0) {
+            // Làm tròn về bội số 1.000đ gần nhất (khử cả ...001..009 lẫn ...991..999)
+            return (float) (round($rounded / 1000) * 1000);
         }
         return (float) $rounded;
     }

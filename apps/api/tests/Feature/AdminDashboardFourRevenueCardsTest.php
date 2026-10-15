@@ -652,7 +652,7 @@ class AdminDashboardFourRevenueCardsTest extends TestCase
     }
 
     /**
-     * Test 5: RepairOrder::normalizeVndAmount và addAdditionalService khử triệt để giá mồi 1đ và số lẻ ...001đ.
+     * Test 5: RepairOrder::normalizeVndAmount và addAdditionalService khử triệt để giá mồi 1đ và số lẻ ...001đ / ...999đ.
      */
     public function test_normalize_vnd_amount_and_additional_service_eliminates_1_vnd_placeholder_and_001_remainder(): void
     {
@@ -660,7 +660,9 @@ class AdminDashboardFourRevenueCardsTest extends TestCase
         $this->assertSame(0.0, RepairOrder::normalizeVndAmount(1));
         $this->assertSame(0.0, RepairOrder::normalizeVndAmount(0.5));
         $this->assertSame(350000.0, RepairOrder::normalizeVndAmount(350001));
+        $this->assertSame(450000.0, RepairOrder::normalizeVndAmount(449999));
         $this->assertSame(500000.0, RepairOrder::normalizeVndAmount(500001));
+        $this->assertSame(500000.0, RepairOrder::normalizeVndAmount(499999));
         $this->assertSame(500000.0, RepairOrder::normalizeVndAmount(500000));
 
         // Đơn có initial_price = 1đ, khi cộng dịch vụ 500.000đ phải ra đúng 500.000đ (không phải 500.001đ)
@@ -787,7 +789,7 @@ class AdminDashboardFourRevenueCardsTest extends TestCase
 
     /**
      * Test 7: Command orders:normalize-codes-and-prices đổi sạch mã FX... sang PC{branch_code}{DDMMYY}{STT}
-     * và khử sạch giá 1đ / ...001đ.
+     * và khử sạch giá 1đ / ...001đ / ...999đ.
      */
     public function test_normalize_order_codes_and_prices_command_cleans_1_vnd_and_converts_fx_codes_to_pc(): void
     {
@@ -816,6 +818,22 @@ class AdminDashboardFourRevenueCardsTest extends TestCase
             'updated_at'    => Carbon::parse('2026-10-12 09:30:00', $this->tz),
         ]);
 
+        $fxOrder3 = $this->createOrder([
+            'order_code'          => 'FX26-TEST03',
+            'status'              => 'completed',
+            'initial_price'       => 0,
+            'total_price'         => 449999,
+            'additional_services' => [
+                [
+                    'id'    => 'srv_test_999',
+                    'name'  => 'Thay pin AirPods Pro 2',
+                    'price' => 449999,
+                ],
+            ],
+            'created_at'          => Carbon::parse('2026-10-12 10:00:00', $this->tz),
+            'updated_at'          => Carbon::parse('2026-10-12 11:00:00', $this->tz),
+        ]);
+
         $payment = Payment::create([
             'payment_code'        => 'PAY_FX_TEST_' . uniqid(),
             'repair_order_id'     => $fxOrder1->id,
@@ -826,15 +844,28 @@ class AdminDashboardFourRevenueCardsTest extends TestCase
             'received_by_user_id' => $this->adminUser->id,
         ]);
 
+        $payment999 = Payment::create([
+            'payment_code'        => 'PAY_FX_999_' . uniqid(),
+            'repair_order_id'     => $fxOrder3->id,
+            'amount'              => 449999,
+            'payment_method'      => 'bank_transfer',
+            'status'              => 'paid',
+            'paid_at'             => Carbon::parse('2026-10-12 11:15:00', $this->tz),
+            'received_by_user_id' => $this->adminUser->id,
+        ]);
+
         $this->artisan('orders:normalize-codes-and-prices')
             ->assertExitCode(0);
 
         $fxOrder1->refresh();
         $fxOrder2->refresh();
+        $fxOrder3->refresh();
         $payment->refresh();
+        $payment999->refresh();
 
         $this->assertStringStartsWith("PC{$this->branch->code}121026", $fxOrder1->order_code);
         $this->assertStringStartsWith("PC{$this->branch->code}121026", $fxOrder2->order_code);
+        $this->assertStringStartsWith("PC{$this->branch->code}121026", $fxOrder3->order_code);
         $this->assertNotEquals($fxOrder1->order_code, $fxOrder2->order_code);
 
         $this->assertEquals(0.0, (float) $fxOrder1->initial_price);
@@ -843,6 +874,11 @@ class AdminDashboardFourRevenueCardsTest extends TestCase
         $this->assertEquals(0.0, (float) $fxOrder2->initial_price);
         $this->assertEquals(0.0, (float) $fxOrder2->total_price);
 
+        $this->assertEquals(0.0, (float) $fxOrder3->initial_price);
+        $this->assertEquals(450000.0, (float) $fxOrder3->total_price);
+        $this->assertEquals(450000.0, (float) ($fxOrder3->additional_services[0]['price'] ?? 0));
+
         $this->assertEquals(350000.0, (float) $payment->amount);
+        $this->assertEquals(450000.0, (float) $payment999->amount);
     }
 }

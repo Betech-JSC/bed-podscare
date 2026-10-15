@@ -56,7 +56,7 @@ export const CheckoutHandoverModal: React.FC<CheckoutHandoverModalProps> = ({
     const val = Number(raw) || 0;
     if (val <= 1) return 0;
     const rounded = Math.round(val);
-    if (rounded > 1000 && rounded % 1000 === 1) return rounded - 1;
+    if (rounded >= 500 && rounded % 1000 !== 0) return Math.round(rounded / 1000) * 1000;
     return rounded;
   };
 

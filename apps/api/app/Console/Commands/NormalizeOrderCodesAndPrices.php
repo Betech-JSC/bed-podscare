@@ -76,17 +76,24 @@ class NormalizeOrderCodesAndPrices extends Command
                 }
 
                 $newInitial = $oldInitial !== null ? RepairOrder::normalizeVndAmount($oldInitial) : null;
+                $normalizedOldTotal = RepairOrder::normalizeVndAmount($oldTotal);
 
                 if (! empty($normalizedServices)) {
                     $base = $newInitial !== null
                         ? $newInitial
-                        : RepairOrder::normalizeVndAmount(max(0.0, $oldTotal - $additionalSum));
-                    if ($newInitial === null) {
+                        : RepairOrder::normalizeVndAmount(max(0.0, $normalizedOldTotal - $additionalSum));
+                    if ($base + $additionalSum < $normalizedOldTotal) {
+                        $base = RepairOrder::normalizeVndAmount($normalizedOldTotal - $additionalSum);
+                        $newInitial = $base;
+                    } elseif ($newInitial === null) {
                         $newInitial = $base;
                     }
                     $newTotal = RepairOrder::normalizeVndAmount($base + $additionalSum);
                 } else {
-                    $newTotal = RepairOrder::normalizeVndAmount($oldTotal);
+                    $newTotal = $normalizedOldTotal;
+                    if ($newInitial !== null && $newInitial === 0.0 && $newTotal > 0) {
+                        $newInitial = $newTotal;
+                    }
                 }
 
                 $initialChanged = ($oldInitial !== null && $newInitial !== $oldInitial)
