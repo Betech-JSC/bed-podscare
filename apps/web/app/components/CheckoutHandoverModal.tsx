@@ -13,6 +13,7 @@ import {
 import type { RepairOrder } from '@podscare/types';
 import { repairService } from '@podscare/api-client';
 import { useShift } from '../providers/ShiftProvider';
+import { useOptionalPodsCare } from '../providers';
 
 export interface CheckoutHandoverModalProps {
   isOpen: boolean;
@@ -46,6 +47,7 @@ export const CheckoutHandoverModal: React.FC<CheckoutHandoverModalProps> = ({
 }) => {
   const { toast } = useToast();
   const { refreshShift } = useShift();
+  const podsCare = useOptionalPodsCare();
   const [paymentMethod, setPaymentMethod] = useState<'cash' | 'bank_transfer'>('cash');
   const [transactionRef, setTransactionRef] = useState('');
   const [notes, setNotes] = useState('');
@@ -141,7 +143,7 @@ export const CheckoutHandoverModal: React.FC<CheckoutHandoverModalProps> = ({
     setErrorMsg('');
 
     try {
-      await repairService.simpleCheckout(order.id, {
+      const checkoutRes: any = await repairService.simpleCheckout(order.id, {
         payment_method: paymentMethod,
         amount: finalAmount,
         service_price: servicePrice,
@@ -171,6 +173,8 @@ export const CheckoutHandoverModal: React.FC<CheckoutHandoverModalProps> = ({
       order.total_price = servicePrice;
       order.price = servicePrice;
 
+      const responseTenant = checkoutRes?.data?.order?.tenant || checkoutRes?.order?.tenant || checkoutRes?.tenant;
+
       const updated: RepairOrder = {
         ...order,
         total_price: servicePrice,
@@ -183,6 +187,12 @@ export const CheckoutHandoverModal: React.FC<CheckoutHandoverModalProps> = ({
         discount_type: discountType,
         discount_amount: calculatedDiscountAmount,
         handedAt: new Intl.DateTimeFormat('vi-VN').format(new Date()),
+        tenant:
+          responseTenant ||
+          order.tenant ||
+          podsCare?.tenantBranding ||
+          podsCare?.currentUser?.tenant ||
+          undefined,
       };
 
       if (onSuccess) {

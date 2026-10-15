@@ -21,7 +21,7 @@ class TenantSettingController extends Controller
             return $this->failure('Chưa xác thực danh tính.', 401);
         }
 
-        $tenant = $user->tenant;
+        $tenant = $user->tenant?->fresh();
         if (! $tenant && $user->role === 'super_admin') {
             $tenant = Tenant::where('code', 'fixo-master')->first() ?? Tenant::first();
         }
@@ -151,13 +151,14 @@ class TenantSettingController extends Controller
             }
 
             // Xóa logo cũ trên public disk nếu có
-            $this->deleteDiskLogoFile($tenant->logo_url);
+            $this->deleteDiskLogoFile($tenant->getRawOriginal('logo_url') ?? $tenant->logo_url);
 
             // Lưu file logo mới
             $extension = $file->getClientOriginalExtension() ?: 'png';
             $filename = 'logo_' . time() . '_' . Str::random(8) . '.' . $extension;
             $path = $file->storeAs("tenants/{$tenant->id}/branding", $filename, 'public');
-            $url = asset("storage/{$path}");
+            $baseUrl = rtrim($request->getSchemeAndHttpHost() ?: (string) config('app.url', 'http://localhost'), '/');
+            $url = "{$baseUrl}/storage/" . ltrim($path, '/');
 
             $tenant->logo_url = $url;
             $tenant->save();
@@ -266,13 +267,14 @@ class TenantSettingController extends Controller
             }
 
             // Xóa logo cũ trên public disk nếu có
-            $this->deleteDiskLogoFile($tenant->logo_url);
+            $this->deleteDiskLogoFile($tenant->getRawOriginal('logo_url') ?? $tenant->logo_url);
 
             // Lưu file logo mới từ dữ liệu Base64
             $filename = 'logo_' . time() . '_' . Str::random(8) . '.' . $extension;
             $relativePath = "tenants/{$tenant->id}/branding/{$filename}";
             Storage::disk('public')->put($relativePath, $binaryData);
-            $url = asset("storage/{$relativePath}");
+            $baseUrl = rtrim($request->getSchemeAndHttpHost() ?: (string) config('app.url', 'http://localhost'), '/');
+            $url = "{$baseUrl}/storage/{$relativePath}";
 
             $tenant->logo_url = $url;
             $tenant->save();
@@ -313,7 +315,7 @@ class TenantSettingController extends Controller
             return $this->failure('Không tìm thấy thông tin gian hàng.', 404);
         }
 
-        $this->deleteDiskLogoFile($tenant->logo_url);
+        $this->deleteDiskLogoFile($tenant->getRawOriginal('logo_url') ?? $tenant->logo_url);
 
         $tenant->logo_url = null;
         $tenant->save();
@@ -336,16 +338,20 @@ class TenantSettingController extends Controller
      */
     protected function deleteDiskLogoFile(?string $logoUrl): void
     {
-        if (! $logoUrl) {
+        if (! $logoUrl || str_starts_with($logoUrl, 'data:image/')) {
             return;
         }
 
+        $relative = null;
         $relativePos = strpos($logoUrl, '/storage/');
         if ($relativePos !== false) {
             $relative = substr($logoUrl, $relativePos + strlen('/storage/'));
-            if ($relative && Storage::disk('public')->exists($relative)) {
-                Storage::disk('public')->delete($relative);
-            }
+        } elseif (! preg_match('#^https?://#i', $logoUrl)) {
+            $relative = preg_replace('#^(?:storage/)+#', '', ltrim($logoUrl, '/'));
+        }
+
+        if ($relative && Storage::disk('public')->exists($relative)) {
+            Storage::disk('public')->delete($relative);
         }
     }
 }

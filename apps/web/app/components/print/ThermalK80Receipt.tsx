@@ -1,6 +1,6 @@
 'use client';
 
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import type { RepairOrder } from '@podscare/types';
 import { generateBarcodeSVG, generateQRCodeSVG } from './BarcodeQRUtils';
 import {
@@ -10,6 +10,7 @@ import {
   type ThermalK80SlipMode,
   type TenantReceiptBranding,
 } from './thermalK80HtmlBuilder';
+import { useOptionalPodsCare } from '../../providers';
 
 export interface ThermalK80ReceiptProps {
   order?: RepairOrder;
@@ -28,16 +29,35 @@ const CustomerSlip: React.FC<{
   origin?: string;
   branding?: TenantReceiptBranding;
 }> = ({ order, origin, branding }) => {
+  const podsCare = useOptionalPodsCare();
+  const [logoError, setLogoError] = useState(false);
+
   const currentOrigin =
     origin || (typeof window !== 'undefined' ? window.location.origin : 'https://fixo.com.vn');
   const trackUrl = `${currentOrigin}/track/${order.id}`;
 
-  const effectiveBranding = branding || (order as any).tenant;
-  const effectiveLogoUrl = effectiveBranding?.logoUrl || effectiveBranding?.storeLogoUrl || (order as any).tenant?.logo_url;
-  const effectiveStoreName = effectiveBranding?.storeName || (order as any).tenant?.name || 'FIXO REPAIR OS';
-  const effectiveBranch = order.branch || effectiveBranding?.storeName || (order as any).tenant?.name || 'FIXO Store';
-  const effectiveHotline = effectiveBranding?.hotline || effectiveBranding?.storeHotline || (order as any).tenant?.hotline || '1900.6868 · fixo.vn';
-  const effectiveFooterNote = effectiveBranding?.footerNote || effectiveBranding?.receiptFooterNote || (order as any).tenant?.receipt_footer_note || '* Quý khách vui lòng giữ phiếu này để đối chiếu khi nhận máy.<br />Cảm ơn quý khách đã tin tưởng dịch vụ FIXO Care!';
+  const fallbackTenant = (order as any).tenant || podsCare?.tenantBranding || podsCare?.currentUser?.tenant;
+  const effectiveBranding = branding || fallbackTenant;
+  const effectiveLogoUrl =
+    branding?.logoUrl !== undefined
+      ? branding.logoUrl
+      : effectiveBranding?.logoUrl || effectiveBranding?.storeLogoUrl || fallbackTenant?.logo_url;
+  const effectiveStoreName =
+    branding?.storeName || effectiveBranding?.storeName || fallbackTenant?.name || 'FIXO REPAIR OS';
+  const effectiveBranch =
+    order.branch || branding?.storeName || effectiveBranding?.storeName || fallbackTenant?.name || 'FIXO Store';
+  const effectiveHotline =
+    branding?.hotline || effectiveBranding?.hotline || effectiveBranding?.storeHotline || fallbackTenant?.hotline || '1900.6868 · fixo.vn';
+  const effectiveFooterNote =
+    branding?.footerNote ||
+    effectiveBranding?.footerNote ||
+    effectiveBranding?.receiptFooterNote ||
+    fallbackTenant?.receipt_footer_note ||
+    '* Quý khách vui lòng giữ phiếu này để đối chiếu khi nhận máy.<br />Cảm ơn quý khách đã tin tưởng dịch vụ FIXO Care!';
+
+  useEffect(() => {
+    setLogoError(false);
+  }, [effectiveLogoUrl]);
 
   const barcodeSvg = generateBarcodeSVG(order.id, {
     height: 36,
@@ -82,7 +102,7 @@ const CustomerSlip: React.FC<{
     <div className="k80-customer-copy">
       {/* Header */}
       <div className="text-center border-b border-dashed border-black pb-2 mb-2">
-        {effectiveLogoUrl ? (
+        {effectiveLogoUrl && !logoError ? (
           <div className="text-center mb-1">
             <img
               src={effectiveLogoUrl}
@@ -90,6 +110,7 @@ const CustomerSlip: React.FC<{
               className="k80-store-logo max-w-[42mm] max-h-[24mm] object-contain mx-auto mb-1 block"
               onError={(e) => {
                 (e.currentTarget as HTMLElement).style.display = 'none';
+                setLogoError(true);
               }}
             />
             <h1 className="font-heading font-black text-sm tracking-tight m-0 text-black">
@@ -107,7 +128,7 @@ const CustomerSlip: React.FC<{
             />
             <div className="text-left">
               <h1 className="font-heading font-bold text-sm tracking-tight m-0 text-black">
-                FIXO REPAIR OS
+                {effectiveStoreName}
               </h1>
               <p className="text-[9px] font-bold tracking-wide uppercase m-0 text-gray-700">
                 PHIẾU TIẾP NHẬN SỬA CHỮA · LIÊN KHÁCH HÀNG
@@ -319,7 +340,15 @@ const CustomerSlip: React.FC<{
  * Liên 2: Bản lưu cửa hàng & Kỹ thuật dán khay (Store Copy)
  * Tuyệt đối không hiển thị giá tiền, QR tra cứu, chữ ký và cam kết.
  */
-const StoreSlip: React.FC<{ order: RepairOrder }> = ({ order }) => {
+const StoreSlip: React.FC<{ order: RepairOrder; branding?: TenantReceiptBranding }> = ({
+  order,
+  branding,
+}) => {
+  const podsCare = useOptionalPodsCare();
+  const fallbackTenant = (order as any).tenant || podsCare?.tenantBranding || podsCare?.currentUser?.tenant;
+  const effectiveStoreName =
+    branding?.storeName || fallbackTenant?.name || 'FIXO REPAIR OS';
+
   const barcodeSvgStore = generateBarcodeSVG(order.id, {
     height: 24,
     barWidth: 1.35,
@@ -333,7 +362,7 @@ const StoreSlip: React.FC<{ order: RepairOrder }> = ({ order }) => {
       {/* Header */}
       <div className="text-center border-b border-dashed border-black pb-2 mb-2">
         <h2 className="font-heading font-bold text-xs tracking-tight uppercase m-0 text-black">
-          FIXO REPAIR OS · BẢN LƯU CỬA HÀNG & KỸ THUẬT
+          {effectiveStoreName} · BẢN LƯU CỬA HÀNG & KỸ THUẬT
         </h2>
         <div className="text-[9px] font-bold text-gray-700 tracking-wide uppercase mt-0.5">
           BẢN LƯU CỬA HÀNG & KỸ THUẬT (KHÔNG CÓ GIÁ TIỀN)
@@ -457,12 +486,49 @@ export const ThermalK80Receipt: React.FC<ThermalK80ReceiptProps> = ({
   slipMode,
   branding,
 }) => {
+  const podsCare = useOptionalPodsCare();
+  const primaryOrder = singleOrder || (orders && orders[0]);
+  const fallbackTenant = primaryOrder?.tenant || podsCare?.tenantBranding || podsCare?.currentUser?.tenant;
+  const resolvedBranding: TenantReceiptBranding | undefined =
+    branding || fallbackTenant
+      ? {
+          logoUrl:
+            branding?.logoUrl !== undefined
+              ? branding.logoUrl
+              : fallbackTenant?.logo_url ?? null,
+          storeName:
+            branding?.storeName ||
+            fallbackTenant?.name ||
+            undefined,
+          hotline:
+            branding?.hotline !== undefined
+              ? branding.hotline
+              : fallbackTenant?.hotline ?? null,
+          footerNote:
+            branding?.footerNote !== undefined
+              ? branding.footerNote
+              : fallbackTenant?.receipt_footer_note ?? null,
+          bankCode:
+            branding?.bankCode !== undefined
+              ? branding.bankCode
+              : (fallbackTenant as any)?.bank_code ?? null,
+          bankAccountNumber:
+            branding?.bankAccountNumber !== undefined
+              ? branding.bankAccountNumber
+              : (fallbackTenant as any)?.bank_account_number ?? null,
+          bankAccountHolder:
+            branding?.bankAccountHolder !== undefined
+              ? branding.bankAccountHolder
+              : (fallbackTenant as any)?.bank_account_holder ?? null,
+        }
+      : undefined;
+
   if (orders && orders.length >= 2) {
     const combinedHtml = renderCombinedThermalK80HTML(orders, {
       origin,
       isRoutingSlip,
       slipMode,
-      branding,
+      branding: resolvedBranding,
     });
     const match = combinedHtml.match(/<body>([\s\S]*?)<\/body>/i);
     const bodyInner = match ? match[1] : combinedHtml;
@@ -485,7 +551,7 @@ export const ThermalK80Receipt: React.FC<ThermalK80ReceiptProps> = ({
     <article className="thermal-receipt bg-white text-black p-3 rounded-[6px] border border-gray-300 shadow-sm w-[74mm] max-w-[74mm] font-sans text-[11px] leading-[1.35] mx-auto select-none print:shadow-none print:border-none print:p-0">
       {effectiveMode === 'dual' && (
         <>
-          <CustomerSlip order={order} origin={origin} branding={branding} />
+          <CustomerSlip order={order} origin={origin} branding={resolvedBranding} />
 
           {/* Vạch phân cách mô phỏng dao cắt giấy POS - Ẩn khi in thực tế */}
           <div className="my-4 py-2 border-y-2 border-dashed border-gray-400 bg-gray-100 text-center font-mono text-[10px] text-gray-600 flex items-center justify-center gap-2 select-none print:hidden">
@@ -500,16 +566,16 @@ export const ThermalK80Receipt: React.FC<ThermalK80ReceiptProps> = ({
             style={{ pageBreakAfter: 'always', breakAfter: 'page' }}
           />
 
-          <StoreSlip order={order} />
+          <StoreSlip order={order} branding={resolvedBranding} />
         </>
       )}
 
       {effectiveMode === 'customer_only' && (
-        <CustomerSlip order={order} origin={origin} branding={branding} />
+        <CustomerSlip order={order} origin={origin} branding={resolvedBranding} />
       )}
 
       {(effectiveMode === 'store_only' || effectiveMode === 'routing') && (
-        <StoreSlip order={order} />
+        <StoreSlip order={order} branding={resolvedBranding} />
       )}
     </article>
   );

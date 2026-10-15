@@ -36,7 +36,15 @@ class OrderController extends Controller
      */
     public function index(Request $request): JsonResponse
     {
-        $query = RepairOrder::with(['customer', 'deviceModel', 'branch', 'technician', 'qcInspector', 'createdByUser:id,name,role']);
+        $query = RepairOrder::with([
+            'customer',
+            'deviceModel',
+            'branch',
+            'technician',
+            'qcInspector',
+            'createdByUser:id,name,role',
+            'tenant:id,name,code,logo_url,hotline,receipt_footer_note',
+        ]);
 
         $status = $request->input('status');
         $filter = $request->input('filter');
@@ -399,7 +407,13 @@ class OrderController extends Controller
             );
 
             return $this->success(
-                $order->load(['customer', 'deviceModel', 'intakeChecklists', 'createdByUser:id,name,role']),
+                $order->load([
+                    'customer',
+                    'deviceModel',
+                    'intakeChecklists',
+                    'createdByUser:id,name,role',
+                    'tenant:id,name,code,logo_url,hotline,receipt_footer_note',
+                ]),
                 'Tạo đơn sửa chữa thành công.',
                 201
             );
@@ -638,7 +652,14 @@ class OrderController extends Controller
                 }
 
                 return $this->success(
-                    $order->fresh(['customer', 'deviceModel', 'branch', 'technician', 'createdByUser:id,name,role']),
+                    $order->fresh([
+                        'customer',
+                        'deviceModel',
+                        'branch',
+                        'technician',
+                        'createdByUser:id,name,role',
+                        'tenant:id,name,code,logo_url,hotline,receipt_footer_note',
+                    ]),
                     'Admin cập nhật thông tin đơn sửa chữa thành công.'
                 );
             });
@@ -668,7 +689,14 @@ class OrderController extends Controller
         $order->update($validated);
 
         return $this->success(
-            $order->fresh(['customer', 'deviceModel', 'branch', 'technician', 'createdByUser:id,name,role']),
+            $order->fresh([
+                'customer',
+                'deviceModel',
+                'branch',
+                'technician',
+                'createdByUser:id,name,role',
+                'tenant:id,name,code,logo_url,hotline,receipt_footer_note',
+            ]),
             'Cập nhật đơn sửa chữa thành công.'
         );
     }

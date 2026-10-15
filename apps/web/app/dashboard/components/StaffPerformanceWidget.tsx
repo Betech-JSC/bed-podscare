@@ -188,6 +188,7 @@ export const StaffPerformanceWidget: React.FC<StaffPerformanceWidgetProps> = ({
     );
   };
 
+  const isStaffLoading = isLoading || isFetching;
   const summary = data?.summary;
 
   const canViewRevenue = useMemo(() => {
@@ -214,9 +215,16 @@ export const StaffPerformanceWidget: React.FC<StaffPerformanceWidgetProps> = ({
               <span className="text-xs font-bold text-[#819089] uppercase tracking-[1px]">
                 KHU VỰC D · HIỆU SUẤT NHÂN SỰ
               </span>
-              <span className="px-2 py-0.5 rounded-full text-[11px] font-bold bg-[#edf5f0] text-[#176b58] border border-[#d0e5d9]">
-                {technicians.length + cskhStaff.length} nhân sự hoạt động
-              </span>
+              {isStaffLoading ? (
+                <span
+                  data-testid="staff-kpi-loading-skeleton"
+                  className="inline-block h-5 w-32 rounded-full bg-[#edf4f0] border border-[#d0e5d9] animate-pulse"
+                />
+              ) : (
+                <span className="px-2 py-0.5 rounded-full text-[11px] font-bold bg-[#edf5f0] text-[#176b58] border border-[#d0e5d9]">
+                  {technicians.length + cskhStaff.length} nhân sự hoạt động
+                </span>
+              )}
             </div>
             <h3 className="font-heading font-bold text-lg text-[#1c302b] m-0">
               Bảng theo dõi năng suất & chất lượng
@@ -231,44 +239,55 @@ export const StaffPerformanceWidget: React.FC<StaffPerformanceWidgetProps> = ({
               variant="secondary"
               size="sm"
               icon="rotate"
-              disabled={isFetching}
+              disabled={isStaffLoading}
               onClick={() => refetch()}
               className="text-xs"
             >
-              {isFetching ? 'Đang tải...' : 'Làm mới'}
+              {isStaffLoading ? 'Đang tải...' : 'Làm mới'}
             </Button>
           </div>
         </div>
 
         {/* Cụm tóm tắt chỉ số nhanh (Summary Pill Stats) */}
-        {summary && (
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 mb-4 p-3 bg-[#fafbfa] rounded-[10px] border border-[#eff3f1]">
-            <div>
-              <span className="text-[11px] text-[#7d8d85] block">Đơn hoàn tất toàn hệ thống:</span>
-              <span className="font-heading font-bold text-sm text-[#1c302b]">
-                {summary.total_completed ?? summary.completed ?? 0} đơn
-              </span>
-            </div>
-            <div>
-              <span className="text-[11px] text-[#7d8d85] block">Tỷ lệ bảo hành:</span>
-              <span className="font-heading font-bold text-sm text-[#bc5b52]">
-                {summary.warranty_rate_formatted ||
-                  `${summary.warranty_rate ?? 0}%`}
-              </span>
-            </div>
-            <div>
-              <span className="text-[11px] text-[#7d8d85] block">Tỷ lệ QC đạt chuẩn:</span>
-              <span className="font-heading font-bold text-sm text-[#176b58]">
-                {summary.qc_pass_rate !== null && summary.qc_pass_rate !== undefined ? `${summary.qc_pass_rate}%` : '—'}
-              </span>
-            </div>
-            <div>
-              <span className="text-[11px] text-[#7d8d85] block">Thời gian xử lý TB:</span>
-              <span className="font-heading font-bold text-sm text-[#2d3d35]">
-                {summary.avg_processing_time_formatted || '—'}
-              </span>
-            </div>
+        {isStaffLoading ? (
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 mb-4 p-3 bg-[#fafbfa] rounded-[10px] border border-[#eff3f1] animate-pulse">
+            {[1, 2, 3, 4].map((idx) => (
+              <div key={idx} className="space-y-1.5">
+                <div className="h-3 w-28 rounded bg-[#e5ece8]" />
+                <div className="h-4 w-16 rounded bg-[#edf4f0]" />
+              </div>
+            ))}
           </div>
+        ) : (
+          summary && (
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 mb-4 p-3 bg-[#fafbfa] rounded-[10px] border border-[#eff3f1]">
+              <div>
+                <span className="text-[11px] text-[#7d8d85] block">Đơn hoàn tất toàn hệ thống:</span>
+                <span className="font-heading font-bold text-sm text-[#1c302b]">
+                  {summary.total_completed ?? summary.completed ?? 0} đơn
+                </span>
+              </div>
+              <div>
+                <span className="text-[11px] text-[#7d8d85] block">Tỷ lệ bảo hành:</span>
+                <span className="font-heading font-bold text-sm text-[#bc5b52]">
+                  {summary.warranty_rate_formatted ||
+                    `${summary.warranty_rate ?? 0}%`}
+                </span>
+              </div>
+              <div>
+                <span className="text-[11px] text-[#7d8d85] block">Tỷ lệ QC đạt chuẩn:</span>
+                <span className="font-heading font-bold text-sm text-[#176b58]">
+                  {summary.qc_pass_rate !== null && summary.qc_pass_rate !== undefined ? `${summary.qc_pass_rate}%` : '—'}
+                </span>
+              </div>
+              <div>
+                <span className="text-[11px] text-[#7d8d85] block">Thời gian xử lý TB:</span>
+                <span className="font-heading font-bold text-sm text-[#2d3d35]">
+                  {summary.avg_processing_time_formatted || '—'}
+                </span>
+              </div>
+            </div>
+          )
         )}
 
         {/* Tab Switcher: Kỹ thuật viên vs CSKH */}
@@ -288,7 +307,11 @@ export const StaffPerformanceWidget: React.FC<StaffPerformanceWidgetProps> = ({
                 activeTab === 'technicians' ? 'bg-white/20 text-white' : 'bg-[#eef3f0] text-[#176b58]'
               }`}
             >
-              {technicians.length}
+              {isStaffLoading ? (
+                <span className="inline-block w-3 h-2.5 rounded bg-current/30 animate-pulse align-middle" />
+              ) : (
+                technicians.length
+              )}
             </span>
           </button>
 
@@ -307,16 +330,42 @@ export const StaffPerformanceWidget: React.FC<StaffPerformanceWidgetProps> = ({
                 activeTab === 'cskh' ? 'bg-white/20 text-white' : 'bg-[#eef3f0] text-[#176b58]'
               }`}
             >
-              {cskhStaff.length}
+              {isStaffLoading ? (
+                <span className="inline-block w-3 h-2.5 rounded bg-current/30 animate-pulse align-middle" />
+              ) : (
+                cskhStaff.length
+              )}
             </span>
           </button>
         </div>
 
         {/* Bảng dữ liệu */}
-        {isLoading ? (
-          <div className="py-12 flex flex-col items-center justify-center text-xs text-[#809088]">
-            <span className="w-5 h-5 rounded-full border-2 border-[#176b58] border-t-transparent animate-spin mb-2" />
-            <span>Đang tải số liệu hiệu suất nhân sự...</span>
+        {isStaffLoading ? (
+          <div
+            data-testid="staff-performance-loading-skeleton"
+            className="space-y-2.5 py-2 animate-pulse"
+          >
+            {[1, 2, 3, 4].map((idx) => (
+              <div
+                key={idx}
+                data-testid="staff-kpi-loading-skeleton"
+                className="flex items-center justify-between gap-4 p-3 rounded-[10px] border border-[#edf2ef] bg-[#fafbfa]"
+              >
+                <div className="flex items-center gap-3">
+                  <div className="w-8 h-8 rounded-full bg-[#e5ece8] shrink-0" />
+                  <div className="space-y-1.5">
+                    <div className="h-3.5 w-32 rounded bg-[#e5ece8]" />
+                    <div className="h-2.5 w-20 rounded bg-[#edf4f0]" />
+                  </div>
+                </div>
+                <div className="hidden sm:flex items-center gap-6">
+                  <div className="h-4 w-12 rounded bg-[#e5ece8]" />
+                  <div className="h-4 w-12 rounded bg-[#edf4f0]" />
+                  <div className="h-5 w-16 rounded-full bg-[#e5ece8]" />
+                  <div className="h-4 w-20 rounded bg-[#edf4f0]" />
+                </div>
+              </div>
+            ))}
           </div>
         ) : isError ? (
           <div className="py-8 text-center text-xs text-[#bc5b52] bg-[#fbefed] rounded-[10px] border border-[#f5c7c2]">

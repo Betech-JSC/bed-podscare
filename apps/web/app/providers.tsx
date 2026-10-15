@@ -3,12 +3,13 @@
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { ToastProvider, ConfirmProvider, useToast } from '@podscare/ui';
-import type { UserRole, UserProfile, RepairOrder, DeviceProfile, OrderDateFilter } from '@podscare/types';
+import type { UserRole, UserProfile, TenantInfo, RepairOrder, DeviceProfile, OrderDateFilter } from '@podscare/types';
 import {
   repairService,
   branchService,
   deviceService,
   authService,
+  tenantService,
   defaultHttpClient,
 } from '@podscare/api-client';
 
@@ -27,10 +28,12 @@ export interface BranchItem {
   is_active?: boolean;
 }
 
-interface PodsCareContextType {
+export interface PodsCareContextType {
   role: UserRole;
   setRole: (role: UserRole) => void;
   currentUser: UserProfile | null;
+  tenantBranding: Partial<TenantInfo> | null;
+  updateTenantBranding: (partial: Partial<TenantInfo> & Record<string, any>) => void;
   branch: string;
   branchId: string | number;
   setBranch: (branch: string, branchId?: string | number) => void;
@@ -55,7 +58,9 @@ interface PodsCareContextType {
   isMounted: boolean;
 }
 
-const PodsCareContext = createContext<PodsCareContextType | null>(null);
+export const PodsCareContext = createContext<PodsCareContextType | null>(null);
+
+export const useOptionalPodsCare = () => useContext(PodsCareContext);
 
 export const usePodsCare = () => {
   const context = useContext(PodsCareContext);
@@ -183,6 +188,62 @@ export const Providers: React.FC<{ children: React.ReactNode }> = ({ children })
   const [isAuthenticated, setIsAuthenticated] = useState<boolean>(false);
   const [isLoadingAuth, setIsLoadingAuth] = useState<boolean>(true);
   const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
+  const [tenantBranding, setTenantBranding] = useState<Partial<TenantInfo> | null>(null);
+
+  const updateTenantBranding = useCallback(
+    (partial: Partial<TenantInfo> & Record<string, any>) => {
+      if (!partial) return;
+      setTenantBranding((prev) => ({ ...(prev || {}), ...partial }));
+      setUserProfile((prev) => {
+        if (!prev) return prev;
+        const nextTenant = { ...(prev.tenant || {}), ...partial } as TenantInfo;
+        const nextProfile = { ...prev, tenant: nextTenant };
+        try {
+          if (typeof window !== 'undefined') {
+            localStorage.setItem('podscare_user', JSON.stringify(nextProfile));
+          }
+        } catch {
+          // ignore
+        }
+        return nextProfile;
+      });
+      try {
+        if (typeof window !== 'undefined') {
+          const rawUser = localStorage.getItem('podscare_user');
+          if (rawUser) {
+            const parsed = JSON.parse(rawUser);
+            const updatedUser = {
+              ...parsed,
+              tenant: { ...(parsed.tenant || {}), ...partial },
+            };
+            localStorage.setItem('podscare_user', JSON.stringify(updatedUser));
+          }
+        }
+      } catch {
+        // ignore
+      }
+      setOrders((prev) =>
+        prev.map((ord) => ({
+          ...ord,
+          tenant: { ...(ord.tenant || {}), ...partial },
+        }))
+      );
+    },
+    []
+  );
+
+  const fetchTenantBranding = useCallback(async () => {
+    if (!isAuthenticated || !token) return;
+    if (role === 'super_admin' || userProfile?.role === 'super_admin') return;
+    try {
+      const res = await tenantService.getSettings();
+      if (res?.success && res.data) {
+        updateTenantBranding(res.data);
+      }
+    } catch (e) {
+      console.warn('Could not fetch tenant branding settings from API:', e);
+    }
+  }, [isAuthenticated, token, role, userProfile?.role, updateTenantBranding]);
 
   // Nạp danh sách chi nhánh từ API và đồng bộ localStorage
   const fetchBranches = useCallback(async () => {
@@ -367,6 +428,9 @@ export const Providers: React.FC<{ children: React.ReactNode }> = ({ children })
           defaultHttpClient.setToken(savedToken);
           setToken(savedToken);
           setUserProfile(parsedUser);
+          if (parsedUser?.tenant) {
+            setTenantBranding(parsedUser.tenant);
+          }
           setRoleState(effectiveRole);
           setIsAuthenticated(true);
         } catch {
@@ -425,13 +489,14 @@ export const Providers: React.FC<{ children: React.ReactNode }> = ({ children })
     }
   }, []);
 
-  // Kích hoạt nạp chi nhánh và danh mục thiết bị từ API khi đã đăng nhập
+  // Kích hoạt nạp chi nhánh, cấu hình thương hiệu và danh mục thiết bị từ API khi đã đăng nhập
   useEffect(() => {
     if (isAuthenticated && token) {
       fetchBranches();
       fetchDeviceProfiles();
+      fetchTenantBranding();
     }
-  }, [isAuthenticated, token, fetchBranches, fetchDeviceProfiles]);
+  }, [isAuthenticated, token, fetchBranches, fetchDeviceProfiles, fetchTenantBranding]);
 
   const fetchOrders = useCallback(async (targetBranchId?: string | number, dateFilter: OrderDateFilter = 'today') => {
     if (!isAuthenticated || !token) return;
@@ -560,6 +625,7 @@ export const Providers: React.FC<{ children: React.ReactNode }> = ({ children })
             checks: mappedChecks,
             photos: mappedPhotos,
             createdBy: o.created_by_user?.name || o.createdBy || 'FIXO',
+            tenant: o.tenant || userProfile?.tenant || tenantBranding || undefined,
           };
         });
 
@@ -571,7 +637,7 @@ export const Providers: React.FC<{ children: React.ReactNode }> = ({ children })
       console.warn('Could not fetch orders from API:', e);
       setOrders([]);
     }
-  }, [branchId, isAuthenticated, token, userProfile?.role, role]);
+  }, [branchId, isAuthenticated, token, userProfile?.role, userProfile?.tenant, tenantBranding, role]);
 
   useEffect(() => {
     if (isAuthenticated && token) {
@@ -701,6 +767,7 @@ export const Providers: React.FC<{ children: React.ReactNode }> = ({ children })
     defaultHttpClient.setToken(data.token);
     setToken(data.token);
     setUserProfile(profile);
+    setTenantBranding(profile.tenant || null);
     setRoleState(normRole);
     setIsAuthenticated(true);
 
@@ -749,6 +816,7 @@ export const Providers: React.FC<{ children: React.ReactNode }> = ({ children })
       defaultHttpClient.setToken(null);
       setToken(null);
       setUserProfile(null);
+      setTenantBranding(null);
       setIsAuthenticated(false);
       setOrders([]);
     }
@@ -789,6 +857,8 @@ export const Providers: React.FC<{ children: React.ReactNode }> = ({ children })
           role,
           setRole,
           currentUser,
+          tenantBranding,
+          updateTenantBranding,
           branch,
           branchId,
           setBranch,

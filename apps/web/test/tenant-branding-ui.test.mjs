@@ -101,3 +101,29 @@ test('5. @podscare/types TenantInfo Verification', () => {
   assert.ok(content.includes('hotline?: string | null;'), 'TenantInfo phải có hotline');
   assert.ok(content.includes('receipt_footer_note?: string | null;'), 'TenantInfo phải có receipt_footer_note');
 });
+
+test('6. Branding Page Context Sync & RepairOrder.tenant Type Verification', () => {
+  const brandingPagePath = path.resolve(__dirname, '../app/branding/page.tsx');
+  const brandingContent = fs.readFileSync(brandingPagePath, 'utf-8');
+
+  assert.ok(
+    brandingContent.includes('updateTenantBranding'),
+    'branding/page.tsx phải gọi updateTenantBranding để đồng bộ cấu hình sang PodsCareContext & localStorage'
+  );
+  assert.ok(
+    brandingContent.includes('updateTenantBranding({ logo_url: res.data.logo_url })'),
+    'branding/page.tsx phải đồng bộ logo_url mới lên context ngay sau khi upload'
+  );
+  assert.ok(
+    brandingContent.includes('updateTenantBranding({ logo_url: null })'),
+    'branding/page.tsx phải đồng bộ logo_url = null lên context ngay sau khi xóa logo'
+  );
+
+  const orderTypesPath = path.resolve(rootDir, 'packages/types/src/order.ts');
+  const orderTypesContent = fs.readFileSync(orderTypesPath, 'utf-8');
+  assert.ok(
+    orderTypesContent.includes('tenant?:') && orderTypesContent.includes('logo_url?: string | null;'),
+    'RepairOrder interface trong packages/types/src/order.ts phải khai báo trường tenant tùy chọn'
+  );
+});
+

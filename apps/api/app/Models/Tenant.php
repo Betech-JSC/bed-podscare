@@ -87,4 +87,68 @@ class Tenant extends Model
     {
         return $this->isActive() && ($this->expires_at === null || $this->expires_at->isFuture());
     }
+
+    /**
+     * Chuẩn hóa đường dẫn logo thương hiệu thành URL tuyệt đối hợp lệ khớp với host/port thực tế của request (hoặc giữ nguyên Data URI).
+     */
+    public function getLogoUrlAttribute(?string $value): ?string
+    {
+        if ($value === null) {
+            return null;
+        }
+
+        $trimmed = trim($value);
+        if ($trimmed === '') {
+            return null;
+        }
+
+        if (str_starts_with($trimmed, 'data:image/')) {
+            return $trimmed;
+        }
+
+        $baseUrl = $this->resolveStorageBaseUrl();
+
+        // Nếu là URL tuyệt đối (http:// hoặc https://)
+        if (preg_match('#^https?://#i', $trimmed)) {
+            // Nếu là URL trỏ tới /storage/ trên localhost hoặc 127.0.0.1 (ví dụ thiếu port :8000 do APP_URL=http://localhost),
+            // chuẩn hóa lại origin theo $baseUrl thực tế của request hiện tại.
+            if (preg_match('#^https?://(?:localhost|127\.0\.0\.1)(?::\d+)?/(storage/.*)$#i', $trimmed, $matches)) {
+                $storagePath = preg_replace('#^(?:storage/)+#', 'storage/', ltrim($matches[1], '/'));
+                return "{$baseUrl}/{$storagePath}";
+            }
+
+            return $trimmed;
+        }
+
+        // Xử lý đường dẫn tương đối: '/storage/tenants/...', 'storage/tenants/...', hoặc 'tenants/1/logo/...'
+        $cleanPath = ltrim($trimmed, '/');
+        $cleanPath = preg_replace('#^(?:storage/)+#', '', $cleanPath);
+
+        return "{$baseUrl}/storage/{$cleanPath}";
+    }
+
+    /**
+     * Xác định Base URL ưu tiên theo scheme + host + port thực tế của HTTP request hiện tại.
+     */
+    protected function resolveStorageBaseUrl(): string
+    {
+        $appUrl = rtrim((string) config('app.url', 'http://localhost'), '/');
+
+        if (app()->bound('request')) {
+            $req = request();
+            if ($req instanceof \Illuminate\Http\Request) {
+                $schemeAndHost = rtrim($req->getSchemeAndHttpHost(), '/');
+                if ($schemeAndHost !== '') {
+                    if (in_array($schemeAndHost, ['http://localhost', 'http://127.0.0.1'], true)
+                        && preg_match('#^https?://(?:localhost|127\.0\.0\.1):\d+$#i', $appUrl)) {
+                        return $appUrl;
+                    }
+
+                    return $schemeAndHost;
+                }
+            }
+        }
+
+        return $appUrl;
+    }
 }

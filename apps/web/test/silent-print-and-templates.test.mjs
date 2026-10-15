@@ -352,4 +352,88 @@ test('12. A4 Template Custom Branding & Co-branding Verification', async (t) => 
   });
 });
 
+test('13. Order.tenant Automatic Branding & Logo Fallback on Error Verification', () => {
+  const orderWithTenant = {
+    id: 'PC26-22580',
+    name: 'Nguyễn Văn A',
+    phone: '0987654321',
+    device: 'AirPods Pro 2',
+    serial: 'GW4Y90ABCD',
+    issue: 'Tai trái rè tiếng khi bật ANC',
+    price: 350000,
+    branch: 'Chi nhánh Trung tâm',
+    createdBy: 'KTV Hoàng',
+    date: '03/10/2026',
+    tenant: {
+      id: 9,
+      name: 'PodsCare Luxury Lab',
+      code: 'PODSLUX',
+      logo_url: 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==',
+      hotline: '0901.999.888',
+      receipt_footer_note: 'Cảm ơn quý khách đã ghé PodsCare Luxury Lab!',
+    },
+  };
+
+  // Gọi renderThermalK80HTML mà KHÔNG truyền options.branding — phải tự động đọc từ order.tenant
+  const html = renderThermalK80HTML(orderWithTenant, 'https://podscare.vn', { slipMode: 'dual' });
+
+  assert.ok(
+    html.includes('<img src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==" class="k80-store-logo"'),
+    'Phải tự động render logo_url từ order.tenant khi không truyền options.branding'
+  );
+  assert.ok(
+    html.includes('PodsCare Luxury Lab'),
+    'Phải hiển thị tên cửa hàng từ order.tenant.name'
+  );
+  assert.ok(
+    html.includes('PodsCare Luxury Lab · BẢN LƯU CỬA HÀNG & KỸ THUẬT'),
+    'Liên 2 (Store Copy) phải hiển thị tên cửa hàng từ order.tenant.name'
+  );
+  assert.ok(
+    html.includes('0901.999.888'),
+    'Phải hiển thị hotline từ order.tenant.hotline'
+  );
+  assert.ok(
+    html.includes('Cảm ơn quý khách đã ghé PodsCare Luxury Lab!'),
+    'Phải hiển thị receipt_footer_note từ order.tenant'
+  );
+  assert.ok(
+    html.includes('k80-logo-fallback'),
+    'Phải có khối dự phòng k80-logo-fallback hiển thị FIXO_LOGO_SVG khi ảnh logo lỗi'
+  );
+});
+
+test('14. useSilentPrint Image Loading Synchronization & Context Branding Fallback Verification', () => {
+  const hookPath = path.join(printDir, 'useSilentPrint.ts');
+  const content = fs.readFileSync(hookPath, 'utf-8');
+
+  assert.ok(content.includes('useOptionalPodsCare'), 'useSilentPrint phải sử dụng useOptionalPodsCare để lấy branding từ context');
+  assert.ok(content.includes('iframeDoc.images'), 'useSilentPrint phải kiểm tra danh sách ảnh trong iframeDoc.images trước khi in');
+  assert.ok(content.includes('!img.complete'), 'useSilentPrint phải lọc các ảnh chưa tải xong (!img.complete)');
+  assert.ok(content.includes("addEventListener('load'"), 'useSilentPrint phải đợi sự kiện load của ảnh');
+  assert.ok(content.includes("addEventListener('error'"), 'useSilentPrint phải xử lý sự kiện error của ảnh để không treo lệnh in');
+  assert.ok(content.includes('1500'), 'useSilentPrint phải có timeout an toàn 1500ms');
+  assert.ok(content.includes('Promise.race'), 'useSilentPrint phải dùng Promise.race giữa tải ảnh và timeout');
+});
+
+test('15. Frontend Order Mappers Preserve Tenant Verification', () => {
+  const providersContent = fs.readFileSync(path.resolve(__dirname, '../app/providers.tsx'), 'utf-8');
+  assert.ok(providersContent.includes('tenantBranding'), 'providers.tsx phải quản lý state tenantBranding');
+  assert.ok(providersContent.includes('updateTenantBranding'), 'providers.tsx phải cung cấp hàm updateTenantBranding');
+  assert.ok(providersContent.includes('tenant: o.tenant'), 'providers.tsx fetchOrders phải bảo toàn trường tenant');
+
+  const repairsContent = fs.readFileSync(path.resolve(__dirname, '../app/repairs/page.tsx'), 'utf-8');
+  assert.ok(repairsContent.includes('tenant: o.tenant || tenantBranding || currentUser?.tenant'), 'repairs/page.tsx phải bảo toàn trường tenant khi map đơn hàng');
+
+  const printPageContent = fs.readFileSync(path.resolve(__dirname, '../app/print/[id]/page.tsx'), 'utf-8');
+  assert.ok(printPageContent.includes('tenant: o.tenant || tenantBranding || currentUser?.tenant'), 'print/[id]/page.tsx phải bảo toàn trường tenant');
+
+  const intakeContent = fs.readFileSync(path.resolve(__dirname, '../app/components/IntakeWizardModal.tsx'), 'utf-8');
+  assert.ok(intakeContent.includes('tenant: data?.tenant || data?.data?.tenant || tenantBranding || currentUser?.tenant'), 'IntakeWizardModal.tsx phải gắn tenant vào đơn hàng mới tạo');
+
+  const checkoutContent = fs.readFileSync(path.resolve(__dirname, '../app/components/CheckoutHandoverModal.tsx'), 'utf-8');
+  assert.ok(checkoutContent.includes('order.tenant') && checkoutContent.includes('podsCare?.tenantBranding'), 'CheckoutHandoverModal.tsx phải bảo toàn tenant sau khi thu tiền & trả máy');
+});
+
+
 

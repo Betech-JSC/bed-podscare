@@ -6,6 +6,7 @@ import type { ActionableTasks } from '@podscare/types';
 
 export interface ActionableTasksCenterProps {
   actionableTasks?: ActionableTasks;
+  isLoading?: boolean;
   onOpenOrderDetail?: (orderCode: string, orderId?: number) => void;
   onOpenCheckout?: (order: any) => void;
   onNavigate?: (path: string) => void;
@@ -15,6 +16,7 @@ type TabType = 'all' | 'overdue' | 'qc' | 'pickup';
 
 export const ActionableTasksCenter: React.FC<ActionableTasksCenterProps> = ({
   actionableTasks,
+  isLoading = false,
   onOpenOrderDetail,
   onOpenCheckout,
   onNavigate,
@@ -70,10 +72,14 @@ export const ActionableTasksCenter: React.FC<ActionableTasksCenterProps> = ({
             <span className="text-xs font-bold text-[#819089] uppercase tracking-[1px]">
               ACTION CENTER · TRUNG TÂM TÁC NGHIỆP
             </span>
-            {totalCount > 0 && (
-              <span className="px-2 py-0.5 rounded-full text-[11px] font-bold bg-[#fbefed] text-[#bc5b52] border border-[#f5c7c2]">
-                {totalCount} việc cần can thiệp
-              </span>
+            {isLoading ? (
+              <span className="h-5 w-28 rounded-full bg-[#edf5f0] animate-pulse" />
+            ) : (
+              totalCount > 0 && (
+                <span className="px-2 py-0.5 rounded-full text-[11px] font-bold bg-[#fbefed] text-[#bc5b52] border border-[#f5c7c2]">
+                  {totalCount} việc cần can thiệp
+                </span>
+              )
             )}
           </div>
           <h3 className="font-heading font-bold text-lg text-[#1c302b] m-0">
@@ -101,17 +107,21 @@ export const ActionableTasksCenter: React.FC<ActionableTasksCenterProps> = ({
               }`}
             >
               <span>{tab.label}</span>
-              <span
-                className={`text-[10px] px-1.5 py-0.2 rounded-full ${
-                  isActive
-                    ? 'bg-white/20 text-white font-bold'
-                    : tab.alert
-                    ? 'bg-[#fbefed] text-[#bc5b52] font-bold'
-                    : 'bg-[#e5ece8] text-[#55665e]'
-                }`}
-              >
-                {tab.count}
-              </span>
+              {isLoading ? (
+                <span className="inline-block w-4 h-3.5 rounded-full bg-current/20 animate-pulse" />
+              ) : (
+                <span
+                  className={`text-[10px] px-1.5 py-0.2 rounded-full ${
+                    isActive
+                      ? 'bg-white/20 text-white font-bold'
+                      : tab.alert
+                      ? 'bg-[#fbefed] text-[#bc5b52] font-bold'
+                      : 'bg-[#e5ece8] text-[#55665e]'
+                  }`}
+                >
+                  {tab.count}
+                </span>
+              )}
             </button>
           );
         })}
@@ -119,7 +129,28 @@ export const ActionableTasksCenter: React.FC<ActionableTasksCenterProps> = ({
 
       {/* Task List */}
       <div className="max-h-[380px] overflow-y-auto space-y-2.5 pr-1 divide-y divide-[#f4f7f5]">
-        {!hasItemsInTab ? (
+        {isLoading ? (
+          <div data-testid="actionable-tasks-loading-skeleton" className="space-y-3 py-2">
+            {[1, 2, 3].map((row) => (
+              <div
+                key={row}
+                className="flex items-center justify-between gap-3 p-2 rounded-[8px] border border-[#f0f3f1]"
+              >
+                <div className="flex items-center gap-3 min-w-0 flex-1">
+                  <div className="w-9 h-9 rounded-[8px] bg-[#edf5f0] animate-pulse flex-none" />
+                  <div className="space-y-1.5 flex-1">
+                    <div className="flex items-center gap-2">
+                      <span className="h-4 w-16 rounded bg-[#e5ece8] animate-pulse" />
+                      <span className="h-4 w-24 rounded bg-[#edf4f0] animate-pulse" />
+                    </div>
+                    <div className="h-3.5 w-3/4 rounded bg-[#edf4f0] animate-pulse" />
+                  </div>
+                </div>
+                <div className="h-8 w-28 rounded-[7px] bg-[#e5ece8] animate-pulse flex-none" />
+              </div>
+            ))}
+          </div>
+        ) : !hasItemsInTab ? (
           <div className="py-8 text-center text-xs text-[#7c8982]">
             <div className="w-10 h-10 rounded-full bg-[#eaf4ef] text-[#176b58] grid place-items-center mx-auto mb-2">
               <Icon name="check" size={20} />

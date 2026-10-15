@@ -39,7 +39,7 @@ function RepairsPageContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const { toast } = useToast();
-  const { orders, updateOrder, branch, branchId, setBranch, branches, role, currentUser, invalidateOrders } =
+  const { orders, updateOrder, branch, branchId, setBranch, branches, role, currentUser, tenantBranding, invalidateOrders } =
     usePodsCare();
 
   const normalizeVndPrice = (raw: unknown): number => {
@@ -351,6 +351,7 @@ function RepairsPageContent() {
         createdAt: o.created_at || o.createdAt,
         intake_batch_code: o.intake_batch_code,
         batchOrders: o.batch_orders || o.batchOrders,
+        tenant: o.tenant || tenantBranding || currentUser?.tenant || undefined,
       };
     });
 
@@ -401,7 +402,7 @@ function RepairsPageContent() {
     }
 
     return mappedList;
-  }, [apiOrdersData, orders, search, statusFilter, orderTypeFilter, dateType]);
+  }, [apiOrdersData, orders, search, statusFilter, orderTypeFilter, dateType, tenantBranding, currentUser?.tenant]);
 
   // Lắng nghe sự kiện realtime cập nhật trạng thái đơn (kèm chuông Audio Chime)
   React.useEffect(() => {
@@ -2200,8 +2201,18 @@ function RepairsPageContent() {
           order={selectedOrder}
           onClose={() => setCheckoutModalOpen(false)}
           onSuccess={(updatedOrder) => {
+            const mergedOrder: RepairOrder = {
+              ...updatedOrder,
+              tenant:
+                updatedOrder.tenant ||
+                selectedOrder?.tenant ||
+                tenantBranding ||
+                currentUser?.tenant ||
+                undefined,
+            };
             setCheckoutModalOpen(false);
-            setSelectedOrder(updatedOrder);
+            setSelectedOrder(mergedOrder);
+            updateOrder(mergedOrder);
             refetch();
             if (invalidateOrders) invalidateOrders();
           }}
@@ -2215,8 +2226,18 @@ function RepairsPageContent() {
           order={selectedOrder}
           onClose={() => setAdminEditModalOpen(false)}
           onSuccess={(updatedOrder) => {
+            const mergedOrder: RepairOrder = {
+              ...updatedOrder,
+              tenant:
+                updatedOrder.tenant ||
+                selectedOrder?.tenant ||
+                tenantBranding ||
+                currentUser?.tenant ||
+                undefined,
+            };
             setAdminEditModalOpen(false);
-            setSelectedOrder(updatedOrder);
+            setSelectedOrder(mergedOrder);
+            updateOrder(mergedOrder);
             refetch();
             if (invalidateOrders) invalidateOrders();
           }}

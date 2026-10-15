@@ -110,7 +110,7 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
   initialCustomerPhone,
 }) => {
   const { toast } = useToast();
-  const { categories, deviceProfiles, addOrder, currentUser, branch, branchId, branches } =
+  const { categories, deviceProfiles, addOrder, currentUser, tenantBranding, branch, branchId, branches } =
     usePodsCare();
   const { printReceipt, currentFormat, setFormat, isPrinting: isSilentPrinting } = useSilentPrint();
   const [printModalOpen, setPrintModalOpen] = useState(false);
@@ -929,6 +929,7 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
             : null,
           createdAt: new Date().toISOString(),
           intake_batch_code: batchCode,
+          tenant: data?.tenant || data?.data?.tenant || tenantBranding || currentUser?.tenant || undefined,
         };
 
         createdOrders.push(newOrder);

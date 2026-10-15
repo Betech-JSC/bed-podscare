@@ -20,7 +20,7 @@ export default function PrintReceiptPage() {
   const params = useParams();
   const router = useRouter();
   const id = params?.id as string;
-  const { orders } = usePodsCare();
+  const { orders, currentUser, tenantBranding } = usePodsCare();
 
   const [format, setFormatState] = useState<PrintFormat>('k80');
   const { printReceipt, isPrinting } = useSilentPrint();
@@ -67,7 +67,10 @@ export default function PrintReceiptPage() {
         existing.checks.length > 0 &&
         existing.createdBy
       ) {
-        return existing;
+        return {
+          ...existing,
+          tenant: existing.tenant || tenantBranding || currentUser?.tenant || undefined,
+        };
       }
 
       // Otherwise fetch dynamically from API with dual-lookup (integer ID or order_code)
@@ -148,6 +151,7 @@ export default function PrintReceiptPage() {
         checks: mappedChecks,
         photos: mappedPhotos,
         createdBy: o.created_by_user?.name || o.createdBy || 'FIXO',
+        tenant: o.tenant || tenantBranding || currentUser?.tenant || undefined,
       };
       return mapped;
     },

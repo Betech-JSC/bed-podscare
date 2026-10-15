@@ -651,6 +651,9 @@ export interface TenantReceiptBranding {
   storeHotline?: string | null;
   footerNote?: string | null;
   receiptFooterNote?: string | null;
+  bankCode?: string | null;
+  bankAccountNumber?: string | null;
+  bankAccountHolder?: string | null;
 }
 
 export interface ThermalK80RenderOptions {
@@ -751,7 +754,8 @@ export function buildCustomerCopyHtml(order: RepairOrder, origin?: string, brand
     <div class="k80-header">
       ${effectiveLogoUrl ? `
       <div style="text-align: center; margin-bottom: 3px;">
-        <img src="${effectiveLogoUrl}" class="k80-store-logo" alt="Logo" onerror="this.style.display='none'" />
+        <img src="${effectiveLogoUrl}" class="k80-store-logo" alt="Logo" onerror="this.style.display='none'; if(this.nextElementSibling) this.nextElementSibling.style.display='inline-block';" />
+        <div class="k80-logo-fallback" style="display: none;">${FIXO_LOGO_SVG}</div>
       </div>
       <div class="k80-brand">${effectiveStoreName}</div>
       <div class="k80-subtitle">PHIẾU TIẾP NHẬN SỬA CHỮA · LIÊN KHÁCH HÀNG</div>
@@ -759,7 +763,7 @@ export function buildCustomerCopyHtml(order: RepairOrder, origin?: string, brand
       <div style="display: flex; justify-content: center; align-items: center; gap: 6px;">
         ${FIXO_LOGO_SVG}
         <div style="text-align: left;">
-          <div class="k80-brand">FIXO REPAIR OS</div>
+          <div class="k80-brand">${effectiveStoreName}</div>
           <div class="k80-subtitle">PHIẾU TIẾP NHẬN SỬA CHỮA · LIÊN KHÁCH HÀNG</div>
         </div>
       </div>
@@ -901,7 +905,8 @@ export function buildCustomerCopyHtml(order: RepairOrder, origin?: string, brand
  * - TUYỆT ĐỐI KHÔNG CHỨA: Giá tiền, mã QR tra cứu, chữ ký khách và cam kết bảo hành.
  * - Cuối liên có đệm đẩy giấy 18mm để máy in cắt trọn vẹn không sót mép giấy.
  */
-export function buildStoreCopyHtml(order: RepairOrder): string {
+export function buildStoreCopyHtml(order: RepairOrder, branding?: TenantReceiptBranding): string {
+  const effectiveStoreName = branding?.storeName || (order as any).tenant?.name || 'FIXO REPAIR OS';
   const barcodeSvgStore = generateBarcodeSVG(order.id, {
     height: 24,
     barWidth: 1.35,
@@ -938,7 +943,7 @@ export function buildStoreCopyHtml(order: RepairOrder): string {
       : '';
 
   return `<div class="k80-wrapper k80-store-copy">
-    <div class="k80-store-header">FIXO REPAIR OS · BẢN LƯU CỬA HÀNG & KỸ THUẬT</div>
+    <div class="k80-store-header">${effectiveStoreName} · BẢN LƯU CỬA HÀNG & KỸ THUẬT</div>
     <div class="k80-store-title">PHIẾU ĐIỀU PHỐI / TEM KHAY KỸ THUẬT</div>
     <div class="k80-store-sub">Chi nhánh: ${order.branch || 'FIXO Store'} · Ngày: ${order.date || 'Hôm nay'} · NV: ${order.createdBy || 'FIXO'}</div>
 
@@ -1097,7 +1102,8 @@ export function buildCombinedCustomerCopyHtml(
     <div class="k80-header">
       ${effectiveLogoUrl ? `
       <div style="text-align: center; margin-bottom: 3px;">
-        <img src="${effectiveLogoUrl}" class="k80-store-logo" alt="Logo" onerror="this.style.display='none'" />
+        <img src="${effectiveLogoUrl}" class="k80-store-logo" alt="Logo" onerror="this.style.display='none'; if(this.nextElementSibling) this.nextElementSibling.style.display='inline-block';" />
+        <div class="k80-logo-fallback" style="display: none;">${FIXO_LOGO_SVG}</div>
       </div>
       <div class="k80-brand">${effectiveStoreName}</div>
       <div class="k80-subtitle">PHIẾU TIẾP NHẬN SỬA CHỮA · LIÊN KHÁCH HÀNG</div>
@@ -1106,7 +1112,7 @@ export function buildCombinedCustomerCopyHtml(
       <div style="display: flex; justify-content: center; align-items: center; gap: 6px;">
         ${FIXO_LOGO_SVG}
         <div style="text-align: left;">
-          <div class="k80-brand">FIXO REPAIR OS</div>
+          <div class="k80-brand">${effectiveStoreName}</div>
           <div class="k80-subtitle">PHIẾU TIẾP NHẬN SỬA CHỮA · LIÊN KHÁCH HÀNG</div>
           <div style="font-size: 9px; font-weight: 800; color: #176b58; margin-top: 1px;">(ĐỢT TIẾP NHẬN GỘP ${orders.length} THIẾT BỊ)</div>
         </div>
@@ -1211,8 +1217,9 @@ export function buildCombinedCustomerCopyHtml(
  * Xây dựng nội dung Liên 2 Gộp: Bản lưu cửa hàng & Kỹ thuật dán khay cho đợt tiếp nhận nhiều thiết bị.
  * Liệt kê tất cả các máy trong đợt để thủ kho/kỹ thuật kẹp khay đối soát.
  */
-export function buildCombinedStoreCopyHtml(orders: RepairOrder[]): string {
+export function buildCombinedStoreCopyHtml(orders: RepairOrder[], branding?: TenantReceiptBranding): string {
   const primaryOrder = orders[0];
+  const effectiveStoreName = branding?.storeName || (primaryOrder as any).tenant?.name || 'FIXO REPAIR OS';
   const batchCode = primaryOrder.intake_batch_code || `IB26-${orders.map((o) => extractOrderDisplaySuffix(o.id)).join('-')}`;
   const barcodeSvgStore = generateBarcodeSVG(primaryOrder.intake_batch_code || primaryOrder.id, {
     height: 24,
@@ -1253,7 +1260,7 @@ export function buildCombinedStoreCopyHtml(orders: RepairOrder[]): string {
     .join('');
 
   return `<div class="k80-wrapper k80-store-copy">
-    <div class="k80-store-header">FIXO REPAIR OS · BẢN LƯU CỬA HÀNG & KỸ THUẬT</div>
+    <div class="k80-store-header">${effectiveStoreName} · BẢN LƯU CỬA HÀNG & KỸ THUẬT</div>
     <div class="k80-store-title">PHIẾU ĐIỀU PHỐI / BẢN LƯU GỘP (${orders.length} THIẾT BỊ)</div>
     <div class="k80-store-sub">Chi nhánh: ${primaryOrder.branch || 'FIXO Store'} · Ngày: ${primaryOrder.date || 'Hôm nay'} · NV: ${primaryOrder.createdBy || 'FIXO'}</div>
 
@@ -1323,11 +1330,11 @@ export function renderCombinedThermalK80HTML(
   if (effectiveMode === 'dual') {
     bodyContent = `${buildCombinedCustomerCopyHtml(orders, effectiveOrigin, effectiveBranding)}
     <div class="k80-slip-separator"></div>
-    ${buildCombinedStoreCopyHtml(orders)}`;
+    ${buildCombinedStoreCopyHtml(orders, effectiveBranding)}`;
   } else if (effectiveMode === 'customer_only') {
     bodyContent = buildCombinedCustomerCopyHtml(orders, effectiveOrigin, effectiveBranding);
   } else {
-    bodyContent = buildCombinedStoreCopyHtml(orders);
+    bodyContent = buildCombinedStoreCopyHtml(orders, effectiveBranding);
   }
 
   const batchCode = primaryOrder.intake_batch_code || `IB26-${orders.length}Devices`;
@@ -1676,12 +1683,12 @@ export function renderThermalK80HTML(
   if (effectiveMode === 'dual') {
     bodyContent = `${buildCustomerCopyHtml(order, effectiveOrigin, effectiveBranding)}
     <div class="k80-slip-separator"></div>
-    ${buildStoreCopyHtml(order)}`;
+    ${buildStoreCopyHtml(order, effectiveBranding)}`;
   } else if (effectiveMode === 'customer_only') {
     bodyContent = buildCustomerCopyHtml(order, effectiveOrigin, effectiveBranding);
   } else {
     // 'store_only' or 'routing'
-    bodyContent = buildStoreCopyHtml(order);
+    bodyContent = buildStoreCopyHtml(order, effectiveBranding);
   }
 
   return `<!DOCTYPE html>

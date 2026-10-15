@@ -10,8 +10,10 @@ import {
 import {
   renderThermalK80HTML,
   type ThermalK80RenderOptions,
+  type TenantReceiptBranding,
 } from './thermalK80HtmlBuilder';
 import { renderA4ReceiptHTML } from './a4ReceiptHtmlBuilder';
+import { useOptionalPodsCare } from '../../providers';
 
 export interface UseSilentPrintOptions {
   onSuccess?: () => void;
@@ -36,6 +38,7 @@ export interface UseSilentPrintReturn {
 export function useSilentPrint(options?: UseSilentPrintOptions): UseSilentPrintReturn {
   const [isPrinting, setIsPrinting] = useState<boolean>(false);
   const [currentFormat, setCurrentFormatState] = useState<PrintFormat>(getStoredPrintFormat);
+  const podsCare = useOptionalPodsCare();
 
   // Lắng nghe thay đổi format từ các component hoặc tab khác
   useEffect(() => {
@@ -91,16 +94,71 @@ export function useSilentPrint(options?: UseSilentPrintOptions): UseSilentPrintR
           iframe.style.opacity = '0';
           iframe.style.pointerEvents = 'none';
 
-          // 2. Chuẩn bị nội dung HTML tương ứng (Single-flight Print Job)
+          // 2. Chuẩn bị nội dung HTML tương ứng (Single-flight Print Job) + Fallback Tenant Branding
           const origin = window.location.origin;
-          const branding =
+          const primaryOrder = Array.isArray(orderOrOrders) ? orderOrOrders[0] : orderOrOrders;
+          let storedTenant: any = null;
+          try {
+            const rawUser = window.localStorage.getItem('podscare_user');
+            if (rawUser) {
+              storedTenant = JSON.parse(rawUser)?.tenant || null;
+            }
+          } catch {}
+
+          const fallbackTenant =
+            primaryOrder?.tenant ||
+            podsCare?.tenantBranding ||
+            podsCare?.currentUser?.tenant ||
+            storedTenant;
+
+          const callerBranding =
             typeof optionsOrRoutingSlip === 'object' && optionsOrRoutingSlip !== null
               ? optionsOrRoutingSlip.branding
               : undefined;
+
+          const effectiveBranding: TenantReceiptBranding | undefined =
+            callerBranding || fallbackTenant
+              ? {
+                  logoUrl:
+                    callerBranding?.logoUrl !== undefined
+                      ? callerBranding.logoUrl
+                      : fallbackTenant?.logo_url ?? null,
+                  storeName:
+                    callerBranding?.storeName ||
+                    fallbackTenant?.name ||
+                    undefined,
+                  hotline:
+                    callerBranding?.hotline !== undefined
+                      ? callerBranding.hotline
+                      : fallbackTenant?.hotline ?? null,
+                  footerNote:
+                    callerBranding?.footerNote !== undefined
+                      ? callerBranding.footerNote
+                      : fallbackTenant?.receipt_footer_note ?? null,
+                  bankCode:
+                    callerBranding?.bankCode !== undefined
+                      ? callerBranding.bankCode
+                      : (fallbackTenant as any)?.bank_code ?? null,
+                  bankAccountNumber:
+                    callerBranding?.bankAccountNumber !== undefined
+                      ? callerBranding.bankAccountNumber
+                      : (fallbackTenant as any)?.bank_account_number ?? null,
+                  bankAccountHolder:
+                    callerBranding?.bankAccountHolder !== undefined
+                      ? callerBranding.bankAccountHolder
+                      : (fallbackTenant as any)?.bank_account_holder ?? null,
+                }
+              : undefined;
+
+          const k80Options: ThermalK80RenderOptions =
+            typeof optionsOrRoutingSlip === 'boolean'
+              ? { isRoutingSlip: optionsOrRoutingSlip, branding: effectiveBranding }
+              : { ...optionsOrRoutingSlip, branding: effectiveBranding };
+
           const htmlContent =
             activeFormat === 'a4'
-              ? renderA4ReceiptHTML(orderOrOrders, origin, branding)
-              : renderThermalK80HTML(orderOrOrders, origin, optionsOrRoutingSlip);
+              ? renderA4ReceiptHTML(orderOrOrders, origin, effectiveBranding)
+              : renderThermalK80HTML(orderOrOrders, origin, k80Options);
 
           // Biến quản lý dọn dẹp (chỉ chạy 1 lần)
           let cleanedUp = false;
@@ -132,7 +190,7 @@ export function useSilentPrint(options?: UseSilentPrintOptions): UseSilentPrintR
           iframeDoc.write(htmlContent);
           iframeDoc.close();
 
-          // 5. Kích hoạt print khi document đã tải xong
+          // 5. Kích hoạt print khi document và toàn bộ ảnh (logo, QR) đã tải xong
           const triggerPrint = () => {
             const win = iframe.contentWindow;
             if (!win) {
@@ -162,13 +220,49 @@ export function useSilentPrint(options?: UseSilentPrintOptions): UseSilentPrintR
             }
           };
 
-          // Đợi một khoảng ngắn để trình duyệt render SVG và font chữ
+          let printTriggered = false;
+          const waitForImagesAndPrint = () => {
+            if (printTriggered) return;
+            printTriggered = true;
+
+            const images = Array.from(iframeDoc.images || []);
+            const pendingImages = images.filter((img) => !img.complete);
+
+            if (pendingImages.length === 0) {
+              setTimeout(triggerPrint, 80);
+              return;
+            }
+
+            const imagePromises = pendingImages.map(
+              (img) =>
+                new Promise<void>((resImg) => {
+                  const onDone = () => {
+                    img.removeEventListener('load', onDone);
+                    img.removeEventListener('error', onDone);
+                    resImg();
+                  };
+                  img.addEventListener('load', onDone);
+                  img.addEventListener('error', onDone);
+                })
+            );
+
+            const timeoutPromise = new Promise<void>((resTimeout) => {
+              setTimeout(resTimeout, 1500);
+            });
+
+            Promise.race([Promise.all(imagePromises), timeoutPromise]).then(() => {
+              setTimeout(triggerPrint, 50);
+            });
+          };
+
+          // Đợi trình duyệt tải xong DOM và toàn bộ ảnh trong iframe trước khi gọi lệnh in
           if (iframe.contentWindow?.document.readyState === 'complete') {
-            setTimeout(triggerPrint, 80);
+            waitForImagesAndPrint();
           } else {
             iframe.onload = () => {
-              setTimeout(triggerPrint, 80);
+              waitForImagesAndPrint();
             };
+            setTimeout(waitForImagesAndPrint, 120);
           }
         } catch (err: any) {
           console.error('[useSilentPrint] Execution failed:', err);
@@ -178,7 +272,7 @@ export function useSilentPrint(options?: UseSilentPrintOptions): UseSilentPrintR
         }
       });
     },
-    [currentFormat, options]
+    [currentFormat, options, podsCare?.tenantBranding, podsCare?.currentUser?.tenant]
   );
 
   return {
@@ -188,3 +282,4 @@ export function useSilentPrint(options?: UseSilentPrintOptions): UseSilentPrintR
     printReceipt,
   };
 }
+

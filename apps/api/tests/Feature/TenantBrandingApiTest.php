@@ -310,4 +310,131 @@ class TenantBrandingApiTest extends TestCase
             ->assertJsonPath('data.tenant.hotline', '0909 999 888')
             ->assertJsonPath('data.tenant.receipt_footer_note', 'Phiếu này có giá trị trong 60 ngày');
     }
+
+    public function test_relative_and_mismatched_port_logo_urls_are_normalized_to_valid_absolute_urls(): void
+    {
+        // 1. Lưu đường dẫn tương đối kiểu 'tenants/1/logo/test.png' trực tiếp vào DB
+        \Illuminate\Support\Facades\DB::table('tenants')
+            ->where('id', $this->tenantA->id)
+            ->update(['logo_url' => "tenants/{$this->tenantA->id}/logo/custom_logo.png"]);
+
+        $resRelative = $this->actingAs($this->adminA)
+            ->getJson('http://localhost:8000/api/v1/tenant/settings');
+
+        $resRelative->assertStatus(200)
+            ->assertJsonPath('data.logo_url', "http://localhost:8000/storage/tenants/{$this->tenantA->id}/logo/custom_logo.png");
+
+        // 2. Đường dẫn có lặp 'storage/storage/...' không bị nhân đôi
+        \Illuminate\Support\Facades\DB::table('tenants')
+            ->where('id', $this->tenantA->id)
+            ->update(['logo_url' => "/storage/storage/tenants/{$this->tenantA->id}/branding/logo_dup.png"]);
+
+        $resDup = $this->actingAs($this->adminA)
+            ->getJson('http://localhost:8000/api/v1/tenant/settings');
+
+        $resDup->assertStatus(200)
+            ->assertJsonPath('data.logo_url', "http://localhost:8000/storage/tenants/{$this->tenantA->id}/branding/logo_dup.png");
+
+        // 3. Đường dẫn 'http://localhost/storage/...' bị thiếu cổng :8000 được tự động chuẩn hóa theo host:port của request
+        \Illuminate\Support\Facades\DB::table('tenants')
+            ->where('id', $this->tenantA->id)
+            ->update(['logo_url' => "http://localhost/storage/tenants/{$this->tenantA->id}/branding/logo_port.png"]);
+
+        $resPort = $this->actingAs($this->adminA)
+            ->getJson('http://localhost:8000/api/v1/auth/me');
+
+        $resPort->assertStatus(200)
+            ->assertJsonPath('data.tenant.logo_url', "http://localhost:8000/storage/tenants/{$this->tenantA->id}/branding/logo_port.png");
+    }
+
+    public function test_orders_index_store_show_and_update_always_include_tenant_with_absolute_logo_url(): void
+    {
+        \Illuminate\Support\Facades\DB::table('tenants')
+            ->where('id', $this->tenantA->id)
+            ->update([
+                'logo_url'            => "tenants/{$this->tenantA->id}/branding/receipt_logo.png",
+                'hotline'             => '1900 6868',
+                'receipt_footer_note' => 'Bảo hành điện tử toàn quốc',
+            ]);
+
+        $branch = \App\Models\Branch::create([
+            'tenant_id' => $this->tenantA->id,
+            'name'      => 'Chi nhánh Trung tâm A',
+            'code'      => 'BR_A_' . uniqid(),
+            'phone'     => '0901111222',
+            'address'   => '100 Nguyễn Huệ, Q1',
+            'is_active' => true,
+        ]);
+
+        $device = \App\Models\DeviceModel::create([
+            'tenant_id'  => $this->tenantA->id,
+            'name'       => 'AirPods Pro 2 USB-C',
+            'model_code' => 'APP2_' . uniqid(),
+            'category'   => 'airpods',
+        ]);
+
+        $expectedLogoUrl = "http://localhost:8000/storage/tenants/{$this->tenantA->id}/branding/receipt_logo.png";
+
+        // 1. POST /api/v1/orders (store)
+        $storeRes = $this->actingAs($this->adminA)
+            ->postJson('http://localhost:8000/api/v1/orders', [
+                'branch_id'         => $branch->id,
+                'customer_name'     => 'Khách In Hóa Đơn',
+                'customer_phone'    => '0987654321',
+                'device_model_id'   => $device->id,
+                'issue_description' => 'Thay pin tai trái',
+                'estimated_price'   => 350000,
+            ]);
+
+        $storeRes->assertStatus(201)
+            ->assertJsonPath('data.tenant.id', $this->tenantA->id)
+            ->assertJsonPath('data.tenant.name', 'Cửa Hàng Sửa Chữa A')
+            ->assertJsonPath('data.tenant.logo_url', $expectedLogoUrl)
+            ->assertJsonPath('data.tenant.hotline', '1900 6868')
+            ->assertJsonPath('data.tenant.receipt_footer_note', 'Bảo hành điện tử toàn quốc');
+
+        $orderId = $storeRes->json('data.id');
+
+        // 2. GET /api/v1/orders (index)
+        $indexRes = $this->actingAs($this->adminA)
+            ->getJson('http://localhost:8000/api/v1/orders?date_filter=all');
+
+        $indexRes->assertStatus(200)
+            ->assertJsonPath('data.data.0.id', $orderId)
+            ->assertJsonPath('data.data.0.tenant.id', $this->tenantA->id)
+            ->assertJsonPath('data.data.0.tenant.logo_url', $expectedLogoUrl)
+            ->assertJsonPath('data.data.0.tenant.hotline', '1900 6868')
+            ->assertJsonPath('data.data.0.tenant.receipt_footer_note', 'Bảo hành điện tử toàn quốc');
+
+        // 3. GET /api/v1/orders/{id} (show)
+        $showRes = $this->actingAs($this->adminA)
+            ->getJson("http://localhost:8000/api/v1/orders/{$orderId}");
+
+        $showRes->assertStatus(200)
+            ->assertJsonPath('data.tenant.id', $this->tenantA->id)
+            ->assertJsonPath('data.tenant.logo_url', $expectedLogoUrl);
+
+        // 4. PUT /api/v1/orders/{id} (update - Admin branch)
+        $updateAdminRes = $this->actingAs($this->adminA)
+            ->putJson("http://localhost:8000/api/v1/orders/{$orderId}", [
+                'repair_note' => 'Đã vệ sinh màng loa',
+            ]);
+
+        $updateAdminRes->assertStatus(200)
+            ->assertJsonPath('data.tenant.id', $this->tenantA->id)
+            ->assertJsonPath('data.tenant.logo_url', $expectedLogoUrl)
+            ->assertJsonPath('data.tenant.hotline', '1900 6868');
+
+        // 5. PUT /api/v1/orders/{id} (update - Non-admin branch)
+        $this->techA->update(['branch_id' => $branch->id]);
+        $updateStaffRes = $this->actingAs($this->techA)
+            ->putJson("http://localhost:8000/api/v1/orders/{$orderId}", [
+                'repair_note' => 'KTV cập nhật ghi chú',
+            ]);
+
+        $updateStaffRes->assertStatus(200)
+            ->assertJsonPath('data.tenant.id', $this->tenantA->id)
+            ->assertJsonPath('data.tenant.logo_url', $expectedLogoUrl)
+            ->assertJsonPath('data.tenant.hotline', '1900 6868');
+    }
 }

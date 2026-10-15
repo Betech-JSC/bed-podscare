@@ -152,6 +152,7 @@ class AuthController extends Controller
                 'expires_at'          => $resolvedTenant->expires_at?->toISOString(),
                 'trial_ends_at'       => $resolvedTenant->trial_ends_at?->toISOString(),
                 'days_remaining'      => $daysRemaining,
+                'settings'            => $resolvedTenant->settings ?? null,
                 'logo_url'            => $resolvedTenant->logo_url,
                 'hotline'             => $resolvedTenant->hotline,
                 'receipt_footer_note' => $resolvedTenant->receipt_footer_note,
@@ -194,6 +195,9 @@ class AuthController extends Controller
         $user = $request->user()->load(['branch', 'tenant']);
 
         $resolvedTenant = $user->tenant;
+        if (! $resolvedTenant && $user->role !== 'super_admin') {
+            $resolvedTenant = Tenant::where('code', 'fixo-master')->first() ?? Tenant::first();
+        }
         $tenantData = null;
         if ($resolvedTenant) {
             $daysRemaining = $resolvedTenant->expires_at ? max(0, (int) now()->diffInDays($resolvedTenant->expires_at, false)) : null;
@@ -206,6 +210,7 @@ class AuthController extends Controller
                 'expires_at'          => $resolvedTenant->expires_at?->toISOString(),
                 'trial_ends_at'       => $resolvedTenant->trial_ends_at?->toISOString(),
                 'days_remaining'      => $daysRemaining,
+                'settings'            => $resolvedTenant->settings ?? null,
                 'logo_url'            => $resolvedTenant->logo_url,
                 'hotline'             => $resolvedTenant->hotline,
                 'receipt_footer_note' => $resolvedTenant->receipt_footer_note,
@@ -218,7 +223,7 @@ class AuthController extends Controller
             'email'      => $user->email,
             'phone'      => $user->phone,
             'role'       => $user->role,
-            'tenant_id'  => $user->tenant_id,
+            'tenant_id'  => $user->tenant_id ?? $resolvedTenant?->id,
             'tenant'     => $tenantData,
             'avatar_url' => $user->avatar_url,
             'branch_id'  => $user->branch_id,

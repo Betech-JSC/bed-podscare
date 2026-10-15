@@ -37,7 +37,9 @@ const SAMPLE_DEMO_ORDER: RepairOrder = {
 
 export default function TenantBrandingPage() {
   const { toast } = useToast();
-  const { currentUser, role } = usePodsCare();
+  const { currentUser, role, updateTenantBranding } = usePodsCare();
+  const currentUserRef = useRef(currentUser);
+  currentUserRef.current = currentUser;
 
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -83,23 +85,25 @@ export default function TenantBrandingPage() {
         setBankCode(res.data.bank_code || 'MB');
         setBankAccountNumber(res.data.bank_account_number || '');
         setBankAccountHolder(res.data.bank_account_holder || '');
+        updateTenantBranding(res.data);
       }
     } catch (err: any) {
       console.error('Failed to load branding settings:', err);
       // Fallback from currentUser.tenant if available
-      if (currentUser?.tenant) {
-        setStoreName(currentUser.tenant.name || '');
-        setHotline(currentUser.tenant.hotline || '');
-        setFooterNote(currentUser.tenant.receipt_footer_note || '');
-        setLogoUrl(currentUser.tenant.logo_url || null);
-        setBankCode((currentUser.tenant as any).bank_code || 'MB');
-        setBankAccountNumber((currentUser.tenant as any).bank_account_number || '');
-        setBankAccountHolder((currentUser.tenant as any).bank_account_holder || '');
+      const fallbackTenant = currentUserRef.current?.tenant;
+      if (fallbackTenant) {
+        setStoreName(fallbackTenant.name || '');
+        setHotline(fallbackTenant.hotline || '');
+        setFooterNote(fallbackTenant.receipt_footer_note || '');
+        setLogoUrl(fallbackTenant.logo_url || null);
+        setBankCode((fallbackTenant as any).bank_code || 'MB');
+        setBankAccountNumber((fallbackTenant as any).bank_account_number || '');
+        setBankAccountHolder((fallbackTenant as any).bank_account_holder || '');
       }
     } finally {
       setLoading(false);
     }
-  }, [currentUser]);
+  }, [updateTenantBranding]);
 
   useEffect(() => {
     loadSettings();
@@ -137,6 +141,16 @@ export default function TenantBrandingPage() {
           setBankCode(res.data.bank_code || 'MB');
           setBankAccountNumber(res.data.bank_account_number || '');
           setBankAccountHolder(res.data.bank_account_holder || '');
+          updateTenantBranding(res.data);
+        } else {
+          updateTenantBranding({
+            name: storeName.trim() || undefined,
+            hotline: hotline.trim() || null,
+            receipt_footer_note: footerNote.trim() || null,
+            bank_code: bankCode.trim() || null,
+            bank_account_number: bankAccountNumber.trim() || null,
+            bank_account_holder: bankAccountHolder.trim() || null,
+          });
         }
       } else {
         toast(res?.message || 'Có lỗi khi lưu cấu hình.', 'error');
@@ -203,6 +217,7 @@ export default function TenantBrandingPage() {
 
       if (res?.success && res.data?.logo_url) {
         setLogoUrl(res.data.logo_url);
+        updateTenantBranding({ logo_url: res.data.logo_url });
         toast('Tải logo thương hiệu lên thành công!', 'success');
       } else {
         const errorMsg =
@@ -254,6 +269,7 @@ export default function TenantBrandingPage() {
       const res = await tenantService.deleteLogo();
       if (res?.success) {
         setLogoUrl(null);
+        updateTenantBranding({ logo_url: null });
         toast('Đã gỡ logo cửa hàng. Mẫu in sẽ sử dụng nhận diện FIXO mặc định.', 'success');
       } else {
         toast(res?.message || 'Không thể gỡ logo.', 'error');

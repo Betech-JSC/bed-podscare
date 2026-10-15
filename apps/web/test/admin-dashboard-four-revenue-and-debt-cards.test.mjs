@@ -91,12 +91,13 @@ describe('OpenSpec: admin-dashboard-four-revenue-and-debt-cards Frontend Verific
       'Card 4 sub-line must display selectedDateUncollectedCount đơn chờ khách nhận ngày {selectedDateDisplay}'
     );
 
-    // Verify status-aware toBreakdownItem fallback sets uncollectedAmount = 0 for completed orders
+    // Verify Single Source of Truth: no frontend fallback breakdown calculation
     assert.ok(
-      content.includes("if (code === 'completed' || o.status === 'Hoàn tất')") &&
-        content.includes('uncollectedAmount = 0;') &&
-        content.includes('totalPrice = collectedAmount;'),
-      'toBreakdownItem must treat completed orders as settled with uncollectedAmount = 0 and totalPrice = collectedAmount'
+      !content.includes('fallbackMonthlyBreakdown') &&
+        !content.includes('fallbackDailyBreakdown') &&
+        content.includes('kpiData?.monthly_orders_breakdown') &&
+        content.includes('kpiData?.selected_date_orders_breakdown'),
+      'DashboardPage must read monthly_orders_breakdown and selected_date_orders_breakdown strictly from kpiData without frontend fallback'
     );
 
     // Verify lower sections remain 100% intact
@@ -193,7 +194,7 @@ describe('OpenSpec: admin-dashboard-four-revenue-and-debt-cards Frontend Verific
     );
   });
 
-  test('Task 3.1 & 3.2 (GMT+7 & Daily Order Filter): DashboardPage uses Asia/Ho_Chi_Minh timezone for date initialization and extractIsoDate, and prioritizes qc_passed_at / repair_completed_at / PC order code / createdAt for waiting-pickup fallback', () => {
+  test('Task 3.1 & 3.2 (GMT+7 & Daily Order Filter): DashboardPage uses Asia/Ho_Chi_Minh timezone for date initialization and queries kpi-dashboard directly', () => {
     const dashboardPath = path.join(webRoot, 'app/dashboard/page.tsx');
     const content = fs.readFileSync(dashboardPath, 'utf-8');
 
@@ -211,17 +212,8 @@ describe('OpenSpec: admin-dashboard-four-revenue-and-debt-cards Frontend Verific
     );
 
     assert.ok(
-      content.includes('/^\\d{4}-\\d{2}-\\d{2}$/.test(s)') &&
-        content.includes('return formatDateInGmt7(parsed);'),
-      'extractIsoDate must only slice pure YYYY-MM-DD strings and format ISO timestamps with formatDateInGmt7'
-    );
-
-    assert.ok(
-      content.includes('/^PC.*?(\\d{2})(\\d{2})(\\d{2})\\d{2,}$/') &&
-        content.includes('? (o as any).qc_passed_at ||') &&
-        content.includes('(o as any).repair_completed_at ||') &&
-        content.includes('pcCodeDate ||'),
-      'toBreakdownItem must prioritize qc_passed_at, repair_completed_at, PC...DDMMYY.. order code date, or createdAt over updated_at for waiting-pickup orders'
+      content.includes("queryKey: ['kpi-dashboard', branchId, period, selectedDate]"),
+      'DashboardPage must query kpi-dashboard with selectedDate'
     );
   });
 
@@ -306,4 +298,55 @@ describe('OpenSpec: admin-dashboard-four-revenue-and-debt-cards Frontend Verific
       'normalizeVndPrice must be applied in repairs/page.tsx, CheckoutHandoverModal.tsx, quotes/page.tsx, and AdminEditOrderModal.tsx'
     );
   });
+
+  test('OpenSpec: dashboard-remove-fallback-and-add-loading-skeleton (Tasks 1.1, 1.2, 2.1, 2.2): Single Source of Truth kpiData and Loading Skeletons across Dashboard, ActionableTasksCenter, and StaffPerformanceWidget', () => {
+    const dashboardContent = fs.readFileSync(path.join(webRoot, 'app/dashboard/page.tsx'), 'utf-8');
+    const actionableContent = fs.readFileSync(
+      path.join(webRoot, 'app/dashboard/components/ActionableTasksCenter.tsx'),
+      'utf-8'
+    );
+    const staffContent = fs.readFileSync(
+      path.join(webRoot, 'app/dashboard/components/StaffPerformanceWidget.tsx'),
+      'utf-8'
+    );
+
+    // Task 1.1: Remove fallbackMonthlyBreakdown & fallbackDailyBreakdown
+    assert.ok(
+      !dashboardContent.includes('fallbackMonthlyBreakdown') &&
+        !dashboardContent.includes('fallbackDailyBreakdown'),
+      'dashboard/page.tsx must not contain fallbackMonthlyBreakdown or fallbackDailyBreakdown'
+    );
+
+    // Task 1.2: Loading skeletons on DashboardPage
+    assert.ok(
+      dashboardContent.includes('isLoading: isLoadingKpi') &&
+        dashboardContent.includes('isFetching: isFetchingKpi') &&
+        dashboardContent.includes('const isKpiLoading = isLoadingKpi || isFetchingKpi;'),
+      'dashboard/page.tsx must derive isKpiLoading = isLoadingKpi || isFetchingKpi from useQuery'
+    );
+    assert.ok(
+      dashboardContent.includes('data-testid="kpi-card-loading-skeleton"') &&
+        dashboardContent.includes('animate-pulse'),
+      'dashboard/page.tsx must render kpi-card-loading-skeleton with animate-pulse when isKpiLoading is true'
+    );
+
+    // Task 2.1: Loading skeletons on ActionableTasksCenter
+    assert.ok(
+      dashboardContent.includes('isLoading={isKpiLoading}') &&
+        actionableContent.includes('isLoading?: boolean;') &&
+        actionableContent.includes('data-testid="actionable-tasks-loading-skeleton"') &&
+        actionableContent.includes('animate-pulse'),
+      'ActionableTasksCenter.tsx must accept isLoading and render actionable-tasks-loading-skeleton with animate-pulse'
+    );
+
+    // Task 2.2: Loading skeletons on StaffPerformanceWidget
+    assert.ok(
+      staffContent.includes('const isStaffLoading = isLoading || isFetching;') &&
+        staffContent.includes('data-testid="staff-kpi-loading-skeleton"') &&
+        staffContent.includes('data-testid="staff-performance-loading-skeleton"') &&
+        staffContent.includes('animate-pulse'),
+      'StaffPerformanceWidget.tsx must use isStaffLoading = isLoading || isFetching and render staff-kpi-loading-skeleton / staff-performance-loading-skeleton with animate-pulse'
+    );
+  });
 });
+

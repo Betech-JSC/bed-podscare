@@ -1,10 +1,11 @@
 'use client';
 
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import type { RepairOrder } from '@podscare/types';
 import { generateBarcodeSVG, generateQRCodeSVG } from './BarcodeQRUtils';
 import { formatMoney, FIXO_LOGO_A4_SVG, type TenantReceiptBranding } from './thermalK80HtmlBuilder';
 import { renderCombinedA4ReceiptHTML } from './a4ReceiptHtmlBuilder';
+import { useOptionalPodsCare } from '../../providers';
 
 export interface A4ReceiptTemplateProps {
   order?: RepairOrder;
@@ -17,8 +18,47 @@ export interface A4ReceiptTemplateProps {
  * Component hiển thị giao diện A4 (2 liên) trong trang xem trước và in
  */
 export const A4ReceiptTemplate: React.FC<A4ReceiptTemplateProps> = ({ order: singleOrder, orders, origin, branding }) => {
+  const podsCare = useOptionalPodsCare();
+  const [logoError, setLogoError] = useState(false);
+
+  const primaryOrder = singleOrder || (orders && orders[0]);
+  const fallbackTenant = primaryOrder?.tenant || podsCare?.tenantBranding || podsCare?.currentUser?.tenant;
+  const resolvedBranding: TenantReceiptBranding | undefined =
+    branding || fallbackTenant
+      ? {
+          logoUrl:
+            branding?.logoUrl !== undefined
+              ? branding.logoUrl
+              : fallbackTenant?.logo_url ?? null,
+          storeName:
+            branding?.storeName ||
+            fallbackTenant?.name ||
+            undefined,
+          hotline:
+            branding?.hotline !== undefined
+              ? branding.hotline
+              : fallbackTenant?.hotline ?? null,
+          footerNote:
+            branding?.footerNote !== undefined
+              ? branding.footerNote
+              : fallbackTenant?.receipt_footer_note ?? null,
+        }
+      : undefined;
+
+  const effectiveBranding = resolvedBranding || (primaryOrder as any)?.tenant;
+  const effectiveLogoUrl =
+    branding?.logoUrl !== undefined
+      ? branding.logoUrl
+      : effectiveBranding?.logoUrl || effectiveBranding?.storeLogoUrl || fallbackTenant?.logo_url;
+  const effectiveStoreName =
+    branding?.storeName || effectiveBranding?.storeName || fallbackTenant?.name || 'FIXO REPAIR OS';
+
+  useEffect(() => {
+    setLogoError(false);
+  }, [effectiveLogoUrl]);
+
   if (orders && orders.length >= 2) {
-    const combinedHtml = renderCombinedA4ReceiptHTML(orders, origin, branding);
+    const combinedHtml = renderCombinedA4ReceiptHTML(orders, origin, resolvedBranding);
     const match = combinedHtml.match(/<body>([\s\S]*?)<\/body>/i);
     const bodyInner = match ? match[1] : combinedHtml;
 
@@ -36,12 +76,11 @@ export const A4ReceiptTemplate: React.FC<A4ReceiptTemplateProps> = ({ order: sin
     origin || (typeof window !== 'undefined' ? window.location.origin : 'https://fixo.com.vn');
   const trackUrl = `${currentOrigin}/track/${order.id}`;
 
-  const effectiveBranding = branding || (order as any).tenant;
-  const effectiveLogoUrl = effectiveBranding?.logoUrl || effectiveBranding?.storeLogoUrl || (order as any).tenant?.logo_url;
-  const effectiveStoreName = effectiveBranding?.storeName || (order as any).tenant?.name || 'FIXO REPAIR OS';
-  const effectiveBranch = order.branch || effectiveBranding?.storeName || (order as any).tenant?.name || 'FIXO Store';
-  const effectiveHotline = effectiveBranding?.hotline || effectiveBranding?.storeHotline || (order as any).tenant?.hotline;
-  const effectiveFooterNote = effectiveBranding?.footerNote || effectiveBranding?.receiptFooterNote || (order as any).tenant?.receipt_footer_note;
+  const effectiveBranch = order.branch || effectiveStoreName || 'FIXO Store';
+  const effectiveHotline =
+    branding?.hotline || effectiveBranding?.hotline || effectiveBranding?.storeHotline || fallbackTenant?.hotline;
+  const effectiveFooterNote =
+    branding?.footerNote || effectiveBranding?.footerNote || effectiveBranding?.receiptFooterNote || fallbackTenant?.receipt_footer_note;
 
   const barcodeSvg = generateBarcodeSVG(order.id, {
     height: 30,
@@ -92,13 +131,14 @@ export const A4ReceiptTemplate: React.FC<A4ReceiptTemplateProps> = ({ order: sin
           {/* Header */}
           <header className="flex justify-between items-center border-b-2 border-[#176b58] pb-1.5 mb-1.5">
             <div className="flex items-center gap-2">
-              {effectiveLogoUrl ? (
+              {effectiveLogoUrl && !logoError ? (
                 <img
                   src={effectiveLogoUrl}
                   alt="Logo"
                   className="max-w-[48mm] max-h-[28mm] object-contain flex-none"
                   onError={(e) => {
                     (e.currentTarget as HTMLElement).style.display = 'none';
+                    setLogoError(true);
                   }}
                 />
               ) : (

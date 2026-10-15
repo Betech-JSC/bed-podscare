@@ -157,6 +157,14 @@ export interface RepairOrder {
   createdAt?: string;
   intake_batch_code?: string;
   batchOrders?: RepairOrder[];
+  tenant?: {
+    id?: number | string;
+    name?: string;
+    code?: string;
+    logo_url?: string | null;
+    hotline?: string | null;
+    receipt_footer_note?: string | null;
+  } | null;
 }
 
 export interface SimpleCheckoutPayload {
