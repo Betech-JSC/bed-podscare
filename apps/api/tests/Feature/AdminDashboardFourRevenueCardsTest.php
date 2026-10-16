@@ -742,18 +742,43 @@ class AdminDashboardFourRevenueCardsTest extends TestCase
             'updated_at' => $now->copy()->subHours(24),
         ]);
 
+        // 1 đơn từ chối sửa (rejected) và 1 đơn đã hủy (cancelled) - KHÔNG thuộc active_orders hay in_workshop
+        $this->createOrder([
+            'order_code' => 'PC26-REJ-01',
+            'status'     => 'rejected',
+            'created_at' => $now->copy()->subHours(40),
+            'updated_at' => $now->copy()->subHours(10),
+        ]);
+        $this->createOrder([
+            'order_code' => 'PC26-CAN-01',
+            'status'     => 'cancelled',
+            'created_at' => $now->copy()->subHours(40),
+            'updated_at' => $now->copy()->subHours(10),
+        ]);
+
         // 1. Kiểm tra KPI Dashboard
         $kpiRes = $this->actingAs($this->adminUser, 'sanctum')
             ->getJson("/api/v1/kpi/dashboard?branch_id={$this->branch->id}");
         $kpiRes->assertOk();
         $kpiData = $kpiRes->json('data');
 
+        $this->assertEquals(6, $kpiData['active_orders']);
+        $this->assertEquals(6, $kpiData['summary']['active_orders']);
         $this->assertEquals(6, $kpiData['operational_summary']['active_orders']);
         $this->assertEquals(4, $kpiData['reconciliation']['in_workshop_count']);
+        $this->assertEquals(2, $kpiData['reconciliation']['ready_for_pickup_count']);
+        $this->assertEquals(
+            $kpiData['operational_summary']['active_orders'],
+            $kpiData['reconciliation']['in_workshop_count'] + $kpiData['reconciliation']['ready_for_pickup_count']
+        );
         $this->assertEquals(2, $kpiData['operational_summary']['waiting_pickup_orders']);
         $this->assertEquals(2, $kpiData['operational_summary']['waiting_parts_orders']);
         $this->assertEquals(2, $kpiData['operational_summary']['overdue_orders']);
         $this->assertCount(2, $kpiData['actionable_tasks']['overdue']);
+        $this->assertEquals(2, $kpiData['actionable_tasks']['counts']['overdue']);
+        $this->assertEquals(2, $kpiData['actionable_tasks']['counts']['waiting_pickup']);
+        $this->assertEquals(0, $kpiData['actionable_tasks']['counts']['waiting_qc']);
+        $this->assertEquals(4, $kpiData['actionable_tasks']['counts']['total']);
 
         // 2. Kiểm tra OrderController::index với các bộ lọc tổ hợp khớp 1-1
         $openRes = $this->actingAs($this->adminUser, 'sanctum')
@@ -880,5 +905,96 @@ class AdminDashboardFourRevenueCardsTest extends TestCase
 
         $this->assertEquals(350000.0, (float) $payment->amount);
         $this->assertEquals(450000.0, (float) $payment999->amount);
+    }
+
+    /**
+     * Test 8: actionable_tasks trả về hơn 10 bản ghi (tối đa 200) và đối tượng counts khớp 1-1
+     * với operational_summary khi có > 10 đơn trễ hạn và > 10 đơn chờ khách nhận.
+     */
+    public function test_actionable_tasks_returns_more_than_10_items_and_exact_counts_matching_operational_summary(): void
+    {
+        $now = Carbon::now($this->tz);
+
+        // Tạo 12 đơn trễ hạn (> 24h) đang sửa trong xưởng
+        for ($i = 1; $i <= 12; $i++) {
+            $this->createOrder([
+                'order_code' => sprintf('PC26-OVD-BULK-%02d', $i),
+                'status'     => 'in_repair',
+                'created_at' => $now->copy()->subHours(25 + $i),
+                'updated_at' => $now->copy()->subHours(2),
+            ]);
+        }
+
+        // Tạo 3 đơn chờ QC (< 24h, không trễ hạn)
+        for ($i = 1; $i <= 3; $i++) {
+            $this->createOrder([
+                'order_code'          => sprintf('PC26-QC-BULK-%02d', $i),
+                'status'              => 'waiting_qc',
+                'repair_completed_at' => $now->copy()->subHours(2),
+                'created_at'          => $now->copy()->subHours(6),
+                'updated_at'          => $now->copy()->subHours(2),
+            ]);
+        }
+
+        // Tạo 2 đơn chờ duyệt báo giá (< 24h, không trễ hạn)
+        for ($i = 1; $i <= 2; $i++) {
+            $this->createOrder([
+                'order_code' => sprintf('PC26-APP-BULK-%02d', $i),
+                'status'     => 'waiting_approval',
+                'created_at' => $now->copy()->subHours(4),
+                'updated_at' => $now->copy()->subHours(1),
+            ]);
+        }
+
+        // Tạo 14 đơn chờ khách nhận
+        for ($i = 1; $i <= 14; $i++) {
+            $this->createOrder([
+                'order_code'   => sprintf('PC26-PKP-BULK-%02d', $i),
+                'status'       => $i % 2 === 0 ? 'waiting_pickup' : 'ready_for_return',
+                'qc_passed_at' => $now->copy()->subHours($i),
+                'created_at'   => $now->copy()->subHours(30 + $i),
+                'updated_at'   => $now->copy()->subHours($i),
+            ]);
+        }
+
+        // Tạo 2 đơn bị từ chối sửa (rejected) - không được tính vào active_orders hay in_workshop
+        for ($i = 1; $i <= 2; $i++) {
+            $this->createOrder([
+                'order_code' => sprintf('PC26-REJ-BULK-%02d', $i),
+                'status'     => 'rejected',
+                'created_at' => $now->copy()->subHours(10),
+                'updated_at' => $now->copy()->subHours(5),
+            ]);
+        }
+
+        $kpiRes = $this->actingAs($this->adminUser, 'sanctum')
+            ->getJson("/api/v1/kpi/dashboard?branch_id={$this->branch->id}");
+        $kpiRes->assertOk();
+        $kpiData = $kpiRes->json('data');
+
+        // Trong xưởng = 12 (in_repair) + 3 (waiting_qc) + 2 (waiting_approval) = 17
+        // Chờ nhận = 14
+        // Tổng đơn đang mở = 17 + 14 = 31 (loại trừ 2 đơn rejected)
+        $this->assertEquals(17, $kpiData['reconciliation']['in_workshop_count']);
+        $this->assertEquals(14, $kpiData['reconciliation']['ready_for_pickup_count']);
+        $this->assertEquals(31, $kpiData['active_orders']);
+        $this->assertEquals(31, $kpiData['summary']['active_orders']);
+        $this->assertEquals(31, $kpiData['operational_summary']['active_orders']);
+        $this->assertEquals(12, $kpiData['operational_summary']['overdue_orders']);
+        $this->assertEquals(14, $kpiData['operational_summary']['waiting_pickup_orders']);
+
+        // Danh sách trong actionable_tasks trả về đủ > 10 bản ghi (12 overdue, 14 waiting_pickup)
+        $this->assertCount(12, $kpiData['actionable_tasks']['overdue']);
+        $this->assertCount(14, $kpiData['actionable_tasks']['waiting_pickup']);
+        $this->assertCount(3, $kpiData['actionable_tasks']['waiting_qc']);
+        $this->assertCount(2, $kpiData['actionable_tasks']['waiting_approval']);
+
+        // Kiểm tra actionable_tasks.counts khớp tuyệt đối
+        $counts = $kpiData['actionable_tasks']['counts'];
+        $this->assertEquals(12, $counts['overdue']);
+        $this->assertEquals(2, $counts['waiting_approval']);
+        $this->assertEquals(3, $counts['waiting_qc']);
+        $this->assertEquals(14, $counts['waiting_pickup']);
+        $this->assertEquals(12 + 3 + 14, $counts['total']);
     }
 }

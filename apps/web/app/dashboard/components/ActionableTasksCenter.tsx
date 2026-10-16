@@ -33,19 +33,21 @@ export const ActionableTasksCenter: React.FC<ActionableTasksCenterProps> = ({
     [actionableTasks]
   );
 
+  const overdueCount = actionableTasks?.counts?.overdue ?? overdueList.length;
+  const qcCount = actionableTasks?.counts?.waiting_qc ?? qcList.length;
+  const pickupCount = actionableTasks?.counts?.waiting_pickup ?? pickupList.length;
   const totalCount =
-    overdueList.length +
-    qcList.length +
-    pickupList.length;
+    actionableTasks?.counts?.total ??
+    (overdueCount + qcCount + pickupCount);
 
   const formatMoney = (n?: number) =>
     n ? new Intl.NumberFormat('vi-VN').format(n) + ' ₫' : '—';
 
   const tabs = [
     { key: 'all' as TabType, label: 'Tất cả', count: totalCount },
-    { key: 'overdue' as TabType, label: 'Quá hạn', count: overdueList.length, alert: overdueList.length > 0 },
-    { key: 'qc' as TabType, label: 'Chờ QC', count: qcList.length },
-    { key: 'pickup' as TabType, label: 'Sẵn sàng trả máy', count: pickupList.length },
+    { key: 'overdue' as TabType, label: 'Quá hạn', count: overdueCount, alert: overdueCount > 0 },
+    { key: 'qc' as TabType, label: 'Chờ QC', count: qcCount },
+    { key: 'pickup' as TabType, label: 'Sẵn sàng trả máy', count: pickupCount },
   ];
 
   const hasItemsInTab = useMemo(() => {
@@ -58,9 +60,9 @@ export const ActionableTasksCenter: React.FC<ActionableTasksCenterProps> = ({
         return pickupList.length > 0;
       case 'all':
       default:
-        return totalCount > 0;
+        return overdueList.length + qcList.length + pickupList.length > 0;
     }
-  }, [activeTab, overdueList, qcList, pickupList, totalCount]);
+  }, [activeTab, overdueList, qcList, pickupList]);
 
   return (
     <div className="bg-white rounded-[14px] border border-[#e5ece8] p-5 sm:p-6 shadow-xs">

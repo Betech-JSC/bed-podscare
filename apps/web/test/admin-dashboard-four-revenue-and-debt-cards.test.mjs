@@ -348,5 +348,75 @@ describe('OpenSpec: admin-dashboard-four-revenue-and-debt-cards Frontend Verific
       'StaffPerformanceWidget.tsx must use isStaffLoading = isLoading || isFetching and render staff-kpi-loading-skeleton / staff-performance-loading-skeleton with animate-pulse'
     );
   });
+
+  test('OpenSpec: sync-admin-repairs-counts-and-fix-empty-date-fallback (Tasks 2.1, 2.2, 2.3, 3.1, 3.2, 3.3): ActionableTasks.counts, Sidebar repairsCount, Repairs empty date zero-fallback, persistent 5-tab counts, and Admin status reconciliation bar', () => {
+    const kpiTypesContent = fs.readFileSync(path.join(repoRoot, 'packages/types/src/kpi.ts'), 'utf-8');
+    const appShellContent = fs.readFileSync(path.join(webRoot, 'app/components/AppShell.tsx'), 'utf-8');
+    const actionableContent = fs.readFileSync(
+      path.join(webRoot, 'app/dashboard/components/ActionableTasksCenter.tsx'),
+      'utf-8'
+    );
+    const repairsContent = fs.readFileSync(path.join(webRoot, 'app/repairs/page.tsx'), 'utf-8');
+
+    // Task 2.1: ActionableTasks.counts in packages/types/src/kpi.ts
+    assert.ok(
+      kpiTypesContent.includes('counts?: {') &&
+        kpiTypesContent.includes('overdue: number;') &&
+        kpiTypesContent.includes('waiting_qc: number;') &&
+        kpiTypesContent.includes('waiting_pickup: number;') &&
+        kpiTypesContent.includes('total: number;'),
+      'packages/types/src/kpi.ts must include optional counts object on ActionableTasks'
+    );
+
+    // Task 2.2: Sidebar repairsCount excludes all 3 terminal statuses ['Hoàn tất', 'Đã hủy', 'Từ chối sửa']
+    assert.ok(
+      appShellContent.includes(
+        "const repairsCount = orders.filter((o) => !['Hoàn tất', 'Đã hủy', 'Từ chối sửa'].includes(o.status)).length;"
+      ),
+      'AppShell.tsx must exclude Hoàn tất, Đã hủy, and Từ chối sửa in repairsCount'
+    );
+
+    // Task 2.3: ActionableTasksCenter reads counts from actionableTasks?.counts with fallback to array length
+    assert.ok(
+      actionableContent.includes('const overdueCount = actionableTasks?.counts?.overdue ?? overdueList.length;') &&
+        actionableContent.includes('const qcCount = actionableTasks?.counts?.waiting_qc ?? qcList.length;') &&
+        actionableContent.includes('const pickupCount = actionableTasks?.counts?.waiting_pickup ?? pickupList.length;') &&
+        actionableContent.includes('actionableTasks?.counts?.total ??'),
+      'ActionableTasksCenter.tsx must prioritize actionableTasks?.counts for tab and header badge counts'
+    );
+
+    // Task 3.1: Zero fallback to global orders when API returns 0 orders on /repairs & isRepairsLoading
+    assert.ok(
+      !repairsContent.includes('const list = Array.isArray(raw) ? raw : (orders || []);') &&
+        !repairsContent.includes('if (list.length === 0 && !search && !statusFilter) {\n      list = orders;\n    }'),
+      'repairs/page.tsx must not fallback to global orders in orderCounts or filteredOrders'
+    );
+    assert.ok(
+      repairsContent.includes('const isRepairsLoading = isLoading || isFetching;') &&
+        repairsContent.includes(') : isRepairsLoading ? ('),
+      'repairs/page.tsx must define and use isRepairsLoading = isLoading || isFetching for TableSkeleton'
+    );
+
+    // Task 3.2: Separate orderTypeFilter from useQuery API params and compute orderCounts from statusFilteredOrders (baseFilteredByStatus)
+    assert.ok(
+      repairsContent.includes('const baseFilteredByStatus: RepairOrder[] = useMemo(') &&
+        repairsContent.includes('const statusFilteredOrders = baseFilteredByStatus;') &&
+        repairsContent.includes('statusFilteredOrders.forEach((o: any) => {'),
+      'repairs/page.tsx must compute orderCounts from statusFilteredOrders (baseFilteredByStatus) so 5 tab counts stay persistent when switching tabs'
+    );
+
+    // Task 3.3: Admin Status Reconciliation Bar on /repairs
+    assert.ok(
+      repairsContent.includes('const statusReconciliationCounts = useMemo(') &&
+        repairsContent.includes('data-testid="admin-repairs-status-reconciliation-bar"') &&
+        repairsContent.includes('data-testid="status-pill-all"') &&
+        repairsContent.includes('data-testid="status-pill-open"') &&
+        repairsContent.includes('data-testid="status-pill-in-workshop"') &&
+        repairsContent.includes('data-testid="status-pill-waiting-pickup"') &&
+        repairsContent.includes('data-testid="status-pill-completed"'),
+      'repairs/page.tsx must render admin-repairs-status-reconciliation-bar with all 5 status reconciliation pills for Admin'
+    );
+  });
 });
+
 

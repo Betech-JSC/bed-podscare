@@ -257,9 +257,10 @@ class DashboardKpiAccuracyTest extends TestCase
     }
 
     /**
-     * Case 4: Phép tính in_workshop_amount và in_workshop_count tính đúng các trạng thái trong xưởng.
+     * Case 4: Phép tính in_workshop_amount và in_workshop_count tính đúng các trạng thái trong xưởng
+     * (bao gồm quote_pending, qc_inspecting, in_repair; loại trừ rejected để khớp 1-1 với active_orders).
      */
-    public function test_in_workshop_amount_and_count_include_quote_pending_qc_inspecting_and_rejected(): void
+    public function test_in_workshop_amount_and_count_include_quote_pending_qc_inspecting_and_exclude_rejected(): void
     {
         // 1. quote_pending trong xưởng (200k)
         $this->createOrder([
@@ -273,7 +274,7 @@ class DashboardKpiAccuracyTest extends TestCase
             'total_price' => 300000,
         ]);
 
-        // 3. rejected trong xưởng (initial_price 150k, total_price 0)
+        // 3. rejected đã kết thúc (initial_price 150k, total_price 0) -> không tính vào in_workshop / active_orders
         $this->createOrder([
             'status'        => 'rejected',
             'initial_price' => 150000,
@@ -303,18 +304,27 @@ class DashboardKpiAccuracyTest extends TestCase
             ->getJson("/api/v1/kpi/dashboard?branch_id={$this->branch->id}");
 
         $response->assertStatus(200);
-        $reconciliation = $response->json('data.reconciliation');
+        $data = $response->json('data');
+        $reconciliation = $data['reconciliation'];
 
-        // in_workshop gồm: quote_pending, qc_inspecting, rejected, in_repair (tổng cộng 4 đơn)
-        $this->assertEquals(4, $reconciliation['in_workshop_count']);
-        // in_workshop_amount: 200.000 + 300.000 + 150.000 (COALESCE initial_price) + 500.000 = 1.150.000
-        $this->assertEquals(1150000, $reconciliation['in_workshop_amount']);
+        // in_workshop gồm: quote_pending, qc_inspecting, in_repair (tổng cộng 3 đơn, loại trừ rejected)
+        $this->assertEquals(3, $reconciliation['in_workshop_count']);
+        // in_workshop_amount: 200.000 + 300.000 + 500.000 = 1.000.000
+        $this->assertEquals(1000000, $reconciliation['in_workshop_amount']);
 
         // ready_for_pickup gồm: ready_for_return (1 đơn, 400k)
         $this->assertEquals(1, $reconciliation['ready_for_pickup_count']);
         $this->assertEquals(400000, $reconciliation['ready_for_pickup_amount']);
 
-        // total_uncollected_amount = 1.150.000 + 400.000 = 1.550.000
-        $this->assertEquals(1550000, $reconciliation['total_uncollected_amount']);
+        // Đồng bộ 1-1: summary.active_orders == operational_summary.active_orders == in_workshop_count + ready_for_pickup_count (3 + 1 = 4)
+        $this->assertEquals(4, $data['summary']['active_orders']);
+        $this->assertEquals(4, $data['operational_summary']['active_orders']);
+        $this->assertEquals(
+            $data['summary']['active_orders'],
+            $reconciliation['in_workshop_count'] + $reconciliation['ready_for_pickup_count']
+        );
+
+        // total_uncollected_amount = 1.000.000 + 400.000 = 1.400.000
+        $this->assertEquals(1400000, $reconciliation['total_uncollected_amount']);
     }
 }

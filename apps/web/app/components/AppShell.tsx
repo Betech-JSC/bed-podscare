@@ -277,7 +277,7 @@ export const AppShell: React.FC<AppShellProps> = ({ children, crumbName = 'Tổn
     }
   };
 
-  const repairsCount = orders.filter((o) => !['Hoàn tất', 'Đã hủy'].includes(o.status)).length;
+  const repairsCount = orders.filter((o) => !['Hoàn tất', 'Đã hủy', 'Từ chối sửa'].includes(o.status)).length;
   const qcCount = orders.filter((o) => o.status === 'Chờ QC').length;
 
   if (isLoadingAuth) {

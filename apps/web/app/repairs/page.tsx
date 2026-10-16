@@ -58,7 +58,6 @@ function RepairsPageContent() {
       : 'created_at';
   const initialStatusParam = searchParams.get('status') || '';
   const initialFilterParam = searchParams.get('filter') || '';
-  const initialDateFilterParam = searchParams.get('date_filter') as OrderDateFilter | null;
   const initialOrderTypeParam = (searchParams.get('order_type') as any) || 'all';
   const initialBranchParam = searchParams.get('branch_id');
   const initialOrderIdParam = searchParams.get('id') || searchParams.get('order_id');
@@ -125,24 +124,6 @@ function RepairsPageContent() {
   const [shippingAddressInput, setShippingAddressInput] = useState('');
   const [isSavingShippingAddress, setIsSavingShippingAddress] = useState(false);
 
-  // Map label to backend status code
-  const statusToBackendMap: Record<string, string> = {
-    'Đơn đang mở': 'open',
-    'Đang sửa trong xưởng': 'in_workshop',
-    'Chờ khách nhận': 'waiting_pickup',
-    'Trễ thời hạn (>24h)': 'overdue',
-    'Tiếp nhận mới': 'inspecting',
-    'Chờ kỹ thuật': 'waiting_tech',
-    'Đã nhận đơn': 'assigned',
-    'Đang kiểm tra': 'inspecting',
-    'Chờ khách duyệt': 'waiting_approval',
-    'Đang sửa': 'in_repair',
-    'Chờ linh kiện': 'waiting_parts',
-    'Chờ QC': 'waiting_qc',
-    'Sẵn sàng trả': 'ready_for_return',
-    'Hoàn tất': 'completed',
-  };
-
   // Đồng bộ URL query params (status, filter, date_filter) và mặc định dateFilter='all' cho Admin
   React.useEffect(() => {
     const statusParam = searchParams.get('status') || '';
@@ -173,24 +154,18 @@ function RepairsPageContent() {
     }
   }, [initialBranchParam, branches, setBranch, searchParams]);
 
-  // Nạp đơn hàng trực tiếp qua API với bộ lọc chi nhánh, trạng thái, thời gian và tìm kiếm
+  // Nạp đơn hàng trực tiếp qua API với bộ lọc chi nhánh, thời gian và tìm kiếm
   const {
     data: apiOrdersData,
     isLoading,
+    isFetching,
     isError,
     refetch,
   } = useQuery({
-    queryKey: ['repairs', branchId, statusFilter, search, orderTypeFilter, dateFilter, selectedDate, dateType],
+    queryKey: ['repairs', branchId, search, dateFilter, selectedDate, dateType],
     queryFn: async () => {
-      const isAdminScope = role === 'admin' || currentUser?.role === 'admin';
       const params: Record<string, any> = {
-        per_page:
-          isAdminScope ||
-          dateFilter === 'all' ||
-          initialDateFilterParam === 'all' ||
-          Boolean(resolvedInitialStatus)
-            ? 500
-            : 50,
+        per_page: 500,
       };
       if (selectedDate) {
         params.date = selectedDate;
@@ -202,62 +177,19 @@ function RepairsPageContent() {
       if (branchId && branchId !== 'all') {
         params.branch_id = branchId;
       }
-      if (statusFilter && statusToBackendMap[statusFilter]) {
-        const mappedBackendStatus = statusToBackendMap[statusFilter];
-        params.status = mappedBackendStatus;
-        if (mappedBackendStatus === 'overdue') {
-          params.filter = 'overdue';
-        }
-      }
       if (search.trim()) {
         params.q = search.trim();
-      }
-      if (orderTypeFilter === 'special_parts') {
-        params.special_parts_status = 'pending';
-      } else if (orderTypeFilter && orderTypeFilter !== 'all') {
-        params.order_type = orderTypeFilter;
       }
       const res = await repairService.getRepairs(params);
       return res?.data || res;
     },
   });
 
-  const orderCounts = useMemo(() => {
-    const raw = apiOrdersData?.data || apiOrdersData;
-    const list = Array.isArray(raw) ? raw : (orders || []);
-    let total = 0;
-    let inStore = 0;
-    let cod = 0;
-    let warranty = 0;
-    let specialParts = 0;
-    list.forEach((o: any) => {
-      total++;
-      const t = o.order_type || o.orderType || 'in_store';
-      if (t === 'warranty') {
-        warranty++;
-      } else if (t === 'cod') {
-        cod++;
-      } else {
-        inStore++;
-      }
-      if (o.special_parts_status === 'pending' || o.specialPartsStatus === 'pending') {
-        specialParts++;
-      }
-    });
-    return { total, inStore, cod, warranty, specialParts };
-  }, [apiOrdersData, orders]);
+  const isRepairsLoading = isLoading || isFetching;
 
-  const filteredOrders: RepairOrder[] = useMemo(() => {
+  const rawMappedOrders: RepairOrder[] = useMemo(() => {
     const raw = apiOrdersData?.data || apiOrdersData;
-    let list = Array.isArray(raw) ? raw : [];
-    if (list.length === 0 && !search && !statusFilter) {
-      list = orders;
-    }
-    if (orderTypeFilter === 'special_parts') {
-      list = list.filter((o: any) => (o.special_parts_status || o.specialPartsStatus) === 'pending');
-    } else if (orderTypeFilter !== 'all') {
-      list = list.filter((o: any) => (o.order_type || o.orderType || 'in_store') === orderTypeFilter);
-    }
+    const list = Array.isArray(raw) ? raw : [];
     const statusMap: Record<string, { label: string; type: any }> = {
       inspecting: { label: 'Đang kiểm tra', type: 'progress' },
       waiting_approval: { label: 'Chờ khách duyệt', type: 'wait' },
@@ -274,7 +206,8 @@ function RepairsPageContent() {
       rejected: { label: 'Từ chối sửa', type: 'danger' },
       cancelled: { label: 'Đã hủy', type: 'gray' },
     };
-    const mappedList: RepairOrder[] = list.map((o: any) => {
+
+    return list.map((o: any) => {
       const rawStatus = o.status === 'qc_pending' ? 'waiting_qc' : o.status;
       const mappedStatus = statusMap[rawStatus] || statusMap[o.status] || {
         label: o.status || 'Tiếp nhận mới',
@@ -354,14 +287,59 @@ function RepairsPageContent() {
         tenant: o.tenant || tenantBranding || currentUser?.tenant || undefined,
       };
     });
+  }, [apiOrdersData, dateType, tenantBranding, currentUser?.tenant]);
 
+  const statusReconciliationCounts = useMemo(() => {
+    const allCount = rawMappedOrders.length;
+    let openCount = 0;
+    let inWorkshopCount = 0;
+    let waitingPickupCount = 0;
+    let completedCount = 0;
+
+    rawMappedOrders.forEach((o) => {
+      if (!['Hoàn tất', 'Đã hủy', 'Từ chối sửa'].includes(o.status)) {
+        openCount++;
+      }
+      if (
+        !['Hoàn tất', 'Đã hủy', 'Từ chối sửa', 'Sẵn sàng trả', 'Chờ khách nhận'].includes(
+          o.status
+        )
+      ) {
+        inWorkshopCount++;
+      }
+      if (['Sẵn sàng trả', 'Chờ khách nhận'].includes(o.status)) {
+        waitingPickupCount++;
+      }
+      if (o.status === 'Hoàn tất') {
+        completedCount++;
+      }
+    });
+
+    return {
+      all: allCount,
+      allCount,
+      active: openCount,
+      openCount,
+      inWorkshop: inWorkshopCount,
+      inWorkshopCount,
+      waitingPickup: waitingPickupCount,
+      waitingPickupCount,
+      completed: completedCount,
+      completedCount,
+    };
+  }, [rawMappedOrders]);
+
+  const baseFilteredByStatus: RepairOrder[] = useMemo(() => {
+    if (!statusFilter) {
+      return rawMappedOrders;
+    }
     if (statusFilter === 'Đơn đang mở') {
-      return mappedList.filter(
+      return rawMappedOrders.filter(
         (item) => !['Hoàn tất', 'Đã hủy', 'Từ chối sửa'].includes(item.status)
       );
     }
     if (statusFilter === 'Đang sửa trong xưởng') {
-      return mappedList.filter(
+      return rawMappedOrders.filter(
         (item) =>
           ![
             'Hoàn tất',
@@ -373,13 +351,22 @@ function RepairsPageContent() {
       );
     }
     if (statusFilter === 'Chờ khách nhận' || statusFilter === 'Sẵn sàng trả') {
-      return mappedList.filter((item) =>
+      return rawMappedOrders.filter((item) =>
         ['Chờ khách nhận', 'Sẵn sàng trả'].includes(item.status)
+      );
+    }
+    if (statusFilter === 'Chờ linh kiện') {
+      return rawMappedOrders.filter(
+        (item) =>
+          (item.status === 'Chờ linh kiện' ||
+            item.special_parts_status === 'pending' ||
+            item.specialPartsStatus === 'pending') &&
+          !['Hoàn tất', 'Đã hủy', 'Từ chối sửa'].includes(item.status)
       );
     }
     if (statusFilter === 'Trễ thời hạn (>24h)') {
       const cutoffMs = Date.now() - 24 * 3600 * 1000;
-      return mappedList.filter((item) => {
+      return rawMappedOrders.filter((item) => {
         if (
           [
             'Hoàn tất',
@@ -400,9 +387,53 @@ function RepairsPageContent() {
         return true;
       });
     }
+    if (statusFilter === 'Tiếp nhận mới' || statusFilter === 'Đang kiểm tra') {
+      return rawMappedOrders.filter((item) =>
+        ['Tiếp nhận mới', 'Đang kiểm tra'].includes(item.status)
+      );
+    }
 
-    return mappedList;
-  }, [apiOrdersData, orders, search, statusFilter, orderTypeFilter, dateType, tenantBranding, currentUser?.tenant]);
+    return rawMappedOrders.filter((item) => item.status === statusFilter);
+  }, [rawMappedOrders, statusFilter]);
+
+  const statusFilteredOrders = baseFilteredByStatus;
+
+  const orderCounts = useMemo(() => {
+    let total = 0;
+    let inStore = 0;
+    let cod = 0;
+    let warranty = 0;
+    let specialParts = 0;
+    statusFilteredOrders.forEach((o: any) => {
+      total++;
+      const t = o.order_type || o.orderType || 'in_store';
+      if (t === 'warranty') {
+        warranty++;
+      } else if (t === 'cod') {
+        cod++;
+      } else {
+        inStore++;
+      }
+      if (o.special_parts_status === 'pending' || o.specialPartsStatus === 'pending') {
+        specialParts++;
+      }
+    });
+    return { total, inStore, cod, warranty, specialParts };
+  }, [statusFilteredOrders]);
+
+  const filteredOrders: RepairOrder[] = useMemo(() => {
+    if (orderTypeFilter === 'special_parts') {
+      return statusFilteredOrders.filter(
+        (o: any) => (o.special_parts_status || o.specialPartsStatus) === 'pending'
+      );
+    }
+    if (orderTypeFilter !== 'all') {
+      return statusFilteredOrders.filter(
+        (o: any) => (o.order_type || o.orderType || 'in_store') === orderTypeFilter
+      );
+    }
+    return statusFilteredOrders;
+  }, [statusFilteredOrders, orderTypeFilter]);
 
   // Lắng nghe sự kiện realtime cập nhật trạng thái đơn (kèm chuông Audio Chime)
   React.useEffect(() => {
@@ -871,7 +902,7 @@ function RepairsPageContent() {
               <span
                 className={`text-[10px] px-1.5 py-0.5 rounded-full font-mono ${
                   orderTypeFilter === 'all' ? 'bg-white/25 text-white' : 'bg-[#e2e9e5] text-[#42584e]'
-                }`}
+                } ${isRepairsLoading ? 'animate-pulse opacity-60' : ''}`}
               >
                 {orderCounts.total}
               </span>
@@ -890,7 +921,7 @@ function RepairsPageContent() {
               <span
                 className={`text-[10px] px-1.5 py-0.5 rounded-full font-mono ${
                   orderTypeFilter === 'in_store' ? 'bg-white/25 text-white' : 'bg-[#e2e9e5] text-[#42584e]'
-                }`}
+                } ${isRepairsLoading ? 'animate-pulse opacity-60' : ''}`}
               >
                 {orderCounts.inStore}
               </span>
@@ -909,7 +940,7 @@ function RepairsPageContent() {
               <span
                 className={`text-[10px] px-1.5 py-0.5 rounded-full font-mono ${
                   orderTypeFilter === 'cod' ? 'bg-white/25 text-white' : 'bg-[#fde68a] text-[#78350f]'
-                }`}
+                } ${isRepairsLoading ? 'animate-pulse opacity-60' : ''}`}
               >
                 {orderCounts.cod}
               </span>
@@ -928,7 +959,7 @@ function RepairsPageContent() {
               <span
                 className={`text-[10px] px-1.5 py-0.5 rounded-full font-mono ${
                   orderTypeFilter === 'warranty' ? 'bg-white/25 text-white' : 'bg-[#a7f3d0] text-[#065f46]'
-                }`}
+                } ${isRepairsLoading ? 'animate-pulse opacity-60' : ''}`}
               >
                 {orderCounts.warranty}
               </span>
@@ -948,7 +979,7 @@ function RepairsPageContent() {
               <span
                 className={`text-[10px] px-1.5 py-0.5 rounded-full font-mono ${
                   orderTypeFilter === 'special_parts' ? 'bg-white/25 text-white' : 'bg-red-100 text-red-700 border border-red-300 font-bold'
-                }`}
+                } ${isRepairsLoading ? 'animate-pulse opacity-60' : ''}`}
               >
                 {orderCounts.specialParts}
               </span>
@@ -1104,6 +1135,85 @@ function RepairsPageContent() {
             ) : null}
           </div>
 
+          {/* Admin Status Reconciliation Bar */}
+          {(role === 'admin' ||
+            currentUser?.role === 'admin' ||
+            (role as string) === 'super_admin' ||
+            (currentUser?.role as string) === 'super_admin') && (
+            <div
+              data-testid="admin-repairs-status-reconciliation-bar"
+              className="flex flex-wrap items-center gap-2 border-b border-[#e5ece8] pb-3 mb-4"
+            >
+              <span className="text-xs font-semibold text-[#667a70] mr-0.5">
+                Đối chiếu trạng thái:
+              </span>
+              <button
+                type="button"
+                data-testid="status-pill-all"
+                onClick={() => setStatusFilter('')}
+                className={`px-3 py-1 rounded-[8px] text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
+                  !statusFilter
+                    ? 'bg-[#176b58] text-white shadow-xs'
+                    : 'bg-[#f4f7f5] text-[#556960] hover:bg-[#eaf0ec]'
+                }`}
+              >
+                <span>Tất cả trạng thái ({statusReconciliationCounts.allCount})</span>
+              </button>
+              <button
+                type="button"
+                data-testid="status-pill-open"
+                onClick={() => setStatusFilter('Đơn đang mở')}
+                className={`px-3 py-1 rounded-[8px] text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
+                  statusFilter === 'Đơn đang mở'
+                    ? 'bg-[#176b58] text-white shadow-xs'
+                    : 'bg-[#eaf4ef] text-[#176b58] border border-[#b8d7c8] hover:bg-[#d8ede1]'
+                }`}
+              >
+                <span>
+                  Đơn đang mở ({statusReconciliationCounts.openCount}:{' '}
+                  {statusReconciliationCounts.inWorkshopCount} trong xưởng ·{' '}
+                  {statusReconciliationCounts.waitingPickupCount} chờ nhận)
+                </span>
+              </button>
+              <button
+                type="button"
+                data-testid="status-pill-in-workshop"
+                onClick={() => setStatusFilter('Đang sửa trong xưởng')}
+                className={`px-3 py-1 rounded-[8px] text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
+                  statusFilter === 'Đang sửa trong xưởng'
+                    ? 'bg-[#176b58] text-white shadow-xs'
+                    : 'bg-[#f4f7f5] text-[#556960] hover:bg-[#eaf0ec]'
+                }`}
+              >
+                <span>Đang sửa trong xưởng ({statusReconciliationCounts.inWorkshopCount})</span>
+              </button>
+              <button
+                type="button"
+                data-testid="status-pill-waiting-pickup"
+                onClick={() => setStatusFilter('Chờ khách nhận')}
+                className={`px-3 py-1 rounded-[8px] text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
+                  statusFilter === 'Chờ khách nhận'
+                    ? 'bg-[#176b58] text-white shadow-xs'
+                    : 'bg-[#f4f7f5] text-[#556960] hover:bg-[#eaf0ec]'
+                }`}
+              >
+                <span>Chờ khách nhận ({statusReconciliationCounts.waitingPickupCount})</span>
+              </button>
+              <button
+                type="button"
+                data-testid="status-pill-completed"
+                onClick={() => setStatusFilter('Hoàn tất')}
+                className={`px-3 py-1 rounded-[8px] text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
+                  statusFilter === 'Hoàn tất'
+                    ? 'bg-[#176b58] text-white shadow-xs'
+                    : 'bg-[#f4f7f5] text-[#556960] hover:bg-[#eaf0ec]'
+                }`}
+              >
+                <span>Hoàn tất ({statusReconciliationCounts.completedCount})</span>
+              </button>
+            </div>
+          )}
+
           <FilterBar
             searchValue={search}
             onSearchChange={setSearch}
@@ -1141,10 +1251,10 @@ function RepairsPageContent() {
                   variant="secondary"
                   size="sm"
                   icon="refresh"
-                  disabled={isLoading}
+                  disabled={isRepairsLoading}
                   onClick={() => refetch()}
                 >
-                  {isLoading ? 'Đang tải...' : 'Làm mới'}
+                  {isRepairsLoading ? 'Đang tải...' : 'Làm mới'}
                 </Button>
               </div>
             }
@@ -1153,7 +1263,7 @@ function RepairsPageContent() {
           {/* 4-Layer Resilient UI States */}
           {isError ? (
             <ErrorFallback onRetry={() => refetch()} />
-          ) : isLoading ? (
+          ) : isRepairsLoading ? (
             <TableSkeleton rows={6} cols={8} />
           ) : filteredOrders.length === 0 ? (
             <EmptyState

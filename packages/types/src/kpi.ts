@@ -245,7 +245,17 @@ export interface ActionableTasks {
   waiting_pickup: ActionableTaskWaitingPickup[];
   ready_pickup?: ActionableTaskWaitingPickup[];
   low_stock_parts: ActionableTaskLowStockPart[];
+  counts?: {
+    overdue: number;
+    waiting_approval: number;
+    waiting_qc: number;
+    waiting_pickup: number;
+    low_stock: number;
+    total: number;
+  };
 }
+
+export type ActionableTasksData = ActionableTasks;
 
 export interface TechnicianKpiItem {
   id: number;

@@ -437,9 +437,9 @@ class KpiController extends Controller
             $baseQuery->where('branch_id', $branchId);
         }
 
-        // 1. Số đơn đang hoạt động (không thuộc trạng thái hoàn tất hoặc hủy)
+        // 1. Số đơn đang hoạt động (không thuộc trạng thái hoàn tất, hủy hoặc từ chối sửa)
         $activeOrders = (clone $baseQuery)
-            ->whereNotIn('status', ['completed', 'cancelled'])
+            ->whereNotIn('status', ['completed', 'cancelled', 'rejected'])
             ->count();
 
         // 2. Tiếp nhận hôm nay
@@ -555,7 +555,6 @@ class KpiController extends Controller
             'inspecting',
             'waiting_approval',
             'quote_pending',
-            'rejected',
             'waiting_tech',
             'assigned',
             'in_repair',
@@ -1092,12 +1091,13 @@ class KpiController extends Controller
         ];
 
         // 9. Danh sách công việc cần xử lý trong ca (Actionable Tasks)
+        $overdueCount = $overdueOrdersCount;
         $overdueOrders = (clone $baseQuery)
             ->whereNotIn('status', ['completed', 'cancelled', 'rejected', 'ready_for_return', 'waiting_pickup'])
             ->where('created_at', '<=', $twentyFourHoursAgo)
             ->with(['customer', 'technician', 'deviceModel'])
             ->orderBy('created_at', 'asc')
-            ->limit(10)
+            ->limit(200)
             ->get()
             ->map(function (RepairOrder $order) use ($tz) {
                 $hoursOverdue = max(0, (int) Carbon::parse($order->created_at, $tz)->diffInHours(Carbon::now($tz)));
@@ -1118,11 +1118,13 @@ class KpiController extends Controller
             ->values()
             ->all();
 
-        $waitingApprovalOrders = (clone $baseQuery)
-            ->whereIn('status', ['waiting_approval', 'quote_pending'])
+        $waitingApprovalQuery = (clone $baseQuery)
+            ->whereIn('status', ['waiting_approval', 'quote_pending']);
+        $waitingApprovalCount = (clone $waitingApprovalQuery)->count();
+        $waitingApprovalOrders = $waitingApprovalQuery
             ->with(['customer', 'technician', 'deviceModel'])
             ->orderBy('updated_at', 'desc')
-            ->limit(10)
+            ->limit(200)
             ->get()
             ->map(function (RepairOrder $order) use ($tz) {
                 $hoursPending = max(0, (int) Carbon::parse($order->updated_at ?? $order->created_at, $tz)->diffInHours(Carbon::now($tz)));
@@ -1144,11 +1146,13 @@ class KpiController extends Controller
             ->values()
             ->all();
 
-        $waitingQcOrders = (clone $baseQuery)
-            ->whereIn('status', ['waiting_qc', 'qc_pending', 'qc_inspecting'])
+        $waitingQcQuery = (clone $baseQuery)
+            ->whereIn('status', ['waiting_qc', 'qc_pending', 'qc_inspecting']);
+        $waitingQcCount = (clone $waitingQcQuery)->count();
+        $waitingQcOrders = $waitingQcQuery
             ->with(['customer', 'technician', 'deviceModel'])
             ->orderBy('repair_completed_at', 'asc')
-            ->limit(10)
+            ->limit(200)
             ->get()
             ->map(function (RepairOrder $order) use ($tz) {
                 $refTime = $order->repair_completed_at ?? $order->updated_at ?? $order->created_at;
@@ -1169,11 +1173,12 @@ class KpiController extends Controller
             ->values()
             ->all();
 
+        $waitingPickupCount = $waitingPickupOrders;
         $waitingPickupList = (clone $baseQuery)
             ->whereIn('status', ['waiting_pickup', 'ready_for_return'])
             ->with(['customer', 'technician', 'deviceModel'])
             ->orderBy('qc_passed_at', 'asc')
-            ->limit(10)
+            ->limit(200)
             ->get()
             ->map(function (RepairOrder $order) {
                 return [
@@ -1195,10 +1200,11 @@ class KpiController extends Controller
         if ($user && $user->tenant_id) {
             $partsQuery->where('tenant_id', $user->tenant_id);
         }
-        $lowStockParts = $partsQuery
-            ->whereColumn('stock_quantity', '<=', 'min_stock_alert')
+        $lowStockQuery = $partsQuery->whereColumn('stock_quantity', '<=', 'min_stock_alert');
+        $lowStockCount = (clone $lowStockQuery)->count();
+        $lowStockParts = $lowStockQuery
             ->orderBy('stock_quantity', 'asc')
-            ->limit(10)
+            ->limit(200)
             ->get()
             ->map(function (Part $part) {
                 return [
@@ -1224,6 +1230,14 @@ class KpiController extends Controller
             'waiting_pickup'   => $waitingPickupList,
             'ready_pickup'     => $waitingPickupList,
             'low_stock_parts'  => $lowStockParts,
+            'counts'           => [
+                'overdue'          => $overdueCount,
+                'waiting_approval' => $waitingApprovalCount,
+                'waiting_qc'       => $waitingQcCount,
+                'waiting_pickup'   => $waitingPickupCount,
+                'low_stock'        => $lowStockCount,
+                'total'            => $overdueCount + $waitingQcCount + $waitingPickupCount,
+            ],
         ];
 
         $summary = [
