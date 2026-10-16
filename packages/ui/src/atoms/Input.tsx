@@ -1,4 +1,5 @@
 import React from 'react';
+import { sanitizeInputText } from '../utils/text';
 
 export interface InputProps extends React.InputHTMLAttributes<HTMLInputElement> {
   label?: string;
@@ -8,8 +9,18 @@ export interface InputProps extends React.InputHTMLAttributes<HTMLInputElement> 
 }
 
 export const Input = React.forwardRef<HTMLInputElement, InputProps>(
-  ({ label, error, hint, icon, className = '', id, ...props }, ref) => {
+  ({ label, error, hint, icon, className = '', id, onChange, ...props }, ref) => {
     const inputId = id || (label ? label.toLowerCase().replace(/\s+/g, '-') : undefined);
+
+    const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+      if (typeof e.target.value === 'string') {
+        const cleaned = sanitizeInputText(e.target.value);
+        if (cleaned !== e.target.value) {
+          e.target.value = cleaned;
+        }
+      }
+      onChange?.(e);
+    };
 
     return (
       <div className="w-full">
@@ -27,6 +38,7 @@ export const Input = React.forwardRef<HTMLInputElement, InputProps>(
           <input
             id={inputId}
             ref={ref}
+            onChange={handleChange}
             className={`w-full h-10 border border-[#e4eae6] rounded-[8px] text-sm text-[#2b3a32] bg-white outline-none transition-all placeholder:text-[#9aa59f] focus:border-[#75a994] focus:ring-2 focus:ring-[#176b58]/10 disabled:bg-[#f6f8f6] disabled:text-[#81908a] ${
               icon ? 'pl-9 pr-3' : 'px-3'
             } ${error ? 'border-[#bc5b52] focus:border-[#bc5b52] focus:ring-[#bc5b52]/10' : ''} ${className}`}

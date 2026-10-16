@@ -3,7 +3,20 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import Link from 'next/link';
 import { paymentService, repairService, tenantService, type PaymentItem } from '@podscare/api-client';
-import { Button, StatusTag, FilterBar, EmptyState, Modal, useToast, StatCard, CurrencyInput, Icon } from '@podscare/ui';
+import {
+  Button,
+  StatusTag,
+  FilterBar,
+  EmptyState,
+  Modal,
+  useToast,
+  StatCard,
+  CurrencyInput,
+  Icon,
+  sanitizeInputLive,
+  sanitizeSearchQuery,
+  matchesPhoneFlexible,
+} from '@podscare/ui';
 import { AppShell } from '../components/AppShell';
 import { usePodsCare } from '../providers';
 import { VietQrPaymentModal } from '../components/VietQrPaymentModal';
@@ -15,6 +28,7 @@ interface FormattedPayment {
   paymentCode: string;
   orderCode: string;
   customerName: string;
+  customerPhone: string;
   amount: number;
   method: string;
   methodKey: 'cash' | 'bank_transfer' | 'card_pos' | 'wallet';
@@ -132,6 +146,7 @@ export default function PaymentsPage() {
             paymentCode: p.payment_code || `PC26-PY-${p.id}`,
             orderCode: p.repair_order?.order_code || `PC26-${p.repair_order_id}`,
             customerName: p.repair_order?.customer?.name || 'Khách lẻ',
+            customerPhone: p.repair_order?.customer?.phone || p.customer?.phone || '',
             amount: Number(p.amount) || 0,
             method: mapMethodLabel(p.payment_method),
             methodKey: p.payment_method,
@@ -277,11 +292,14 @@ export default function PaymentsPage() {
   const cashCount = payments.filter((p) => p.methodKey === 'cash').length;
 
   const filtered = payments.filter((p) => {
-    const q = search.toLowerCase();
+    const q = sanitizeSearchQuery(search).toLowerCase();
+    if (!q) return true;
     return (
       p.paymentCode.toLowerCase().includes(q) ||
       p.orderCode.toLowerCase().includes(q) ||
       p.customerName.toLowerCase().includes(q) ||
+      p.customerPhone.toLowerCase().includes(q) ||
+      matchesPhoneFlexible(p.customerPhone, q) ||
       p.method.toLowerCase().includes(q)
     );
   });
@@ -400,8 +418,8 @@ export default function PaymentsPage() {
             <div className="flex-1 min-w-[280px]">
               <FilterBar
                 searchValue={search}
-                onSearchChange={setSearch}
-                searchPlaceholder="Tìm theo mã phiếu thu, mã đơn sửa, tên khách hoặc phương thức..."
+                onSearchChange={(val) => setSearch(sanitizeInputLive(val))}
+                searchPlaceholder="Tìm theo mã phiếu thu, mã đơn sửa, tên/SĐT khách hoặc phương thức..."
               />
             </div>
             <div className="flex items-center gap-2">
@@ -471,7 +489,14 @@ export default function PaymentsPage() {
                     <tr key={p.id} className="h-12 hover:bg-[#fafcfa] transition-colors">
                       <td className="px-3 font-mono font-bold text-[#176b58]">{p.paymentCode}</td>
                       <td className="px-3 font-mono font-medium text-[#2d3d35]">{p.orderCode}</td>
-                      <td className="px-3 font-medium text-[#1c302b]">{p.customerName}</td>
+                      <td className="px-3 font-medium text-[#1c302b]">
+                        <span>{p.customerName}</span>
+                        {p.customerPhone && (
+                          <small className="block text-xs font-mono text-[#6e7e76]">
+                            {p.customerPhone}
+                          </small>
+                        )}
+                      </td>
                       <td className="px-3 text-[#4d5e56]">
                         <span className="block font-medium">{p.method}</span>
                         {p.transactionRef && (

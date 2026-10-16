@@ -8,6 +8,7 @@ use App\Models\Payment;
 use App\Models\RepairOrder;
 use App\Models\User;
 use App\Services\RefundService;
+use App\Support\PhoneHelper;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
@@ -35,11 +36,29 @@ class PaymentController extends Controller
         }
 
         if ($orderIdentifier = $request->input('repair_order_id') ?? $request->input('order_code')) {
-            if (is_numeric($orderIdentifier)) {
-                $query->where('repair_order_id', (int) $orderIdentifier);
+            $cleanOrderId = PhoneHelper::sanitizeText((string) $orderIdentifier);
+            if (is_numeric($cleanOrderId)) {
+                $query->where('repair_order_id', (int) $cleanOrderId);
             } else {
-                $query->whereHas('repairOrder', fn ($q) => $q->where('order_code', (string) $orderIdentifier));
+                $query->whereHas('repairOrder', fn ($q) => $q->where('order_code', $cleanOrderId));
             }
+        }
+
+        $rawSearch = $request->input('q') ?? $request->input('search');
+        $search = PhoneHelper::sanitizeText($rawSearch);
+        if ($search !== '') {
+            $query->where(function ($q) use ($search) {
+                $q->where('payment_code', 'like', "%{$search}%")
+                  ->orWhere('transaction_ref', 'like', "%{$search}%")
+                  ->orWhereHas('repairOrder', function ($rq) use ($search) {
+                      $rq->where('order_code', 'like', "%{$search}%")
+                         ->orWhere('serial_number', 'like', "%{$search}%")
+                         ->orWhereHas('customer', function ($cq) use ($search) {
+                             $cq->where('name', 'like', "%{$search}%");
+                             PhoneHelper::applyPhoneColumnSearch($cq, 'phone', $search, 'or');
+                         });
+                  });
+            });
         }
 
         if ($method = $request->input('payment_method')) {

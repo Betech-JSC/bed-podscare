@@ -3,7 +3,19 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { warrantyService, type WarrantyItem } from '@podscare/api-client';
-import { Button, StatusTag, FilterBar, EmptyState, Modal, useToast, Icon } from '@podscare/ui';
+import {
+  Button,
+  StatusTag,
+  FilterBar,
+  EmptyState,
+  Modal,
+  useToast,
+  Icon,
+  sanitizeInputLive,
+  sanitizeSearchQuery,
+  matchesPhoneFlexible,
+  isPhoneLikeQuery,
+} from '@podscare/ui';
 import { AppShell } from '../components/AppShell';
 
 interface FormattedWarranty {
@@ -91,8 +103,9 @@ export default function WarrantyPage() {
     setIsLoading(true);
     try {
       const params: any = { per_page: 50 };
-      if (queryStr && queryStr.trim()) {
-        params.q = queryStr.trim();
+      const cleanQuery = sanitizeSearchQuery(queryStr);
+      if (cleanQuery) {
+        params.q = cleanQuery;
       }
       const res = await warrantyService.getWarranties(params);
       const raw = res?.data;
@@ -241,7 +254,7 @@ export default function WarrantyPage() {
 
   const handleLookup = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
-    const query = lookupQuery.trim();
+    const query = sanitizeSearchQuery(lookupQuery);
     if (!query) {
       toast('Vui lòng nhập mã bảo hành, serial hoặc số điện thoại', 'info');
       return;
@@ -251,7 +264,7 @@ export default function WarrantyPage() {
     setLookupResult(null);
 
     try {
-      const isPhone = /^[0-9+ ]{8,15}$/.test(query);
+      const isPhone = isPhoneLikeQuery(query) || /^[0-9+().\-\s]{4,20}$/.test(query);
       const params = isPhone ? { phone: query } : { code: query };
       const res = await warrantyService.lookup(params);
       const data = res?.data;
@@ -279,7 +292,7 @@ export default function WarrantyPage() {
       const found = warranties.find(
         (w) =>
           w.code.toLowerCase() === query.toLowerCase() ||
-          w.phone.replace(/\s+/g, '') === query.replace(/\s+/g, '') ||
+          matchesPhoneFlexible(w.phone, query) ||
           w.serial.toLowerCase() === query.toLowerCase()
       );
       if (found) {
@@ -294,12 +307,14 @@ export default function WarrantyPage() {
   };
 
   const filtered = warranties.filter((w) => {
-    const q = search.toLowerCase();
+    const q = sanitizeSearchQuery(search).toLowerCase();
+    if (!q) return true;
     return (
       w.code.toLowerCase().includes(q) ||
       w.orderCode.toLowerCase().includes(q) ||
       w.customerName.toLowerCase().includes(q) ||
       w.phone.toLowerCase().includes(q) ||
+      matchesPhoneFlexible(w.phone, q) ||
       w.serial.toLowerCase().includes(q) ||
       w.device.toLowerCase().includes(q)
     );
@@ -364,7 +379,7 @@ export default function WarrantyPage() {
               type="text"
               placeholder="VD: 0903... hoặc Serial..."
               value={lookupQuery}
-              onChange={(e) => setLookupQuery(e.target.value)}
+              onChange={(e) => setLookupQuery(sanitizeInputLive(e.target.value))}
               className="text-xs px-3 py-2 rounded-[8px] border border-[#bad5c6] bg-white outline-none focus:border-[#176b58] focus:ring-1 focus:ring-[#176b58] flex-1 sm:w-[240px]"
             />
             <Button
@@ -431,7 +446,7 @@ export default function WarrantyPage() {
             <div className="mb-4">
               <FilterBar
                 searchValue={search}
-                onSearchChange={setSearch}
+                onSearchChange={(val) => setSearch(sanitizeInputLive(val))}
                 searchPlaceholder="Nhập số điện thoại khách hàng, số serial hoặc mã BH..."
               />
             </div>
@@ -1032,7 +1047,7 @@ export default function WarrantyPage() {
                 type="text"
                 placeholder="Nhập mã BH, SĐT hoặc Serial..."
                 value={lookupQuery}
-                onChange={(e) => setLookupQuery(e.target.value)}
+                onChange={(e) => setLookupQuery(sanitizeInputLive(e.target.value))}
                 className="text-sm px-3.5 py-2.5 rounded-[8px] border border-[#d2dcd6] bg-white outline-none focus:border-[#176b58] focus:ring-1 focus:ring-[#176b58] flex-1"
               />
               <Button type="submit" variant="primary" size="md" disabled={isLookingUp}>

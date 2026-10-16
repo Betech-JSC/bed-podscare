@@ -9,6 +9,9 @@ import {
   Textarea,
   useToast,
   Icon,
+  sanitizeInputLive,
+  sanitizeSearchQuery,
+  normalizePhoneForStorage,
 } from '@podscare/ui';
 import type { RepairOrder } from '@podscare/types';
 import { repairService, userService, type UserRecord } from '@podscare/api-client';
@@ -107,7 +110,10 @@ export const AdminEditOrderModal: React.FC<AdminEditOrderModalProps> = ({
   }, []);
 
   const handleSave = async () => {
-    if (!customerName.trim()) {
+    const cleanCustomerName = sanitizeSearchQuery(customerName);
+    const normalizedCustomerPhone = normalizePhoneForStorage(customerPhone);
+
+    if (!cleanCustomerName) {
       setErrorMsg('Vui lòng nhập họ tên khách hàng.');
       return;
     }
@@ -124,8 +130,8 @@ export const AdminEditOrderModal: React.FC<AdminEditOrderModalProps> = ({
 
     try {
       const payload: Record<string, any> = {
-        customer_name: customerName.trim(),
-        customer_phone: customerPhone.trim(),
+        customer_name: cleanCustomerName,
+        customer_phone: normalizedCustomerPhone,
         serial_number: serialNumber.trim() || null,
         issue_description: issueDescription.trim(),
         accessories: accessories.trim() || null,
@@ -144,8 +150,8 @@ export const AdminEditOrderModal: React.FC<AdminEditOrderModalProps> = ({
 
       const updatedOrder: RepairOrder = {
         ...order,
-        name: customerName.trim(),
-        phone: customerPhone.trim(),
+        name: cleanCustomerName,
+        phone: normalizedCustomerPhone,
         serial: serialNumber.trim() || 'Chưa cập nhật',
         issue: issueDescription.trim(),
         accessories: accessories.trim() || 'Không gửi kèm',
@@ -287,7 +293,7 @@ export const AdminEditOrderModal: React.FC<AdminEditOrderModalProps> = ({
             </label>
             <Input
               value={customerName}
-              onChange={(e) => setCustomerName(e.target.value)}
+              onChange={(e) => setCustomerName(sanitizeInputLive(e.target.value))}
               placeholder="Nguyễn Văn A..."
             />
           </div>
@@ -297,7 +303,7 @@ export const AdminEditOrderModal: React.FC<AdminEditOrderModalProps> = ({
             </label>
             <Input
               value={customerPhone}
-              onChange={(e) => setCustomerPhone(e.target.value)}
+              onChange={(e) => setCustomerPhone(sanitizeInputLive(e.target.value))}
               placeholder="090..."
             />
           </div>

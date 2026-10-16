@@ -15,6 +15,7 @@ use App\Models\User;
 use App\Models\Warranty;
 use App\Services\OrderCodeService;
 use App\Services\OrderWorkflowService;
+use App\Support\PhoneHelper;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
@@ -134,13 +135,17 @@ class OrderController extends Controller
             }
         }
 
-        if ($search = $request->input('q')) {
+        $rawSearch = $request->input('q') ?? $request->input('search');
+        $search = PhoneHelper::sanitizeText($rawSearch);
+
+        if ($search !== '') {
             $query->where(function ($q) use ($search) {
                 $q->where('order_code', 'like', "%{$search}%")
                   ->orWhere('serial_number', 'like', "%{$search}%")
+                  ->orWhere('issue_description', 'like', "%{$search}%")
                   ->orWhereHas('customer', function ($sq) use ($search) {
-                      $sq->where('phone', 'like', "%{$search}%")
-                         ->orWhere('name', 'like', "%{$search}%");
+                      $sq->where('name', 'like', "%{$search}%");
+                      PhoneHelper::applyPhoneColumnSearch($sq, 'phone', $search, 'or');
                   });
             });
         }
@@ -181,7 +186,7 @@ class OrderController extends Controller
         };
 
         // Nếu có date cụ thể (YYYY-MM-DD), ưu tiên lọc theo ngày đó thay vì preset
-        $specificDate = $request->input('date');
+        $specificDate = $request->input('date') ?? $request->input('exact_date');
         $hasSpecificDate = false;
 
         if ($specificDate && is_string($specificDate) && preg_match('/^\d{4}-\d{2}-\d{2}$/', $specificDate)) {
@@ -204,10 +209,13 @@ class OrderController extends Controller
                 || $request->input('special_parts') === 'true'
                 || in_array($status, ['special_parts', 'open', 'in_workshop', 'waiting_pickup', 'ready_for_return', 'waiting_parts', 'overdue'], true)
                 || in_array($filter, ['open', 'in_workshop', 'waiting_pickup', 'ready_for_return', 'waiting_parts', 'overdue'], true);
-            if ($hasSpecialPartsFilter && ! $request->has('date_filter')) {
+
+            if ($search !== '' && ($dateFilter === 'today' || ! $request->filled('date_filter'))) {
+                $dateFilter = 'all';
+            } elseif ($hasSpecialPartsFilter && ! $request->has('date_filter')) {
                 $dateFilter = 'all';
             } elseif ($isTechnician) {
-                if (in_array($dateFilter, ['all', '30_days'], true) || ! in_array($dateFilter, ['today', '3_days', 'yesterday', '7_days'], true)) {
+                if ($search === '' && (in_array($dateFilter, ['all', '30_days'], true) || ! in_array($dateFilter, ['today', '3_days', 'yesterday', '7_days'], true))) {
                     $dateFilter = '7_days';
                 }
             } else {
@@ -243,7 +251,7 @@ class OrderController extends Controller
             } elseif ($dateFilter === '30_days') {
                 $filterDateFrom($query, Carbon::now($tz)->subDays(30)->startOfDay());
             } elseif ($dateFilter === 'all') {
-                if ($isTechnician && ! $isCompletedDate) {
+                if ($isTechnician && ! $isCompletedDate && $search === '') {
                     $query->where('created_at', '>=', Carbon::today($tz)->subDays(6)->startOfDay());
                 }
             }
@@ -267,6 +275,16 @@ class OrderController extends Controller
             $quotaService = app(\App\Services\QuotaService::class);
             $quotaService->checkSubscriptionActive($tenant);
             $quotaService->checkOrderQuota($tenant);
+        }
+
+        if ($request->has('customer_name') && is_string($request->input('customer_name'))) {
+            $request->merge(['customer_name' => PhoneHelper::sanitizeText($request->input('customer_name'))]);
+        }
+        if ($request->has('customer_phone') && is_string($request->input('customer_phone'))) {
+            $request->merge(['customer_phone' => PhoneHelper::normalizeForStorage($request->input('customer_phone'))]);
+        }
+        if ($request->has('serial_number') && is_string($request->input('serial_number'))) {
+            $request->merge(['serial_number' => PhoneHelper::sanitizeText($request->input('serial_number'))]);
         }
 
         $rules = [
@@ -318,10 +336,29 @@ class OrderController extends Controller
             // 1. Tìm hoặc tạo khách hàng
             $customerId = $validated['customer_id'] ?? null;
             if (! $customerId && ! empty($validated['customer_phone'])) {
-                $customer = Customer::firstOrCreate(
-                    ['phone' => $validated['customer_phone']],
-                    ['name' => $validated['customer_name'] ?? 'Khách lẻ']
-                );
+                $normalizedPhone = PhoneHelper::normalizeForStorage($validated['customer_phone']);
+                $cleanName = PhoneHelper::sanitizeText($validated['customer_name'] ?? '') ?: 'Khách lẻ';
+
+                $customer = Customer::where(function ($q) use ($normalizedPhone) {
+                    $q->where('phone', $normalizedPhone);
+                    PhoneHelper::applyPhoneColumnSearch($q, 'phone', $normalizedPhone, 'or');
+                })->first();
+
+                if ($customer) {
+                    if ($customer->phone !== $normalizedPhone) {
+                        $existsOther = Customer::where('phone', $normalizedPhone)
+                            ->where('id', '!=', $customer->id)
+                            ->exists();
+                        if (! $existsOther) {
+                            $customer->update(['phone' => $normalizedPhone]);
+                        }
+                    }
+                } else {
+                    $customer = Customer::create([
+                        'phone' => $normalizedPhone,
+                        'name'  => $cleanName,
+                    ]);
+                }
                 $customerId = $customer->id;
             }
 
@@ -535,6 +572,16 @@ class OrderController extends Controller
         $user = $request->user();
         $isAdmin = $user && in_array($user->role, ['admin', 'super_admin'], true);
 
+        if ($request->has('customer_name') && is_string($request->input('customer_name'))) {
+            $request->merge(['customer_name' => PhoneHelper::sanitizeText($request->input('customer_name'))]);
+        }
+        if ($request->has('customer_phone') && is_string($request->input('customer_phone'))) {
+            $request->merge(['customer_phone' => PhoneHelper::normalizeForStorage($request->input('customer_phone'))]);
+        }
+        if ($request->has('serial_number') && is_string($request->input('serial_number'))) {
+            $request->merge(['serial_number' => PhoneHelper::sanitizeText($request->input('serial_number'))]);
+        }
+
         if ($isAdmin) {
             $validated = $request->validate([
                 'customer_name'         => 'nullable|string|max:255',
@@ -562,20 +609,29 @@ class OrderController extends Controller
             return DB::transaction(function () use ($order, $validated, $user, $request) {
                 // Cập nhật thông tin khách hàng nếu có
                 if (! empty($validated['customer_name']) || ! empty($validated['customer_phone'])) {
+                    $cleanName = ! empty($validated['customer_name'])
+                        ? PhoneHelper::sanitizeText($validated['customer_name'])
+                        : null;
+                    $normalizedPhone = ! empty($validated['customer_phone'])
+                        ? PhoneHelper::normalizeForStorage($validated['customer_phone'])
+                        : null;
+
                     if ($order->customer) {
                         $customerUpdates = [];
-                        if (! empty($validated['customer_name'])) {
-                            $customerUpdates['name'] = $validated['customer_name'];
+                        if ($cleanName !== null && $cleanName !== '') {
+                            $customerUpdates['name'] = $cleanName;
                         }
-                        if (! empty($validated['customer_phone'])) {
-                            $customerUpdates['phone'] = $validated['customer_phone'];
+                        if ($normalizedPhone !== null && $normalizedPhone !== '') {
+                            $customerUpdates['phone'] = $normalizedPhone;
                         }
-                        $order->customer->update($customerUpdates);
+                        if (! empty($customerUpdates)) {
+                            $order->customer->update($customerUpdates);
+                        }
                     } else {
                         $newCustomer = Customer::create([
                             'tenant_id' => $order->tenant_id,
-                            'name'      => $validated['customer_name'] ?? 'Khách lẻ',
-                            'phone'     => $validated['customer_phone'] ?? '0900000000',
+                            'name'      => $cleanName ?: 'Khách lẻ',
+                            'phone'     => $normalizedPhone ?: '0900000000',
                         ]);
                         $order->customer_id = $newCustomer->id;
                         $order->save();

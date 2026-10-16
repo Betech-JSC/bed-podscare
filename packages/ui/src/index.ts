@@ -13,6 +13,8 @@ export * from './atoms/Icons';
 
 // Utils
 export * from './utils/currency';
+export * from './utils/text';
+export * from './utils/phoneSearch';
 
 // Molecules
 export * from './molecules/StatCard';

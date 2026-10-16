@@ -9,6 +9,7 @@ use App\Models\RepairOrder;
 use App\Models\Warranty;
 use App\Models\WarrantyClaim;
 use App\Services\WarrantyReworkService;
+use App\Support\PhoneHelper;
 use App\Support\PiiHelper;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -34,27 +35,32 @@ class WarrantyController extends Controller
             $query->where('status', $status);
         }
 
-        if ($phone = $request->input('phone') ?: $request->input('customer_phone')) {
+        $phone = PhoneHelper::sanitizeText($request->input('phone') ?: $request->input('customer_phone'));
+        if ($phone !== '') {
             $query->whereHas('customer', function ($cq) use ($phone) {
-                $cq->where('phone', 'like', "%{$phone}%");
+                PhoneHelper::applyPhoneColumnSearch($cq, 'phone', $phone, 'and');
             });
         }
 
-        if ($serial = $request->input('serial_number') ?: $request->input('serial')) {
+        $serial = PhoneHelper::sanitizeText($request->input('serial_number') ?: $request->input('serial'));
+        if ($serial !== '') {
             $query->whereHas('repairOrder', function ($rq) use ($serial) {
                 $rq->where('serial_number', 'like', "%{$serial}%");
             });
         }
 
-        if ($search = $request->input('q')) {
+        $rawSearch = $request->input('q') ?? $request->input('search');
+        $search = PhoneHelper::sanitizeText($rawSearch);
+        if ($search !== '') {
             $query->where(function ($q) use ($search) {
                 $q->where('warranty_code', 'like', "%{$search}%")
                   ->orWhereHas('repairOrder', function ($rq) use ($search) {
-                      $rq->where('serial_number', 'like', "%{$search}%");
+                      $rq->where('serial_number', 'like', "%{$search}%")
+                         ->orWhere('order_code', 'like', "%{$search}%");
                   })
                   ->orWhereHas('customer', function ($sq) use ($search) {
-                      $sq->where('phone', 'like', "%{$search}%")
-                         ->orWhere('name', 'like', "%{$search}%");
+                      $sq->where('name', 'like', "%{$search}%");
+                      PhoneHelper::applyPhoneColumnSearch($sq, 'phone', $search, 'or');
                   });
             });
         }
@@ -69,12 +75,12 @@ class WarrantyController extends Controller
      */
     public function history(Request $request): JsonResponse
     {
-        $phone = $request->input('phone') ?: $request->input('customer_phone');
-        $serial = $request->input('serial_number') ?: $request->input('serial');
+        $phone = PhoneHelper::sanitizeText($request->input('phone') ?: $request->input('customer_phone'));
+        $serial = PhoneHelper::sanitizeText($request->input('serial_number') ?: $request->input('serial'));
         $customerId = $request->input('customer_id');
-        $orderCode = $request->input('order_code');
+        $orderCode = PhoneHelper::sanitizeText($request->input('order_code'));
 
-        if (! $phone && ! $serial && ! $customerId && ! $orderCode) {
+        if ($phone === '' && $serial === '' && ! $customerId && $orderCode === '') {
             return $this->failure('Vui lòng cung cấp Số điện thoại (phone), Số Serial (serial_number) hoặc mã đơn (order_code) để tra cứu hồ sơ bệnh án.', 422);
         }
 
@@ -91,13 +97,13 @@ class WarrantyController extends Controller
 
         $ordersQuery->where(function ($q) use ($phone, $serial, $customerId, $orderCode) {
             $applied = false;
-            if ($phone) {
+            if ($phone !== '') {
                 $q->whereHas('customer', function ($cq) use ($phone) {
-                    $cq->where('phone', 'like', "%{$phone}%");
+                    PhoneHelper::applyPhoneColumnSearch($cq, 'phone', $phone, 'and');
                 });
                 $applied = true;
             }
-            if ($serial) {
+            if ($serial !== '') {
                 if ($applied) {
                     $q->orWhere('serial_number', 'like', "%{$serial}%");
                 } else {
@@ -113,7 +119,7 @@ class WarrantyController extends Controller
                     $applied = true;
                 }
             }
-            if ($orderCode) {
+            if ($orderCode !== '') {
                 if ($applied) {
                     $q->orWhere('order_code', 'like', "%{$orderCode}%");
                 } else {
@@ -127,8 +133,10 @@ class WarrantyController extends Controller
         $customer = null;
         if ($orders->isNotEmpty()) {
             $customer = $orders->first()->customer;
-        } elseif ($phone) {
-            $customer = Customer::where('phone', 'like', "%{$phone}%")->first();
+        } elseif ($phone !== '') {
+            $customer = Customer::where(function ($cq) use ($phone) {
+                PhoneHelper::applyPhoneColumnSearch($cq, 'phone', $phone, 'and');
+            })->first();
         }
 
         $formattedOrders = $orders->map(function ($order) {
@@ -201,22 +209,48 @@ class WarrantyController extends Controller
      */
     public function lookup(Request $request): JsonResponse
     {
-        $code = $request->input('code');
-        $phone = $request->input('phone');
+        $code = PhoneHelper::sanitizeText($request->input('code'));
+        $phone = PhoneHelper::sanitizeText($request->input('phone') ?? $request->input('q'));
 
-        if (! $code && ! $phone) {
+        if ($code === '' && $phone === '') {
             return $this->failure('Vui lòng cung cấp mã bảo hành (code) hoặc số điện thoại (phone).', 422);
         }
 
         $query = Warranty::with(['repairOrder', 'customer', 'deviceModel', 'claims']);
 
-        if ($code) {
-            $query->where('warranty_code', $code);
-        }
+        $codeTokens = $code !== '' ? PhoneHelper::extractSearchTokens($code) : null;
 
-        if ($phone) {
+        if ($code !== '' && $phone !== '') {
+            $query->where(function ($q) use ($code) {
+                $q->where('warranty_code', $code)
+                  ->orWhere('warranty_code', 'like', "%{$code}%")
+                  ->orWhereHas('repairOrder', fn ($rq) => $rq->where('order_code', 'like', "%{$code}%"));
+            });
             $query->whereHas('customer', function ($q) use ($phone) {
-                $q->where('phone', $phone);
+                PhoneHelper::applyPhoneColumnSearch($q, 'phone', $phone, 'and');
+            });
+        } elseif ($code !== '') {
+            $query->where(function ($q) use ($code, $codeTokens) {
+                $q->where('warranty_code', $code)
+                  ->orWhere('warranty_code', 'like', "%{$code}%")
+                  ->orWhereHas('repairOrder', fn ($rq) => $rq->where('order_code', 'like', "%{$code}%"));
+
+                if ($codeTokens && $codeTokens['isPhoneLike']) {
+                    $q->orWhereHas('customer', function ($cq) use ($code) {
+                        PhoneHelper::applyPhoneColumnSearch($cq, 'phone', $code, 'and');
+                    });
+                }
+            });
+        } elseif ($phone !== '') {
+            $phoneTokens = PhoneHelper::extractSearchTokens($phone);
+            $query->where(function ($q) use ($phone, $phoneTokens) {
+                $q->whereHas('customer', function ($cq) use ($phone) {
+                    PhoneHelper::applyPhoneColumnSearch($cq, 'phone', $phone, 'and');
+                });
+                if (! $phoneTokens['isPhoneLike']) {
+                    $q->orWhere('warranty_code', 'like', "%{$phone}%")
+                      ->orWhereHas('repairOrder', fn ($rq) => $rq->where('order_code', 'like', "%{$phone}%"));
+                }
             });
         }
 
@@ -226,11 +260,15 @@ class WarrantyController extends Controller
             return $this->empty('Không tìm thấy thông tin bảo hành phù hợp.');
         }
 
+        $phoneForVerification = $phone !== ''
+            ? $phone
+            : (($codeTokens && $codeTokens['isPhoneLike']) ? $code : '');
+
         // Áp dụng Data Masking nếu tra cứu công khai bằng mã bảo hành mà chưa xác thực số điện thoại
         foreach ($results as $warranty) {
             $isVerified = false;
-            if (! empty($phone) && $warranty->customer && ! empty($warranty->customer->phone)) {
-                $isVerified = PiiHelper::isPhoneMatching($phone, $warranty->customer->phone);
+            if ($phoneForVerification !== '' && $warranty->customer && ! empty($warranty->customer->phone)) {
+                $isVerified = PiiHelper::isPhoneMatching($phoneForVerification, $warranty->customer->phone);
             }
 
             if (! $isVerified && $warranty->customer) {

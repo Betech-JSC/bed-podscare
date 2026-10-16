@@ -13,6 +13,8 @@ import {
   Icon,
   Modal,
   useToast,
+  sanitizeInputLive,
+  sanitizeSearchQuery,
 } from '@podscare/ui';
 import type { UserProfile } from '@podscare/types';
 import { saasService } from '@podscare/api-client';
@@ -128,6 +130,32 @@ export const AppShell: React.FC<AppShellProps> = ({ children, crumbName = 'Tổn
   const [searchVal, setSearchVal] = useState('');
   const [logoutModalOpen, setLogoutModalOpen] = useState(false);
   const [logoutLoading, setLogoutLoading] = useState(false);
+
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const params = new URLSearchParams(window.location.search);
+      const urlSearch = params.get('search') ?? params.get('q') ?? '';
+      if (pathname === '/repairs') {
+        setSearchVal(sanitizeInputLive(urlSearch));
+      } else if (!urlSearch) {
+        setSearchVal('');
+      }
+    }
+  }, [pathname]);
+
+  const handleTopbarSearchChange = (val: string) => {
+    setSearchVal(sanitizeInputLive(val));
+  };
+
+  const handleTopbarSearchSubmit = (val: string) => {
+    const cleanVal = sanitizeSearchQuery(val);
+    setSearchVal(cleanVal);
+    if (cleanVal) {
+      router.push(`/repairs?search=${encodeURIComponent(cleanVal)}`);
+    } else if (pathname === '/repairs') {
+      router.push('/repairs');
+    }
+  };
 
   // Quản lý Notification Center Popover kết nối trực tiếp với NotificationProvider & Web Audio Chime
   const [notificationOpen, setNotificationOpen] = useState(false);
@@ -327,7 +355,8 @@ export const AppShell: React.FC<AppShellProps> = ({ children, crumbName = 'Tổn
           crumbName={crumbName}
           onOpenMobileMenu={() => setMobileMenuOpen(true)}
           searchValue={searchVal}
-          onSearchChange={setSearchVal}
+          onSearchChange={handleTopbarSearchChange}
+          onSearchSubmit={handleTopbarSearchSubmit}
           unreadCount={unreadCount}
           isNotificationOpen={notificationOpen}
           onOpenNotifications={() => setNotificationOpen((prev) => !prev)}

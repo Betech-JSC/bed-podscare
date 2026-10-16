@@ -1,11 +1,13 @@
 import React from 'react';
 import { Icon } from '../atoms/Icons';
+import { sanitizeInputText } from '../utils/text';
 
 export interface TopbarProps {
   crumbName: string;
   onOpenMobileMenu?: () => void;
   searchValue?: string;
   onSearchChange?: (val: string) => void;
+  onSearchSubmit?: (val: string) => void;
   onOpenNotifications?: () => void;
   hasUnreadNotification?: boolean;
   unreadCount?: number;
@@ -20,6 +22,7 @@ export const Topbar: React.FC<TopbarProps> = ({
   onOpenMobileMenu,
   searchValue = '',
   onSearchChange,
+  onSearchSubmit,
   onOpenNotifications,
   hasUnreadNotification = false,
   unreadCount,
@@ -67,7 +70,13 @@ export const Topbar: React.FC<TopbarProps> = ({
           <input
             type="text"
             value={searchValue}
-            onChange={(e) => onSearchChange?.(e.target.value)}
+            onChange={(e) => onSearchChange?.(sanitizeInputText(e.target.value))}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') {
+                e.preventDefault();
+                onSearchSubmit?.(sanitizeInputText(e.currentTarget.value));
+              }
+            }}
             placeholder="Tìm mã đơn, khách..."
             className="w-full text-sm outline-none bg-transparent text-[#1c302b] placeholder:text-[#9aa59f]"
           />

@@ -12,6 +12,9 @@ import {
   Input,
   Textarea,
   Icon,
+  sanitizeInputLive,
+  sanitizeSearchQuery,
+  normalizePhoneForStorage,
 } from '@podscare/ui';
 import { AppShell } from '../components/AppShell';
 import { IntakeWizardModal } from '../components/IntakeWizardModal';
@@ -51,8 +54,9 @@ export default function CustomersPage() {
   } = useQuery({
     queryKey: ['customers', search.trim(), page, perPage],
     queryFn: async () => {
+      const cleanQuery = sanitizeSearchQuery(search);
       const res = await customerService.getCustomers({
-        q: search.trim() || undefined,
+        q: cleanQuery || undefined,
         page: perPage === 'all' ? 1 : page,
         per_page: perPage,
         all: perPage === 'all' ? true : undefined,
@@ -245,10 +249,10 @@ export default function CustomersPage() {
     setEditError(null);
     try {
       await customerService.updateCustomer(editingCustomer.id, {
-        name: editName.trim(),
-        phone: editPhone.trim(),
-        address: editAddress.trim() || undefined,
-        email: editEmail.trim() || undefined,
+        name: sanitizeSearchQuery(editName),
+        phone: normalizePhoneForStorage(editPhone),
+        address: sanitizeSearchQuery(editAddress) || undefined,
+        email: sanitizeSearchQuery(editEmail) || undefined,
       });
 
       toast('Cập nhật thông tin khách hàng thành công!', 'success');
@@ -320,7 +324,7 @@ export default function CustomersPage() {
           <FilterBar
             searchValue={search}
             onSearchChange={(val: string) => {
-              setSearch(val);
+              setSearch(sanitizeInputLive(val));
               setPage(1);
             }}
             searchPlaceholder="Tìm theo họ tên hoặc số điện thoại..."
@@ -815,7 +819,7 @@ export default function CustomersPage() {
               label="Họ và tên khách hàng *"
               value={editName}
               onChange={(e) => {
-                setEditName(e.target.value);
+                setEditName(sanitizeInputLive(e.target.value));
                 if (editError) setEditError(null);
               }}
               placeholder="Nhập họ và tên..."
@@ -824,7 +828,7 @@ export default function CustomersPage() {
               label="Số điện thoại *"
               value={editPhone}
               onChange={(e) => {
-                setEditPhone(e.target.value);
+                setEditPhone(sanitizeInputLive(e.target.value));
                 if (editError) setEditError(null);
               }}
               placeholder="Nhập số điện thoại..."

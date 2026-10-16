@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api\V1;
 
 use App\Http\Controllers\Controller;
 use App\Models\RepairOrder;
+use App\Support\PhoneHelper;
 use App\Support\PiiHelper;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -17,6 +18,7 @@ class TrackingController extends Controller
      */
     public function track(string $code, Request $request): JsonResponse
     {
+        $code = PhoneHelper::sanitizeText($code);
         $phone = $request->input('phone');
 
         $altCode = str_starts_with($code, 'PC')

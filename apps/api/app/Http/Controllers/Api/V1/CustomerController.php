@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api\V1;
 
 use App\Http\Controllers\Controller;
 use App\Models\Customer;
+use App\Support\PhoneHelper;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Validation\Rule;
@@ -17,11 +18,14 @@ class CustomerController extends Controller
     {
         $query = Customer::query();
 
-        if ($search = $request->input('q')) {
+        $rawSearch = $request->input('q') ?? $request->input('search');
+        $search = PhoneHelper::sanitizeText($rawSearch);
+
+        if ($search !== '') {
             $query->where(function ($q) use ($search) {
-                $q->where('phone', 'like', "%{$search}%")
-                  ->orWhere('name', 'like', "%{$search}%")
+                $q->where('name', 'like', "%{$search}%")
                   ->orWhere('email', 'like', "%{$search}%");
+                PhoneHelper::applyPhoneColumnSearch($q, 'phone', $search, 'or');
             });
         }
 
@@ -61,6 +65,13 @@ class CustomerController extends Controller
      */
     public function store(Request $request): JsonResponse
     {
+        if ($request->has('phone') && is_string($request->input('phone'))) {
+            $request->merge(['phone' => PhoneHelper::normalizeForStorage($request->input('phone'))]);
+        }
+        if ($request->has('name') && is_string($request->input('name'))) {
+            $request->merge(['name' => PhoneHelper::sanitizeText($request->input('name'))]);
+        }
+
         $validated = $request->validate([
             'phone'         => 'required|string|max:20',
             'name'          => 'required|string|max:255',
@@ -69,6 +80,9 @@ class CustomerController extends Controller
             'source'        => 'nullable|in:store,website,facebook,referral,other',
             'notes'         => 'nullable|string',
         ]);
+
+        $validated['phone'] = PhoneHelper::normalizeForStorage($validated['phone']);
+        $validated['name'] = PhoneHelper::sanitizeText($validated['name']);
 
         $customer = Customer::updateOrCreate(
             ['phone' => $validated['phone']],
@@ -89,6 +103,13 @@ class CustomerController extends Controller
             return $this->failure('Không tìm thấy khách hàng.', 404);
         }
 
+        if ($request->has('phone') && is_string($request->input('phone'))) {
+            $request->merge(['phone' => PhoneHelper::normalizeForStorage($request->input('phone'))]);
+        }
+        if ($request->has('name') && is_string($request->input('name'))) {
+            $request->merge(['name' => PhoneHelper::sanitizeText($request->input('name'))]);
+        }
+
         $user = $request->user();
         $tenantId = $user?->tenant_id ?? $customer->tenant_id;
 
@@ -103,7 +124,7 @@ class CustomerController extends Controller
                 'sometimes',
                 'required',
                 'string',
-                'regex:/^(0|\+?84)[35789]\d{8}$/',
+                'regex:/^(0|\+?84)[35789]\d{8,9}$/',
                 $phoneRule,
             ],
             'address'       => 'nullable|string|max:500',
@@ -118,6 +139,13 @@ class CustomerController extends Controller
             'phone.unique'   => 'Số điện thoại này đã được sử dụng bởi khách hàng khác.',
             'email.email'    => 'Địa chỉ email không đúng định dạng.',
         ]);
+
+        if (isset($validated['name'])) {
+            $validated['name'] = PhoneHelper::sanitizeText($validated['name']);
+        }
+        if (isset($validated['phone'])) {
+            $validated['phone'] = PhoneHelper::normalizeForStorage($validated['phone']);
+        }
 
         $customer->update($validated);
 

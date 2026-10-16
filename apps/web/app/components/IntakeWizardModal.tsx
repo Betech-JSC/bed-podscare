@@ -14,6 +14,9 @@ import {
   PhotoDropzone,
   StepperWidget,
   useToast,
+  sanitizeInputLive,
+  sanitizeSearchQuery,
+  normalizePhoneForStorage,
 } from '@podscare/ui';
 import type {
   ChecklistStatus,
@@ -834,11 +837,13 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
         }));
 
         const devPrice = typeof dev.price === 'number' ? dev.price : 0;
+        const cleanCustomerName = sanitizeSearchQuery(name) || name.trim();
+        const normalizedCustomerPhone = normalizePhoneForStorage(phone) || phone.trim();
 
         const payload = {
           branch_id: branchIdNum,
-          customer_name: name.trim(),
-          customer_phone: phone.trim(),
+          customer_name: cleanCustomerName,
+          customer_phone: normalizedCustomerPhone,
           device_model_id: deviceModelId,
           serial_number: dev.serial.trim() || undefined,
           accessories: dev.accessories.trim() || undefined,
@@ -886,8 +891,8 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
           orderType: orderType,
           shipping_address: (orderType === 'cod' || orderType === 'warranty') && shippingAddress.trim() ? shippingAddress.trim() : null,
           shippingAddress: (orderType === 'cod' || orderType === 'warranty') && shippingAddress.trim() ? shippingAddress.trim() : null,
-          name: name.trim(),
-          phone: phone.trim(),
+          name: cleanCustomerName,
+          phone: normalizedCustomerPhone,
           deviceCategory: dev.category,
           device: dev.device,
           serial: dev.serial.trim() || 'Chưa cập nhật',
@@ -1155,7 +1160,7 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
                   label="Họ và tên khách hàng *"
                   value={name}
                   onChange={(e) => {
-                    setName(e.target.value);
+                    setName(sanitizeInputLive(e.target.value));
                     if (errors.name) {
                       setErrors((prev) => {
                         const next = { ...prev };
@@ -1173,7 +1178,7 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
                   type="tel"
                   value={phone}
                   onChange={(e) => {
-                    setPhone(e.target.value);
+                    setPhone(sanitizeInputLive(e.target.value));
                     if (errors.phone) {
                       setErrors((prev) => {
                         const next = { ...prev };

@@ -17,6 +17,9 @@ import {
   CurrencyInput,
   ConfirmModal,
   Icon,
+  sanitizeInputLive,
+  sanitizeSearchQuery,
+  matchesPhoneFlexible,
 } from '@podscare/ui';
 import { AppShell } from '../components/AppShell';
 import { IntakeWizardModal } from '../components/IntakeWizardModal';
@@ -61,6 +64,9 @@ function RepairsPageContent() {
   const initialOrderTypeParam = (searchParams.get('order_type') as any) || 'all';
   const initialBranchParam = searchParams.get('branch_id');
   const initialOrderIdParam = searchParams.get('id') || searchParams.get('order_id');
+  const initialSearchParam = sanitizeInputLive(
+    searchParams.get('search') || searchParams.get('q') || ''
+  );
 
   const backendToStatusLabelMap: Record<string, string> = {
     open: 'Đơn đang mở',
@@ -87,7 +93,7 @@ function RepairsPageContent() {
   const [dateFilter, setDateFilter] = useState<OrderDateFilter>('today');
   const [selectedDate, setSelectedDate] = useState<string>(initialDate);
   const [dateType, setDateType] = useState<'created_at' | 'completed_at'>(initialDateType);
-  const [search, setSearch] = useState('');
+  const [search, setSearch] = useState(initialSearchParam);
   const [statusFilter, setStatusFilter] = useState(
     backendToStatusLabelMap[resolvedInitialStatus] || resolvedInitialStatus
   );
@@ -124,13 +130,17 @@ function RepairsPageContent() {
   const [shippingAddressInput, setShippingAddressInput] = useState('');
   const [isSavingShippingAddress, setIsSavingShippingAddress] = useState(false);
 
-  // Đồng bộ URL query params (status, filter, date_filter) và mặc định dateFilter='all' cho Admin
+  // Đồng bộ URL query params (status, filter, date_filter, search/q) và mặc định dateFilter='all' cho Admin
   React.useEffect(() => {
     const statusParam = searchParams.get('status') || '';
     const filterParam = searchParams.get('filter') || '';
     const rawStatus = statusParam || (filterParam === 'overdue' ? 'overdue' : filterParam);
     if (rawStatus) {
       setStatusFilter(backendToStatusLabelMap[rawStatus] || rawStatus);
+    }
+    const urlSearch = searchParams.get('search') ?? searchParams.get('q');
+    if (urlSearch !== null) {
+      setSearch(sanitizeInputLive(urlSearch));
     }
     const dfParam = searchParams.get('date_filter') as OrderDateFilter | null;
     const validDateFilters: OrderDateFilter[] = ['all', 'today', 'yesterday', '3_days', '7_days', '30_days'];
@@ -167,8 +177,11 @@ function RepairsPageContent() {
       const params: Record<string, any> = {
         per_page: 500,
       };
+      const cleanSearch = sanitizeSearchQuery(search);
       if (selectedDate) {
         params.date = selectedDate;
+      } else if (cleanSearch) {
+        params.date_filter = 'all';
       } else {
         params.date_filter = dateFilter;
       }
@@ -177,8 +190,8 @@ function RepairsPageContent() {
       if (branchId && branchId !== 'all') {
         params.branch_id = branchId;
       }
-      if (search.trim()) {
-        params.q = search.trim();
+      if (cleanSearch) {
+        params.q = cleanSearch;
       }
       const res = await repairService.getRepairs(params);
       return res?.data || res;
@@ -422,18 +435,32 @@ function RepairsPageContent() {
   }, [statusFilteredOrders]);
 
   const filteredOrders: RepairOrder[] = useMemo(() => {
+    let base = statusFilteredOrders;
     if (orderTypeFilter === 'special_parts') {
-      return statusFilteredOrders.filter(
+      base = base.filter(
         (o: any) => (o.special_parts_status || o.specialPartsStatus) === 'pending'
       );
-    }
-    if (orderTypeFilter !== 'all') {
-      return statusFilteredOrders.filter(
+    } else if (orderTypeFilter !== 'all') {
+      base = base.filter(
         (o: any) => (o.order_type || o.orderType || 'in_store') === orderTypeFilter
       );
     }
-    return statusFilteredOrders;
-  }, [statusFilteredOrders, orderTypeFilter]);
+    const cleanQ = sanitizeSearchQuery(search).toLowerCase();
+    if (!cleanQ) {
+      return base;
+    }
+    return base.filter((o) => {
+      return (
+        o.id.toLowerCase().includes(cleanQ) ||
+        o.name.toLowerCase().includes(cleanQ) ||
+        o.phone.toLowerCase().includes(cleanQ) ||
+        matchesPhoneFlexible(o.phone, cleanQ) ||
+        (o.serial || '').toLowerCase().includes(cleanQ) ||
+        o.device.toLowerCase().includes(cleanQ) ||
+        o.issue.toLowerCase().includes(cleanQ)
+      );
+    });
+  }, [statusFilteredOrders, orderTypeFilter, search]);
 
   // Lắng nghe sự kiện realtime cập nhật trạng thái đơn (kèm chuông Audio Chime)
   React.useEffect(() => {
@@ -1216,7 +1243,7 @@ function RepairsPageContent() {
 
           <FilterBar
             searchValue={search}
-            onSearchChange={setSearch}
+            onSearchChange={(val) => setSearch(sanitizeInputLive(val))}
             selectValue={statusFilter}
             onSelectChange={setStatusFilter}
             selectOptions={statusOptions}

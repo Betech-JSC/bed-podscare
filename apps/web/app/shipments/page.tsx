@@ -2,13 +2,24 @@
 
 import React, { useState, useEffect, useCallback } from 'react';
 import { shipmentService, type ShipmentItem } from '@podscare/api-client';
-import { StatusTag, Button, FilterBar, EmptyState, TableSkeleton, useToast } from '@podscare/ui';
+import {
+  StatusTag,
+  Button,
+  FilterBar,
+  EmptyState,
+  TableSkeleton,
+  useToast,
+  sanitizeInputLive,
+  sanitizeSearchQuery,
+  matchesPhoneFlexible,
+} from '@podscare/ui';
 import { AppShell } from '../components/AppShell';
 
 interface FormattedShipment {
   id: string;
   orderCode: string;
   customerName: string;
+  customerPhone: string;
   method: string;
   carrier: string;
   trackingCode?: string;
@@ -64,6 +75,7 @@ export default function ShipmentsPage() {
             id: s.shipment_code || `PC26-SH-${s.id}`,
             orderCode: s.repair_order?.order_code || `PC26-${s.repair_order_id || '00000'}`,
             customerName: s.repair_order?.customer?.name || 'Khách lẻ',
+            customerPhone: s.repair_order?.customer?.phone || s.customer?.phone || '',
             method: s.delivery_method === 'store_pickup' ? 'Giao tại cửa hàng' : 'Giao tận nơi',
             carrier: s.carrier_name || s.partner?.name || 'FIXO Express',
             trackingCode: s.tracking_code || undefined,
@@ -89,11 +101,14 @@ export default function ShipmentsPage() {
   }, [loadShipments]);
 
   const filtered = shipments.filter((s) => {
-    const q = search.toLowerCase();
+    const q = sanitizeSearchQuery(search).toLowerCase();
+    if (!q) return true;
     return (
       s.id.toLowerCase().includes(q) ||
       s.orderCode.toLowerCase().includes(q) ||
       s.customerName.toLowerCase().includes(q) ||
+      s.customerPhone.toLowerCase().includes(q) ||
+      matchesPhoneFlexible(s.customerPhone, q) ||
       s.carrier.toLowerCase().includes(q) ||
       (s.trackingCode && s.trackingCode.toLowerCase().includes(q))
     );
@@ -131,8 +146,8 @@ export default function ShipmentsPage() {
           <div className="mb-4">
             <FilterBar
               searchValue={search}
-              onSearchChange={setSearch}
-              searchPlaceholder="Tìm theo mã vận đơn, mã đơn sửa, tên khách hoặc đơn vị ship..."
+              onSearchChange={(val) => setSearch(sanitizeInputLive(val))}
+              searchPlaceholder="Tìm theo mã vận đơn, mã đơn sửa, tên/SĐT khách hoặc đơn vị ship..."
             />
           </div>
 
@@ -163,7 +178,14 @@ export default function ShipmentsPage() {
                     <tr key={s.id} className="h-12 hover:bg-[#fafcfa] transition-colors">
                       <td className="px-3 font-mono font-bold text-[#176b58]">{s.id}</td>
                       <td className="px-3 font-mono font-semibold text-[#2d3d35]">{s.orderCode}</td>
-                      <td className="px-3 font-medium text-[#1c302b]">{s.customerName}</td>
+                      <td className="px-3 font-medium text-[#1c302b]">
+                        <span>{s.customerName}</span>
+                        {s.customerPhone && (
+                          <small className="block text-xs font-mono text-[#6e7e76]">
+                            {s.customerPhone}
+                          </small>
+                        )}
+                      </td>
                       <td className="px-3 text-[#4d5e56]">{s.method}</td>
                       <td className="px-3 text-[#708078]">
                         <span className="font-medium text-[#2d3d35]">{s.carrier}</span>

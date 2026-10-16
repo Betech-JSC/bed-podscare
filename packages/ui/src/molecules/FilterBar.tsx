@@ -1,5 +1,6 @@
 import React from 'react';
 import { Icon } from '../atoms/Icons';
+import { sanitizeInputText } from '../utils/text';
 
 export interface FilterOption {
   value: string;
@@ -40,7 +41,7 @@ export const FilterBar: React.FC<FilterBarProps> = ({
           <input
             type="text"
             value={searchValue}
-            onChange={(e) => onSearchChange(e.target.value)}
+            onChange={(e) => onSearchChange(sanitizeInputText(e.target.value))}
             placeholder={searchPlaceholder}
             className="w-full h-10 pl-9 pr-3 border border-[#e4eae6] rounded-[8px] text-sm text-[#2b3a32] bg-white outline-none focus:border-[#75a994] focus:ring-2 focus:ring-[#176b58]/10 transition-all placeholder:text-[#9aa59f]"
           />

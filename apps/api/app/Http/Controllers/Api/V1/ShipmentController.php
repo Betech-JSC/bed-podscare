@@ -8,6 +8,7 @@ use App\Models\RepairOrder;
 use App\Models\Shipment;
 use App\Models\ShipmentProof;
 use App\Services\OrderWorkflowService;
+use App\Support\PhoneHelper;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
@@ -32,6 +33,24 @@ class ShipmentController extends Controller
 
         if ($method = $request->input('delivery_method')) {
             $query->where('delivery_method', $method);
+        }
+
+        $rawSearch = $request->input('q') ?? $request->input('search');
+        $search = PhoneHelper::sanitizeText($rawSearch);
+        if ($search !== '') {
+            $query->where(function ($q) use ($search) {
+                $q->where('shipment_code', 'like', "%{$search}%")
+                  ->orWhere('tracking_code', 'like', "%{$search}%")
+                  ->orWhere('carrier_name', 'like', "%{$search}%")
+                  ->orWhereHas('repairOrder', function ($rq) use ($search) {
+                      $rq->where('order_code', 'like', "%{$search}%")
+                         ->orWhere('serial_number', 'like', "%{$search}%")
+                         ->orWhereHas('customer', function ($cq) use ($search) {
+                             $cq->where('name', 'like', "%{$search}%");
+                             PhoneHelper::applyPhoneColumnSearch($cq, 'phone', $search, 'or');
+                         });
+                  });
+            });
         }
 
         $shipments = $query->latest('id')->paginate($request->input('per_page', 15));

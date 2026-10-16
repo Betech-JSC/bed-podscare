@@ -84,25 +84,37 @@ class PiiHelper
      */
     public static function isPhoneMatching(?string $inputPhone, ?string $targetPhone): bool
     {
-        if (empty($inputPhone) || empty($targetPhone)) {
+        $sanitizedInput = PhoneHelper::sanitizeText($inputPhone);
+        $sanitizedTarget = PhoneHelper::sanitizeText($targetPhone);
+
+        if ($sanitizedInput === '' || $sanitizedTarget === '') {
             return false;
         }
 
-        $cleanInput = preg_replace('/[^0-9]/', '', (string) $inputPhone);
-        $cleanTarget = preg_replace('/[^0-9]/', '', (string) $targetPhone);
+        $cleanInput = preg_replace('/[^0-9]/', '', $sanitizedInput) ?? '';
+        $cleanTarget = preg_replace('/[^0-9]/', '', $sanitizedTarget) ?? '';
 
         if ($cleanInput === '' || $cleanTarget === '') {
             return false;
         }
 
-        // 1. Khớp chính xác
-        if ($cleanInput === $cleanTarget) {
+        // 1. Khớp chính xác hoặc sau khi chuẩn hóa về đầu 0
+        $normalizedInput = PhoneHelper::normalizeForStorage($sanitizedInput);
+        $normalizedTarget = PhoneHelper::normalizeForStorage($sanitizedTarget);
+
+        if ($cleanInput === $cleanTarget || ($normalizedInput !== '' && $normalizedInput === $normalizedTarget)) {
             return true;
         }
 
         // 2. Khớp chuỗi đuôi (ví dụ nhập 903482716 khi target là 0903482716 hoặc ngược lại)
         if (str_ends_with($cleanTarget, $cleanInput) || str_ends_with($cleanInput, $cleanTarget)) {
             return true;
+        }
+
+        if ($normalizedInput !== '' && $normalizedTarget !== '') {
+            if (str_ends_with($normalizedTarget, $cleanInput) || str_ends_with($normalizedInput, $cleanTarget)) {
+                return true;
+            }
         }
 
         // 3. Khớp 4 số cuối (yêu cầu cả hai chuỗi có ít nhất 4 số)
