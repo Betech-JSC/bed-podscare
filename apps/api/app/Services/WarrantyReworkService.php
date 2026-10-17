@@ -95,6 +95,8 @@ class WarrantyReworkService
                 ]
             );
 
+            app(\App\Services\TelegramNotificationService::class)->notifyNewOrder($reworkOrder);
+
             return $reworkOrder;
         });
     }

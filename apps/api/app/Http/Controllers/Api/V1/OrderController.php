@@ -443,6 +443,8 @@ class OrderController extends Controller
                 'order.created'
             );
 
+            app(\App\Services\TelegramNotificationService::class)->notifyNewOrder($order);
+
             return $this->success(
                 $order->load([
                     'customer',

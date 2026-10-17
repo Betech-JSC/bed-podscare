@@ -25,6 +25,8 @@ use App\Http\Controllers\Api\V1\SupplierController;
 use App\Http\Controllers\Api\V1\GoodsReceiptController;
 use App\Http\Controllers\Api\V1\TenantRegistrationController;
 use App\Http\Controllers\Api\V1\TenantSettingController;
+use App\Http\Controllers\Api\V1\TelegramRecipientController;
+use App\Http\Controllers\Api\V1\TelegramWebhookController;
 use App\Http\Controllers\Api\V1\TrackingController;
 use App\Http\Controllers\Api\V1\UserController;
 use App\Http\Controllers\Api\V1\WarrantyController;
@@ -69,6 +71,9 @@ Route::prefix('v1')->group(function () {
         // SePay VietQR Platform Webhooks
         Route::post('/webhooks/sepay', [SePayPlatformWebhookController::class, 'handle'])->name('api.v1.webhooks.sepay');
         Route::post('/saas/sepay/webhook', [SePayPlatformWebhookController::class, 'handle'])->name('api.v1.saas.sepay.webhook');
+
+        // Telegram Bot Webhook
+        Route::post('/webhooks/telegram', [TelegramWebhookController::class, 'handle'])->name('api.v1.webhooks.telegram');
     });
 
 
@@ -261,6 +266,17 @@ Route::prefix('v1')->group(function () {
             Route::post('/settings', [TenantSettingController::class, 'updateSettings'])->middleware('role:admin')->name('api.v1.tenant.settings.update');
             Route::post('/logo', [TenantSettingController::class, 'uploadLogo'])->middleware('role:admin')->name('api.v1.tenant.logo.upload');
             Route::delete('/logo', [TenantSettingController::class, 'deleteLogo'])->middleware('role:admin')->name('api.v1.tenant.logo.delete');
+        });
+
+        // Telegram Order Notification Recipients (Admin & Super Admin)
+        Route::middleware('role:admin,super_admin')->group(function () {
+            Route::get('/telegram-recipients', [TelegramRecipientController::class, 'index'])->name('api.v1.telegram_recipients.index');
+            Route::post('/telegram-recipients', [TelegramRecipientController::class, 'store'])->name('api.v1.telegram_recipients.store');
+            Route::post('/telegram-recipients/sync', [TelegramRecipientController::class, 'sync'])->name('api.v1.telegram_recipients.sync');
+            Route::put('/telegram-recipients/{id}', [TelegramRecipientController::class, 'update'])->name('api.v1.telegram_recipients.update');
+            Route::patch('/telegram-recipients/{id}', [TelegramRecipientController::class, 'update'])->name('api.v1.telegram_recipients.patch');
+            Route::delete('/telegram-recipients/{id}', [TelegramRecipientController::class, 'destroy'])->name('api.v1.telegram_recipients.destroy');
+            Route::post('/telegram-recipients/{id}/test', [TelegramRecipientController::class, 'test'])->name('api.v1.telegram_recipients.test');
         });
 
         // Platform Super Admin Portal

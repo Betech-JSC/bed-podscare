@@ -6,6 +6,7 @@ import { AppShell } from '../components/AppShell';
 import { usePodsCare } from '../providers';
 import {
   tenantService,
+  type TelegramRecipientItem,
 } from '@podscare/api-client';
 import { ThermalK80Receipt } from '../components/print/ThermalK80Receipt';
 import { A4ReceiptTemplate } from '../components/print/A4ReceiptTemplate';
@@ -37,7 +38,7 @@ const SAMPLE_DEMO_ORDER: RepairOrder = {
 
 export default function TenantBrandingPage() {
   const { toast } = useToast();
-  const { currentUser, role, updateTenantBranding } = usePodsCare();
+  const { currentUser, role, updateTenantBranding, branches } = usePodsCare();
   const currentUserRef = useRef(currentUser);
   currentUserRef.current = currentUser;
 
@@ -54,6 +55,21 @@ export default function TenantBrandingPage() {
   const [bankCode, setBankCode] = useState('MB');
   const [bankAccountNumber, setBankAccountNumber] = useState('');
   const [bankAccountHolder, setBankAccountHolder] = useState('');
+
+  // Telegram Recipients state
+  const [telegramRecipients, setTelegramRecipients] = useState<TelegramRecipientItem[]>([]);
+  const [loadingTelegram, setLoadingTelegram] = useState(false);
+  const [syncingTelegram, setSyncingTelegram] = useState(false);
+  const [addingTelegram, setAddingTelegram] = useState(false);
+  const [testingRecipientId, setTestingRecipientId] = useState<number | null>(null);
+  const [togglingRecipientId, setTogglingRecipientId] = useState<number | null>(null);
+  const [deletingRecipientId, setDeletingRecipientId] = useState<number | null>(null);
+
+  const [tgLabel, setTgLabel] = useState('');
+  const [tgPhone, setTgPhone] = useState('');
+  const [tgBranchId, setTgBranchId] = useState('');
+  const [tgChatId, setTgChatId] = useState('');
+  const [showAdvancedTg, setShowAdvancedTg] = useState(false);
 
   // Preview format switch
   const [previewFormat, setPreviewFormat] = useState<'k80' | 'a4'>('k80');
@@ -105,9 +121,224 @@ export default function TenantBrandingPage() {
     }
   }, [updateTenantBranding]);
 
+  const loadTelegramRecipients = useCallback(async () => {
+    if (!isAdmin) return;
+    setLoadingTelegram(true);
+    try {
+      const res = await tenantService.getTelegramRecipients();
+      if (res?.success && Array.isArray(res.data)) {
+        setTelegramRecipients(res.data);
+      }
+    } catch (err) {
+      console.error('Failed to load telegram recipients:', err);
+    } finally {
+      setLoadingTelegram(false);
+    }
+  }, [isAdmin]);
+
   useEffect(() => {
     loadSettings();
   }, [loadSettings]);
+
+  useEffect(() => {
+    loadTelegramRecipients();
+  }, [loadTelegramRecipients]);
+
+  const hasPendingTelegram = telegramRecipients.some(
+    (item) => item.is_active && (!item.telegram_chat_id || item.telegram_chat_id.trim() === '')
+  );
+
+  useEffect(() => {
+    if (!isAdmin || !hasPendingTelegram) return;
+
+    let isMounted = true;
+    let isSyncing = false;
+
+    const silentSync = async () => {
+      if (isSyncing) return;
+      isSyncing = true;
+      try {
+        const res = await tenantService.syncTelegramRecipients();
+        if (!isMounted || !res?.success || !res.data) return;
+
+        const nextRecipients = Array.isArray(res.data.recipients) ? res.data.recipients : [];
+        const newlyConnected = nextRecipients.some((nextItem) => {
+          const hasChatIdNow = Boolean(
+            nextItem.telegram_chat_id && nextItem.telegram_chat_id.trim() !== ''
+          );
+          if (!hasChatIdNow) return false;
+          const prevItem = telegramRecipients.find((p) => p.id === nextItem.id);
+          const hadChatIdBefore = Boolean(
+            prevItem?.telegram_chat_id && prevItem.telegram_chat_id.trim() !== ''
+          );
+          return !hadChatIdBefore;
+        });
+
+        if ((res.data.synced_count ?? 0) > 0 || newlyConnected) {
+          if (nextRecipients.length > 0) {
+            setTelegramRecipients(nextRecipients);
+          }
+          toast('Đã tự động kết nối Telegram thành công!', 'success');
+        }
+      } catch {
+        // Bỏ qua lỗi khi đồng bộ ngầm để không làm gián đoạn trải nghiệm
+      } finally {
+        isSyncing = false;
+      }
+    };
+
+    const intervalId = window.setInterval(silentSync, 3000);
+    const handleFocus = () => {
+      silentSync();
+    };
+    window.addEventListener('focus', handleFocus);
+
+    return () => {
+      isMounted = false;
+      window.clearInterval(intervalId);
+      window.removeEventListener('focus', handleFocus);
+    };
+  }, [isAdmin, hasPendingTelegram, telegramRecipients, toast]);
+
+  const handleAddTelegramRecipient = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!isAdmin) {
+      toast('Chỉ Quản trị viên cửa hàng mới có quyền thêm số điện thoại nhận thông báo.', 'error');
+      return;
+    }
+
+    if (!tgLabel.trim() || !tgPhone.trim()) {
+      toast('Vui lòng nhập đầy đủ Tên gợi nhớ và Số điện thoại.', 'error');
+      return;
+    }
+
+    setAddingTelegram(true);
+    try {
+      const res = await tenantService.createTelegramRecipient({
+        label: tgLabel.trim(),
+        phone: tgPhone.trim(),
+        branch_id: tgBranchId ? Number(tgBranchId) : null,
+        target_role: 'admin',
+        telegram_chat_id: tgChatId.trim() || null,
+        is_active: true,
+      });
+
+      if (res?.success && res.data) {
+        setTelegramRecipients((prev) => [res.data!, ...prev]);
+        setTgLabel('');
+        setTgPhone('');
+        setTgBranchId('');
+        setTgChatId('');
+        setShowAdvancedTg(false);
+        toast('Đã thêm số điện thoại nhận thông báo Telegram!', 'success');
+      } else {
+        toast(res?.message || 'Không thể thêm số điện thoại.', 'error');
+      }
+    } catch (err: any) {
+      toast(err?.data?.message || err?.message || 'Lỗi khi thêm số điện thoại nhận thông báo.', 'error');
+    } finally {
+      setAddingTelegram(false);
+    }
+  };
+
+  const handleSyncTelegram = async () => {
+    if (!isAdmin) return;
+    setSyncingTelegram(true);
+    try {
+      const res = await tenantService.syncTelegramRecipients();
+      if (res?.success && res.data) {
+        if (Array.isArray(res.data.recipients)) {
+          setTelegramRecipients(res.data.recipients);
+        } else {
+          await loadTelegramRecipients();
+        }
+        const count = res.data.synced_count ?? 0;
+        if (count > 0) {
+          toast(`Đã đồng bộ kết nối thành công ${count} số điện thoại!`, 'success');
+        } else {
+          toast(res.message || 'Đã kiểm tra đồng bộ. Chưa phát hiện lượt bấm Start mới trên Telegram.', 'info');
+        }
+      } else {
+        toast(res?.message || 'Không thể đồng bộ kết nối Telegram.', 'error');
+      }
+    } catch (err: any) {
+      toast(err?.data?.message || err?.message || 'Lỗi khi đồng bộ với Telegram Bot.', 'error');
+    } finally {
+      setSyncingTelegram(false);
+    }
+  };
+
+  const handleToggleTelegramRecipient = async (item: TelegramRecipientItem) => {
+    if (!isAdmin) return;
+    setTogglingRecipientId(item.id);
+    try {
+      const nextActive = !item.is_active;
+      const res = await tenantService.updateTelegramRecipient(item.id, {
+        is_active: nextActive,
+      });
+      if (res?.success && res.data) {
+        setTelegramRecipients((prev) =>
+          prev.map((r) => (r.id === item.id ? res.data! : r))
+        );
+        toast(
+          nextActive
+            ? `Đã bật thông báo cho ${item.label}.`
+            : `Đã tạm tắt thông báo cho ${item.label}.`,
+          'success'
+        );
+      } else {
+        toast(res?.message || 'Không thể cập nhật trạng thái.', 'error');
+      }
+    } catch (err: any) {
+      toast(err?.data?.message || err?.message || 'Lỗi khi cập nhật trạng thái.', 'error');
+    } finally {
+      setTogglingRecipientId(null);
+    }
+  };
+
+  const handleTestTelegramRecipient = async (item: TelegramRecipientItem) => {
+    if (!isAdmin) return;
+    setTestingRecipientId(item.id);
+    try {
+      const res = await tenantService.testTelegramRecipient(item.id);
+      if (res?.success) {
+        toast(res.message || `Đã gửi tin nhắn thử nghiệm tới ${item.label}!`, 'success');
+      } else {
+        toast(res?.message || 'Gửi tin nhắn thử nghiệm thất bại.', 'error');
+      }
+    } catch (err: any) {
+      toast(err?.data?.message || err?.message || 'Không thể gửi tin nhắn thử nghiệm.', 'error');
+    } finally {
+      setTestingRecipientId(null);
+    }
+  };
+
+  const handleDeleteTelegramRecipient = async (item: TelegramRecipientItem) => {
+    if (!isAdmin) return;
+    setDeletingRecipientId(item.id);
+    try {
+      const res = await tenantService.deleteTelegramRecipient(item.id);
+      if (res?.success) {
+        setTelegramRecipients((prev) => prev.filter((r) => r.id !== item.id));
+        toast(`Đã xóa số điện thoại ${item.phone} (${item.label}).`, 'success');
+      } else {
+        toast(res?.message || 'Không thể xóa số điện thoại.', 'error');
+      }
+    } catch (err: any) {
+      toast(err?.data?.message || err?.message || 'Lỗi khi xóa số điện thoại.', 'error');
+    } finally {
+      setDeletingRecipientId(null);
+    }
+  };
+
+  const handleCopyConnectUrl = async (url: string) => {
+    try {
+      await navigator.clipboard.writeText(url);
+      toast('Đã sao chép đường dẫn kết nối Telegram!', 'success');
+    } catch {
+      toast('Không thể sao chép tự động. Vui lòng mở trực tiếp link.', 'error');
+    }
+  };
 
   const handleSaveSettings = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -643,6 +874,307 @@ export default function TenantBrandingPage() {
                 </div>
               )}
             </form>
+
+            {/* Card 3: Telegram Notifications for New Repair Orders (Admin only) */}
+            {isAdmin && (
+              <div className="rounded-[16px] bg-white border border-[#e5ece8] p-6 shadow-xs space-y-5">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-[#eef3f0]">
+                  <div>
+                    <h2 className="text-sm font-heading font-bold text-[#1c302b] m-0">
+                      Thông báo Telegram (Đơn sửa chữa mới)
+                    </h2>
+                    <p className="text-xs text-[#5c6e66] m-0 mt-0.5 leading-relaxed">
+                      Thêm một hoặc nhiều số điện thoại của Admin/Quản lý để tự động nhận tin nhắn Telegram ngay khi có đơn sửa chữa mới được tạo.
+                    </p>
+                  </div>
+                  <span className="text-[10px] bg-[#e8f5f1] text-[#176b58] font-bold px-2.5 py-1 rounded-full self-start sm:self-center shrink-0">
+                    {telegramRecipients.filter((r) => r.is_active && r.telegram_chat_id).length}/{telegramRecipients.length} SĐT đã kết nối
+                  </span>
+                </div>
+
+                {/* Form thêm số điện thoại mới */}
+                <form
+                  onSubmit={handleAddTelegramRecipient}
+                  className="p-4 rounded-[12px] bg-[#f9faf9] border border-[#e5ece8] space-y-3.5"
+                >
+                  <div className="text-xs font-heading font-bold text-[#1c302b]">
+                    Thêm số điện thoại nhận thông báo
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                    {/* Tên gợi nhớ */}
+                    <div className="space-y-1">
+                      <label className="text-[11px] font-bold text-[#2a3c36] block">
+                        Tên gợi nhớ <span className="text-red-500">*</span>
+                      </label>
+                      <input
+                        type="text"
+                        value={tgLabel}
+                        onChange={(e) => setTgLabel(e.target.value)}
+                        placeholder="VD: Anh Minh - Chủ shop"
+                        disabled={addingTelegram}
+                        className="w-full px-3 py-2 text-xs rounded-[8px] border border-[#d2ded8] focus:outline-none focus:border-[#176b58] focus:ring-1 focus:ring-[#176b58] transition-all bg-white"
+                        required
+                      />
+                    </div>
+
+                    {/* Số điện thoại */}
+                    <div className="space-y-1">
+                      <label className="text-[11px] font-bold text-[#2a3c36] block">
+                        Số điện thoại <span className="text-red-500">*</span>
+                      </label>
+                      <input
+                        type="text"
+                        value={tgPhone}
+                        onChange={(e) => setTgPhone(e.target.value)}
+                        placeholder="VD: 0901234567"
+                        disabled={addingTelegram}
+                        className="w-full px-3 py-2 text-xs font-mono font-bold rounded-[8px] border border-[#d2ded8] focus:outline-none focus:border-[#176b58] focus:ring-1 focus:ring-[#176b58] transition-all bg-white"
+                        required
+                      />
+                    </div>
+
+                    {/* Phạm vi chi nhánh */}
+                    <div className="space-y-1">
+                      <label className="text-[11px] font-bold text-[#2a3c36] block">
+                        Phạm vi chi nhánh
+                      </label>
+                      <select
+                        value={tgBranchId}
+                        onChange={(e) => setTgBranchId(e.target.value)}
+                        disabled={addingTelegram}
+                        className="w-full px-3 py-2 text-xs rounded-[8px] border border-[#d2ded8] focus:outline-none focus:border-[#176b58] focus:ring-1 focus:ring-[#176b58] transition-all bg-white"
+                      >
+                        <option value="">Tất cả chi nhánh</option>
+                        {branches
+                          .filter((b) => String(b.id) !== 'all')
+                          .map((b) => (
+                            <option key={b.id} value={String(b.id)}>
+                              {b.name}
+                            </option>
+                          ))}
+                      </select>
+                    </div>
+                  </div>
+
+                  {/* Tùy chọn nâng cao: Chat ID / Group ID */}
+                  <div className="pt-1">
+                    <button
+                      type="button"
+                      onClick={() => setShowAdvancedTg((prev) => !prev)}
+                      className="text-[11px] font-semibold text-[#176b58] hover:underline focus:outline-none"
+                    >
+                      {showAdvancedTg
+                        ? 'Ẩn tùy chọn nâng cao (Chat ID / Group ID)'
+                        : 'Tùy chọn nâng cao: Nhập trực tiếp Chat ID / Group ID (nếu có)'}
+                    </button>
+
+                    {showAdvancedTg && (
+                      <div className="mt-2 space-y-1">
+                        <label className="text-[11px] font-bold text-[#2a3c36] block">
+                          Chat ID / Group ID (Không bắt buộc)
+                        </label>
+                        <input
+                          type="text"
+                          value={tgChatId}
+                          onChange={(e) => setTgChatId(e.target.value)}
+                          placeholder="Để trống để kết nối 1 chạm qua nút Start Bot trên Telegram"
+                          disabled={addingTelegram}
+                          className="w-full px-3 py-2 text-xs font-mono rounded-[8px] border border-[#d2ded8] focus:outline-none focus:border-[#176b58] focus:ring-1 focus:ring-[#176b58] transition-all bg-white"
+                        />
+                        <span className="text-[10px] text-[#718279] block">
+                          Nếu để trống, sau khi thêm bạn chỉ cần mở link Telegram của số điện thoại đó và bấm Start Bot là hệ thống tự nhận diện Chat ID.
+                        </span>
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="flex justify-end pt-1">
+                    <Button
+                      type="submit"
+                      variant="primary"
+                      size="sm"
+                      disabled={addingTelegram}
+                      className="font-bold text-xs px-4 bg-[#176b58] hover:bg-[#0e4b3d]"
+                    >
+                      {addingTelegram ? 'Đang thêm...' : '+ Thêm SĐT nhận đơn'}
+                    </Button>
+                  </div>
+                </form>
+
+                {/* Danh sách các số điện thoại đã thêm */}
+                <div className="space-y-3">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                    <div className="text-xs font-heading font-bold text-[#1c302b]">
+                      Danh sách số điện thoại nhận thông báo ({telegramRecipients.length})
+                    </div>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={handleSyncTelegram}
+                      disabled={syncingTelegram || loadingTelegram}
+                      className="text-xs font-bold border-[#b8d0c5] hover:bg-[#f0f8f4] text-[#176b58]"
+                    >
+                      {syncingTelegram ? 'Đang đồng bộ...' : 'Đồng bộ kết nối Telegram'}
+                    </Button>
+                  </div>
+
+                  {loadingTelegram ? (
+                    <div className="p-6 text-center text-xs text-[#6b7c74] bg-[#f9faf9] rounded-[12px] border border-[#e5ece8]">
+                      Đang tải danh sách số điện thoại...
+                    </div>
+                  ) : telegramRecipients.length === 0 ? (
+                    <div className="p-6 text-center text-xs text-[#6b7c74] bg-[#f9faf9] rounded-[12px] border border-[#e5ece8]">
+                      Chưa có số điện thoại nào được cấu hình. Hãy thêm số điện thoại của Admin ở biểu mẫu phía trên.
+                    </div>
+                  ) : (
+                    <div className="space-y-2.5">
+                      {telegramRecipients.map((item) => {
+                        const branchName =
+                          item.branch?.name ||
+                          (item.branch_id
+                            ? branches.find((b) => String(b.id) === String(item.branch_id))?.name ||
+                              `Chi nhánh #${item.branch_id}`
+                            : 'Tất cả chi nhánh');
+                        const roleName =
+                          item.target_role === 'admin'
+                            ? 'Admin'
+                            : item.target_role.toUpperCase();
+                        const isConnected = Boolean(item.telegram_chat_id);
+
+                        return (
+                          <div
+                            key={item.id}
+                            className={`p-3.5 rounded-[12px] border transition-all ${
+                              item.is_active
+                                ? 'bg-white border-[#dce7e1]'
+                                : 'bg-[#f6f8f6] border-[#e5ece8] opacity-75'
+                            }`}
+                          >
+                            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
+                              <div className="space-y-1">
+                                <div className="flex flex-wrap items-center gap-2">
+                                  <span className="text-xs font-heading font-bold text-[#1c302b]">
+                                    {item.label}
+                                  </span>
+                                  <span className="text-xs font-mono font-bold text-[#176b58] bg-[#e9f4ef] px-2 py-0.5 rounded-[6px]">
+                                    {item.phone}
+                                  </span>
+                                  <span className="text-[10px] font-semibold text-[#516059] bg-[#f0f3f1] px-2 py-0.5 rounded-full">
+                                    {branchName}
+                                  </span>
+                                  <span className="text-[10px] font-semibold text-[#516059] bg-[#f0f3f1] px-2 py-0.5 rounded-full">
+                                    Vai trò: {roleName}
+                                  </span>
+                                  {!item.is_active && (
+                                    <span className="text-[10px] font-semibold text-[#77847e] bg-[#e9eeeb] px-2 py-0.5 rounded-full">
+                                      Đang tạm tắt
+                                    </span>
+                                  )}
+                                </div>
+
+                                <div className="flex flex-wrap items-center gap-2 pt-0.5">
+                                  {isConnected ? (
+                                    <>
+                                      <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-bold text-[#28805e] bg-[#eaf5ef]">
+                                        <span className="w-1.5 h-1.5 rounded-full bg-[#28805e]" />
+                                        Đã kết nối Telegram
+                                      </span>
+                                      <span className="text-[10px] font-mono text-[#6b7c74]">
+                                        Chat ID: {item.telegram_chat_id}
+                                      </span>
+                                    </>
+                                  ) : (
+                                    <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-bold text-[#b77a21] bg-[#faf3e7]">
+                                      <span className="w-1.5 h-1.5 rounded-full bg-[#b77a21]" />
+                                      Chờ bấm Start trên Telegram
+                                    </span>
+                                  )}
+                                </div>
+                              </div>
+
+                              {/* Nút thao tác */}
+                              <div className="flex flex-wrap items-center gap-1.5 self-start sm:self-center">
+                                {isConnected ? (
+                                  <Button
+                                    type="button"
+                                    variant="secondary"
+                                    size="sm"
+                                    onClick={() => handleTestTelegramRecipient(item)}
+                                    disabled={testingRecipientId === item.id}
+                                    className="text-[11px] font-bold text-[#176b58] border-[#b8d0c5] hover:bg-[#f0f8f4]"
+                                  >
+                                    {testingRecipientId === item.id ? 'Đang gửi...' : 'Gửi thử'}
+                                  </Button>
+                                ) : (
+                                  <>
+                                    {item.connect_url && (
+                                      <>
+                                        <Button
+                                          type="button"
+                                          variant="primary"
+                                          size="sm"
+                                          onClick={() =>
+                                            window.open(item.connect_url, '_blank', 'noopener,noreferrer')
+                                          }
+                                          className="text-[11px] font-bold bg-[#176b58] hover:bg-[#0e4b3d]"
+                                        >
+                                          Mở Telegram kích hoạt
+                                        </Button>
+                                        <Button
+                                          type="button"
+                                          variant="secondary"
+                                          size="sm"
+                                          onClick={() => handleCopyConnectUrl(item.connect_url)}
+                                          className="text-[11px]"
+                                        >
+                                          Copy link
+                                        </Button>
+                                      </>
+                                    )}
+                                  </>
+                                )}
+
+                                <Button
+                                  type="button"
+                                  variant="secondary"
+                                  size="sm"
+                                  onClick={() => handleToggleTelegramRecipient(item)}
+                                  disabled={togglingRecipientId === item.id}
+                                  className="text-[11px]"
+                                >
+                                  {togglingRecipientId === item.id
+                                    ? 'Đang lưu...'
+                                    : item.is_active
+                                      ? 'Tạm tắt'
+                                      : 'Bật lại'}
+                                </Button>
+
+                                <Button
+                                  type="button"
+                                  variant="outline"
+                                  size="sm"
+                                  onClick={() => handleDeleteTelegramRecipient(item)}
+                                  disabled={deletingRecipientId === item.id}
+                                  className="text-[11px] text-[#bc5b52] border-[#f5c6cb] hover:bg-[#fbefed]"
+                                >
+                                  {deletingRecipientId === item.id ? 'Đang xóa...' : 'Xóa'}
+                                </Button>
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+
+                  <div className="p-3 rounded-[10px] bg-[#f7faf8] border border-[#dce7e1] text-[11px] text-[#4d6359] leading-relaxed">
+                    <strong>Hướng dẫn kết nối 1 chạm:</strong> Sau khi thêm số điện thoại, hãy bấm <strong>&ldquo;Mở Telegram kích hoạt&rdquo;</strong> (hoặc gửi link cho chủ số điện thoại đó) và bấm <strong>Start</strong> trên Telegram Bot. Sau đó bấm <strong>&ldquo;Đồng bộ kết nối Telegram&rdquo;</strong> để hoàn tất liên kết tự động.
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
 
           {/* Right Column: Live Sticky Print Preview (5 cols) */}

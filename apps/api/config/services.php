@@ -46,4 +46,11 @@ return [
         'qr_template'    => env('SEPAY_QR_TEMPLATE', 'compact2'),
     ],
 
+    'telegram' => [
+        'bot_token'      => env('TELEGRAM_BOT_TOKEN', ''),
+        'bot_username'   => env('TELEGRAM_BOT_USERNAME', 'PodsCareNotifyBot'),
+        'webhook_secret' => env('TELEGRAM_WEBHOOK_SECRET', ''),
+        'frontend_url'   => env('FRONTEND_URL', env('APP_URL', 'http://localhost:3000')),
+    ],
+
 ];
