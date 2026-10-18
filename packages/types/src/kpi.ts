@@ -41,6 +41,128 @@ export interface RevenueOrderBreakdownItem {
   completed_at?: string | null;
 }
 
+export interface PeriodHandoverRevenue {
+  total_revenue: number;
+  total_revenue_formatted?: string;
+  collected_amount: number;
+  collected_amount_formatted?: string;
+  cash_amount: number;
+  cash_amount_formatted?: string;
+  transfer_amount: number;
+  transfer_amount_formatted?: string;
+  uncollected_amount: number;
+  uncollected_amount_formatted?: string;
+  completed_orders_count: number;
+  orders_breakdown?: RevenueOrderBreakdownItem[];
+}
+
+export interface PeriodProfitAndCogs {
+  revenue: number;
+  revenue_formatted?: string;
+  cogs: number;
+  cogs_amount?: number;
+  cogs_formatted?: string;
+  gross_profit: number;
+  gross_profit_formatted?: string;
+  gross_profit_margin: number;
+  accounts_payable: number;
+  accounts_payable_formatted?: string;
+}
+
+export interface PeriodOrderFlow {
+  intake_count: number;
+  completed_count: number;
+  warranty_count: number;
+}
+
+export interface PeriodMonthlyRevenueSummary {
+  month_label?: string;
+  total_revenue?: number;
+  total_revenue_formatted?: string;
+  collected_amount: number;
+  collected_amount_formatted?: string;
+  cash_amount: number;
+  cash_amount_formatted?: string;
+  transfer_amount: number;
+  transfer_amount_formatted?: string;
+  uncollected_amount?: number;
+  uncollected_amount_formatted?: string;
+  completed_orders_count: number;
+}
+
+export interface PeriodMetrics {
+  period: string;
+  date: string;
+  from_date: string;
+  to_date: string;
+  period_label: string;
+  intake_count: number;
+  completed_count: number;
+  warranty_count: number;
+  order_flow: PeriodOrderFlow;
+  handover_revenue?: PeriodHandoverRevenue | null;
+  profit_and_cogs?: PeriodProfitAndCogs | null;
+  monthly_revenue_summary?: PeriodMonthlyRevenueSummary | null;
+  revenue_chart?: Array<{
+    date: string;
+    label: string;
+    revenue: number;
+    completed_orders: number;
+  }>;
+}
+
+export interface StoreLiveFinancials {
+  open_orders_count: number;
+  open_orders_amount?: number | null;
+  waiting_pickup_count: number;
+  waiting_pickup_total_amount?: number | null;
+  waiting_pickup_deposit_amount?: number | null;
+  waiting_pickup_uncollected_amount?: number | null;
+  in_workshop_count: number;
+  in_workshop_expected_amount?: number | null;
+  ready_for_pickup?: {
+    count: number;
+    total_amount?: number | null;
+    total_amount_formatted?: string;
+    deposit_amount?: number | null;
+    deposit_amount_formatted?: string;
+    uncollected_amount?: number | null;
+    uncollected_amount_formatted?: string;
+  };
+  in_workshop?: {
+    count: number;
+    expected_amount?: number | null;
+    expected_amount_formatted?: string;
+  };
+  outstanding_debt?: {
+    total_uncollected_amount?: number | null;
+    total_uncollected_amount_formatted?: string;
+  };
+}
+
+export interface WorkshopPipeline {
+  total_active_orders: number;
+  open_orders_count: number;
+  in_workshop_count: number;
+  steps: {
+    inspecting: number;
+    waiting_approval: number;
+    in_repair: number;
+    waiting_parts: number;
+    waiting_qc: number;
+    ready_for_return: number;
+  };
+  inspecting: number;
+  waiting_approval: number;
+  in_repair: number;
+  waiting_parts: number;
+  waiting_qc: number;
+  ready_for_return: number;
+  waiting_pickup: number;
+  overdue_count: number;
+  overdue_orders: number;
+}
+
 export interface DashboardSummary {
   active_orders: number;
   intake_today: number;
@@ -98,6 +220,9 @@ export interface DashboardSummary {
   reconciliation?: OperationalReconciliation;
   operational_summary?: OperationalSummary;
   actionable_tasks?: ActionableTasks;
+  period_metrics?: PeriodMetrics;
+  store_live_financials?: StoreLiveFinancials;
+  workshop_pipeline?: WorkshopPipeline;
 }
 
 export type KpiSummary = DashboardSummary;
@@ -168,6 +293,9 @@ export interface DashboardKpiResponse {
   }>;
   operational_summary?: OperationalSummary;
   actionable_tasks?: ActionableTasks;
+  period_metrics?: PeriodMetrics;
+  store_live_financials?: StoreLiveFinancials;
+  workshop_pipeline?: WorkshopPipeline;
 }
 
 export type KpiDashboardData = DashboardKpiResponse;
@@ -198,6 +326,22 @@ export interface ActionableTaskWaitingApproval {
   hours_pending: number;
   status: string;
   created_at?: string;
+}
+
+export interface ActionableTaskWaitingParts {
+  id: number;
+  order_code: string;
+  customer_name: string;
+  customer_phone?: string;
+  device_model: string;
+  technician_name: string;
+  special_parts_needed?: string | null;
+  special_parts_status?: string | null;
+  special_parts_requested_at?: string | null;
+  hours_waiting: number;
+  status: string;
+  issue_description?: string;
+  total_price?: number;
 }
 
 export interface ActionableTaskWaitingQc {
@@ -240,6 +384,8 @@ export interface ActionableTasks {
   overdue: ActionableTaskOverdue[];
   waiting_approval: ActionableTaskWaitingApproval[];
   pending_quotes?: ActionableTaskWaitingApproval[];
+  waiting_parts?: ActionableTaskWaitingParts[];
+  special_parts?: ActionableTaskWaitingParts[];
   waiting_qc: ActionableTaskWaitingQc[];
   pending_qc?: ActionableTaskWaitingQc[];
   waiting_pickup: ActionableTaskWaitingPickup[];
@@ -248,8 +394,10 @@ export interface ActionableTasks {
   counts?: {
     overdue: number;
     waiting_approval: number;
+    waiting_parts?: number;
     waiting_qc: number;
     waiting_pickup: number;
+    ready_pickup?: number;
     low_stock: number;
     total: number;
   };

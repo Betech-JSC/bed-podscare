@@ -56,11 +56,29 @@ class ShiftController extends Controller
 
     /**
      * Ca đang mở của chi nhánh hiện tại kèm snapshot tài chính & vận hành.
+     * Hỗ trợ branch_id=all (hoặc khi Admin không truyền branch_id) để tổng hợp toàn bộ ca đang mở.
      */
     public function current(Request $request): JsonResponse
     {
         $user = $request->user();
-        $branchId = $request->input('branch_id') ?? $user->branch_id;
+        $rawBranchId = $request->input('branch_id');
+        $isAdmin = $user && in_array($user->role, ['admin', 'super_admin'], true);
+
+        if ($rawBranchId === 'all' || (! $request->filled('branch_id') && $isAdmin)) {
+            $aggregated = $this->shiftService->getAggregatedActiveShifts((int) $user->tenant_id);
+
+            return response()->json([
+                'success'          => true,
+                'message'          => $aggregated['has_active_shift']
+                    ? 'Lấy thông tin tổng hợp các ca đang mở thành công.'
+                    : 'Hiện chưa có chi nhánh nào đang mở ca.',
+                'data'             => $aggregated,
+                'has_active_shift' => $aggregated['has_active_shift'],
+                'is_aggregated'    => true,
+            ], 200);
+        }
+
+        $branchId = $rawBranchId ?? $user->branch_id;
 
         if (! $branchId) {
             return $this->failure('Không xác định được chi nhánh làm việc.', 422);

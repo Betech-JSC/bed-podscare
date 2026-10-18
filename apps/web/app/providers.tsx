@@ -508,7 +508,6 @@ export const Providers: React.FC<{ children: React.ReactNode }> = ({ children })
         role === 'admin';
       const params: Record<string, any> = { per_page: 50, date_filter: dateFilter };
       if (isAdminUser) {
-        params.per_page = 500;
         params.date_filter = 'all';
       }
       if (activeBranchId && activeBranchId !== 'all') {
@@ -580,8 +579,15 @@ export const Providers: React.FC<{ children: React.ReactNode }> = ({ children })
             issue: o.issue_description || 'Kiểm tra',
             status: mappedStatus.label,
             statusType: mappedStatus.type,
-            price: Number(o.total_price) || Number(o.estimated_price) || 0,
-            total_price: Number(o.total_price) || Number(o.price) || 0,
+            price: Number(o.normalized_total_price ?? o.total_price ?? o.estimated_price ?? 0),
+            total_price: Number(o.normalized_total_price ?? o.total_price ?? o.price ?? 0),
+            normalized_total_price: o.normalized_total_price ?? (Number(o.total_price) || 0),
+            paid_amount: o.paid_amount ?? 0,
+            cash_paid_amount: o.cash_paid_amount ?? 0,
+            transfer_paid_amount: o.transfer_paid_amount ?? 0,
+            remaining_amount: o.remaining_amount ?? 0,
+            payment_method_summary: o.payment_method_summary ?? 'unpaid',
+            payment_status_label: o.payment_status_label ?? '',
             initial_price: o.initial_price !== null && o.initial_price !== undefined ? Number(o.initial_price) : (Number(o.total_price) || Number(o.price) || 0),
             initialPrice: o.initial_price !== null && o.initial_price !== undefined ? Number(o.initial_price) : (Number(o.total_price) || Number(o.price) || 0),
             additional_services: Array.isArray(o.additional_services) ? o.additional_services : (Array.isArray(o.additionalServices) ? o.additionalServices : []),

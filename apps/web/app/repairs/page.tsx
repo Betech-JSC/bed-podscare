@@ -5,7 +5,6 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import {
   Button,
   StatusTag,
-  FilterBar,
   Avatar,
   Modal,
   EmptyState,
@@ -19,7 +18,6 @@ import {
   Icon,
   sanitizeInputLive,
   sanitizeSearchQuery,
-  matchesPhoneFlexible,
 } from '@podscare/ui';
 import { AppShell } from '../components/AppShell';
 import { IntakeWizardModal } from '../components/IntakeWizardModal';
@@ -28,7 +26,13 @@ import { AdminEditOrderModal } from '../components/AdminEditOrderModal';
 import { ConfirmDeleteOrderModal } from '../components/ConfirmDeleteOrderModal';
 import { RefundModal } from '../components/RefundModal';
 import { usePodsCare } from '../providers';
-import type { RepairOrder, AdditionalServiceItem, OrderDateFilter } from '@podscare/types';
+import type {
+  RepairOrder,
+  AdditionalServiceItem,
+  OrderDateFilter,
+  OrderListMetaSummary,
+  OrderWorkshopStepFilter,
+} from '@podscare/types';
 import { repairService, serviceService } from '@podscare/api-client';
 import { useQuery } from '@tanstack/react-query';
 import {
@@ -37,6 +41,88 @@ import {
   isTechnicalStageStatus,
 } from './fsm';
 import { useSilentPrint, PrintButtonDropdown } from '../components/print';
+
+type StatusCardKey = 'all' | 'open' | 'in_workshop' | 'waiting_pickup' | 'completed';
+type WorkshopStepKey =
+  | 'all'
+  | 'inspecting'
+  | 'waiting_approval'
+  | 'in_repair'
+  | 'waiting_parts'
+  | 'waiting_qc'
+  | 'overdue';
+
+const WORKSHOP_STEP_KEYS: WorkshopStepKey[] = [
+  'inspecting',
+  'waiting_approval',
+  'in_repair',
+  'waiting_parts',
+  'waiting_qc',
+  'overdue',
+];
+
+function resolveStatusAndWorkshopStepFromUrl(
+  statusParam: string,
+  filterParam: string,
+  workshopStepParam: string
+): { statusCard: StatusCardKey; workshopStep: WorkshopStepKey } {
+  const rawStep = (workshopStepParam || '').trim() as WorkshopStepKey;
+  if (WORKSHOP_STEP_KEYS.includes(rawStep)) {
+    return { statusCard: 'in_workshop', workshopStep: rawStep };
+  }
+
+  const rawStatus = (statusParam || (filterParam === 'overdue' ? 'overdue' : filterParam)).trim();
+  if (WORKSHOP_STEP_KEYS.includes(rawStatus as WorkshopStepKey)) {
+    return { statusCard: 'in_workshop', workshopStep: rawStatus as WorkshopStepKey };
+  }
+  if (rawStatus === 'qc_pending' || rawStatus === 'qc_inspecting') {
+    return { statusCard: 'in_workshop', workshopStep: 'waiting_qc' };
+  }
+  if (rawStatus === 'quote_pending') {
+    return { statusCard: 'in_workshop', workshopStep: 'waiting_approval' };
+  }
+  if (['waiting_tech', 'assigned', 'rework_needed'].includes(rawStatus)) {
+    return { statusCard: 'in_workshop', workshopStep: 'in_repair' };
+  }
+  if (rawStatus === 'ready_for_return' || rawStatus === 'waiting_pickup') {
+    return { statusCard: 'waiting_pickup', workshopStep: 'all' };
+  }
+  if (['all', 'open', 'in_workshop', 'waiting_pickup', 'completed'].includes(rawStatus)) {
+    return { statusCard: rawStatus as StatusCardKey, workshopStep: 'all' };
+  }
+  return { statusCard: 'all', workshopStep: 'all' };
+}
+
+function buildPageNumbers(current: number, total: number): Array<number | '...'> {
+  if (total <= 7) {
+    return Array.from({ length: total }, (_, i) => i + 1);
+  }
+  const pages: Array<number | '...'> = [1];
+  if (current > 3) {
+    pages.push('...');
+  }
+  const start = Math.max(2, current - 1);
+  const end = Math.min(total - 1, current + 1);
+  for (let p = start; p <= end; p++) {
+    pages.push(p);
+  }
+  if (current < total - 2) {
+    pages.push('...');
+  }
+  pages.push(total);
+  return pages;
+}
+
+const VALID_DATE_FILTERS: OrderDateFilter[] = [
+  'all',
+  'today',
+  'yesterday',
+  '3_days',
+  '7_days',
+  'this_month',
+  '30_days',
+  'custom',
+];
 
 function RepairsPageContent() {
   const router = useRouter();
@@ -61,47 +147,61 @@ function RepairsPageContent() {
       : 'created_at';
   const initialStatusParam = searchParams.get('status') || '';
   const initialFilterParam = searchParams.get('filter') || '';
+  const initialWorkshopStepParam = searchParams.get('workshop_step') || '';
   const initialOrderTypeParam = (searchParams.get('order_type') as any) || 'all';
   const initialBranchParam = searchParams.get('branch_id');
   const initialOrderIdParam = searchParams.get('id') || searchParams.get('order_id');
   const initialSearchParam = sanitizeInputLive(
     searchParams.get('search') || searchParams.get('q') || ''
   );
+  const initialPageParam = Math.max(1, Number(searchParams.get('page')) || 1);
+  const initialPerPageParam = [15, 20, 30, 50].includes(Number(searchParams.get('per_page')))
+    ? Number(searchParams.get('per_page'))
+    : 15;
 
-  const backendToStatusLabelMap: Record<string, string> = {
-    open: 'Đơn đang mở',
-    in_workshop: 'Đang sửa trong xưởng',
-    overdue: 'Trễ thời hạn (>24h)',
-    inspecting: 'Đang kiểm tra',
-    waiting_tech: 'Chờ kỹ thuật',
-    assigned: 'Đã nhận đơn',
-    waiting_approval: 'Chờ khách duyệt',
-    in_repair: 'Đang sửa',
-    waiting_parts: 'Chờ linh kiện',
-    waiting_qc: 'Chờ QC',
-    qc_pending: 'Chờ QC',
-    ready_for_return: 'Sẵn sàng trả',
-    waiting_pickup: 'Chờ khách nhận',
-    completed: 'Hoàn tất',
-    rejected: 'Từ chối sửa',
-    cancelled: 'Đã hủy',
-  };
+  const initialResolvedStatus = resolveStatusAndWorkshopStepFromUrl(
+    initialStatusParam,
+    initialFilterParam,
+    initialWorkshopStepParam
+  );
 
-  const resolvedInitialStatus =
-    initialStatusParam || (initialFilterParam === 'overdue' ? 'overdue' : initialFilterParam);
+  const initialDateFilterParam = searchParams.get('date_filter') as OrderDateFilter | null;
 
-  const [dateFilter, setDateFilter] = useState<OrderDateFilter>('today');
+  const [dateFilter, setDateFilter] = useState<OrderDateFilter>(() => {
+    if (initialDate) return 'custom';
+    if (initialDateFilterParam && VALID_DATE_FILTERS.includes(initialDateFilterParam)) {
+      return initialDateFilterParam;
+    }
+    if (
+      initialStatusParam ||
+      initialFilterParam ||
+      initialWorkshopStepParam ||
+      role === 'admin' ||
+      currentUser?.role === 'admin'
+    ) {
+      return 'all';
+    }
+    return 'today';
+  });
   const [selectedDate, setSelectedDate] = useState<string>(initialDate);
   const [dateType, setDateType] = useState<'created_at' | 'completed_at'>(initialDateType);
   const [search, setSearch] = useState(initialSearchParam);
-  const [statusFilter, setStatusFilter] = useState(
-    backendToStatusLabelMap[resolvedInitialStatus] || resolvedInitialStatus
+  const [statusCardFilter, setStatusCardFilter] = useState<StatusCardKey>(
+    initialResolvedStatus.statusCard
   );
-  const [orderTypeFilter, setOrderTypeFilter] = useState<'all' | 'in_store' | 'cod' | 'warranty' | 'special_parts'>(
+  const [workshopStepFilter, setWorkshopStepFilter] = useState<WorkshopStepKey>(
+    initialResolvedStatus.workshopStep
+  );
+  const [orderTypeFilter, setOrderTypeFilter] = useState<
+    'all' | 'in_store' | 'cod' | 'warranty' | 'special_parts'
+  >(
     ['all', 'in_store', 'cod', 'warranty', 'special_parts'].includes(initialOrderTypeParam)
       ? initialOrderTypeParam
       : 'all'
   );
+  const [currentPage, setCurrentPage] = useState<number>(initialPageParam);
+  const [perPage, setPerPage] = useState<number>(initialPerPageParam);
+
   const [selectedOrder, setSelectedOrder] = useState<RepairOrder | null>(null);
   const [intakeModalOpen, setIntakeModalOpen] = useState(false);
   const [initialIntakeType, setInitialIntakeType] = useState<'in_store' | 'cod' | 'warranty'>('in_store');
@@ -130,25 +230,55 @@ function RepairsPageContent() {
   const [shippingAddressInput, setShippingAddressInput] = useState('');
   const [isSavingShippingAddress, setIsSavingShippingAddress] = useState(false);
 
-  // Đồng bộ URL query params (status, filter, date_filter, search/q) và mặc định dateFilter='all' cho Admin
+  // Đồng bộ URL query params (status, filter, workshop_step, date_filter, date_type, date, order_type, search/q)
   React.useEffect(() => {
     const statusParam = searchParams.get('status') || '';
     const filterParam = searchParams.get('filter') || '';
-    const rawStatus = statusParam || (filterParam === 'overdue' ? 'overdue' : filterParam);
-    if (rawStatus) {
-      setStatusFilter(backendToStatusLabelMap[rawStatus] || rawStatus);
+    const wsParam = searchParams.get('workshop_step') || '';
+    if (statusParam || filterParam || wsParam) {
+      const resolved = resolveStatusAndWorkshopStepFromUrl(statusParam, filterParam, wsParam);
+      setStatusCardFilter(resolved.statusCard);
+      setWorkshopStepFilter(resolved.workshopStep);
     }
+
+    const otParam = searchParams.get('order_type') as any;
+    if (otParam && ['all', 'in_store', 'cod', 'warranty', 'special_parts'].includes(otParam)) {
+      setOrderTypeFilter(otParam);
+    }
+
+    const dtParam = searchParams.get('date_type');
+    if (dtParam === 'completed_at' || dtParam === 'handed_over_at') {
+      setDateType('completed_at');
+    } else if (dtParam === 'created_at') {
+      setDateType('created_at');
+    }
+
+    const dateParam = searchParams.get('date');
+    if (dateParam) {
+      setSelectedDate(dateParam);
+      setDateFilter('custom');
+    }
+
     const urlSearch = searchParams.get('search') ?? searchParams.get('q');
     if (urlSearch !== null) {
       setSearch(sanitizeInputLive(urlSearch));
     }
+
     const dfParam = searchParams.get('date_filter') as OrderDateFilter | null;
-    const validDateFilters: OrderDateFilter[] = ['all', 'today', 'yesterday', '3_days', '7_days', '30_days'];
-    if (dfParam && validDateFilters.includes(dfParam)) {
-      setDateFilter(dfParam);
-    } else if (rawStatus || role === 'admin' || currentUser?.role === 'admin') {
-      setDateFilter('all');
+    if (!dateParam) {
+      if (dfParam && VALID_DATE_FILTERS.includes(dfParam)) {
+        setDateFilter(dfParam);
+      } else if (
+        statusParam ||
+        filterParam ||
+        wsParam ||
+        role === 'admin' ||
+        currentUser?.role === 'admin'
+      ) {
+        setDateFilter('all');
+      }
     }
+    setCurrentPage(1);
   }, [searchParams, role, currentUser?.role]);
 
   // Khởi tạo branch_id và intake=warranty từ URL nếu có
@@ -164,7 +294,7 @@ function RepairsPageContent() {
     }
   }, [initialBranchParam, branches, setBranch, searchParams]);
 
-  // Nạp đơn hàng trực tiếp qua API với bộ lọc chi nhánh, thời gian và tìm kiếm
+  // Nạp đơn hàng qua API với Server-side Pagination chuẩn + meta.summary
   const {
     data: apiOrdersData,
     isLoading,
@@ -172,20 +302,37 @@ function RepairsPageContent() {
     isError,
     refetch,
   } = useQuery({
-    queryKey: ['repairs', branchId, search, dateFilter, selectedDate, dateType],
+    queryKey: [
+      'repairs',
+      branchId,
+      search,
+      dateFilter,
+      selectedDate,
+      dateType,
+      orderTypeFilter,
+      statusCardFilter,
+      workshopStepFilter,
+      currentPage,
+      perPage,
+    ],
     queryFn: async () => {
       const params: Record<string, any> = {
-        per_page: 500,
+        page: currentPage,
+        per_page: perPage,
+        date_type: dateType,
+        order_type: orderTypeFilter,
+        status: statusCardFilter,
       };
+      if (statusCardFilter === 'in_workshop' && workshopStepFilter && workshopStepFilter !== 'all') {
+        params.workshop_step = workshopStepFilter as OrderWorkshopStepFilter;
+      }
+
       const cleanSearch = sanitizeSearchQuery(search);
       if (selectedDate) {
         params.date = selectedDate;
-      } else if (cleanSearch) {
-        params.date_filter = 'all';
       } else {
-        params.date_filter = dateFilter;
+        params.date_filter = dateFilter === 'custom' ? 'all' : dateFilter;
       }
-      params.date_type = dateType;
 
       if (branchId && branchId !== 'all') {
         params.branch_id = branchId;
@@ -250,6 +397,26 @@ function RepairsPageContent() {
             ? Number(o.initial_price)
             : Number(o.total_price) || Number(o.price) || 0
         ),
+        normalized_total_price:
+          o.normalized_total_price !== undefined && o.normalized_total_price !== null
+            ? Number(o.normalized_total_price)
+            : null,
+        paid_amount:
+          o.paid_amount !== undefined && o.paid_amount !== null ? Number(o.paid_amount) : null,
+        cash_paid_amount:
+          o.cash_paid_amount !== undefined && o.cash_paid_amount !== null
+            ? Number(o.cash_paid_amount)
+            : null,
+        transfer_paid_amount:
+          o.transfer_paid_amount !== undefined && o.transfer_paid_amount !== null
+            ? Number(o.transfer_paid_amount)
+            : null,
+        remaining_amount:
+          o.remaining_amount !== undefined && o.remaining_amount !== null
+            ? Number(o.remaining_amount)
+            : null,
+        payment_method_summary: o.payment_method_summary,
+        payment_status_label: o.payment_status_label,
         additional_services: Array.isArray(o.additional_services) ? o.additional_services : (Array.isArray(o.additionalServices) ? o.additionalServices : []),
         additionalServices: Array.isArray(o.additional_services) ? o.additional_services : (Array.isArray(o.additionalServices) ? o.additionalServices : []),
         device_model_id: o.device_model_id || o.device_model?.id || null,
@@ -302,165 +469,114 @@ function RepairsPageContent() {
     });
   }, [apiOrdersData, dateType, tenantBranding, currentUser?.tenant]);
 
-  const statusReconciliationCounts = useMemo(() => {
-    const allCount = rawMappedOrders.length;
-    let openCount = 0;
-    let inWorkshopCount = 0;
-    let waitingPickupCount = 0;
-    let completedCount = 0;
+  const metaSummary: OrderListMetaSummary | undefined =
+    apiOrdersData?.meta?.summary || apiOrdersData?.summary;
 
-    rawMappedOrders.forEach((o) => {
-      if (!['Hoàn tất', 'Đã hủy', 'Từ chối sửa'].includes(o.status)) {
-        openCount++;
-      }
-      if (
-        !['Hoàn tất', 'Đã hủy', 'Từ chối sửa', 'Sẵn sàng trả', 'Chờ khách nhận'].includes(
-          o.status
-        )
-      ) {
-        inWorkshopCount++;
-      }
-      if (['Sẵn sàng trả', 'Chờ khách nhận'].includes(o.status)) {
-        waitingPickupCount++;
-      }
-      if (o.status === 'Hoàn tất') {
-        completedCount++;
-      }
-    });
+  const paginationMeta = useMemo(() => {
+    const meta = apiOrdersData?.meta || apiOrdersData || {};
+    const total = Number(meta.total ?? apiOrdersData?.total ?? rawMappedOrders.length);
+    const resolvedPerPage = Number(meta.per_page ?? apiOrdersData?.per_page ?? perPage) || 15;
+    const resolvedCurrentPage = Number(meta.current_page ?? apiOrdersData?.current_page ?? currentPage) || 1;
+    const lastPage = Math.max(
+      1,
+      Number(meta.last_page ?? apiOrdersData?.last_page ?? Math.ceil(total / resolvedPerPage)) || 1
+    );
+    const from =
+      total === 0
+        ? 0
+        : Number(meta.from ?? apiOrdersData?.from ?? (resolvedCurrentPage - 1) * resolvedPerPage + 1);
+    const to =
+      total === 0
+        ? 0
+        : Number(meta.to ?? apiOrdersData?.to ?? Math.min(total, resolvedCurrentPage * resolvedPerPage));
 
     return {
-      all: allCount,
-      allCount,
-      active: openCount,
-      openCount,
-      inWorkshop: inWorkshopCount,
-      inWorkshopCount,
-      waitingPickup: waitingPickupCount,
-      waitingPickupCount,
-      completed: completedCount,
-      completedCount,
+      total,
+      perPage: resolvedPerPage,
+      currentPage: resolvedCurrentPage,
+      lastPage,
+      from,
+      to,
     };
-  }, [rawMappedOrders]);
+  }, [apiOrdersData, rawMappedOrders.length, perPage, currentPage]);
 
-  const baseFilteredByStatus: RepairOrder[] = useMemo(() => {
-    if (!statusFilter) {
-      return rawMappedOrders;
-    }
-    if (statusFilter === 'Đơn đang mở') {
-      return rawMappedOrders.filter(
-        (item) => !['Hoàn tất', 'Đã hủy', 'Từ chối sửa'].includes(item.status)
-      );
-    }
-    if (statusFilter === 'Đang sửa trong xưởng') {
-      return rawMappedOrders.filter(
-        (item) =>
-          ![
-            'Hoàn tất',
-            'Đã hủy',
-            'Từ chối sửa',
-            'Sẵn sàng trả',
-            'Chờ khách nhận',
-          ].includes(item.status)
-      );
-    }
-    if (statusFilter === 'Chờ khách nhận' || statusFilter === 'Sẵn sàng trả') {
-      return rawMappedOrders.filter((item) =>
-        ['Chờ khách nhận', 'Sẵn sàng trả'].includes(item.status)
-      );
-    }
-    if (statusFilter === 'Chờ linh kiện') {
-      return rawMappedOrders.filter(
-        (item) =>
-          (item.status === 'Chờ linh kiện' ||
-            item.special_parts_status === 'pending' ||
-            item.specialPartsStatus === 'pending') &&
-          !['Hoàn tất', 'Đã hủy', 'Từ chối sửa'].includes(item.status)
-      );
-    }
-    if (statusFilter === 'Trễ thời hạn (>24h)') {
-      const cutoffMs = Date.now() - 24 * 3600 * 1000;
-      return rawMappedOrders.filter((item) => {
-        if (
-          [
-            'Hoàn tất',
-            'Đã hủy',
-            'Từ chối sửa',
-            'Sẵn sàng trả',
-            'Chờ khách nhận',
-          ].includes(item.status)
-        ) {
-          return false;
-        }
-        if (item.createdAt) {
-          const ts = new Date(item.createdAt).getTime();
-          if (!isNaN(ts)) {
-            return ts <= cutoffMs;
-          }
-        }
-        return true;
-      });
-    }
-    if (statusFilter === 'Tiếp nhận mới' || statusFilter === 'Đang kiểm tra') {
-      return rawMappedOrders.filter((item) =>
-        ['Tiếp nhận mới', 'Đang kiểm tra'].includes(item.status)
-      );
-    }
-
-    return rawMappedOrders.filter((item) => item.status === statusFilter);
-  }, [rawMappedOrders, statusFilter]);
-
-  const statusFilteredOrders = baseFilteredByStatus;
-
+  // Tầng 1: Số đếm 5 Tab phân loại đơn từ meta.summary.order_type_counts (giữ nguyên khi đổi tab hoặc chuyển trang)
   const orderCounts = useMemo(() => {
+    const otc = metaSummary?.order_type_counts;
+    if (otc) {
+      return {
+        total: Number(otc.all || 0),
+        inStore: Number(otc.in_store || 0),
+        cod: Number(otc.cod || 0),
+        warranty: Number(otc.warranty || 0),
+        specialParts: Number(otc.special_parts || 0),
+      };
+    }
     let total = 0;
     let inStore = 0;
     let cod = 0;
     let warranty = 0;
     let specialParts = 0;
-    statusFilteredOrders.forEach((o: any) => {
+    rawMappedOrders.forEach((o: any) => {
       total++;
       const t = o.order_type || o.orderType || 'in_store';
-      if (t === 'warranty') {
-        warranty++;
-      } else if (t === 'cod') {
-        cod++;
-      } else {
-        inStore++;
-      }
+      if (t === 'warranty') warranty++;
+      else if (t === 'cod') cod++;
+      else inStore++;
       if (o.special_parts_status === 'pending' || o.specialPartsStatus === 'pending') {
         specialParts++;
       }
     });
     return { total, inStore, cod, warranty, specialParts };
-  }, [statusFilteredOrders]);
+  }, [metaSummary, rawMappedOrders]);
 
-  const filteredOrders: RepairOrder[] = useMemo(() => {
-    let base = statusFilteredOrders;
-    if (orderTypeFilter === 'special_parts') {
-      base = base.filter(
-        (o: any) => (o.special_parts_status || o.specialPartsStatus) === 'pending'
-      );
-    } else if (orderTypeFilter !== 'all') {
-      base = base.filter(
-        (o: any) => (o.order_type || o.orderType || 'in_store') === orderTypeFilter
-      );
-    }
-    const cleanQ = sanitizeSearchQuery(search).toLowerCase();
-    if (!cleanQ) {
-      return base;
-    }
-    return base.filter((o) => {
-      return (
-        o.id.toLowerCase().includes(cleanQ) ||
-        o.name.toLowerCase().includes(cleanQ) ||
-        o.phone.toLowerCase().includes(cleanQ) ||
-        matchesPhoneFlexible(o.phone, cleanQ) ||
-        (o.serial || '').toLowerCase().includes(cleanQ) ||
-        o.device.toLowerCase().includes(cleanQ) ||
-        o.issue.toLowerCase().includes(cleanQ)
-      );
-    });
-  }, [statusFilteredOrders, orderTypeFilter, search]);
+  // Tầng 2: 5 Thẻ Đối Soát Trạng Thái & Dòng Tiền từ meta.summary.status_cards
+  const statusCardsSummary = useMemo(() => {
+    const sc = metaSummary?.status_cards;
+    const counts = metaSummary?.status_counts;
+    return {
+      all: {
+        count: Number(sc?.all?.count ?? counts?.all ?? 0),
+        total_amount: sc?.all?.total_amount ?? 0,
+      },
+      open: {
+        count: Number(sc?.open?.count ?? counts?.open ?? 0),
+        total_amount: sc?.open?.total_amount ?? 0,
+      },
+      in_workshop: {
+        count: Number(sc?.in_workshop?.count ?? counts?.in_workshop ?? 0),
+        expected_amount: sc?.in_workshop?.expected_amount ?? sc?.in_workshop?.total_amount ?? 0,
+      },
+      waiting_pickup: {
+        count: Number(sc?.waiting_pickup?.count ?? counts?.waiting_pickup ?? 0),
+        total_amount: sc?.waiting_pickup?.total_amount ?? 0,
+        deposit_amount: sc?.waiting_pickup?.deposit_amount ?? 0,
+        uncollected_amount: sc?.waiting_pickup?.uncollected_amount ?? 0,
+      },
+      completed: {
+        count: Number(sc?.completed?.count ?? counts?.completed ?? 0),
+        collected_amount: sc?.completed?.collected_amount ?? sc?.completed?.total_amount ?? 0,
+        cash_amount: sc?.completed?.cash_amount ?? 0,
+        transfer_amount: sc?.completed?.transfer_amount ?? 0,
+      },
+    };
+  }, [metaSummary]);
+
+  // Dải Sub-filter 6 bước kỹ thuật + Quá hạn từ meta.summary.workshop_steps
+  const workshopStepsCounts = useMemo(() => {
+    const ws = metaSummary?.workshop_steps;
+    return {
+      all: Number(ws?.all ?? ws?.in_workshop ?? statusCardsSummary.in_workshop.count ?? 0),
+      inspecting: Number(ws?.inspecting ?? 0),
+      waiting_approval: Number(ws?.waiting_approval ?? 0),
+      in_repair: Number(ws?.in_repair ?? 0),
+      waiting_parts: Number(ws?.waiting_parts ?? 0),
+      waiting_qc: Number(ws?.waiting_qc ?? 0),
+      overdue: Number(ws?.overdue ?? 0),
+    };
+  }, [metaSummary, statusCardsSummary.in_workshop.count]);
+
+  const filteredOrders: RepairOrder[] = rawMappedOrders;
 
   // Lắng nghe sự kiện realtime cập nhật trạng thái đơn (kèm chuông Audio Chime)
   React.useEffect(() => {
@@ -490,6 +606,7 @@ function RepairsPageContent() {
       }
     }
   }, [initialOrderIdParam, filteredOrders]);
+
 
   // Admin / CSKH kích hoạt tiếp tục sửa chữa khi đã có linh kiện
   const handleResumeOrder = async (orderToResume: RepairOrder) => {
@@ -782,22 +899,6 @@ function RepairsPageContent() {
     }
   };
 
-  const statusOptions = [
-    { value: 'Đơn đang mở', label: 'Đơn đang mở' },
-    { value: 'Đang sửa trong xưởng', label: 'Đang sửa trong xưởng' },
-    { value: 'Chờ khách nhận', label: 'Chờ khách nhận' },
-    { value: 'Trễ thời hạn (>24h)', label: 'Trễ thời hạn (>24h)' },
-    { value: 'Tiếp nhận mới', label: 'Tiếp nhận mới' },
-    { value: 'Chờ kỹ thuật', label: 'Chờ kỹ thuật' },
-    { value: 'Đã nhận đơn', label: 'Đã nhận đơn' },
-    { value: 'Đang kiểm tra', label: 'Đang kiểm tra' },
-    { value: 'Đang sửa', label: 'Đang sửa' },
-    { value: 'Chờ linh kiện', label: 'Chờ linh kiện' },
-    { value: 'Chờ QC', label: 'Chờ QC' },
-    { value: 'Sẵn sàng trả', label: 'Sẵn sàng trả' },
-    { value: 'Hoàn tất', label: 'Hoàn tất' },
-  ];
-
   const handleUpdateStatus = async (
     nextStatus: string,
     nextType: any,
@@ -911,381 +1012,661 @@ function RepairsPageContent() {
           </div>
         </div>
 
-        {/* Panel with Table and Filters */}
-        <div className="bg-white rounded-[12px] border border-[#e5ece8] p-5 sm:p-6 shadow-xs">
-          {/* Quick Filter Tabs: Tất cả, Tại cửa hàng, Đơn COD */}
-          <div className="flex flex-wrap items-center gap-2 border-b border-[#e5ece8] pb-3 mb-4">
-            <button
-              type="button"
-              data-testid="tab-filter-all"
-              onClick={() => setOrderTypeFilter('all')}
-              className={`px-3.5 py-1.5 rounded-[8px] text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
-                orderTypeFilter === 'all'
-                  ? 'bg-[#176b58] text-white shadow-sm'
-                  : 'bg-[#f4f7f5] text-[#556960] hover:bg-[#eaf0ec]'
-              }`}
-            >
-              <span>Tất cả đơn</span>
-              <span
-                className={`text-[10px] px-1.5 py-0.5 rounded-full font-mono ${
-                  orderTypeFilter === 'all' ? 'bg-white/25 text-white' : 'bg-[#e2e9e5] text-[#42584e]'
-                } ${isRepairsLoading ? 'animate-pulse opacity-60' : ''}`}
-              >
-                {orderCounts.total}
-              </span>
-            </button>
-            <button
-              type="button"
-              data-testid="tab-filter-in-store"
-              onClick={() => setOrderTypeFilter('in_store')}
-              className={`px-3.5 py-1.5 rounded-[8px] text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
-                orderTypeFilter === 'in_store'
-                  ? 'bg-[#176b58] text-white shadow-sm'
-                  : 'bg-[#f4f7f5] text-[#556960] hover:bg-[#eaf0ec]'
-              }`}
-            >
-              <span>Tại cửa hàng</span>
-              <span
-                className={`text-[10px] px-1.5 py-0.5 rounded-full font-mono ${
-                  orderTypeFilter === 'in_store' ? 'bg-white/25 text-white' : 'bg-[#e2e9e5] text-[#42584e]'
-                } ${isRepairsLoading ? 'animate-pulse opacity-60' : ''}`}
-              >
-                {orderCounts.inStore}
-              </span>
-            </button>
-            <button
-              type="button"
-              data-testid="tab-filter-cod"
-              onClick={() => setOrderTypeFilter('cod')}
-              className={`px-3.5 py-1.5 rounded-[8px] text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
-                orderTypeFilter === 'cod'
-                  ? 'bg-[#d97706] text-white shadow-sm'
-                  : 'bg-[#fef3c7] text-[#92400e] hover:bg-[#fde68a]'
-              }`}
-            >
-              <span>Đơn COD (Khách tỉnh)</span>
-              <span
-                className={`text-[10px] px-1.5 py-0.5 rounded-full font-mono ${
-                  orderTypeFilter === 'cod' ? 'bg-white/25 text-white' : 'bg-[#fde68a] text-[#78350f]'
-                } ${isRepairsLoading ? 'animate-pulse opacity-60' : ''}`}
-              >
-                {orderCounts.cod}
-              </span>
-            </button>
-            <button
-              type="button"
-              data-testid="tab-filter-warranty"
-              onClick={() => setOrderTypeFilter('warranty')}
-              className={`px-3.5 py-1.5 rounded-[8px] text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
-                orderTypeFilter === 'warranty'
-                  ? 'bg-[#047857] text-white shadow-sm'
-                  : 'bg-[#ecfdf5] text-[#047857] hover:bg-[#d1fae5]'
-              }`}
-            >
-              <span>Đơn bảo hành</span>
-              <span
-                className={`text-[10px] px-1.5 py-0.5 rounded-full font-mono ${
-                  orderTypeFilter === 'warranty' ? 'bg-white/25 text-white' : 'bg-[#a7f3d0] text-[#065f46]'
-                } ${isRepairsLoading ? 'animate-pulse opacity-60' : ''}`}
-              >
-                {orderCounts.warranty}
-              </span>
-            </button>
-            <button
-              type="button"
-              data-testid="tab-filter-special-parts"
-              onClick={() => setOrderTypeFilter('special_parts')}
-              className={`px-3.5 py-1.5 rounded-[8px] text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
-                orderTypeFilter === 'special_parts'
-                  ? 'bg-red-600 text-white shadow-sm'
-                  : 'bg-red-50 text-red-700 border border-red-300 font-bold hover:bg-red-100'
-              }`}
-            >
-              <Icon name="bell" size={14} />
-              <span>Cần mua ngoài</span>
-              <span
-                className={`text-[10px] px-1.5 py-0.5 rounded-full font-mono ${
-                  orderTypeFilter === 'special_parts' ? 'bg-white/25 text-white' : 'bg-red-100 text-red-700 border border-red-300 font-bold'
-                } ${isRepairsLoading ? 'animate-pulse opacity-60' : ''}`}
-              >
-                {orderCounts.specialParts}
-              </span>
-            </button>
-          </div>
-
-          {/* Date Filter Pills (Shift Day & History Scope) */}
-          <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[#e5ece8] pb-3 mb-4">
-            <div className="flex items-center gap-3 flex-wrap">
-              {/* Tiêu chí thời gian: Theo ngày tiếp nhận vs Theo ngày hoàn tất */}
-              <div className="flex items-center gap-1 bg-[#f4f7f5] p-0.5 rounded-[8px] border border-[#e5ece8]">
-                <button
-                  type="button"
-                  data-testid="date-type-created"
-                  onClick={() => setDateType('created_at')}
-                  className={`px-2.5 py-1 rounded-[6px] text-xs font-bold transition-all cursor-pointer ${
-                    dateType === 'created_at'
-                      ? 'bg-white text-[#176b58] shadow-xs'
-                      : 'text-[#667a70] hover:text-[#1c302b]'
-                  }`}
-                >
-                  Theo ngày tiếp nhận
-                </button>
-                <button
-                  type="button"
-                  data-testid="date-type-completed"
-                  onClick={() => setDateType('completed_at')}
-                  className={`px-2.5 py-1 rounded-[6px] text-xs font-bold transition-all cursor-pointer ${
-                    dateType === 'completed_at'
-                      ? 'bg-white text-[#176b58] shadow-xs'
-                      : 'text-[#667a70] hover:text-[#1c302b]'
-                  }`}
-                >
-                  Theo ngày hoàn tất
-                </button>
-              </div>
-
-              {/* Ô chọn ngày cụ thể */}
-              <div className="flex items-center gap-1.5">
-                <span className="text-xs font-semibold text-[#667a70]">Ngày:</span>
+        {/* Panel with Two-Tier Reconciliation Bar, Table, and Server-side Pagination */}
+        <div className="bg-white rounded-[12px] border border-[#e5ece8] p-5 sm:p-6 shadow-xs space-y-4">
+          {/* TẦNG 1: Toolbar Tìm kiếm & Bộ lọc Ngữ cảnh */}
+          <div
+            data-testid="repairs-tier1-context-bar"
+            className="space-y-3 border-b border-[#e5ece8] pb-4"
+          >
+            {/* Hàng 1: Ô tìm kiếm + Toggle Ngày nhận/Ngày bàn giao + Kỳ thời gian + Chọn ngày + Chi nhánh + Làm mới */}
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              {/* Ô tìm kiếm đa năng */}
+              <div className="relative flex-1 min-w-[220px] max-w-[340px]">
+                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-[#91a098] pointer-events-none">
+                  <Icon name="search" size={16} />
+                </span>
                 <input
-                  type="date"
-                  data-testid="date-picker-input"
-                  value={selectedDate}
+                  type="text"
+                  data-testid="repairs-search-input"
+                  value={search}
                   onChange={(e) => {
-                    setSelectedDate(e.target.value);
+                    setSearch(sanitizeInputLive(e.target.value));
+                    setCurrentPage(1);
                   }}
-                  className="h-8 px-2 text-xs border border-[#d6dfda] rounded-[8px] bg-white text-[#1c302b] outline-none focus:border-[#176b58]"
+                  placeholder="Tìm mã đơn, tên khách, SĐT, serial, thiết bị..."
+                  className="w-full h-9 pl-9 pr-8 border border-[#d6dfda] rounded-[8px] text-xs sm:text-sm text-[#1c302b] bg-[#fafcfa] outline-none focus:border-[#176b58] focus:bg-white transition-all placeholder:text-[#8f9f97]"
                 />
-                {selectedDate && (
+                {search && (
                   <button
                     type="button"
-                    data-testid="clear-date-picker-btn"
-                    onClick={() => setSelectedDate('')}
-                    className="text-xs text-[#819089] hover:text-[#e05252] font-semibold underline px-1 cursor-pointer"
+                    onClick={() => {
+                      setSearch('');
+                      setCurrentPage(1);
+                    }}
+                    className="absolute right-2.5 top-1/2 -translate-y-1/2 text-xs text-[#7c8c84] hover:text-[#1c302b] cursor-pointer"
                   >
-                    Xóa lọc ngày
+                    <Icon name="x" size={14} />
                   </button>
                 )}
               </div>
 
-              {/* Các nút lọc nhanh ca làm việc */}
-              <div className="flex items-center gap-1 flex-wrap">
-                <span className="text-xs font-semibold text-[#667a70] mr-0.5">Ca:</span>
-                <button
-                  type="button"
-                  data-testid="date-filter-today"
-                  onClick={() => {
-                    setSelectedDate('');
-                    setDateFilter('today');
-                  }}
-                  className={`px-2.5 py-1 rounded-[8px] text-xs font-bold transition-all cursor-pointer flex items-center ${
-                    !selectedDate && dateFilter === 'today'
-                      ? 'bg-[#176b58] text-white shadow-xs'
-                      : 'bg-[#f4f7f5] text-[#556960] hover:bg-[#eaf0ec]'
-                  }`}
-                >
-                  Hôm nay
-                </button>
-                <button
-                  type="button"
-                  data-testid="date-filter-yesterday"
-                  onClick={() => {
-                    setSelectedDate('');
-                    setDateFilter('yesterday');
-                  }}
-                  className={`px-2.5 py-1 rounded-[8px] text-xs font-bold transition-all cursor-pointer flex items-center ${
-                    !selectedDate && dateFilter === 'yesterday'
-                      ? 'bg-[#176b58] text-white shadow-xs'
-                      : 'bg-[#f4f7f5] text-[#556960] hover:bg-[#eaf0ec]'
-                  }`}
-                >
-                  Hôm qua
-                </button>
-                <button
-                  type="button"
-                  data-testid="date-filter-7_days"
-                  onClick={() => {
-                    setSelectedDate('');
-                    setDateFilter('7_days');
-                  }}
-                  className={`px-2.5 py-1 rounded-[8px] text-xs font-bold transition-all cursor-pointer flex items-center ${
-                    !selectedDate && dateFilter === '7_days'
-                      ? 'bg-[#176b58] text-white shadow-xs'
-                      : 'bg-[#f4f7f5] text-[#556960] hover:bg-[#eaf0ec]'
-                  }`}
-                >
-                  7 ngày qua
-                </button>
-                <button
-                  type="button"
-                  data-testid="date-filter-30_days"
-                  onClick={() => {
-                    setSelectedDate('');
-                    setDateFilter('30_days');
-                  }}
-                  className={`px-2.5 py-1 rounded-[8px] text-xs font-bold transition-all cursor-pointer flex items-center ${
-                    !selectedDate && dateFilter === '30_days'
-                      ? 'bg-[#176b58] text-white shadow-xs'
-                      : 'bg-[#f4f7f5] text-[#556960] hover:bg-[#eaf0ec]'
-                  }`}
-                >
-                  30 ngày qua
-                </button>
-                <button
-                  type="button"
-                  data-testid="date-filter-all"
-                  onClick={() => {
-                    setSelectedDate('');
-                    setDateFilter('all');
-                  }}
-                  className={`px-2.5 py-1 rounded-[8px] text-xs font-bold transition-all cursor-pointer flex items-center ${
-                    !selectedDate && dateFilter === 'all'
-                      ? 'bg-[#176b58] text-white shadow-xs'
-                      : 'bg-[#f4f7f5] text-[#556960] hover:bg-[#eaf0ec]'
-                  }`}
-                >
-                  Toàn bộ
-                </button>
+              {/* Cụm điều khiển Thời gian & Chi nhánh */}
+              <div className="flex flex-wrap items-center gap-2">
+                {/* Toggle Ngày nhận / Ngày bàn giao */}
+                <div className="flex items-center gap-1 bg-[#f4f7f5] p-0.5 rounded-[8px] border border-[#e5ece8]">
+                  <button
+                    type="button"
+                    data-testid="date-type-created"
+                    onClick={() => {
+                      setDateType('created_at');
+                      setCurrentPage(1);
+                    }}
+                    className={`px-2.5 py-1 rounded-[6px] text-xs font-bold transition-all cursor-pointer ${
+                      dateType === 'created_at'
+                        ? 'bg-white text-[#176b58] shadow-xs'
+                        : 'text-[#667a70] hover:text-[#1c302b]'
+                    }`}
+                  >
+                    Ngày nhận
+                  </button>
+                  <button
+                    type="button"
+                    data-testid="date-type-completed"
+                    onClick={() => {
+                      setDateType('completed_at');
+                      setCurrentPage(1);
+                    }}
+                    className={`px-2.5 py-1 rounded-[6px] text-xs font-bold transition-all cursor-pointer ${
+                      dateType === 'completed_at'
+                        ? 'bg-white text-[#176b58] shadow-xs'
+                        : 'text-[#667a70] hover:text-[#1c302b]'
+                    }`}
+                  >
+                    Ngày bàn giao
+                  </button>
+                </div>
+
+                {/* Cụm chọn Kỳ nhanh */}
+                <div className="flex items-center gap-1 flex-wrap">
+                  {(
+                    [
+                      { key: 'all', label: 'Toàn bộ' },
+                      { key: 'today', label: 'Hôm nay' },
+                      { key: 'yesterday', label: 'Hôm qua' },
+                      { key: '7_days', label: '7 ngày qua' },
+                      { key: 'this_month', label: 'Tháng này' },
+                    ] as Array<{ key: OrderDateFilter; label: string }>
+                  ).map((item) => {
+                    const isActive = !selectedDate && dateFilter === item.key;
+                    return (
+                      <button
+                        key={item.key}
+                        type="button"
+                        data-testid={`date-filter-${item.key}`}
+                        onClick={() => {
+                          setSelectedDate('');
+                          setDateFilter(item.key);
+                          setCurrentPage(1);
+                        }}
+                        className={`px-2.5 py-1 rounded-[8px] text-xs font-bold transition-all cursor-pointer flex items-center ${
+                          isActive
+                            ? 'bg-[#176b58] text-white shadow-xs'
+                            : 'bg-[#f4f7f5] text-[#556960] hover:bg-[#eaf0ec]'
+                        }`}
+                      >
+                        {item.label}
+                      </button>
+                    );
+                  })}
+                </div>
+
+                {/* Chọn ngày cụ thể */}
+                <div className="flex items-center gap-1.5">
+                  <input
+                    type="date"
+                    data-testid="date-picker-input"
+                    value={selectedDate}
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      setSelectedDate(val);
+                      if (val) {
+                        setDateFilter('custom');
+                      } else {
+                        setDateFilter('all');
+                      }
+                      setCurrentPage(1);
+                    }}
+                    className="h-8 px-2 text-xs border border-[#d6dfda] rounded-[8px] bg-white text-[#1c302b] outline-none focus:border-[#176b58]"
+                  />
+                  {selectedDate && (
+                    <button
+                      type="button"
+                      data-testid="clear-date-picker-btn"
+                      onClick={() => {
+                        setSelectedDate('');
+                        setDateFilter('all');
+                        setCurrentPage(1);
+                      }}
+                      className="text-xs text-[#819089] hover:text-[#bc5b52] font-semibold underline px-1 cursor-pointer"
+                    >
+                      Xóa lọc ngày
+                    </button>
+                  )}
+                </div>
+
+                {/* Bộ chọn Chi nhánh & Nút Làm mới */}
+                <div className="flex items-center gap-2">
+                  {role === 'admin' || (role as string) === 'super_admin' ? (
+                    <select
+                      data-testid="repairs-branch-select"
+                      value={String(branchId || 'all')}
+                      onChange={(e) => {
+                        if (e.target.value === 'all') {
+                          setBranch('Tất cả chi nhánh', 'all');
+                        } else {
+                          const b = branches.find((item) => String(item.id) === e.target.value);
+                          if (b) setBranch(b.name, b.id);
+                        }
+                        setCurrentPage(1);
+                      }}
+                      className="h-8 border border-[#d6dfda] rounded-[8px] px-2.5 text-xs text-[#1c302b] bg-[#f9fbf9] font-semibold outline-none focus:border-[#176b58] cursor-pointer"
+                    >
+                      <option value="all">Tất cả chi nhánh</option>
+                      {branches
+                        .filter((b) => b.id !== 'all')
+                        .map((b) => (
+                          <option key={b.id} value={String(b.id)}>
+                            {b.name} ({b.code})
+                          </option>
+                        ))}
+                    </select>
+                  ) : (
+                    <div className="h-8 border border-[#d6dfda] rounded-[8px] px-2.5 text-xs text-[#176b58] bg-[#eaf4ef] font-semibold flex items-center gap-1.5 cursor-default select-none pointer-events-none">
+                      <Icon name="building" size={14} className="text-[#176b58]" />
+                      <span>{branch}</span>
+                    </div>
+                  )}
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    icon="refresh"
+                    disabled={isRepairsLoading}
+                    onClick={() => refetch()}
+                  >
+                    {isRepairsLoading ? 'Đang tải...' : 'Làm mới'}
+                  </Button>
+                </div>
               </div>
             </div>
 
-            {selectedDate ? (
-              <span className="text-[11px] text-[#176b58] bg-[#eaf4ef] px-2 py-0.5 rounded-full font-medium">
-                Đang lọc ngày {selectedDate} ({dateType === 'completed_at' ? 'ngày hoàn tất' : 'ngày tiếp nhận'})
-              </span>
-            ) : dateFilter === 'today' ? (
-              <span className="text-[11px] text-[#556960] bg-[#eaf4ef] px-2 py-0.5 rounded-full font-medium">
-                {dateType === 'completed_at'
-                  ? 'Chỉ hiển thị đơn hoàn tất/bàn giao trong ngày hôm nay'
-                  : 'Chỉ hiển thị đơn tiếp nhận trong ngày hôm nay'}
-              </span>
-            ) : null}
+            {/* Hàng 2: 5 Tab phân loại đơn đọc từ meta.summary.order_type_counts */}
+            <div className="flex flex-wrap items-center justify-between gap-2 pt-1">
+              <div className="flex flex-wrap items-center gap-2">
+                <button
+                  type="button"
+                  data-testid="tab-filter-all"
+                  onClick={() => {
+                    setOrderTypeFilter('all');
+                    setCurrentPage(1);
+                  }}
+                  className={`px-3.5 py-1.5 rounded-[8px] text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
+                    orderTypeFilter === 'all'
+                      ? 'bg-[#176b58] text-white shadow-xs'
+                      : 'bg-[#f4f7f5] text-[#556960] hover:bg-[#eaf0ec]'
+                  }`}
+                >
+                  <span>Tất cả đơn</span>
+                  <span
+                    className={`text-[10px] px-1.5 py-0.5 rounded-full font-mono ${
+                      orderTypeFilter === 'all' ? 'bg-white/25 text-white' : 'bg-[#e2e9e5] text-[#42584e]'
+                    } ${isRepairsLoading ? 'animate-pulse opacity-60' : ''}`}
+                  >
+                    {orderCounts.total}
+                  </span>
+                </button>
+                <button
+                  type="button"
+                  data-testid="tab-filter-in-store"
+                  onClick={() => {
+                    setOrderTypeFilter('in_store');
+                    setCurrentPage(1);
+                  }}
+                  className={`px-3.5 py-1.5 rounded-[8px] text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
+                    orderTypeFilter === 'in_store'
+                      ? 'bg-[#176b58] text-white shadow-xs'
+                      : 'bg-[#f4f7f5] text-[#556960] hover:bg-[#eaf0ec]'
+                  }`}
+                >
+                  <span>Tại quầy</span>
+                  <span
+                    className={`text-[10px] px-1.5 py-0.5 rounded-full font-mono ${
+                      orderTypeFilter === 'in_store' ? 'bg-white/25 text-white' : 'bg-[#e2e9e5] text-[#42584e]'
+                    } ${isRepairsLoading ? 'animate-pulse opacity-60' : ''}`}
+                  >
+                    {orderCounts.inStore}
+                  </span>
+                </button>
+                <button
+                  type="button"
+                  data-testid="tab-filter-cod"
+                  onClick={() => {
+                    setOrderTypeFilter('cod');
+                    setCurrentPage(1);
+                  }}
+                  className={`px-3.5 py-1.5 rounded-[8px] text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
+                    orderTypeFilter === 'cod'
+                      ? 'bg-[#915e1b] text-white shadow-xs'
+                      : 'bg-[#fcfaf5] text-[#915e1b] border border-[#ebd9bd] hover:bg-[#fbf3e5]'
+                  }`}
+                >
+                  <span>Ship COD</span>
+                  <span
+                    className={`text-[10px] px-1.5 py-0.5 rounded-full font-mono ${
+                      orderTypeFilter === 'cod' ? 'bg-white/25 text-white' : 'bg-[#fbf3e5] text-[#78490f]'
+                    } ${isRepairsLoading ? 'animate-pulse opacity-60' : ''}`}
+                  >
+                    {orderCounts.cod}
+                  </span>
+                </button>
+                <button
+                  type="button"
+                  data-testid="tab-filter-warranty"
+                  onClick={() => {
+                    setOrderTypeFilter('warranty');
+                    setCurrentPage(1);
+                  }}
+                  className={`px-3.5 py-1.5 rounded-[8px] text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
+                    orderTypeFilter === 'warranty'
+                      ? 'bg-[#176b58] text-white shadow-xs'
+                      : 'bg-[#eaf4ef] text-[#176b58] border border-[#b8d7c8] hover:bg-[#d8ede1]'
+                  }`}
+                >
+                  <span>Bảo hành</span>
+                  <span
+                    className={`text-[10px] px-1.5 py-0.5 rounded-full font-mono ${
+                      orderTypeFilter === 'warranty' ? 'bg-white/25 text-white' : 'bg-[#d5eadf] text-[#176b58]'
+                    } ${isRepairsLoading ? 'animate-pulse opacity-60' : ''}`}
+                  >
+                    {orderCounts.warranty}
+                  </span>
+                </button>
+                <button
+                  type="button"
+                  data-testid="tab-filter-special-parts"
+                  onClick={() => {
+                    setOrderTypeFilter('special_parts');
+                    setCurrentPage(1);
+                  }}
+                  className={`px-3.5 py-1.5 rounded-[8px] text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
+                    orderTypeFilter === 'special_parts'
+                      ? 'bg-[#bc5b52] text-white shadow-xs'
+                      : 'bg-[#fcf4f2] text-[#bc5b52] border border-[#f3c7c2] hover:bg-[#fbefed]'
+                  }`}
+                >
+                  <Icon name="bell" size={14} />
+                  <span>Cần mua LK</span>
+                  <span
+                    className={`text-[10px] px-1.5 py-0.5 rounded-full font-mono ${
+                      orderTypeFilter === 'special_parts'
+                        ? 'bg-white/25 text-white'
+                        : 'bg-[#fbefed] text-[#bc5b52] border border-[#f3c7c2] font-bold'
+                    } ${isRepairsLoading ? 'animate-pulse opacity-60' : ''}`}
+                  >
+                    {orderCounts.specialParts}
+                  </span>
+                </button>
+              </div>
+
+              {selectedDate ? (
+                <span className="text-[11px] text-[#176b58] bg-[#eaf4ef] px-2.5 py-1 rounded-full font-semibold">
+                  Đang lọc ngày {selectedDate} ({dateType === 'completed_at' ? 'ngày bàn giao' : 'ngày nhận'})
+                </span>
+              ) : null}
+            </div>
           </div>
 
-          {/* Admin Status Reconciliation Bar */}
-          {(role === 'admin' ||
-            currentUser?.role === 'admin' ||
-            (role as string) === 'super_admin' ||
-            (currentUser?.role as string) === 'super_admin') && (
+          {/* TẦNG 2: Dải 5 Thẻ Đối Soát Trạng Thái & Dòng Tiền (Server-side Summary Cards) */}
+          <div className="space-y-2.5 border-b border-[#e5ece8] pb-4">
             <div
               data-testid="admin-repairs-status-reconciliation-bar"
-              className="flex flex-wrap items-center gap-2 border-b border-[#e5ece8] pb-3 mb-4"
+              className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-2.5"
             >
-              <span className="text-xs font-semibold text-[#667a70] mr-0.5">
-                Đối chiếu trạng thái:
-              </span>
+              {/* Thẻ 1: Tất cả trạng thái */}
               <button
                 type="button"
                 data-testid="status-pill-all"
-                onClick={() => setStatusFilter('')}
-                className={`px-3 py-1 rounded-[8px] text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
-                  !statusFilter
-                    ? 'bg-[#176b58] text-white shadow-xs'
-                    : 'bg-[#f4f7f5] text-[#556960] hover:bg-[#eaf0ec]'
+                onClick={() => {
+                  setStatusCardFilter('all');
+                  setWorkshopStepFilter('all');
+                  setCurrentPage(1);
+                }}
+                className={`p-3 rounded-[10px] border text-left transition-all cursor-pointer flex flex-col justify-between ${
+                  statusCardFilter === 'all'
+                    ? 'bg-[#176b58] text-white border-[#176b58] shadow-xs'
+                    : 'bg-[#fafcfa] text-[#1c302b] border-[#dce6e0] hover:border-[#176b58]'
                 }`}
               >
-                <span>Tất cả trạng thái ({statusReconciliationCounts.allCount})</span>
+                <div className="flex items-center justify-between gap-2">
+                  <span
+                    className={`text-xs font-bold ${
+                      statusCardFilter === 'all' ? 'text-white' : 'text-[#4e5e56]'
+                    }`}
+                  >
+                    Tất cả trạng thái
+                  </span>
+                  <span
+                    className={`px-2 py-0.5 rounded-full text-xs font-mono font-extrabold ${
+                      statusCardFilter === 'all'
+                        ? 'bg-white/20 text-white'
+                        : 'bg-[#eaf4ef] text-[#176b58]'
+                    }`}
+                  >
+                    {statusCardsSummary.all.count} đơn
+                  </span>
+                </div>
+                {!isTechRole && (
+                  <div
+                    className={`text-[11px] font-medium mt-1.5 ${
+                      statusCardFilter === 'all' ? 'text-white/90' : 'text-[#667a70]'
+                    }`}
+                  >
+                    Tổng giá trị:{' '}
+                    <b className="font-mono">
+                      {moneyFormatted(Number(statusCardsSummary.all.total_amount || 0))}
+                    </b>
+                  </div>
+                )}
               </button>
+
+              {/* Thẻ 2: Đơn đang mở */}
               <button
                 type="button"
                 data-testid="status-pill-open"
-                onClick={() => setStatusFilter('Đơn đang mở')}
-                className={`px-3 py-1 rounded-[8px] text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
-                  statusFilter === 'Đơn đang mở'
-                    ? 'bg-[#176b58] text-white shadow-xs'
-                    : 'bg-[#eaf4ef] text-[#176b58] border border-[#b8d7c8] hover:bg-[#d8ede1]'
+                onClick={() => {
+                  setStatusCardFilter('open');
+                  setWorkshopStepFilter('all');
+                  setCurrentPage(1);
+                }}
+                className={`p-3 rounded-[10px] border text-left transition-all cursor-pointer flex flex-col justify-between ${
+                  statusCardFilter === 'open'
+                    ? 'bg-[#176b58] text-white border-[#176b58] shadow-xs'
+                    : 'bg-[#f4f9f6] text-[#1c302b] border-[#c5e1d4] hover:border-[#176b58]'
                 }`}
               >
-                <span>
-                  Đơn đang mở ({statusReconciliationCounts.openCount}:{' '}
-                  {statusReconciliationCounts.inWorkshopCount} trong xưởng ·{' '}
-                  {statusReconciliationCounts.waitingPickupCount} chờ nhận)
-                </span>
+                <div className="flex items-center justify-between gap-2">
+                  <span
+                    className={`text-xs font-bold ${
+                      statusCardFilter === 'open' ? 'text-white' : 'text-[#176b58]'
+                    }`}
+                  >
+                    Đơn đang mở
+                  </span>
+                  <span
+                    className={`px-2 py-0.5 rounded-full text-xs font-mono font-extrabold ${
+                      statusCardFilter === 'open'
+                        ? 'bg-white/20 text-white'
+                        : 'bg-white text-[#176b58] border border-[#c5e1d4]'
+                    }`}
+                  >
+                    {statusCardsSummary.open.count} đơn
+                  </span>
+                </div>
+                <div
+                  className={`text-[11px] font-medium mt-1.5 ${
+                    statusCardFilter === 'open' ? 'text-white/90' : 'text-[#52635a]'
+                  }`}
+                >
+                  {!isTechRole ? (
+                    <>
+                      Tổng giá trị:{' '}
+                      <b className="font-mono">
+                        {moneyFormatted(Number(statusCardsSummary.open.total_amount || 0))}
+                      </b>{' '}
+                      <span className="opacity-80">
+                        ({statusCardsSummary.in_workshop.count} xưởng ·{' '}
+                        {statusCardsSummary.waiting_pickup.count} chờ nhận)
+                      </span>
+                    </>
+                  ) : (
+                    <span>
+                      {statusCardsSummary.in_workshop.count} trong xưởng ·{' '}
+                      {statusCardsSummary.waiting_pickup.count} chờ nhận
+                    </span>
+                  )}
+                </div>
               </button>
+
+              {/* Thẻ 3: Đang trong xưởng */}
               <button
                 type="button"
                 data-testid="status-pill-in-workshop"
-                onClick={() => setStatusFilter('Đang sửa trong xưởng')}
-                className={`px-3 py-1 rounded-[8px] text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
-                  statusFilter === 'Đang sửa trong xưởng'
-                    ? 'bg-[#176b58] text-white shadow-xs'
-                    : 'bg-[#f4f7f5] text-[#556960] hover:bg-[#eaf0ec]'
+                onClick={() => {
+                  setStatusCardFilter('in_workshop');
+                  setWorkshopStepFilter('all');
+                  setCurrentPage(1);
+                }}
+                className={`p-3 rounded-[10px] border text-left transition-all cursor-pointer flex flex-col justify-between ${
+                  statusCardFilter === 'in_workshop'
+                    ? 'bg-[#176b58] text-white border-[#176b58] shadow-xs'
+                    : 'bg-[#fafcfa] text-[#1c302b] border-[#dce6e0] hover:border-[#176b58]'
                 }`}
               >
-                <span>Đang sửa trong xưởng ({statusReconciliationCounts.inWorkshopCount})</span>
+                <div className="flex items-center justify-between gap-2">
+                  <span
+                    className={`text-xs font-bold ${
+                      statusCardFilter === 'in_workshop' ? 'text-white' : 'text-[#4e5e56]'
+                    }`}
+                  >
+                    Đang trong xưởng
+                  </span>
+                  <span
+                    className={`px-2 py-0.5 rounded-full text-xs font-mono font-extrabold ${
+                      statusCardFilter === 'in_workshop'
+                        ? 'bg-white/20 text-white'
+                        : 'bg-[#eaf4ef] text-[#176b58]'
+                    }`}
+                  >
+                    {statusCardsSummary.in_workshop.count} đơn
+                  </span>
+                </div>
+                {!isTechRole && (
+                  <div
+                    className={`text-[11px] font-medium mt-1.5 ${
+                      statusCardFilter === 'in_workshop' ? 'text-white/90' : 'text-[#667a70]'
+                    }`}
+                  >
+                    Giá trị dự kiến:{' '}
+                    <b className="font-mono">
+                      {moneyFormatted(Number(statusCardsSummary.in_workshop.expected_amount || 0))}
+                    </b>
+                  </div>
+                )}
               </button>
+
+              {/* Thẻ 4: Chờ khách nhận */}
               <button
                 type="button"
                 data-testid="status-pill-waiting-pickup"
-                onClick={() => setStatusFilter('Chờ khách nhận')}
-                className={`px-3 py-1 rounded-[8px] text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
-                  statusFilter === 'Chờ khách nhận'
-                    ? 'bg-[#176b58] text-white shadow-xs'
-                    : 'bg-[#f4f7f5] text-[#556960] hover:bg-[#eaf0ec]'
+                onClick={() => {
+                  setStatusCardFilter('waiting_pickup');
+                  setWorkshopStepFilter('all');
+                  setCurrentPage(1);
+                }}
+                className={`p-3 rounded-[10px] border text-left transition-all cursor-pointer flex flex-col justify-between ${
+                  statusCardFilter === 'waiting_pickup'
+                    ? 'bg-[#915e1b] text-white border-[#915e1b] shadow-xs'
+                    : 'bg-[#fcfaf5] text-[#1c302b] border-[#ebd9bd] hover:border-[#915e1b]'
                 }`}
               >
-                <span>Chờ khách nhận ({statusReconciliationCounts.waitingPickupCount})</span>
+                <div className="flex items-center justify-between gap-2">
+                  <span
+                    className={`text-xs font-bold ${
+                      statusCardFilter === 'waiting_pickup' ? 'text-white' : 'text-[#915e1b]'
+                    }`}
+                  >
+                    Chờ khách nhận
+                  </span>
+                  <span
+                    className={`px-2 py-0.5 rounded-full text-xs font-mono font-extrabold ${
+                      statusCardFilter === 'waiting_pickup'
+                        ? 'bg-white/20 text-white'
+                        : 'bg-[#fbf3e5] text-[#915e1b] border border-[#ebd9bd]'
+                    }`}
+                  >
+                    {statusCardsSummary.waiting_pickup.count} đơn
+                  </span>
+                </div>
+                {!isTechRole && (
+                  <div
+                    className={`text-[11px] font-medium mt-1.5 ${
+                      statusCardFilter === 'waiting_pickup' ? 'text-white/90' : 'text-[#8c6527]'
+                    }`}
+                  >
+                    Còn thu:{' '}
+                    <b className="font-mono">
+                      {moneyFormatted(
+                        Number(statusCardsSummary.waiting_pickup.uncollected_amount || 0)
+                      )}
+                    </b>
+                  </div>
+                )}
               </button>
+
+              {/* Thẻ 5: Đã bàn giao */}
               <button
                 type="button"
                 data-testid="status-pill-completed"
-                onClick={() => setStatusFilter('Hoàn tất')}
-                className={`px-3 py-1 rounded-[8px] text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
-                  statusFilter === 'Hoàn tất'
-                    ? 'bg-[#176b58] text-white shadow-xs'
-                    : 'bg-[#f4f7f5] text-[#556960] hover:bg-[#eaf0ec]'
+                onClick={() => {
+                  setStatusCardFilter('completed');
+                  setWorkshopStepFilter('all');
+                  setCurrentPage(1);
+                }}
+                className={`p-3 rounded-[10px] border text-left transition-all cursor-pointer flex flex-col justify-between ${
+                  statusCardFilter === 'completed'
+                    ? 'bg-[#176b58] text-white border-[#176b58] shadow-xs'
+                    : 'bg-[#fafcfa] text-[#1c302b] border-[#dce6e0] hover:border-[#176b58]'
                 }`}
               >
-                <span>Hoàn tất ({statusReconciliationCounts.completedCount})</span>
-              </button>
-            </div>
-          )}
-
-          <FilterBar
-            searchValue={search}
-            onSearchChange={(val) => setSearch(sanitizeInputLive(val))}
-            selectValue={statusFilter}
-            onSelectChange={setStatusFilter}
-            selectOptions={statusOptions}
-            selectPlaceholder="Tất cả trạng thái"
-            actions={
-              <div className="flex items-center gap-2">
-                {role === 'admin' ? (
-                  <select
-                    value={String(branchId || 'all')}
-                    onChange={(e) => {
-                      const b = branches.find((item) => String(item.id) === e.target.value);
-                      if (b) setBranch(b.name, b.id);
-                    }}
-                    className="h-9 border border-[#d6dfda] rounded-[8px] px-2.5 text-xs text-[#1c302b] bg-[#f9fbf9] font-medium outline-none focus:border-[#75a994] cursor-pointer"
+                <div className="flex items-center justify-between gap-2">
+                  <span
+                    className={`text-xs font-bold ${
+                      statusCardFilter === 'completed' ? 'text-white' : 'text-[#4e5e56]'
+                    }`}
                   >
-                    <option value="all">Tất cả chi nhánh</option>
-                    {branches
-                      .filter((b) => b.id !== 'all')
-                      .map((b) => (
-                        <option key={b.id} value={String(b.id)}>
-                          {b.name} ({b.code})
-                        </option>
-                      ))}
-                  </select>
-                ) : (
-                  <div className="h-9 border border-[#d6dfda] rounded-[8px] px-2.5 text-xs text-[#176b58] bg-[#eaf4ef] font-semibold flex items-center gap-1.5 cursor-default select-none pointer-events-none">
-                    <Icon name="building" size={14} className="text-[#176b58]" />
-                    <span>{branch}</span>
+                    Đã bàn giao
+                  </span>
+                  <span
+                    className={`px-2 py-0.5 rounded-full text-xs font-mono font-extrabold ${
+                      statusCardFilter === 'completed'
+                        ? 'bg-white/20 text-white'
+                        : 'bg-[#eaf4ef] text-[#176b58]'
+                    }`}
+                  >
+                    {statusCardsSummary.completed.count} đơn
+                  </span>
+                </div>
+                {!isTechRole && (
+                  <div
+                    className={`text-[11px] font-medium mt-1.5 ${
+                      statusCardFilter === 'completed' ? 'text-white/90' : 'text-[#667a70]'
+                    }`}
+                  >
+                    Thực thu:{' '}
+                    <b className="font-mono">
+                      {moneyFormatted(Number(statusCardsSummary.completed.collected_amount || 0))}
+                    </b>
                   </div>
                 )}
-                <Button
-                  variant="secondary"
-                  size="sm"
-                  icon="refresh"
-                  disabled={isRepairsLoading}
-                  onClick={() => refetch()}
+              </button>
+            </div>
+
+            {/* Dải Sub-filter 6 bước kỹ thuật + Quá hạn khi chọn Đang trong xưởng */}
+            {(statusCardFilter === 'in_workshop' || workshopStepFilter !== 'all') && (
+              <div
+                data-testid="workshop-steps-subfilter-bar"
+                className="flex flex-wrap items-center gap-1.5 pt-1 bg-[#f7faf8] border border-[#dce8e1] rounded-[10px] p-2.5"
+              >
+                <span className="text-xs font-bold text-[#176b58] mr-1 flex items-center gap-1.5">
+                  <Icon name="wrench" size={13} />
+                  <span>Bước xử lý trong xưởng:</span>
+                </span>
+                {(
+                  [
+                    { key: 'all', label: 'Tất cả xưởng', count: workshopStepsCounts.all },
+                    { key: 'inspecting', label: 'Kiểm tra', count: workshopStepsCounts.inspecting },
+                    {
+                      key: 'waiting_approval',
+                      label: 'Chờ duyệt giá',
+                      count: workshopStepsCounts.waiting_approval,
+                    },
+                    { key: 'in_repair', label: 'Đang sửa', count: workshopStepsCounts.in_repair },
+                    {
+                      key: 'waiting_parts',
+                      label: 'Chờ LK',
+                      count: workshopStepsCounts.waiting_parts,
+                    },
+                    { key: 'waiting_qc', label: 'Chờ QC', count: workshopStepsCounts.waiting_qc },
+                  ] as Array<{ key: WorkshopStepKey; label: string; count: number }>
+                ).map((step) => {
+                  const isActive = workshopStepFilter === step.key;
+                  return (
+                    <button
+                      key={step.key}
+                      type="button"
+                      data-testid={`workshop-step-${step.key}`}
+                      onClick={() => {
+                        setStatusCardFilter('in_workshop');
+                        setWorkshopStepFilter(step.key);
+                        setCurrentPage(1);
+                      }}
+                      className={`px-2.5 py-1 rounded-[7px] text-xs font-bold transition-all cursor-pointer flex items-center gap-1 ${
+                        isActive
+                          ? 'bg-[#176b58] text-white shadow-2xs'
+                          : 'bg-white text-[#52635a] border border-[#d6e2db] hover:bg-[#edf4f0]'
+                      }`}
+                    >
+                      <span>{step.label}</span>
+                      <span
+                        className={`text-[10px] font-mono px-1.5 py-0.5 rounded-full ${
+                          isActive ? 'bg-white/20 text-white' : 'bg-[#eaf4ef] text-[#176b58]'
+                        }`}
+                      >
+                        {step.count}
+                      </span>
+                    </button>
+                  );
+                })}
+
+                <button
+                  type="button"
+                  data-testid="workshop-step-overdue"
+                  onClick={() => {
+                    setStatusCardFilter('in_workshop');
+                    setWorkshopStepFilter('overdue');
+                    setCurrentPage(1);
+                  }}
+                  className={`px-2.5 py-1 rounded-[7px] text-xs font-bold transition-all cursor-pointer flex items-center gap-1 ${
+                    workshopStepFilter === 'overdue'
+                      ? 'bg-[#bc5b52] text-white shadow-2xs'
+                      : 'bg-[#fcf4f2] text-[#bc5b52] border border-[#f3c7c2] hover:bg-[#fbefed]'
+                  }`}
                 >
-                  {isRepairsLoading ? 'Đang tải...' : 'Làm mới'}
-                </Button>
+                  <Icon name="alert" size={12} />
+                  <span>Quá hạn &gt;24h</span>
+                  <span
+                    className={`text-[10px] font-mono px-1.5 py-0.5 rounded-full ${
+                      workshopStepFilter === 'overdue'
+                        ? 'bg-white/20 text-white'
+                        : 'bg-[#fbefed] text-[#bc5b52]'
+                    }`}
+                  >
+                    {workshopStepsCounts.overdue}
+                  </span>
+                </button>
               </div>
-            }
-          />
+            )}
+          </div>
 
           {/* 4-Layer Resilient UI States */}
           {isError ? (
@@ -1316,193 +1697,358 @@ function RepairsPageContent() {
               }}
             />
           ) : (
-            <div className="overflow-x-auto -mx-5 sm:mx-0">
-              <table className="w-full text-left border-collapse min-w-[760px]">
-                <thead>
-                  <tr className="border-y border-[#f0f3f1] bg-[#fafbfa] text-xs font-bold text-[#809088] uppercase tracking-wider h-10">
-                    <th className="px-3 py-2 text-center w-12 text-xs font-bold text-[#809088] uppercase tracking-wider">STT</th>
-                    <th className="px-4">Mã đơn</th>
-                    <th className="px-4">Khách hàng</th>
-                    <th className="px-4">Thiết bị & lỗi</th>
-                    <th className="px-4">Trạng thái</th>
-                    {!isTechRole && <th className="px-4">Chi phí</th>}
-                    <th className="px-4">Kỹ thuật viên</th>
-                    <th className="px-4">Ngày nhận & Kho</th>
-                    <th className="px-4 text-right">Thao tác</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-[#f1f3f2] text-sm text-[#3b4c44]">
-                  {filteredOrders.map((o, idx) => (
-                    <tr
-                      key={o.id}
-                      onClick={() => setSelectedOrder(o)}
-                      className="h-14 hover:bg-[#fbfcfb] cursor-pointer transition-colors"
-                    >
-                      <td
-                        data-testid="order-row-stt"
-                        className="px-3 py-3 text-center text-xs font-semibold text-[#809088]"
-                      >
-                        {filteredOrders.length - idx}
-                      </td>
-                      <td className="px-4">
-                        <div className="font-mono font-bold text-[#176b58]">{o.id}</div>
-                        <div className="mt-1">
-                          {(o.order_type === 'warranty' || o.orderType === 'warranty') ? (
-                            <span
-                              data-testid="badge-order-type-warranty"
-                              className="inline-flex items-center gap-0.5 text-[10px] font-bold text-[#047857] bg-[#ecfdf5] px-1.5 py-0.5 rounded border border-[#a7f3d0]"
-                            >
-                              Bảo hành
-                            </span>
-                          ) : (o.order_type === 'cod' || o.orderType === 'cod') ? (
-                            <span
-                              data-testid="badge-order-type-cod"
-                              className="inline-flex items-center gap-0.5 text-[10px] font-bold text-[#b45309] bg-[#fef3c7] px-1.5 py-0.5 rounded border border-[#fde68a]"
-                            >
-                              Đơn COD
-                            </span>
-                          ) : (
-                            <span
-                              data-testid="badge-order-type-in-store"
-                              className="inline-flex items-center gap-0.5 text-[10px] font-bold text-[#176b58] bg-[#eaf4ef] px-1.5 py-0.5 rounded border border-[#b8d7c8]"
-                            >
-                              Tại quầy
-                            </span>
-                          )}
-                        </div>
-                      </td>
-                      <td className="px-4">
-                        <div className="flex items-center gap-2.5">
-                          <Avatar initials={o.name} variant={(idx % 4) as any} size="sm" />
-                          <div>
-                            <b className="block text-[#273730] font-semibold">{o.name}</b>
-                            <small className="block text-[#86968f] text-xs">{o.phone}</small>
-                          </div>
-                        </div>
-                      </td>
-                      <td className="px-4">
-                        <span className="font-semibold text-[#3a4b42] block">{o.device}</span>
-                        <small className="text-[#84948c] text-xs block truncate max-w-[220px]">
-                          {o.issue}
-                        </small>
-                      </td>
-                      <td className="px-4">
-                        <div className="space-y-1">
-                          <StatusTag label={o.status} type={o.statusType} />
-                          {(o.special_parts_status === 'pending' || o.specialPartsStatus === 'pending') ? (
-                            <div
-                              data-testid={`badge-special-part-pending-${o.id}`}
-                              className="inline-flex items-center gap-1 text-[11px] font-bold text-red-700 bg-red-50 px-2 py-0.5 rounded border border-red-300 max-w-[210px] truncate shadow-2xs"
-                              title={`Linh kiện cần mua ngoài: ${o.special_parts_needed || o.specialPartsNeeded || 'Chưa cập nhật'}`}
-                            >
-                              <Icon name="bell" size={12} className="text-red-600 flex-none" />
-                              <span className="truncate">Cần mua ngoài: {o.special_parts_needed || o.specialPartsNeeded || 'Cần tìm mua'}</span>
-                            </div>
-                          ) : (o.special_parts_status === 'purchased' || o.specialPartsStatus === 'purchased') ? (
-                            <div
-                              data-testid={`badge-special-part-purchased-${o.id}`}
-                              className="inline-flex items-center gap-1 text-[11px] font-bold text-[#28805e] bg-[#eaf5ef] px-2 py-0.5 rounded border border-[#c2e4d3] max-w-[210px] truncate"
-                              title="Quầy đã mua xong linh kiện"
-                            >
-                              <Icon name="check" size={12} className="text-[#28805e]" />
-                              <span className="truncate">Đã mua linh kiện</span>
-                            </div>
-                          ) : (o.parts_needed || o.partsNeeded || normalizeStatusCode(o.status) === 'waiting_parts') ? (
-                            <div
-                              className="inline-flex items-center gap-1 text-[11px] font-semibold text-[#b45309] bg-[#fef3c7] px-2 py-0.5 rounded border border-[#fde68a] max-w-[190px] truncate"
-                              title={`Linh kiện yêu cầu: ${o.parts_needed || o.partsNeeded || 'Chưa cập nhật'}`}
-                            >
-                              <Icon name="package" size={12} />
-                              <span className="truncate">Cần: {o.parts_needed || o.partsNeeded || 'Chờ linh kiện'}</span>
-                            </div>
-                          ) : null}
-                        </div>
-                      </td>
-                      {!isTechRole && (
-                        <td className="px-4 font-semibold text-[#405048]">
-                          {moneyFormatted(o.price)}
-                        </td>
-                      )}
-                      <td className="px-4 text-[#5e6f66]">{o.tech}</td>
-                      <td className="px-4 text-[#7b8a82]">
-                        <span className="block font-medium">{o.date}</span>
-                        <span className="inline-block mt-0.5 text-xs font-mono font-bold text-[#176b58] bg-[#eaf4ef] px-1.5 py-0.5 rounded">
-                          {o.branchName || o.branch}
-                        </span>
-                      </td>
-                      <td className="px-4 text-right">
-                        <div className="flex items-center justify-end gap-1.5">
-                          {['ready_for_return', 'waiting_pickup', 'in_repair'].includes(normalizeStatusCode(o.status)) ? (
-                            <Button
-                              variant="primary"
-                              size="sm"
-                              data-testid={`row-checkout-btn-${o.id}`}
-                              className="bg-[#176b58] hover:bg-[#125848] text-white font-bold text-xs px-2.5 py-1 flex items-center gap-1 shadow-xs whitespace-nowrap cursor-pointer"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                setSelectedOrder(o);
-                                setCheckoutModalOpen(true);
-                              }}
-                            >
-                              <Icon name="payments" size={12} />
-                              <span>Thanh toán</span>
-                            </Button>
-                          ) : normalizeStatusCode(o.status) === 'completed' ? (
-                            <span
-                              data-testid={`row-paid-badge-${o.id}`}
-                              className="text-[11px] font-semibold text-[#667770] bg-[#edf2ef] px-2 py-0.5 rounded border border-[#d8e0dc] whitespace-nowrap"
-                            >
-                              Đã thu
-                            </span>
-                          ) : null}
-
-                          {normalizeStatusCode(o.status) === 'waiting_parts' && (
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              className="text-xs bg-[#eaf5ef] text-[#176b58] border-[#a9c9b9] hover:bg-[#d8ede1] font-bold whitespace-nowrap"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                handleResumeOrder(o);
-                              }}
-                            >
-                              Đã có linh kiện
-                            </Button>
-                          )}
-
-                          {(o.special_parts_status === 'pending' || o.specialPartsStatus === 'pending') && (
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              data-testid={`row-fulfill-special-part-btn-${o.id}`}
-                              disabled={isFulfillingSpecialPart}
-                              className="text-xs bg-[#fffbeb] text-[#b45309] border-[#fde68a] hover:bg-[#fef3c7] font-bold whitespace-nowrap"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                handleFulfillSpecialPart(o);
-                              }}
-                            >
-                              Đã mua linh kiện
-                            </Button>
-                          )}
-
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            data-testid={`row-action-btn-${o.id}`}
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              setSelectedOrder(o);
-                            }}
-                          >
-                            ···
-                          </Button>
-                        </div>
-                      </td>
+            <div className="space-y-4">
+              <div className="overflow-x-auto -mx-5 sm:mx-0">
+                <table className="w-full text-left border-collapse min-w-[780px]">
+                  <thead>
+                    <tr className="border-y border-[#f0f3f1] bg-[#fafbfa] text-xs font-bold text-[#809088] uppercase tracking-wider h-10">
+                      <th className="px-3 py-2 text-center w-12 text-xs font-bold text-[#809088] uppercase tracking-wider">
+                        STT
+                      </th>
+                      <th className="px-4">Mã đơn</th>
+                      <th className="px-4">Khách hàng</th>
+                      <th className="px-4">Thiết bị & lỗi</th>
+                      <th className="px-4">Trạng thái</th>
+                      {!isTechRole && <th className="px-4">Chi phí & Thanh toán</th>}
+                      <th className="px-4">Kỹ thuật viên</th>
+                      <th className="px-4">Ngày nhận & Kho</th>
+                      <th className="px-4 text-right">Thao tác</th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
+                  </thead>
+                  <tbody className="divide-y divide-[#f1f3f2] text-sm text-[#3b4c44]">
+                    {filteredOrders.map((o, idx) => {
+                      const continuousStt =
+                        (paginationMeta.currentPage - 1) * paginationMeta.perPage + idx + 1;
+                      const totalVal = Number(
+                        o.normalized_total_price ?? o.total_price ?? o.price ?? 0
+                      );
+                      const paidVal = Number(o.paid_amount ?? 0);
+                      const remainingVal = Number(
+                        o.remaining_amount ?? Math.max(0, totalVal - paidVal)
+                      );
+                      const methodSummary = o.payment_method_summary;
+                      const isCompletedStatus = normalizeStatusCode(o.status) === 'completed';
+                      const isFullyPaid =
+                        totalVal > 0 && (paidVal >= totalVal || (isCompletedStatus && remainingVal <= 0));
+                      const methodLabel =
+                        methodSummary === 'transfer'
+                          ? 'VietQR/CK'
+                          : methodSummary === 'mixed'
+                          ? 'TM + CK'
+                          : 'Tiền mặt';
+
+                      return (
+                        <tr
+                          key={o.id}
+                          onClick={() => setSelectedOrder(o)}
+                          className="h-14 hover:bg-[#fbfcfb] cursor-pointer transition-colors"
+                        >
+                          <td
+                            data-testid="order-row-stt"
+                            className="px-3 py-3 text-center text-xs font-mono font-bold text-[#667a70]"
+                          >
+                            {continuousStt}
+                          </td>
+                          <td className="px-4">
+                            <div className="font-mono font-bold text-[#176b58]">{o.id}</div>
+                            <div className="mt-1">
+                              {o.order_type === 'warranty' || o.orderType === 'warranty' ? (
+                                <span
+                                  data-testid="badge-order-type-warranty"
+                                  className="inline-flex items-center gap-0.5 text-[10px] font-bold text-[#047857] bg-[#ecfdf5] px-1.5 py-0.5 rounded border border-[#a7f3d0]"
+                                >
+                                  Bảo hành
+                                </span>
+                              ) : o.order_type === 'cod' || o.orderType === 'cod' ? (
+                                <span
+                                  data-testid="badge-order-type-cod"
+                                  className="inline-flex items-center gap-0.5 text-[10px] font-bold text-[#b45309] bg-[#fef3c7] px-1.5 py-0.5 rounded border border-[#fde68a]"
+                                >
+                                  Đơn COD
+                                </span>
+                              ) : (
+                                <span
+                                  data-testid="badge-order-type-in-store"
+                                  className="inline-flex items-center gap-0.5 text-[10px] font-bold text-[#176b58] bg-[#eaf4ef] px-1.5 py-0.5 rounded border border-[#b8d7c8]"
+                                >
+                                  Tại quầy
+                                </span>
+                              )}
+                            </div>
+                          </td>
+                          <td className="px-4">
+                            <div className="flex items-center gap-2.5">
+                              <Avatar initials={o.name} variant={(idx % 4) as any} size="sm" />
+                              <div>
+                                <b className="block text-[#273730] font-semibold">{o.name}</b>
+                                <small className="block text-[#86968f] text-xs">{o.phone}</small>
+                              </div>
+                            </div>
+                          </td>
+                          <td className="px-4">
+                            <span className="font-semibold text-[#3a4b42] block">{o.device}</span>
+                            <small className="text-[#84948c] text-xs block truncate max-w-[220px]">
+                              {o.issue}
+                            </small>
+                          </td>
+                          <td className="px-4">
+                            <div className="space-y-1">
+                              <StatusTag label={o.status} type={o.statusType} />
+                              {o.special_parts_status === 'pending' ||
+                              o.specialPartsStatus === 'pending' ? (
+                                <div
+                                  data-testid={`badge-special-part-pending-${o.id}`}
+                                  className="inline-flex items-center gap-1 text-[11px] font-bold text-red-700 bg-red-50 px-2 py-0.5 rounded border border-red-300 max-w-[210px] truncate shadow-2xs"
+                                  title={`Linh kiện cần mua ngoài: ${
+                                    o.special_parts_needed || o.specialPartsNeeded || 'Chưa cập nhật'
+                                  }`}
+                                >
+                                  <Icon name="bell" size={12} className="text-red-600 flex-none" />
+                                  <span className="truncate">
+                                    Cần mua ngoài:{' '}
+                                    {o.special_parts_needed || o.specialPartsNeeded || 'Cần tìm mua'}
+                                  </span>
+                                </div>
+                              ) : o.special_parts_status === 'purchased' ||
+                                o.specialPartsStatus === 'purchased' ? (
+                                <div
+                                  data-testid={`badge-special-part-purchased-${o.id}`}
+                                  className="inline-flex items-center gap-1 text-[11px] font-bold text-[#28805e] bg-[#eaf5ef] px-2 py-0.5 rounded border border-[#c2e4d3] max-w-[210px] truncate"
+                                  title="Quầy đã mua xong linh kiện"
+                                >
+                                  <Icon name="check" size={12} className="text-[#28805e]" />
+                                  <span className="truncate">Đã mua linh kiện</span>
+                                </div>
+                              ) : o.parts_needed ||
+                                o.partsNeeded ||
+                                normalizeStatusCode(o.status) === 'waiting_parts' ? (
+                                <div
+                                  className="inline-flex items-center gap-1 text-[11px] font-semibold text-[#b45309] bg-[#fef3c7] px-2 py-0.5 rounded border border-[#fde68a] max-w-[190px] truncate"
+                                  title={`Linh kiện yêu cầu: ${
+                                    o.parts_needed || o.partsNeeded || 'Chưa cập nhật'
+                                  }`}
+                                >
+                                  <Icon name="package" size={12} />
+                                  <span className="truncate">
+                                    Cần: {o.parts_needed || o.partsNeeded || 'Chờ linh kiện'}
+                                  </span>
+                                </div>
+                              ) : null}
+                            </div>
+                          </td>
+                          {!isTechRole && (
+                            <td
+                              data-testid={`order-row-payment-${o.id}`}
+                              className="px-4 py-2.5"
+                            >
+                              <div className="font-mono font-bold text-[#1c302b]">
+                                {moneyFormatted(totalVal)}
+                              </div>
+                              {totalVal <= 0 ? (
+                                <span className="inline-flex items-center text-[10px] font-semibold text-[#556960] bg-[#f4f7f5] px-1.5 py-0.5 rounded border border-[#dce5e0] mt-0.5">
+                                  Miễn phí / Bảo hành 0 ₫
+                                </span>
+                              ) : isFullyPaid ? (
+                                <span className="inline-flex items-center gap-1 text-[10px] font-bold text-[#176b58] bg-[#eaf4ef] px-1.5 py-0.5 rounded border border-[#b8d7c8] mt-0.5">
+                                  Đã thu đủ · {methodLabel}
+                                </span>
+                              ) : paidVal > 0 ? (
+                                <span className="inline-flex items-center gap-1 text-[10px] font-bold text-[#915e1b] bg-[#fcfaf5] px-1.5 py-0.5 rounded border border-[#ebd9bd] mt-0.5">
+                                  Đã cọc {moneyFormatted(paidVal)} · Còn thu{' '}
+                                  {moneyFormatted(remainingVal)}
+                                </span>
+                              ) : (
+                                <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-[#bc5b52] bg-[#fcf4f2] px-1.5 py-0.5 rounded border border-[#f3c7c2] mt-0.5">
+                                  Chưa thu
+                                </span>
+                              )}
+                            </td>
+                          )}
+                          <td className="px-4 text-[#5e6f66]">{o.tech}</td>
+                          <td className="px-4 text-[#7b8a82]">
+                            <span className="block font-medium">{o.date}</span>
+                            <span className="inline-block mt-0.5 text-xs font-mono font-bold text-[#176b58] bg-[#eaf4ef] px-1.5 py-0.5 rounded">
+                              {o.branchName || o.branch}
+                            </span>
+                          </td>
+                          <td className="px-4 text-right">
+                            <div className="flex items-center justify-end gap-1.5">
+                              {['ready_for_return', 'waiting_pickup', 'in_repair'].includes(
+                                normalizeStatusCode(o.status)
+                              ) ? (
+                                <Button
+                                  variant="primary"
+                                  size="sm"
+                                  data-testid={`row-checkout-btn-${o.id}`}
+                                  className="bg-[#176b58] hover:bg-[#125848] text-white font-bold text-xs px-2.5 py-1 flex items-center gap-1 shadow-xs whitespace-nowrap cursor-pointer"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    setSelectedOrder(o);
+                                    setCheckoutModalOpen(true);
+                                  }}
+                                >
+                                  <Icon name="payments" size={12} />
+                                  <span>Thanh toán</span>
+                                </Button>
+                              ) : normalizeStatusCode(o.status) === 'completed' ? (
+                                <span
+                                  data-testid={`row-paid-badge-${o.id}`}
+                                  className="text-[11px] font-semibold text-[#667770] bg-[#edf2ef] px-2 py-0.5 rounded border border-[#d8e0dc] whitespace-nowrap"
+                                >
+                                  Đã thu
+                                </span>
+                              ) : null}
+
+                              {normalizeStatusCode(o.status) === 'waiting_parts' && (
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  className="text-xs bg-[#eaf5ef] text-[#176b58] border-[#a9c9b9] hover:bg-[#d8ede1] font-bold whitespace-nowrap"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleResumeOrder(o);
+                                  }}
+                                >
+                                  Đã có linh kiện
+                                </Button>
+                              )}
+
+                              {(o.special_parts_status === 'pending' ||
+                                o.specialPartsStatus === 'pending') && (
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  data-testid={`row-fulfill-special-part-btn-${o.id}`}
+                                  disabled={isFulfillingSpecialPart}
+                                  className="text-xs bg-[#fffbeb] text-[#b45309] border-[#fde68a] hover:bg-[#fef3c7] font-bold whitespace-nowrap"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleFulfillSpecialPart(o);
+                                  }}
+                                >
+                                  Đã mua linh kiện
+                                </Button>
+                              )}
+
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                data-testid={`row-action-btn-${o.id}`}
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setSelectedOrder(o);
+                                }}
+                              >
+                                ···
+                              </Button>
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+
+              {/* Thanh điều khiển Server-side Pagination chuẩn */}
+              <div
+                data-testid="repairs-pagination-footer"
+                className="flex flex-wrap items-center justify-between gap-3 pt-3 border-t border-[#e5ece8] text-xs text-[#556960]"
+              >
+                <div className="flex flex-wrap items-center gap-3">
+                  <span>
+                    Hiển thị từ <b className="text-[#1c302b]">{paginationMeta.from}</b> đến{' '}
+                    <b className="text-[#1c302b]">{paginationMeta.to}</b> trên tổng số{' '}
+                    <b className="text-[#176b58]">{paginationMeta.total}</b> đơn
+                  </span>
+                  <div className="flex items-center gap-1.5">
+                    <span>Hiển thị:</span>
+                    <select
+                      data-testid="repairs-per-page-select"
+                      value={perPage}
+                      onChange={(e) => {
+                        setPerPage(Number(e.target.value));
+                        setCurrentPage(1);
+                      }}
+                      className="h-7 border border-[#d6dfda] rounded-[6px] px-2 text-xs text-[#1c302b] bg-white font-semibold outline-none focus:border-[#176b58] cursor-pointer"
+                    >
+                      <option value={15}>15 dòng/trang</option>
+                      <option value={30}>30 dòng/trang</option>
+                      <option value={50}>50 dòng/trang</option>
+                    </select>
+                  </div>
+                </div>
+
+                <div className="flex flex-wrap items-center gap-1">
+                  <button
+                    type="button"
+                    data-testid="pagination-first"
+                    disabled={paginationMeta.currentPage <= 1 || isRepairsLoading}
+                    onClick={() => setCurrentPage(1)}
+                    className="px-2.5 py-1 rounded-[6px] border border-[#d6dfda] bg-white text-xs font-semibold text-[#42584e] hover:bg-[#f4f7f5] disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
+                  >
+                    Trang đầu
+                  </button>
+                  <button
+                    type="button"
+                    data-testid="pagination-prev"
+                    disabled={paginationMeta.currentPage <= 1 || isRepairsLoading}
+                    onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+                    className="px-2.5 py-1 rounded-[6px] border border-[#d6dfda] bg-white text-xs font-semibold text-[#42584e] hover:bg-[#f4f7f5] disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
+                  >
+                    Trang trước
+                  </button>
+
+                  {buildPageNumbers(paginationMeta.currentPage, paginationMeta.lastPage).map(
+                    (p, i) =>
+                      p === '...' ? (
+                        <span key={`ellipsis-${i}`} className="px-2 py-1 text-xs text-[#819089]">
+                          ...
+                        </span>
+                      ) : (
+                        <button
+                          key={p}
+                          type="button"
+                          data-testid={`pagination-page-${p}`}
+                          disabled={isRepairsLoading}
+                          onClick={() => setCurrentPage(Number(p))}
+                          className={`min-w-[28px] px-2 py-1 rounded-[6px] text-xs font-bold transition-all cursor-pointer ${
+                            paginationMeta.currentPage === p
+                              ? 'bg-[#176b58] text-white border border-[#176b58]'
+                              : 'bg-white text-[#42584e] border border-[#d6dfda] hover:bg-[#f4f7f5]'
+                          }`}
+                        >
+                          {p}
+                        </button>
+                      )
+                  )}
+
+                  <button
+                    type="button"
+                    data-testid="pagination-next"
+                    disabled={
+                      paginationMeta.currentPage >= paginationMeta.lastPage || isRepairsLoading
+                    }
+                    onClick={() =>
+                      setCurrentPage((p) => Math.min(paginationMeta.lastPage, p + 1))
+                    }
+                    className="px-2.5 py-1 rounded-[6px] border border-[#d6dfda] bg-white text-xs font-semibold text-[#42584e] hover:bg-[#f4f7f5] disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
+                  >
+                    Trang sau
+                  </button>
+                  <button
+                    type="button"
+                    data-testid="pagination-last"
+                    disabled={
+                      paginationMeta.currentPage >= paginationMeta.lastPage || isRepairsLoading
+                    }
+                    onClick={() => setCurrentPage(paginationMeta.lastPage)}
+                    className="px-2.5 py-1 rounded-[6px] border border-[#d6dfda] bg-white text-xs font-semibold text-[#42584e] hover:bg-[#f4f7f5] disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
+                  >
+                    Trang cuối
+                  </button>
+                </div>
+              </div>
             </div>
           )}
         </div>

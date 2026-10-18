@@ -207,10 +207,46 @@ export interface CashTransactionFilterParams {
   per_page?: number;
 }
 
+export interface AggregatedShiftSummaryItem {
+  id: number;
+  shift_code: string;
+  branch_id: number;
+  branch_name?: string | null;
+  branch?: {
+    id: number;
+    name: string;
+    code?: string;
+  } | null;
+  cashier_id?: number;
+  cashier_name?: string | null;
+  cashier?: {
+    id: number;
+    name: string;
+    role?: string;
+    phone?: string;
+  } | null;
+  opened_at?: string | null;
+  opening_cash: number;
+  system_cash_in: number;
+  system_cash_out: number;
+  expected_cash: number;
+  vietqr_total: number;
+  orders_completed_count: number;
+}
+
 export interface CurrentShiftSnapshot extends WorkShift {
+  status: ShiftStatus;
+  opening_cash: number;
+  system_cash_in: number;
+  system_cash_out: number;
+  expected_cash: number | string;
   vietqr_total?: number;
   orders_completed_count?: number;
   has_active_shift?: boolean;
+  is_aggregated?: boolean;
+  open_branches_count?: number;
+  total_branches_count?: number;
+  open_shifts?: AggregatedShiftSummaryItem[];
 }
 
 export interface CurrentShiftResponse {
@@ -218,4 +254,6 @@ export interface CurrentShiftResponse {
   message: string;
   data: CurrentShiftSnapshot | null;
   has_active_shift: boolean;
+  is_aggregated?: boolean;
 }
+

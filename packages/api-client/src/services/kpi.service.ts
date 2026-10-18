@@ -2,6 +2,13 @@ import { HttpClient, defaultHttpClient } from '../http-client';
 import type {
   OperationalSummary,
   ActionableTasks,
+  ActionableTaskWaitingParts,
+  PeriodMetrics,
+  PeriodHandoverRevenue,
+  PeriodProfitAndCogs,
+  PeriodOrderFlow,
+  StoreLiveFinancials,
+  WorkshopPipeline,
   DashboardKpiResponse,
   TechnicianKpiItem,
   CskhKpiItem,
@@ -16,6 +23,13 @@ import type {
 export type {
   OperationalSummary,
   ActionableTasks,
+  ActionableTaskWaitingParts,
+  PeriodMetrics,
+  PeriodHandoverRevenue,
+  PeriodProfitAndCogs,
+  PeriodOrderFlow,
+  StoreLiveFinancials,
+  WorkshopPipeline,
   DashboardKpiResponse,
   TechnicianKpiItem,
   CskhKpiItem,
@@ -81,6 +95,9 @@ export interface DashboardStats {
   };
   operational_summary?: OperationalSummary;
   actionable_tasks?: ActionableTasks;
+  period_metrics?: PeriodMetrics;
+  store_live_financials?: StoreLiveFinancials;
+  workshop_pipeline?: WorkshopPipeline;
   [key: string]: any;
 }
 
@@ -98,6 +115,9 @@ export interface DashboardKpiData {
   recent_orders?: any[];
   operational_summary?: OperationalSummary;
   actionable_tasks?: ActionableTasks;
+  period_metrics?: PeriodMetrics;
+  store_live_financials?: StoreLiveFinancials;
+  workshop_pipeline?: WorkshopPipeline;
   [key: string]: any;
 }
 
@@ -112,7 +132,7 @@ export class KpiService {
 
   async getDashboardKpi(params?: {
     branch_id?: string | number;
-    period?: string;
+    period?: 'today' | 'yesterday' | '7_days' | 'this_month' | '30_days' | 'custom' | string;
     date?: string;
   }): Promise<any> {
     return this.http.get('/api/v1/kpi/dashboard', { params });
@@ -120,3 +140,4 @@ export class KpiService {
 }
 
 export const kpiService = new KpiService();
+

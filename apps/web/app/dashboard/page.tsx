@@ -6,7 +6,6 @@ import {
   Button,
   StatCard,
   StatusTag,
-  Avatar,
   Icon,
   Modal,
   useToast,
@@ -18,10 +17,9 @@ import { TechOrderDetailModal } from '../components/TechOrderDetailModal';
 import { CheckoutHandoverModal } from '../components/CheckoutHandoverModal';
 import { ActionableTasksCenter } from './components/ActionableTasksCenter';
 import { StaffPerformanceWidget } from './components/StaffPerformanceWidget';
-import { ShiftCashbookSnapshot } from './components/ShiftCashbookSnapshot';
 import { usePodsCare } from '../providers';
 import { useShift } from '../providers/ShiftProvider';
-import type { RepairOrder, RevenueOrderBreakdownItem } from '@podscare/types';
+import type { RepairOrder } from '@podscare/types';
 import { kpiService, repairService } from '@podscare/api-client';
 import { useQuery } from '@tanstack/react-query';
 import { normalizeStatusCode } from '../repairs/fsm';
@@ -44,8 +42,6 @@ export default function DashboardPage() {
   const [intakeModalOpen, setIntakeModalOpen] = useState(false);
   const [initialIntakeType, setInitialIntakeType] = useState<'in_store' | 'cod' | 'warranty'>('in_store');
   const [cskhPendingModalOpen, setCskhPendingModalOpen] = useState(false);
-  const [period, setPeriod] = useState<'7_days' | '14_days' | '30_days'>('14_days');
-
   const todayStr = React.useMemo(() => formatDateInGmt7(new Date()), []);
 
   const yesterdayStr = React.useMemo(() => {
@@ -53,7 +49,9 @@ export default function DashboardPage() {
     return formatDateInGmt7(d);
   }, []);
 
-  const [activePreset, setActivePreset] = useState<'today' | 'yesterday' | '7_days' | '30_days' | 'custom'>('today');
+  const [activePreset, setActivePreset] = useState<
+    'today' | 'yesterday' | '7_days' | 'this_month' | 'custom'
+  >('today');
 
   const [selectedDate, setSelectedDate] = useState<string>(() => formatDateInGmt7(new Date()));
 
@@ -68,48 +66,17 @@ export default function DashboardPage() {
   const [checkoutModalOpen, setCheckoutModalOpen] = useState(false);
   const [checkoutOrder, setCheckoutOrder] = useState<RepairOrder | null>(null);
 
-  // Customer Revenue & Debt Drill-Down Modal State (Admin 4 Financial Cards)
-  const [drilldownModalOpen, setDrilldownModalOpen] = useState(false);
-  const [drilldownPeriod, setDrilldownPeriod] = useState<'month' | 'day'>('month');
-  const [drilldownFilter, setDrilldownFilter] = useState<'all' | 'collected' | 'uncollected'>('all');
-  const [drilldownSearch, setDrilldownSearch] = useState('');
-  const [drilldownSortKey, setDrilldownSortKey] = useState<
-    'customer' | 'order' | 'total' | 'collected' | 'uncollected'
-  >('uncollected');
-  const [drilldownSortDir, setDrilldownSortDir] = useState<'asc' | 'desc'>('desc');
-
-  const handleOpenDrilldownModal = (
-    targetPeriod: 'month' | 'day',
-    targetFilter: 'all' | 'collected' | 'uncollected'
-  ) => {
-    setDrilldownPeriod(targetPeriod);
-    setDrilldownFilter(targetFilter);
-    setDrilldownSearch('');
-    setDrilldownModalOpen(true);
-  };
-
-  const handleDrilldownSort = (
-    key: 'customer' | 'order' | 'total' | 'collected' | 'uncollected'
-  ) => {
-    if (drilldownSortKey === key) {
-      setDrilldownSortDir((prev) => (prev === 'asc' ? 'desc' : 'asc'));
-    } else {
-      setDrilldownSortKey(key);
-      setDrilldownSortDir(key === 'customer' || key === 'order' ? 'asc' : 'desc');
-    }
-  };
-
   // Đấu nối KPI Dashboard API (Single Source of Truth)
   const {
     data: kpiData,
     isLoading: isLoadingKpi,
     isFetching: isFetchingKpi,
   } = useQuery({
-    queryKey: ['kpi-dashboard', branchId, period, selectedDate],
+    queryKey: ['kpi-dashboard', branchId, activePreset, selectedDate],
     queryFn: async () => {
       const res = await kpiService.getDashboardKpi({
         branch_id: branchId && branchId !== 'all' ? branchId : undefined,
-        period,
+        period: activePreset,
         date: selectedDate,
       });
       return res?.data || res;
@@ -224,36 +191,6 @@ export default function DashboardPage() {
       );
     });
   }, [branchOrders, currentUser?.role, currentUserId]);
-
-  // Máy chưa xong chi tiết tại xưởng (in_repair, waiting_parts, assigned, rework_needed)
-  const unfinishedTechOrders = React.useMemo(() => {
-    return branchOrders.filter((o) => {
-      const code = normalizeStatusCode(o.status);
-      return ['in_repair', 'waiting_parts', 'assigned', 'rework_needed'].includes(code);
-    });
-  }, [branchOrders]);
-
-  const formatWorkshopDuration = (createdAtStr?: string) => {
-    if (!createdAtStr) return '—';
-    try {
-      const created = new Date(createdAtStr);
-      if (isNaN(created.getTime())) return createdAtStr;
-      const diffMs = Math.max(0, Date.now() - created.getTime());
-      const hours = Math.floor(diffMs / (1000 * 60 * 60));
-      const days = Math.floor(hours / 24);
-      const remHours = hours % 24;
-      if (days > 0) {
-        return `${days} ngày ${remHours > 0 ? `${remHours}h` : ''}`.trim();
-      }
-      if (hours > 0) {
-        return `${hours} giờ`;
-      }
-      const mins = Math.max(1, Math.floor(diffMs / (1000 * 60)));
-      return `${mins} phút`;
-    } catch {
-      return '—';
-    }
-  };
 
   // Thao tác cho Admin Action Center & Bảng chi tiết
   const handleOpenOrderDetail = async (orderCode: string, orderId?: number) => {
@@ -418,46 +355,174 @@ export default function DashboardPage() {
   };
 
   // Statistics for Dashboard Cards (Single Source of Truth từ GET /api/v1/kpi/dashboard)
-  const activeOrdersCount =
-    kpiData?.operational_summary?.active_orders ??
-    kpiData?.active_orders ??
-    0;
+  const kpiSummary = kpiData?.summary || kpiData;
+  const periodMetrics = kpiData?.period_metrics ?? kpiSummary?.period_metrics;
+  const storeLiveFinancials =
+    kpiData?.store_live_financials ?? kpiSummary?.store_live_financials;
+  const workshopPipeline =
+    kpiData?.workshop_pipeline ?? kpiSummary?.workshop_pipeline;
 
   const todayOrdersCount = kpiData?.intake_today ?? 0;
 
-  const completedCount =
-    kpiData?.completed_orders ??
-    kpiData?.summary?.completed_orders ??
+  const inspectingCount =
+    workshopPipeline?.inspecting ?? kpiData?.workload_by_status?.inspecting ?? 0;
+  const waitingApprovalCount =
+    workshopPipeline?.waiting_approval ??
+    kpiData?.workload_by_status?.waiting_approval ??
+    0;
+  const repairingCount =
+    workshopPipeline?.in_repair ?? kpiData?.workload_by_status?.in_repair ?? 0;
+  const waitingPartsPipelineCount =
+    workshopPipeline?.waiting_parts ??
+    kpiData?.operational_summary?.waiting_parts_orders ??
+    0;
+  const waitingQcPipelineCount =
+    workshopPipeline?.waiting_qc ??
+    kpiData?.operational_summary?.waiting_qc_count ??
+    0;
+  const readyCount =
+    workshopPipeline?.waiting_pickup ??
+    workshopPipeline?.ready_for_return ??
+    kpiData?.workload_by_status?.ready_for_return ??
     0;
 
-  const inspectingCount = kpiData?.workload_by_status?.inspecting ?? 0;
+  // Zone 1 Period Metrics values
+  const handoverRevenue = periodMetrics?.handover_revenue;
+  const profitAndCogs = periodMetrics?.profit_and_cogs;
+  const orderFlow = periodMetrics?.order_flow;
 
-  const waitingApprovalCount = kpiData?.workload_by_status?.waiting_approval ?? 0;
+  const zone1CollectedRevenue = Number(
+    handoverRevenue?.collected_amount ??
+      kpiData?.selected_date_collected_amount ??
+      kpiSummary?.selected_date_collected_amount ??
+      0
+  );
+  const zone1CashAmount = Number(handoverRevenue?.cash_amount ?? 0);
+  const zone1TransferAmount = Number(handoverRevenue?.transfer_amount ?? 0);
+  const zone1CompletedOrdersCount = Number(
+    handoverRevenue?.completed_orders_count ??
+      periodMetrics?.completed_count ??
+      kpiData?.selected_date_completed_orders ??
+      0
+  );
 
-  const repairingCount = kpiData?.workload_by_status?.in_repair ?? 0;
+  const zone1GrossProfit = Number(
+    profitAndCogs?.gross_profit ??
+      kpiData?.selected_date_gross_profit ??
+      kpiSummary?.selected_date_gross_profit ??
+      0
+  );
+  const zone1CogsAmount = Number(
+    profitAndCogs?.cogs_amount ??
+      profitAndCogs?.cogs ??
+      kpiData?.selected_date_cogs ??
+      0
+  );
+  const zone1GrossMargin = Number(
+    profitAndCogs?.gross_profit_margin ??
+      kpiData?.selected_date_gross_profit_margin ??
+      kpiData?.gross_profit_margin ??
+      0
+  );
+  const zone1AccountsPayable = Number(
+    profitAndCogs?.accounts_payable ??
+      kpiData?.accounts_payable ??
+      kpiSummary?.accounts_payable ??
+      0
+  );
 
-  const readyCount = kpiData?.workload_by_status?.ready_for_return ?? 0;
+  const zone1IntakeCount = Number(
+    orderFlow?.intake_count ??
+      periodMetrics?.intake_count ??
+      kpiData?.intake_today ??
+      0
+  );
+  const zone1CompletedFlowCount = Number(
+    orderFlow?.completed_count ??
+      periodMetrics?.completed_count ??
+      zone1CompletedOrdersCount
+  );
+  const zone1WarrantyCount = Number(
+    orderFlow?.warranty_count ??
+      periodMetrics?.warranty_count ??
+      kpiData?.warranty_count ??
+      0
+  );
 
-  const reconciliation = kpiData?.reconciliation;
+  const monthlySummary = periodMetrics?.monthly_revenue_summary;
+  const monthlyCollectedRevenue = Number(
+    monthlySummary?.collected_amount ??
+      kpiData?.monthly_collected_amount ??
+      kpiSummary?.monthly_collected_amount ??
+      kpiData?.monthly_revenue ??
+      kpiSummary?.monthly_revenue ??
+      0
+  );
+  const monthlyCashAmount = Number(
+    monthlySummary?.cash_amount ?? (kpiData as any)?.monthly_cash_amount ?? 0
+  );
+  const monthlyTransferAmount = Number(
+    monthlySummary?.transfer_amount ?? (kpiData as any)?.monthly_transfer_amount ?? 0
+  );
+  const monthlyCompletedCount = Number(
+    monthlySummary?.completed_orders_count ??
+      kpiData?.monthly_completed_orders_count ??
+      kpiSummary?.monthly_completed_orders_count ??
+      kpiData?.monthly_completed_orders ??
+      kpiSummary?.monthly_completed_orders ??
+      0
+  );
 
-  const waitingPickupCount =
-    kpiData?.operational_summary?.waiting_pickup_orders ??
-    kpiData?.reconciliation?.ready_for_pickup_count ??
-    0;
-  const activeOrdersTotal =
-    kpiData?.operational_summary?.active_orders ?? activeOrdersCount;
-  const inWorkshopCount =
-    kpiData?.reconciliation?.in_workshop_count ??
-    Math.max(0, activeOrdersTotal - waitingPickupCount);
+  // Zone 2 All-time Live Snapshot values
+  const liveWaitingPickupCount = Number(
+    storeLiveFinancials?.waiting_pickup_count ??
+      storeLiveFinancials?.ready_for_pickup?.count ??
+      kpiData?.reconciliation?.ready_for_pickup_count ??
+      0
+  );
+  const liveWaitingPickupTotalAmount = Number(
+    storeLiveFinancials?.waiting_pickup_total_amount ??
+      storeLiveFinancials?.ready_for_pickup?.total_amount ??
+      0
+  );
+  const liveWaitingPickupDepositAmount = Number(
+    storeLiveFinancials?.waiting_pickup_deposit_amount ??
+      storeLiveFinancials?.ready_for_pickup?.deposit_amount ??
+      0
+  );
+  const liveWaitingPickupUncollectedAmount = Number(
+    storeLiveFinancials?.waiting_pickup_uncollected_amount ??
+      storeLiveFinancials?.ready_for_pickup?.uncollected_amount ??
+      kpiData?.reconciliation?.ready_for_pickup_amount ??
+      0
+  );
 
-  // Chuẩn hóa nhãn Tháng & Ngày đang chọn
-  const selectedMonthLabel = React.useMemo(() => {
-    const parts = (selectedDate || todayStr).split('-');
-    if (parts.length >= 2) {
-      return `Tháng ${Number(parts[1])}/${parts[0]}`;
-    }
-    return `Tháng ${new Date().getMonth() + 1}/${new Date().getFullYear()}`;
-  }, [selectedDate, todayStr]);
+  const liveInWorkshopCount = Number(
+    storeLiveFinancials?.in_workshop_count ??
+      storeLiveFinancials?.in_workshop?.count ??
+      workshopPipeline?.in_workshop_count ??
+      kpiData?.reconciliation?.in_workshop_count ??
+      0
+  );
+  const liveInWorkshopExpectedAmount = Number(
+    storeLiveFinancials?.in_workshop_expected_amount ??
+      storeLiveFinancials?.in_workshop?.expected_amount ??
+      kpiData?.reconciliation?.in_workshop_amount ??
+      0
+  );
+
+  const liveOpenOrdersCount = Number(
+    storeLiveFinancials?.open_orders_count ??
+      workshopPipeline?.open_orders_count ??
+      liveInWorkshopCount + liveWaitingPickupCount
+  );
+
+  const liveOverdueCount = Number(
+    workshopPipeline?.overdue_count ??
+      workshopPipeline?.overdue_orders ??
+      kpiData?.operational_summary?.overdue_orders ??
+      0
+  );
 
   const selectedDateDisplay = React.useMemo(() => {
     const parts = (selectedDate || todayStr).split('-');
@@ -467,186 +532,12 @@ export default function DashboardPage() {
     return selectedDate || todayStr;
   }, [selectedDate, todayStr]);
 
-  const kpiSummary = kpiData?.summary || kpiData;
-
-  const monthlyOrdersBreakdown: RevenueOrderBreakdownItem[] = React.useMemo(() => {
-    const raw =
-      kpiData?.monthly_orders_breakdown ??
-      kpiSummary?.monthly_orders_breakdown;
-    return Array.isArray(raw) ? raw : [];
-  }, [kpiData, kpiSummary]);
-
-  const selectedDateOrdersBreakdown: RevenueOrderBreakdownItem[] = React.useMemo(() => {
-    const raw =
-      kpiData?.selected_date_orders_breakdown ??
-      kpiSummary?.selected_date_orders_breakdown;
-    return Array.isArray(raw) ? raw : [];
-  }, [kpiData, kpiSummary]);
-
-  // 1. Chỉ số Tháng (Tổng tháng, Thực thu tháng, Công nợ chưa thu ở tháng) — Single Source of Truth từ kpiData
-  const monthlyTotalRevenue = Number(
-    kpiData?.monthly_total_revenue ??
-      kpiSummary?.monthly_total_revenue ??
-      kpiData?.monthly_revenue ??
-      kpiSummary?.monthly_revenue ??
-      0
-  );
-
-  const monthlyCollectedAmount = Number(
-    kpiData?.monthly_collected_amount ??
-      kpiSummary?.monthly_collected_amount ??
-      0
-  );
-
-  const monthlyUncollectedAmount = Number(
-    kpiData?.monthly_uncollected_amount ??
-      kpiSummary?.monthly_uncollected_amount ??
-      0
-  );
-
-  const monthlyOrdersCount = Number(
-    kpiData?.monthly_finished_orders_count ??
-      kpiSummary?.monthly_finished_orders_count ??
-      kpiData?.monthly_completed_orders ??
-      kpiSummary?.monthly_completed_orders ??
-      monthlyOrdersBreakdown.length
-  );
-
-  const monthlyCompletedCount = Number(
-    kpiData?.monthly_completed_orders_count ??
-      kpiSummary?.monthly_completed_orders_count ??
-      kpiData?.monthly_completed_orders ??
-      kpiSummary?.monthly_completed_orders ??
-      0
-  );
-
-  const monthlyUncollectedCount = Number(
-    kpiData?.monthly_uncollected_orders_count ??
-      kpiSummary?.monthly_uncollected_orders_count ??
-      0
-  );
-
-  // 2. Chỉ số Ngày đã chọn (Tổng ngày đã chọn, Thực thu ngày, Công nợ chưa thu theo ngày) — Single Source of Truth từ kpiData
-  const selectedDateTotalRevenue = Number(
-    kpiData?.selected_date_total_revenue ??
-      kpiSummary?.selected_date_total_revenue ??
-      kpiData?.selected_date_revenue ??
-      kpiSummary?.selected_date_revenue ??
-      0
-  );
-
-  const selectedDateCollectedAmount = Number(
-    kpiData?.selected_date_collected_amount ??
-      kpiSummary?.selected_date_collected_amount ??
-      0
-  );
-
-  const selectedDateUncollectedAmount = Number(
-    kpiData?.selected_date_uncollected_amount ??
-      kpiSummary?.selected_date_uncollected_amount ??
-      0
-  );
-
-  const selectedDateOrdersCount = Number(
-    kpiData?.selected_date_finished_orders_count ??
-      kpiSummary?.selected_date_finished_orders_count ??
-      kpiData?.selected_date_completed_orders ??
-      kpiSummary?.selected_date_completed_orders ??
-      selectedDateOrdersBreakdown.length
-  );
-
-  const selectedDateCompletedCount = Number(
-    kpiData?.selected_date_completed_orders_count ??
-      kpiSummary?.selected_date_completed_orders_count ??
-      kpiData?.selected_date_completed_orders ??
-      kpiSummary?.selected_date_completed_orders ??
-      0
-  );
-
-  const selectedDateUncollectedCount = Number(
-    kpiData?.selected_date_uncollected_orders_count ??
-      kpiSummary?.selected_date_uncollected_orders_count ??
-      0
-  );
-
-  // Dữ liệu hiển thị trong Modal Chi tiết Doanh thu & Công nợ Khách hàng
-  const activeDrilldownRawItems =
-    drilldownPeriod === 'month' ? monthlyOrdersBreakdown : selectedDateOrdersBreakdown;
-
-  const periodTotal =
-    drilldownPeriod === 'month' ? monthlyTotalRevenue : selectedDateTotalRevenue;
-  const periodCollected =
-    drilldownPeriod === 'month' ? monthlyCollectedAmount : selectedDateCollectedAmount;
-  const periodUncollected =
-    drilldownPeriod === 'month' ? monthlyUncollectedAmount : selectedDateUncollectedAmount;
-  const periodOrdersCount =
-    drilldownPeriod === 'month' ? monthlyOrdersCount : selectedDateOrdersCount;
-  const periodUncollectedCount =
-    drilldownPeriod === 'month' ? monthlyUncollectedCount : selectedDateUncollectedCount;
-
-  const periodCashAmount = activeDrilldownRawItems.reduce(
-    (sum, item) => sum + Number(item.cash_amount ?? item.collected_amount ?? 0),
-    0
-  );
-  const periodTransferAmount = activeDrilldownRawItems.reduce(
-    (sum, item) => sum + Number(item.transfer_amount ?? 0),
-    0
-  );
-
-  const filteredAndSortedDrilldownItems = React.useMemo(() => {
-    const q = drilldownSearch.trim().toLowerCase();
-
-    const filtered = activeDrilldownRawItems.filter((item) => {
-      if (
-        drilldownFilter === 'collected' &&
-        !(
-          normalizeStatusCode(item.status) === 'completed' ||
-          item.status === 'Hoàn tất' ||
-          Number(item.collected_amount || 0) > 0
-        )
-      ) {
-        return false;
-      }
-      if (
-        drilldownFilter === 'uncollected' &&
-        !(
-          (normalizeStatusCode(item.status) !== 'completed' && item.status !== 'Hoàn tất') ||
-          Number(item.uncollected_amount || 0) > 0
-        )
-      ) {
-        return false;
-      }
-      if (q) {
-        const matchName = (item.customer_name || '').toLowerCase().includes(q);
-        const matchPhone = (item.customer_phone || '').toLowerCase().includes(q);
-        const matchCode = String(item.order_code || item.id || '').toLowerCase().includes(q);
-        const matchDevice = (item.device_name || '').toLowerCase().includes(q);
-        if (!matchName && !matchPhone && !matchCode && !matchDevice) {
-          return false;
-        }
-      }
-      return true;
-    });
-
-    return [...filtered].sort((a, b) => {
-      let cmp = 0;
-      if (drilldownSortKey === 'customer') {
-        cmp = (a.customer_name || '').localeCompare(b.customer_name || '', 'vi');
-      } else if (drilldownSortKey === 'order') {
-        cmp = String(a.order_code || a.id || '').localeCompare(
-          String(b.order_code || b.id || ''),
-          'vi'
-        );
-      } else if (drilldownSortKey === 'total') {
-        cmp = Number(a.total_price || 0) - Number(b.total_price || 0);
-      } else if (drilldownSortKey === 'collected') {
-        cmp = Number(a.collected_amount || 0) - Number(b.collected_amount || 0);
-      } else if (drilldownSortKey === 'uncollected') {
-        cmp = Number(a.uncollected_amount || 0) - Number(b.uncollected_amount || 0);
-      }
-      return drilldownSortDir === 'asc' ? cmp : -cmp;
-    });
-  }, [activeDrilldownRawItems, drilldownFilter, drilldownSearch, drilldownSortKey, drilldownSortDir]);
+  const periodQueryString = React.useMemo(() => {
+    if (activePreset === 'custom') {
+      return `date_filter=custom&date=${encodeURIComponent(selectedDate)}`;
+    }
+    return `date_filter=${encodeURIComponent(activePreset)}`;
+  }, [activePreset, selectedDate]);
 
   // Thuật toán sinh đồ thị doanh thu SVG động (Dynamic SVG Path Generator)
   const renderRevenueChart = () => {
@@ -654,7 +545,7 @@ export default function DashboardPage() {
       return (
         <div
           data-testid="kpi-card-loading-skeleton"
-          className="h-[210px] w-full p-4 flex flex-col justify-between rounded-[10px] bg-[#fafcfa]"
+          className="h-[220px] w-full p-4 flex flex-col justify-between rounded-[10px] bg-[#fafcfa]"
         >
           <div className="space-y-4">
             <div className="h-3 w-full rounded bg-[#edf4f0] animate-pulse" />
@@ -672,11 +563,15 @@ export default function DashboardPage() {
     }
 
     const rawChart: Array<{ date?: string; label?: string; revenue?: number; completed_orders?: number }> =
-      Array.isArray(kpiData?.revenue_chart) ? (kpiData.revenue_chart as any[]) : [];
+      Array.isArray(periodMetrics?.revenue_chart) && periodMetrics.revenue_chart.length > 0
+        ? (periodMetrics.revenue_chart as any[])
+        : Array.isArray(kpiData?.revenue_chart)
+        ? (kpiData.revenue_chart as any[])
+        : [];
 
     if (rawChart.length === 0) {
       return (
-        <div className="h-[210px] w-full flex items-center justify-center p-4">
+        <div className="h-[220px] w-full flex items-center justify-center p-4">
           <EmptyState
             title="Chưa có dữ liệu doanh thu"
             description="Chưa có dữ liệu doanh thu phát sinh trong khoảng thời gian này."
@@ -723,7 +618,7 @@ export default function DashboardPage() {
     const formatMil = (v: number) => (v >= 1000000 ? `${Math.round(v / 1000000)}tr` : '0');
 
     return (
-      <div className="h-[210px] w-full p-2">
+      <div className="h-[220px] w-full p-2">
         <svg viewBox="0 0 620 190" preserveAspectRatio="none" className="w-full h-full">
           <defs>
             <linearGradient id="chartFill" x1="0" y1="0" x2="0" y2="1">
@@ -784,1300 +679,738 @@ export default function DashboardPage() {
   };
 
   /* ========================================================================= */
-  /* ADMIN DASHBOARD VIEW                                                      */
+  /* ADMIN COMMAND CENTER VIEW (3-ZONE ARCHITECTURE — PHƯƠNG ÁN A + CÁCH 1)    */
   /* ========================================================================= */
-  const renderAdminDashboard = () => (
-    <div className="space-y-6">
-      {/* Heading */}
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <div className="text-xs font-bold text-[#819089] uppercase tracking-[1.05px] mb-1">
-            FIXO · TỔNG QUAN
+  const renderAdminDashboard = () => {
+    const pipelineSteps = [
+      {
+        key: 'inspecting',
+        label: '1. Chờ KT / Đang khám',
+        count: inspectingCount,
+        icon: 'search',
+        barColor: 'bg-[#4d9877]',
+        badgeBg: 'bg-[#edf5f0] text-[#478065]',
+        href: '/repairs?date_filter=all&status=in_workshop&workshop_step=inspecting',
+      },
+      {
+        key: 'waiting_approval',
+        label: '2. Chờ khách duyệt giá',
+        count: waitingApprovalCount,
+        icon: 'quotes',
+        barColor: 'bg-[#d2a25d]',
+        badgeBg: 'bg-[#fbf3e5] text-[#915e1b]',
+        href: '/repairs?date_filter=all&status=in_workshop&workshop_step=waiting_approval',
+      },
+      {
+        key: 'in_repair',
+        label: '3. Đang sửa chữa',
+        count: repairingCount,
+        icon: 'wrench',
+        barColor: 'bg-[#356d8a]',
+        badgeBg: 'bg-[#edf4f7] text-[#356d8a]',
+        href: '/repairs?date_filter=all&status=in_workshop&workshop_step=in_repair',
+      },
+      {
+        key: 'waiting_parts',
+        label: '4. Chờ linh kiện',
+        count: waitingPartsPipelineCount,
+        icon: 'inventory',
+        barColor: 'bg-[#b77a21]',
+        badgeBg: 'bg-[#fcfaf5] text-[#915e1b]',
+        href: '/repairs?date_filter=all&status=in_workshop&workshop_step=waiting_parts',
+      },
+      {
+        key: 'waiting_qc',
+        label: '5. Chờ kiểm định QC',
+        count: waitingQcPipelineCount,
+        icon: 'qc',
+        barColor: 'bg-[#28805e]',
+        badgeBg: 'bg-[#eaf4ef] text-[#176b58]',
+        href: '/repairs?date_filter=all&status=in_workshop&workshop_step=waiting_qc',
+      },
+      {
+        key: 'waiting_pickup',
+        label: '6. Sẵn sàng trả khách',
+        count: liveWaitingPickupCount || readyCount,
+        icon: 'truck',
+        barColor: 'bg-[#176b58]',
+        badgeBg: 'bg-[#eaf5ef] text-[#176b58]',
+        href: '/repairs?date_filter=all&status=waiting_pickup',
+      },
+    ];
+
+    return (
+      <div className="space-y-6">
+        {/* Heading */}
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <div className="text-xs font-bold text-[#819089] uppercase tracking-[1.05px] mb-1">
+              FIXO · TRUNG TÂM ĐIỀU HÀNH (COMMAND CENTER)
+            </div>
+            <h1 className="font-heading font-bold text-2xl md:text-3xl text-[#1c302b] m-0">
+              Chào buổi sáng, {currentUser?.name || 'Quản trị viên'}
+            </h1>
+            <p className="text-sm text-[#7e8d85] mt-1 mb-0">
+              Trung tâm kiểm soát tài chính theo kỳ &amp; điều phối xưởng thời gian thực tại{' '}
+              <b className="text-[#1c302b]">{branch || currentUser?.branch || 'Tất cả chi nhánh'}</b>.
+            </p>
           </div>
-          <h1 className="font-heading font-bold text-2xl md:text-3xl text-[#1c302b] m-0">
-            Chào buổi sáng, {currentUser?.name || 'Nhân viên'}
-          </h1>
-          <p className="text-sm text-[#7e8d85] mt-1 mb-0">
-            Đây là tình hình vận hành FIXO hôm nay tại {branch || currentUser?.branch}.
-          </p>
-        </div>
-        <div className="flex items-center gap-2.5">
-          <Button
-            variant="secondary"
-            size="md"
-            icon="download"
-            onClick={() => toast('Đang chuẩn bị xuất báo cáo Excel...')}
-          >
-            Xuất báo cáo
-          </Button>
-          <Button
-            variant="outline"
-            size="md"
-            icon="shield"
-            data-testid="admin-warranty-intake-btn"
-            onClick={() => {
-              setInitialIntakeType('warranty');
-              setIntakeModalOpen(true);
-            }}
-            className="bg-[#eaf5ef] text-[#176b58] border-[#a9c9b9] hover:bg-[#d8ede1] font-bold"
-          >
-            Tiếp nhận bảo hành
-          </Button>
-          <Button
-            variant="primary"
-            size="md"
-            icon="plus"
-            onClick={() => {
-              setInitialIntakeType('in_store');
-              setIntakeModalOpen(true);
-            }}
-          >
-            Tạo đơn mới
-          </Button>
-        </div>
-      </div>
-
-      {/* Thanh điều khiển chọn ngày tra cứu */}
-      <div className="flex flex-wrap items-center justify-between gap-3 bg-white rounded-[12px] border border-[#e5ece8] p-3.5 sm:px-5 sm:py-3.5 shadow-xs">
-        <div className="flex flex-wrap items-center gap-3">
-          <span className="text-xs font-bold text-[#1c302b] flex items-center gap-1.5">
-            <span className="w-2 h-2 rounded-full bg-[#176b58]" />
-            {role === 'admin' ? 'Tra cứu doanh thu theo ngày:' : 'Tra cứu tiến độ theo ngày:'}
-          </span>
-          <div className="flex flex-wrap items-center gap-2">
-            <input
-              type="date"
-              value={selectedDate}
-              onChange={(e) => {
-                const val = e.target.value;
-                setSelectedDate(val);
-                if (val === todayStr) {
-                  setActivePreset('today');
-                } else if (val === yesterdayStr) {
-                  setActivePreset('yesterday');
-                } else {
-                  setActivePreset('custom');
-                }
-              }}
-              className="text-xs border border-[#e4eae6] bg-[#fafbfa] text-[#2d3d35] rounded-[8px] px-3 py-1.5 outline-none focus:border-[#176b58] focus:bg-white transition-all cursor-pointer font-medium"
-            />
-
-            {/* Cụm 4 nút bấm chọn nhanh chu kỳ (Date Range Presets) */}
-            <div className="flex items-center gap-1.5 flex-wrap">
-              <button
-                type="button"
-                onClick={() => {
-                  setActivePreset('today');
-                  setSelectedDate(todayStr);
-                }}
-                className={`text-xs px-3 py-1.5 rounded-[8px] transition-all cursor-pointer ${
-                  activePreset === 'today' && selectedDate === todayStr
-                    ? 'bg-[#176b58] text-white font-bold shadow-xs'
-                    : 'bg-white text-[#596962] border border-[#d8e2dc] hover:bg-[#f0f4f2]'
-                }`}
-              >
-                Hôm nay
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  setActivePreset('yesterday');
-                  setSelectedDate(yesterdayStr);
-                }}
-                className={`text-xs px-3 py-1.5 rounded-[8px] transition-all cursor-pointer ${
-                  activePreset === 'yesterday' && selectedDate === yesterdayStr
-                    ? 'bg-[#176b58] text-white font-bold shadow-xs'
-                    : 'bg-white text-[#596962] border border-[#d8e2dc] hover:bg-[#f0f4f2]'
-                }`}
-              >
-                Hôm qua
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  setActivePreset('7_days');
-                  setPeriod('7_days');
-                }}
-                className={`text-xs px-3 py-1.5 rounded-[8px] transition-all cursor-pointer ${
-                  activePreset === '7_days' && period === '7_days'
-                    ? 'bg-[#176b58] text-white font-bold shadow-xs'
-                    : 'bg-white text-[#596962] border border-[#d8e2dc] hover:bg-[#f0f4f2]'
-                }`}
-              >
-                7 ngày qua
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  setActivePreset('30_days');
-                  setPeriod('30_days');
-                }}
-                className={`text-xs px-3 py-1.5 rounded-[8px] transition-all cursor-pointer ${
-                  activePreset === '30_days' && period === '30_days'
-                    ? 'bg-[#176b58] text-white font-bold shadow-xs'
-                    : 'bg-white text-[#596962] border border-[#d8e2dc] hover:bg-[#f0f4f2]'
-                }`}
-              >
-                Tháng này
-              </button>
-            </div>
-          </div>
-        </div>
-        <div className="text-xs text-[#7e8d85] flex items-center">
-          <span>
-            Ngày đang chọn: <b className="text-[#176b58] font-mono">{selectedDate === todayStr ? `Hôm nay (${selectedDate})` : selectedDate}</b>
-          </span>
-          {isKpiLoading ? (
-            <span
-              data-testid="kpi-card-loading-skeleton"
-              className="ml-2 inline-block h-5 w-24 rounded-full bg-[#edf5f0] animate-pulse"
-            />
-          ) : (
-            kpiData?.selected_date_completed_orders !== undefined && (
-              <span className="ml-2 px-2 py-0.5 rounded-full bg-[#edf5f0] text-[#176b58] font-semibold text-[11px]">
-                {kpiData.selected_date_completed_orders} đơn hoàn tất
-              </span>
-            )
-          )}
-        </div>
-      </div>
-
-      {/* Stats Cards (Khu vực A: Phân quyền tài chính RBAC - 4 Ô Doanh thu & Công nợ) */}
-      {role === 'admin' ? (
-        /* Khi role === 'admin': 4 thẻ chỉ số Doanh thu & Công nợ theo đúng thứ tự yêu cầu */
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3.5">
-          {/* Ô 1: Tổng tháng (Doanh thu tháng) */}
-          <button
-            type="button"
-            data-testid="admin-card-monthly-total"
-            onClick={() => handleOpenDrilldownModal('month', 'all')}
-            className="bg-white border border-[#c5e1d4] rounded-[12px] p-4 min-h-[124px] shadow-[0_2px_5px_rgba(36,60,41,0.03)] hover:border-[#176b58] hover:-translate-y-0.5 hover:shadow-[0_7px_18px_rgba(28,49,34,0.06)] text-left flex flex-col justify-between transition-all cursor-pointer group"
-          >
-            <div className="flex items-center justify-between text-[#406856] text-sm font-semibold w-full">
-              <span>Tổng tháng</span>
-              <span className="w-8 h-8 rounded-[8px] bg-[#eaf4ef] text-[#176b58] grid place-items-center flex-none">
-                <Icon name="payments" size={17} />
-              </span>
-            </div>
-
-            {isKpiLoading ? (
-              <div data-testid="kpi-card-loading-skeleton" className="my-2 w-full">
-                <div className="h-8 w-40 rounded-[6px] bg-[#e5ece8] animate-pulse" />
-              </div>
-            ) : (
-              <div className="font-heading font-extrabold text-[22px] xl:text-[26px] tracking-[-0.6px] text-[#176b58] my-2">
-                {formatVND(monthlyTotalRevenue)}
-              </div>
-            )}
-
-            <div className="flex items-center justify-between gap-1 text-xs text-[#287452] font-semibold pt-1.5 border-t border-[#edf4f0] w-full">
-              {isKpiLoading ? (
-                <span className="h-4 w-full rounded-[4px] bg-[#edf4f0] animate-pulse" />
-              ) : (
-                <span>
-                  Thực thu: {formatVND(monthlyCollectedAmount)} · {monthlyCompletedCount} đơn hoàn tất · Chờ thu: {formatVND(monthlyUncollectedAmount)} ({monthlyUncollectedCount} đơn chờ lấy) ({selectedMonthLabel})
-                </span>
-              )}
-              <Icon name="arrow" size={12} className="text-[#176b58] flex-none" />
-            </div>
-          </button>
-
-          {/* Ô 2: Công nợ chưa thu ở tháng */}
-          <button
-            type="button"
-            data-testid="admin-card-monthly-uncollected"
-            onClick={() => handleOpenDrilldownModal('month', 'uncollected')}
-            className={`border rounded-[12px] p-4 min-h-[124px] shadow-[0_2px_5px_rgba(36,60,41,0.03)] hover:-translate-y-0.5 hover:shadow-[0_7px_18px_rgba(28,49,34,0.06)] text-left flex flex-col justify-between transition-all cursor-pointer group ${
-              !isKpiLoading && monthlyUncollectedAmount > 0
-                ? 'bg-[#fcfaf5] border-[#ebd9bd] hover:border-[#d2a25d]'
-                : 'bg-white border-[#e5ece8] hover:border-[#176b58]'
-            }`}
-          >
-            <div className="flex items-center justify-between text-sm font-semibold w-full">
-              <span className={!isKpiLoading && monthlyUncollectedAmount > 0 ? 'text-[#915e1b]' : 'text-[#687871]'}>
-                Công nợ chưa thu ở tháng
-              </span>
-              <span
-                className={`w-8 h-8 rounded-[8px] grid place-items-center flex-none ${
-                  !isKpiLoading && monthlyUncollectedAmount > 0
-                    ? 'bg-[#fbf3e5] text-[#915e1b]'
-                    : 'bg-[#eff5f1] text-[#398066]'
-                }`}
-              >
-                <Icon name="account_balance_wallet" size={17} />
-              </span>
-            </div>
-
-            {isKpiLoading ? (
-              <div data-testid="kpi-card-loading-skeleton" className="my-2 w-full">
-                <div className="h-8 w-40 rounded-[6px] bg-[#e5ece8] animate-pulse" />
-              </div>
-            ) : (
-              <div
-                className={`font-heading font-extrabold text-[22px] xl:text-[26px] tracking-[-0.6px] my-2 ${
-                  monthlyUncollectedAmount > 0 ? 'text-[#bc5b52]' : 'text-[#1c302b]'
-                }`}
-              >
-                {formatVND(monthlyUncollectedAmount)}
-              </div>
-            )}
-
-            <div className="flex items-center justify-between gap-1 text-xs pt-1.5 border-t border-[#f0ece3] w-full">
-              {isKpiLoading ? (
-                <span className="h-4 w-full rounded-[4px] bg-[#f0ece3] animate-pulse" />
-              ) : (
-                <span
-                  className={
-                    monthlyUncollectedAmount > 0
-                      ? 'text-[#915e1b] font-semibold'
-                      : 'text-[#687871] font-medium'
-                  }
-                >
-                  {monthlyUncollectedCount} đơn chờ khách nhận ({selectedMonthLabel})
-                </span>
-              )}
-              <Icon
-                name="arrow"
-                size={12}
-                className={
-                  !isKpiLoading && monthlyUncollectedAmount > 0 ? 'text-[#915e1b] flex-none' : 'text-[#176b58] flex-none'
-                }
-              />
-            </div>
-          </button>
-
-          {/* Ô 3: Tổng ngày đã chọn */}
-          <button
-            type="button"
-            data-testid="admin-card-daily-total"
-            onClick={() => handleOpenDrilldownModal('day', 'all')}
-            className="bg-white border border-[#c5e1d4] rounded-[12px] p-4 min-h-[124px] shadow-[0_2px_5px_rgba(36,60,41,0.03)] hover:border-[#176b58] hover:-translate-y-0.5 hover:shadow-[0_7px_18px_rgba(28,49,34,0.06)] text-left flex flex-col justify-between transition-all cursor-pointer group"
-          >
-            <div className="flex items-center justify-between text-[#406856] text-sm font-semibold w-full">
-              <span>Tổng ngày đã chọn</span>
-              <span className="w-8 h-8 rounded-[8px] bg-[#eaf4ef] text-[#176b58] grid place-items-center flex-none">
-                <Icon name="payments" size={17} />
-              </span>
-            </div>
-
-            {isKpiLoading ? (
-              <div data-testid="kpi-card-loading-skeleton" className="my-2 w-full">
-                <div className="h-8 w-40 rounded-[6px] bg-[#e5ece8] animate-pulse" />
-              </div>
-            ) : (
-              <div className="font-heading font-extrabold text-[22px] xl:text-[26px] tracking-[-0.6px] text-[#176b58] my-2">
-                {formatVND(selectedDateTotalRevenue)}
-              </div>
-            )}
-
-            <div className="flex items-center justify-between gap-1 text-xs text-[#287452] font-semibold pt-1.5 border-t border-[#edf4f0] w-full">
-              {isKpiLoading ? (
-                <span className="h-4 w-full rounded-[4px] bg-[#edf4f0] animate-pulse" />
-              ) : (
-                <span>
-                  Thực thu: {formatVND(selectedDateCollectedAmount)} · {selectedDateCompletedCount} đơn hoàn tất · Chờ thu: {formatVND(selectedDateUncollectedAmount)} ({selectedDateUncollectedCount} đơn chờ lấy)
-                </span>
-              )}
-              <Icon name="arrow" size={12} className="text-[#176b58] flex-none" />
-            </div>
-          </button>
-
-          {/* Ô 4: Công nợ chưa thu theo ngày */}
-          <button
-            type="button"
-            data-testid="admin-card-daily-uncollected"
-            onClick={() => handleOpenDrilldownModal('day', 'uncollected')}
-            className={`border rounded-[12px] p-4 min-h-[124px] shadow-[0_2px_5px_rgba(36,60,41,0.03)] hover:-translate-y-0.5 hover:shadow-[0_7px_18px_rgba(28,49,34,0.06)] text-left flex flex-col justify-between transition-all cursor-pointer group ${
-              !isKpiLoading && selectedDateUncollectedAmount > 0
-                ? 'bg-[#fcfaf5] border-[#ebd9bd] hover:border-[#d2a25d]'
-                : 'bg-white border-[#e5ece8] hover:border-[#176b58]'
-            }`}
-          >
-            <div className="flex items-center justify-between text-sm font-semibold w-full">
-              <span className={!isKpiLoading && selectedDateUncollectedAmount > 0 ? 'text-[#915e1b]' : 'text-[#687871]'}>
-                Công nợ chưa thu theo ngày
-              </span>
-              <span
-                className={`w-8 h-8 rounded-[8px] grid place-items-center flex-none ${
-                  !isKpiLoading && selectedDateUncollectedAmount > 0
-                    ? 'bg-[#fbf3e5] text-[#915e1b]'
-                    : 'bg-[#eff5f1] text-[#398066]'
-                }`}
-              >
-                <Icon name="account_balance_wallet" size={17} />
-              </span>
-            </div>
-
-            {isKpiLoading ? (
-              <div data-testid="kpi-card-loading-skeleton" className="my-2 w-full">
-                <div className="h-8 w-40 rounded-[6px] bg-[#e5ece8] animate-pulse" />
-              </div>
-            ) : (
-              <div
-                className={`font-heading font-extrabold text-[22px] xl:text-[26px] tracking-[-0.6px] my-2 ${
-                  selectedDateUncollectedAmount > 0 ? 'text-[#bc5b52]' : 'text-[#1c302b]'
-                }`}
-              >
-                {formatVND(selectedDateUncollectedAmount)}
-              </div>
-            )}
-
-            <div className="flex items-center justify-between gap-1 text-xs pt-1.5 border-t border-[#f0ece3] w-full">
-              {isKpiLoading ? (
-                <span className="h-4 w-full rounded-[4px] bg-[#f0ece3] animate-pulse" />
-              ) : (
-                <span
-                  className={
-                    selectedDateUncollectedAmount > 0
-                      ? 'text-[#915e1b] font-semibold'
-                      : 'text-[#687871] font-medium'
-                  }
-                >
-                  {selectedDateUncollectedCount} đơn chờ khách nhận ngày {selectedDateDisplay}
-                </span>
-              )}
-              <Icon
-                name="arrow"
-                size={12}
-                className={
-                  !isKpiLoading && selectedDateUncollectedAmount > 0 ? 'text-[#915e1b] flex-none' : 'text-[#176b58] flex-none'
-                }
-              />
-            </div>
-          </button>
-        </div>
-      ) : (
-        /* Khi role !== 'admin': 6 thẻ chỉ số vận hành hữu ích */
-        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3.5">
-          {isKpiLoading ? (
-            [
-              { label: 'Đơn đang xử lý', icon: 'clock' },
-              { label: 'Tiếp nhận hôm nay', icon: 'plus' },
-              { label: 'Đang kiểm tra / sửa chữa', icon: 'wrench' },
-              { label: 'Chờ kiểm định QC', icon: 'verified' },
-              { label: 'Sẵn sàng giao khách', icon: 'local_shipping' },
-              { label: 'Tỉ lệ bảo hành', icon: 'shield' },
-            ].map((item) => (
-              <div
-                key={item.label}
-                data-testid="kpi-card-loading-skeleton"
-                className="bg-white border border-[#e5ece8] rounded-[10px] p-4 min-h-[115px] shadow-[0_2px_5px_rgba(36,60,41,0.03)] flex flex-col justify-between"
-              >
-                <div className="flex items-center justify-between text-[#687871] text-sm font-medium w-full">
-                  <span>{item.label}</span>
-                  <span className="w-8 h-8 rounded-[8px] bg-[#eff5f1] text-[#398066] grid place-items-center flex-none">
-                    <Icon name={item.icon} size={17} />
-                  </span>
-                </div>
-                <div className="h-8 w-16 rounded-[6px] bg-[#e5ece8] animate-pulse my-2" />
-                <div className="h-3.5 w-28 rounded-[4px] bg-[#edf4f0] animate-pulse" />
-              </div>
-            ))
-          ) : (
-            <>
-              <StatCard
-                label="Đơn đang xử lý"
-                value={kpiData?.active_orders ?? activeOrdersCount}
-                icon="clock"
-                foot={`${kpiData?.active_orders ?? activeOrdersCount} đơn đang hoạt động`}
-                onClick={() => router.push('/repairs')}
-              />
-              <StatCard
-                label="Tiếp nhận hôm nay"
-                value={String(kpiData?.intake_today ?? todayOrdersCount).padStart(2, '0')}
-                icon="plus"
-                foot="Cập nhật theo ngày thực tế"
-              />
-              <StatCard
-                label="Đang kiểm tra / sửa chữa"
-                value={String(repairingCount ?? 0).padStart(2, '0')}
-                icon="wrench"
-                foot="Máy đang xử lý tại xưởng"
-                onClick={() => router.push('/repairs?status=in_repair')}
-              />
-              <StatCard
-                label="Chờ kiểm định QC"
-                value={String(
-                  kpiData?.operational_summary?.waiting_qc_count ??
-                  kpiData?.actionable_tasks?.waiting_qc?.length ??
-                  0
-                ).padStart(2, '0')}
-                icon="verified"
-                foot="Chờ nghiệm thu chất lượng"
-                onClick={() => router.push('/qc')}
-              />
-              <StatCard
-                label="Sẵn sàng giao khách"
-                value={String(
-                  kpiData?.reconciliation?.ready_for_pickup_count ??
-                  kpiData?.actionable_tasks?.ready_pickup?.length ??
-                  readyCount ??
-                  0
-                ).padStart(2, '0')}
-                icon="local_shipping"
-                foot="Máy xong chờ trả khách"
-                onClick={() => router.push('/repairs?status=waiting_pickup')}
-              />
-              <StatCard
-                label="Tỉ lệ bảo hành"
-                value={`${kpiData?.summary?.warranty_rate ?? kpiData?.warranty_rate ?? 0}%`}
-                icon="shield"
-                foot="Tỷ lệ máy bảo hành trong kỳ"
-                onClick={() => router.push('/repairs?intake_type=warranty')}
-              />
-            </>
-          )}
-        </div>
-      )}
-
-      {/* [MỚI] KHU VỰC B: CHỈ SỐ ĐIỀU HÀNH VẬN HÀNH (4 Thẻ) */}
-      <div className="space-y-2.5">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <span className="w-2 h-2 rounded-full bg-[#176b58]" />
-            <h3 className="text-xs font-bold uppercase tracking-wider text-[#73857d] m-0">
-              CHỈ SỐ ĐIỀU HÀNH CA LÀM VIỆC (OPERATIONAL METRICS)
-            </h3>
-          </div>
-          <span className="text-[11px] text-[#86968f]">
-            Cập nhật thời gian thực theo trạng thái đơn
-          </span>
-        </div>
-
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3.5">
-          {/* 1. Đơn đang mở */}
-          <div
-            onClick={() =>
-              role === 'admin'
-                ? router.push('/repairs?status=open&date_filter=all')
-                : router.push('/repairs')
-            }
-            className="bg-white border border-[#e5ece8] rounded-[12px] p-4 shadow-xs hover:border-[#c5e1d4] hover:shadow-sm transition-all cursor-pointer flex flex-col justify-between"
-          >
-            <div className="flex items-center justify-between text-sm font-medium text-[#687871]">
-              <span>Đơn đang mở</span>
-              <span className="w-8 h-8 rounded-[8px] bg-[#eff5f1] text-[#176b58] grid place-items-center">
-                <Icon name="repairs" size={17} />
-              </span>
-            </div>
-            {isKpiLoading ? (
-              <div data-testid="kpi-card-loading-skeleton" className="my-2">
-                <div className="h-8 w-16 rounded-[6px] bg-[#e5ece8] animate-pulse" />
-              </div>
-            ) : (
-              <div className="font-heading font-extrabold text-2xl md:text-3xl text-[#1c302b] my-2">
-                {activeOrdersTotal}
-              </div>
-            )}
-            <div className="flex items-center justify-between text-xs text-[#7c8982]">
-              {isKpiLoading ? (
-                <span className="h-4 w-44 rounded-[4px] bg-[#edf4f0] animate-pulse" />
-              ) : (
-                <span>{inWorkshopCount} đang sửa trong xưởng · {waitingPickupCount} chờ khách nhận</span>
-              )}
-              <Icon name="arrow" size={12} className="text-[#176b58]" />
-            </div>
-          </div>
-
-          {/* 2. Chờ khách nhận máy */}
-          <div
-            onClick={() =>
-              role === 'admin'
-                ? router.push('/repairs?status=waiting_pickup&date_filter=all')
-                : router.push('/repairs?status=waiting_pickup')
-            }
-            className="bg-white border border-[#e5ece8] rounded-[12px] p-4 shadow-xs hover:border-[#c5e1d4] hover:shadow-sm transition-all cursor-pointer flex flex-col justify-between"
-          >
-            <div className="flex items-center justify-between text-sm font-medium text-[#687871]">
-              <span>Chờ khách nhận</span>
-              <span className="w-8 h-8 rounded-[8px] bg-[#eff5f1] text-[#176b58] grid place-items-center">
-                <Icon name="truck" size={17} />
-              </span>
-            </div>
-            {isKpiLoading ? (
-              <div data-testid="kpi-card-loading-skeleton" className="my-2">
-                <div className="h-8 w-16 rounded-[6px] bg-[#e5ece8] animate-pulse" />
-              </div>
-            ) : (
-              <div className="font-heading font-extrabold text-2xl md:text-3xl text-[#176b58] my-2">
-                {waitingPickupCount}
-              </div>
-            )}
-            <div className="flex items-center justify-between text-xs text-[#7c8982]">
-              {isKpiLoading ? (
-                <span className="h-4 w-36 rounded-[4px] bg-[#edf4f0] animate-pulse" />
-              ) : (
-                <span>Đã xong & QC đạt, chờ giao</span>
-              )}
-              <Icon name="arrow" size={12} className="text-[#176b58]" />
-            </div>
-          </div>
-
-          {/* 3. Chờ linh kiện */}
-          <div
-            onClick={() =>
-              role === 'admin'
-                ? router.push('/repairs?status=waiting_parts&date_filter=all')
-                : router.push('/repairs?status=waiting_parts')
-            }
-            className="bg-white border border-[#e5ece8] rounded-[12px] p-4 shadow-xs hover:border-[#ebd9bd] hover:shadow-sm transition-all cursor-pointer flex flex-col justify-between"
-          >
-            <div className="flex items-center justify-between text-sm font-medium text-[#687871]">
-              <span>Chờ linh kiện</span>
-              <span className="w-8 h-8 rounded-[8px] bg-[#fdf9f0] text-[#915e1b] grid place-items-center">
-                <Icon name="inventory" size={17} />
-              </span>
-            </div>
-            {isKpiLoading ? (
-              <div data-testid="kpi-card-loading-skeleton" className="my-2">
-                <div className="h-8 w-16 rounded-[6px] bg-[#e5ece8] animate-pulse" />
-              </div>
-            ) : (
-              <div className="font-heading font-extrabold text-2xl md:text-3xl text-[#915e1b] my-2">
-                {kpiData?.operational_summary?.waiting_parts_orders ?? 0}
-              </div>
-            )}
-            <div className="flex items-center justify-between text-xs text-[#7c8982]">
-              {isKpiLoading ? (
-                <span className="h-4 w-40 rounded-[4px] bg-[#f0ece3] animate-pulse" />
-              ) : (
-                <span>Tạm dừng do thiếu phụ tùng</span>
-              )}
-              <Icon name="arrow" size={12} className="text-[#915e1b]" />
-            </div>
-          </div>
-
-          {/* 4. Trễ thời hạn cam kết */}
-          <div
-            onClick={() =>
-              role === 'admin'
-                ? router.push('/repairs?filter=overdue&date_filter=all')
-                : router.push('/repairs?filter=overdue')
-            }
-            className={`border rounded-[12px] p-4 shadow-xs transition-all cursor-pointer flex flex-col justify-between ${
-              !isKpiLoading && (kpiData?.operational_summary?.overdue_orders ?? 0) > 0
-                ? 'bg-[#fbefed] border-[#f5c7c2] hover:border-[#ea9d94]'
-                : 'bg-white border-[#e5ece8] hover:border-[#c5e1d4]'
-            }`}
-          >
-            <div className="flex items-center justify-between text-sm font-medium">
-              <span className={!isKpiLoading && (kpiData?.operational_summary?.overdue_orders ?? 0) > 0 ? 'text-[#bc5b52] font-semibold' : 'text-[#687871]'}>
-                Trễ thời hạn
-              </span>
-              <span className={`w-8 h-8 rounded-[8px] grid place-items-center ${
-                !isKpiLoading && (kpiData?.operational_summary?.overdue_orders ?? 0) > 0
-                  ? 'bg-white text-[#bc5b52]'
-                  : 'bg-[#eff5f1] text-[#176b58]'
-              }`}>
-                <Icon name="alert" size={17} />
-              </span>
-            </div>
-            {isKpiLoading ? (
-              <div data-testid="kpi-card-loading-skeleton" className="my-2">
-                <div className="h-8 w-16 rounded-[6px] bg-[#e5ece8] animate-pulse" />
-              </div>
-            ) : (
-              <div className={`font-heading font-extrabold text-2xl md:text-3xl my-2 ${
-                (kpiData?.operational_summary?.overdue_orders ?? 0) > 0 ? 'text-[#bc5b52]' : 'text-[#1c302b]'
-              }`}>
-                {kpiData?.operational_summary?.overdue_orders ?? 0}
-              </div>
-            )}
-            <div className="flex items-center justify-between text-xs">
-              {isKpiLoading ? (
-                <span className="h-4 w-44 rounded-[4px] bg-[#edf4f0] animate-pulse" />
-              ) : (
-                <span className={(kpiData?.operational_summary?.overdue_orders ?? 0) > 0 ? 'text-[#bc5b52] font-medium' : 'text-[#7c8982]'}>
-                  Máy đang sửa quá 24h trong xưởng
-                </span>
-              )}
-              <Icon
-                name="arrow"
-                size={12}
-                className={!isKpiLoading && (kpiData?.operational_summary?.overdue_orders ?? 0) > 0 ? 'text-[#bc5b52]' : 'text-[#176b58]'}
-              />
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* [MỚI] KHU VỰC C: TRUNG TÂM HÀNH ĐỘNG ("VIỆC CẦN XỬ LÝ TRONG CA") */}
-      <ActionableTasksCenter
-        actionableTasks={kpiData?.actionable_tasks}
-        isLoading={isKpiLoading}
-        onOpenOrderDetail={handleOpenOrderDetail}
-        onOpenCheckout={handleOpenCheckout}
-        onNavigate={(path) => router.push(path)}
-      />
-
-      {/* Grid: Revenue Chart & Workload breakdown */}
-      {role === 'admin' ? (
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-          {/* Chart */}
-          <div className="lg:col-span-2 bg-white rounded-[12px] border border-[#e5ece8] p-5 sm:p-6 shadow-xs">
-            <div className="flex items-center justify-between mb-2">
-              <div>
-                <h3 className="font-heading font-bold text-base text-[#1c302b] m-0">
-                  Doanh thu & đơn hàng
-                </h3>
-                <p className="text-xs text-[#8a9891] mt-0.5 mb-0">
-                  Tổng quan hoạt động trong tháng {new Date().getMonth() + 1}, {new Date().getFullYear()}
-                </p>
-              </div>
-              <select
-                value={period}
-                onChange={(e) => setPeriod(e.target.value as any)}
-                className="text-xs border border-[#e4eae6] rounded-[7px] px-3 py-1.5 bg-white text-[#55655d] outline-none cursor-pointer"
-              >
-                <option value="14_days">14 ngày gần nhất</option>
-                <option value="7_days">7 ngày gần nhất</option>
-                <option value="30_days">30 ngày gần nhất</option>
-              </select>
-            </div>
-            {renderRevenueChart()}
-            <div className="flex items-center gap-5 text-xs text-[#808f87] px-2 pt-3 border-t border-[#f0f3f1]">
-              <span className="flex items-center gap-1.5">
-                <i className="w-2.5 h-2.5 rounded-full bg-[#176b58]" /> Doanh thu
-              </span>
-              <span className="flex items-center gap-1.5">
-                <i className="w-2.5 h-2.5 rounded-full bg-[#bdc9c2]" /> Đơn hoàn tất
-              </span>
-            </div>
-          </div>
-
-          {/* Workload */}
-          <div className="bg-white rounded-[12px] border border-[#e5ece8] p-5 sm:p-6 shadow-xs flex flex-col justify-between">
-            <div className="flex items-center justify-between mb-3">
-              <div>
-                <h3 className="font-heading font-bold text-base text-[#1c302b] m-0">
-                  Đơn theo trạng thái
-                </h3>
-                <p className="text-xs text-[#8a9891] mt-0.5 mb-0">
-                  Phân bổ {branchOrders.length} đơn trong hệ thống
-                </p>
-              </div>
-              <Button
-                variant="ghost"
-                size="sm"
-                icon="arrow"
-                onClick={() => router.push('/repairs')}
-              />
-            </div>
-
-            {isKpiLoading ? (
-              <div data-testid="kpi-card-loading-skeleton" className="space-y-4">
-                {[1, 2, 3, 4].map((idx) => (
-                  <div key={idx} className="grid grid-cols-[30px_1fr_30px] gap-3 items-center">
-                    <div className="w-[30px] h-[30px] rounded-[8px] bg-[#edf5f0] animate-pulse" />
-                    <div className="space-y-1.5">
-                      <div className="flex justify-between">
-                        <span className="h-3.5 w-24 rounded bg-[#e5ece8] animate-pulse" />
-                        <span className="h-3.5 w-10 rounded bg-[#edf4f0] animate-pulse" />
-                      </div>
-                      <div className="h-2 bg-[#f0f3f1] rounded-full animate-pulse" />
-                    </div>
-                    <span className="h-4 w-5 ml-auto rounded bg-[#e5ece8] animate-pulse" />
-                  </div>
-                ))}
-              </div>
-            ) : (
-              <div className="space-y-4">
-                <div className="grid grid-cols-[30px_1fr_30px] gap-3 items-center">
-                  <div className="w-[30px] h-[30px] rounded-[8px] bg-[#edf5f0] text-[#478065] grid place-items-center">
-                    <Icon name="search" size={15} />
-                  </div>
-                  <div>
-                    <div className="flex justify-between text-xs mb-1">
-                      <span className="font-medium text-[#2d3d35]">Đang kiểm tra</span>
-                      <span className="text-[#7c8982]">{String(inspectingCount).padStart(2, '0')} đơn</span>
-                    </div>
-                    <div className="h-2 bg-[#f0f3f1] rounded-full overflow-hidden">
-                      <div
-                        className="h-full bg-[#4d9877] rounded-full"
-                        style={{ width: `${activeOrdersTotal > 0 ? Math.min(100, (inspectingCount / activeOrdersTotal) * 100) : 0}%` }}
-                      />
-                    </div>
-                  </div>
-                  <b className="text-xs text-right text-[#1c302b]">{inspectingCount}</b>
-                </div>
-
-                <div className="grid grid-cols-[30px_1fr_30px] gap-3 items-center">
-                  <div className="w-[30px] h-[30px] rounded-[8px] bg-[#fbf3e5] text-[#a4722f] grid place-items-center">
-                    <Icon name="clock" size={15} />
-                  </div>
-                  <div>
-                    <div className="flex justify-between text-xs mb-1">
-                      <span className="font-medium text-[#2d3d35]">Chờ kỹ thuật nhận</span>
-                      <span className="text-[#7c8982]">{String(waitingApprovalCount).padStart(2, '0')} đơn</span>
-                    </div>
-                    <div className="h-2 bg-[#f0f3f1] rounded-full overflow-hidden">
-                      <div
-                        className="h-full bg-[#d2a25d] rounded-full"
-                        style={{ width: `${activeOrdersTotal > 0 ? Math.min(100, (waitingApprovalCount / activeOrdersTotal) * 100) : 0}%` }}
-                      />
-                    </div>
-                  </div>
-                  <b className="text-xs text-right text-[#1c302b]">{waitingApprovalCount}</b>
-                </div>
-
-                <div className="grid grid-cols-[30px_1fr_30px] gap-3 items-center">
-                  <div className="w-[30px] h-[30px] rounded-[8px] bg-[#edf4f7] text-[#477b98] grid place-items-center">
-                    <Icon name="wrench" size={15} />
-                  </div>
-                  <div>
-                    <div className="flex justify-between text-xs mb-1">
-                      <span className="font-medium text-[#2d3d35]">Đang sửa chữa</span>
-                      <span className="text-[#7c8982]">{String(repairingCount).padStart(2, '0')} đơn</span>
-                    </div>
-                    <div className="h-2 bg-[#f0f3f1] rounded-full overflow-hidden">
-                      <div
-                        className="h-full bg-[#477b98] rounded-full"
-                        style={{ width: `${activeOrdersTotal > 0 ? Math.min(100, (repairingCount / activeOrdersTotal) * 100) : 0}%` }}
-                      />
-                    </div>
-                  </div>
-                  <b className="text-xs text-right text-[#1c302b]">{repairingCount}</b>
-                </div>
-
-                <div className="grid grid-cols-[30px_1fr_30px] gap-3 items-center">
-                  <div className="w-[30px] h-[30px] rounded-[8px] bg-[#eaf4ef] text-[#28805e] grid place-items-center">
-                    <Icon name="check" size={15} />
-                  </div>
-                  <div>
-                    <div className="flex justify-between text-xs mb-1">
-                      <span className="font-medium text-[#2d3d35]">Chờ QC / trả máy</span>
-                      <span className="text-[#7c8982]">{String(readyCount).padStart(2, '0')} đơn</span>
-                    </div>
-                    <div className="h-2 bg-[#f0f3f1] rounded-full overflow-hidden">
-                      <div
-                        className="h-full bg-[#28805e] rounded-full"
-                        style={{ width: `${activeOrdersTotal > 0 ? Math.min(100, (readyCount / activeOrdersTotal) * 100) : 0}%` }}
-                      />
-                    </div>
-                  </div>
-                  <b className="text-xs text-right text-[#1c302b]">{readyCount}</b>
-                </div>
-              </div>
-            )}
-          </div>
-        </div>
-      ) : (
-        /* Workload Distribution Grid cho Non-Admin: Phân bổ trạng thái trực quan thay thế biểu đồ doanh thu */
-        <div className="bg-white rounded-[12px] border border-[#e5ece8] p-5 sm:p-6 shadow-xs">
-          <div className="flex items-center justify-between mb-4">
-            <div>
-              <h3 className="font-heading font-bold text-base text-[#1c302b] m-0">
-                Phân bổ tiến độ & trạng thái đơn hàng
-              </h3>
-              <p className="text-xs text-[#8a9891] mt-0.5 mb-0">
-                Tổng hợp tình hình xử lý đơn hàng tại chi nhánh
-              </p>
-            </div>
+          <div className="flex items-center gap-2.5">
             <Button
               variant="secondary"
-              size="sm"
-              icon="arrow"
-              onClick={() => router.push('/repairs')}
+              size="md"
+              icon="download"
+              onClick={() => toast('Đang chuẩn bị xuất báo cáo Excel...')}
             >
-              Mở danh sách đơn ↗
+              Xuất báo cáo
+            </Button>
+            <Button
+              variant="outline"
+              size="md"
+              icon="shield"
+              data-testid="admin-warranty-intake-btn"
+              onClick={() => {
+                setInitialIntakeType('warranty');
+                setIntakeModalOpen(true);
+              }}
+              className="bg-[#eaf5ef] text-[#176b58] border-[#a9c9b9] hover:bg-[#d8ede1] font-bold"
+            >
+              Tiếp nhận bảo hành
+            </Button>
+            <Button
+              variant="primary"
+              size="md"
+              icon="plus"
+              onClick={() => {
+                setInitialIntakeType('in_store');
+                setIntakeModalOpen(true);
+              }}
+            >
+              Tạo đơn mới
             </Button>
           </div>
+        </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-            <div className="p-4 rounded-[10px] bg-[#edf5f0] border border-[#d2e7dc]">
-              <div className="flex items-center justify-between text-xs text-[#406856] font-semibold mb-2">
-                <span>ĐANG KIỂM TRA</span>
-                <span className="w-7 h-7 rounded-[7px] bg-white text-[#478065] grid place-items-center">
-                  <Icon name="search" size={15} />
-                </span>
+        {/* =================================================================== */}
+        {/* ZONE 1: HIỆU QUẢ KINH DOANH & TÀI CHÍNH THEO KỲ (PERIOD METRICS)     */}
+        {/* =================================================================== */}
+        <section data-testid="admin-zone1-period-metrics" className="space-y-4">
+          {/* Thanh điều khiển Kỳ tra cứu Zone 1 */}
+          <div className="flex flex-wrap items-center justify-between gap-3 bg-white rounded-[12px] border border-[#e5ece8] p-3.5 sm:px-5 sm:py-3.5 shadow-xs">
+            <div className="flex flex-wrap items-center gap-3">
+              <span className="text-xs font-bold text-[#1c302b] uppercase tracking-[0.8px] flex items-center gap-1.5">
+                <span className="w-2 h-2 rounded-full bg-[#176b58]" />
+                <span>KỲ BÁO CÁO:</span>
+              </span>
+              <div className="flex flex-wrap items-center gap-1.5">
+                {(
+                  [
+                    { key: 'today', label: 'Hôm nay' },
+                    { key: 'yesterday', label: 'Hôm qua' },
+                    { key: '7_days', label: '7 ngày qua' },
+                    { key: 'this_month', label: 'Tháng này' },
+                  ] as const
+                ).map((preset) => (
+                  <button
+                    key={preset.key}
+                    type="button"
+                    data-testid={`zone1-period-${preset.key}`}
+                    onClick={() => {
+                      setActivePreset(preset.key);
+                      if (preset.key === 'today') setSelectedDate(todayStr);
+                      if (preset.key === 'yesterday') setSelectedDate(yesterdayStr);
+                    }}
+                    className={`text-xs px-3 py-1.5 rounded-[8px] transition-all cursor-pointer ${
+                      activePreset === preset.key
+                        ? 'bg-[#176b58] text-white font-bold shadow-xs'
+                        : 'bg-white text-[#596962] border border-[#d8e2dc] hover:bg-[#f0f4f2]'
+                    }`}
+                  >
+                    {preset.label}
+                  </button>
+                ))}
+
+                <input
+                  type="date"
+                  data-testid="zone1-date-picker"
+                  value={selectedDate}
+                  onChange={(e) => {
+                    const val = e.target.value;
+                    if (!val) return;
+                    setSelectedDate(val);
+                    if (val === todayStr) {
+                      setActivePreset('today');
+                    } else if (val === yesterdayStr) {
+                      setActivePreset('yesterday');
+                    } else {
+                      setActivePreset('custom');
+                    }
+                  }}
+                  className="text-xs border border-[#d8e2dc] bg-[#fafbfa] text-[#2d3d35] rounded-[8px] px-3 py-1.5 outline-none focus:border-[#176b58] focus:bg-white transition-all cursor-pointer font-medium"
+                />
               </div>
-              {isKpiLoading ? (
-                <div data-testid="kpi-card-loading-skeleton" className="h-8 w-16 rounded-[6px] bg-[#d2e7dc] animate-pulse" />
-              ) : (
-                <div className="font-heading font-bold text-2xl text-[#1c302b]">
-                  {String(inspectingCount).padStart(2, '0')} <small className="text-xs font-normal text-[#6b7c74]">đơn</small>
-                </div>
-              )}
-              <div className="mt-2 text-[11px] text-[#5c7066]">Chờ kiểm tra lỗi ban đầu</div>
             </div>
 
-            <div className="p-4 rounded-[10px] bg-[#fbf3e5] border border-[#ebd9bd]">
-              <div className="flex items-center justify-between text-xs text-[#8c6527] font-semibold mb-2">
-                <span>CHỜ KỸ THUẬT</span>
-                <span className="w-7 h-7 rounded-[7px] bg-white text-[#a4722f] grid place-items-center">
-                  <Icon name="clock" size={15} />
+            <div className="text-xs text-[#687871] flex items-center gap-2">
+              <span>
+                Kỳ đang chọn:{' '}
+                <b className="text-[#176b58] font-semibold">
+                  {periodMetrics?.period_label || selectedDateDisplay}
+                </b>
+              </span>
+              {!isKpiLoading && (
+                <span className="px-2.5 py-0.5 rounded-full bg-[#edf5f0] text-[#176b58] font-bold text-[11px] border border-[#d0e5d9]">
+                  {zone1CompletedOrdersCount} đơn đã bàn giao
                 </span>
-              </div>
-              {isKpiLoading ? (
-                <div data-testid="kpi-card-loading-skeleton" className="h-8 w-16 rounded-[6px] bg-[#ebd9bd] animate-pulse" />
-              ) : (
-                <div className="font-heading font-bold text-2xl text-[#915e1b]">
-                  {String(waitingApprovalCount).padStart(2, '0')} <small className="text-xs font-normal text-[#915e1b]/70">đơn</small>
-                </div>
               )}
-              <div className="mt-2 text-[11px] text-[#8c6527]">Chờ kỹ thuật viên nhận máy</div>
-            </div>
-
-            <div className="p-4 rounded-[10px] bg-[#edf4f7] border border-[#cadce6]">
-              <div className="flex items-center justify-between text-xs text-[#3b6780] font-semibold mb-2">
-                <span>ĐANG SỬA CHỮA</span>
-                <span className="w-7 h-7 rounded-[7px] bg-white text-[#477b98] grid place-items-center">
-                  <Icon name="wrench" size={15} />
-                </span>
-              </div>
-              {isKpiLoading ? (
-                <div data-testid="kpi-card-loading-skeleton" className="h-8 w-16 rounded-[6px] bg-[#cadce6] animate-pulse" />
-              ) : (
-                <div className="font-heading font-bold text-2xl text-[#1c302b]">
-                  {String(repairingCount).padStart(2, '0')} <small className="text-xs font-normal text-[#6b7c74]">đơn</small>
-                </div>
-              )}
-              <div className="mt-2 text-[11px] text-[#477b98]">Kỹ thuật viên đang xử lý thiết bị</div>
-            </div>
-
-            <div className="p-4 rounded-[10px] bg-[#eaf4ef] border border-[#c5e1d4]">
-              <div className="flex items-center justify-between text-xs text-[#1e6b4e] font-semibold mb-2">
-                <span>CHỜ QC / TRẢ MÁY</span>
-                <span className="w-7 h-7 rounded-[7px] bg-white text-[#28805e] grid place-items-center">
-                  <Icon name="check" size={15} />
-                </span>
-              </div>
-              {isKpiLoading ? (
-                <div data-testid="kpi-card-loading-skeleton" className="h-8 w-16 rounded-[6px] bg-[#c5e1d4] animate-pulse" />
-              ) : (
-                <div className="font-heading font-bold text-2xl text-[#176b58]">
-                  {String(readyCount).padStart(2, '0')} <small className="text-xs font-normal text-[#176b58]/70">đơn</small>
-                </div>
-              )}
-              <div className="mt-2 text-[11px] text-[#28805e]">Đã hoàn thành hoặc chờ bàn giao</div>
             </div>
           </div>
-        </div>
-      )}
 
-      {/* Khối đối chiếu vận hành & dòng tiền (Chỉ render khi role === 'admin' để bảo vệ quyền riêng tư tài chính) */}
-      {role === 'admin' && (
-        <div className="bg-white rounded-[14px] border border-[#e5ece8] p-5 sm:p-6 shadow-xs">
-          <div className="flex flex-wrap items-center justify-between gap-3 mb-5">
+          {/* 4 Thẻ Tài chính & Vận hành chủ lực trong Kỳ */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3.5">
+            {/* CARD 1: DOANH THU BÀN GIAO */}
+            <div
+              data-testid="zone1-card-handover-revenue"
+              onClick={() =>
+                router.push(
+                  `/repairs?status=completed&date_type=completed_at&${periodQueryString}`
+                )
+              }
+              className="bg-white border border-[#c5e1d4] rounded-[14px] p-4 sm:p-5 shadow-xs hover:border-[#176b58] transition-all cursor-pointer flex flex-col justify-between"
+            >
+              <div>
+                <div className="flex items-center justify-between gap-2 mb-2">
+                  <span className="text-[11px] font-bold uppercase tracking-[0.8px] text-[#406856]">
+                    DOANH THU BÀN GIAO
+                  </span>
+                  <span className="w-7 h-7 rounded-[7px] bg-[#eaf4ef] text-[#176b58] grid place-items-center flex-none">
+                    <Icon name="payments" size={15} />
+                  </span>
+                </div>
+
+                {isKpiLoading ? (
+                  <div data-testid="kpi-card-loading-skeleton" className="space-y-2 py-1">
+                    <div className="h-7 w-36 rounded bg-[#e5ece8] animate-pulse" />
+                    <div className="h-3.5 w-44 rounded bg-[#edf4f0] animate-pulse" />
+                  </div>
+                ) : (
+                  <>
+                    <div className="font-heading font-extrabold text-2xl text-[#176b58] tracking-tight">
+                      {formatVND(zone1CollectedRevenue)}
+                    </div>
+                    <div className="text-xs text-[#5d6f67] mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-0.5">
+                      <span>
+                        TM: <b className="text-[#1c302b]">{formatVND(zone1CashAmount)}</b>
+                      </span>
+                      <span className="text-[#c5d1cb]">|</span>
+                      <span>
+                        CK: <b className="text-[#2a6280]">{formatVND(zone1TransferAmount)}</b>
+                      </span>
+                    </div>
+                  </>
+                )}
+              </div>
+
+              <div className="pt-2.5 mt-3 border-t border-[#edf2ee] flex items-center justify-between gap-2 text-xs">
+                <span className="text-[#287452] font-semibold">
+                  {zone1CompletedOrdersCount} đơn đã giao
+                </span>
+                <span className="inline-flex items-center gap-1 font-bold text-[#176b58]">
+                  <span>Xem</span>
+                  <Icon name="arrow" size={12} />
+                </span>
+              </div>
+            </div>
+
+            {/* CARD 2: LỢI NHUẬN GỘP */}
+            <div
+              data-testid="zone1-card-gross-profit"
+              className="bg-white border border-[#e5ece8] rounded-[14px] p-4 sm:p-5 shadow-xs flex flex-col justify-between"
+            >
+              <div>
+                <div className="flex items-center justify-between gap-2 mb-2">
+                  <span className="text-[11px] font-bold uppercase tracking-[0.8px] text-[#6d7f77]">
+                    LỢI NHUẬN GỘP
+                  </span>
+                  <span className="w-7 h-7 rounded-[7px] bg-[#eaf4ef] text-[#176b58] grid place-items-center flex-none">
+                    <Icon name="trending_up" size={15} />
+                  </span>
+                </div>
+
+                {isKpiLoading ? (
+                  <div data-testid="kpi-card-loading-skeleton" className="space-y-2 py-1">
+                    <div className="h-7 w-36 rounded bg-[#e5ece8] animate-pulse" />
+                    <div className="h-3.5 w-44 rounded bg-[#edf4f0] animate-pulse" />
+                  </div>
+                ) : (
+                  <>
+                    <div className="font-heading font-extrabold text-2xl text-[#1c302b] tracking-tight">
+                      {formatVND(zone1GrossProfit)}
+                    </div>
+                    <div className="text-xs text-[#5d6f67] mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-0.5">
+                      <span>
+                        Giá vốn LK: <b className="text-[#1c302b]">{formatVND(zone1CogsAmount)}</b>
+                      </span>
+                      <span className="text-[#c5d1cb]">·</span>
+                      <span>
+                        Biên lãi: <b className="text-[#176b58]">{zone1GrossMargin}%</b>
+                      </span>
+                    </div>
+                  </>
+                )}
+              </div>
+
+              <div className="pt-2.5 mt-3 border-t border-[#edf2ee] flex items-center justify-between gap-2 text-xs text-[#65766e]">
+                <span>
+                  Công nợ NCC: <b className="text-[#915e1b]">{formatVND(zone1AccountsPayable)}</b>
+                </span>
+                <button
+                  type="button"
+                  onClick={() => router.push('/suppliers')}
+                  className="inline-flex items-center gap-1 font-bold text-[#176b58] hover:text-[#115042] cursor-pointer"
+                >
+                  <span>NCC</span>
+                  <Icon name="arrow" size={12} />
+                </button>
+              </div>
+            </div>
+
+            {/* CARD 3: LƯU LƯỢNG ĐƠN & TIẾP NHẬN */}
+            <div
+              data-testid="zone1-card-order-flow"
+              className="bg-white border border-[#e5ece8] rounded-[14px] p-4 sm:p-5 shadow-xs flex flex-col justify-between"
+            >
+              <div>
+                <div className="flex items-center justify-between gap-2 mb-2">
+                  <span className="text-[11px] font-bold uppercase tracking-[0.8px] text-[#6d7f77]">
+                    LƯU LƯỢNG ĐƠN &amp; TIẾP NHẬN
+                  </span>
+                  <span className="w-7 h-7 rounded-[7px] bg-[#eaf4ef] text-[#176b58] grid place-items-center flex-none">
+                    <Icon name="repairs" size={15} />
+                  </span>
+                </div>
+
+                {isKpiLoading ? (
+                  <div data-testid="kpi-card-loading-skeleton" className="space-y-2 py-1">
+                    <div className="h-7 w-36 rounded bg-[#e5ece8] animate-pulse" />
+                    <div className="h-3.5 w-44 rounded bg-[#edf4f0] animate-pulse" />
+                  </div>
+                ) : (
+                  <>
+                    <div className="font-heading font-extrabold text-2xl text-[#1c302b] tracking-tight">
+                      {zone1IntakeCount} đơn mới
+                    </div>
+                    <div className="text-xs text-[#5d6f67] mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-0.5">
+                      <button
+                        type="button"
+                        onClick={() =>
+                          router.push(
+                            `/repairs?status=completed&date_type=completed_at&${periodQueryString}`
+                          )
+                        }
+                        className="hover:text-[#176b58] hover:underline cursor-pointer"
+                      >
+                        Đã bàn giao: <b className="text-[#176b58]">{zone1CompletedFlowCount} đơn</b>
+                      </button>
+                      <span className="text-[#c5d1cb]">|</span>
+                      <button
+                        type="button"
+                        onClick={() =>
+                          router.push(`/repairs?order_type=warranty&${periodQueryString}`)
+                        }
+                        className="hover:text-[#176b58] hover:underline cursor-pointer"
+                      >
+                        Bảo hành: <b className="text-[#915e1b]">{zone1WarrantyCount} đơn</b>
+                      </button>
+                    </div>
+                  </>
+                )}
+              </div>
+
+              <div className="pt-2.5 mt-3 border-t border-[#edf2ee] flex items-center justify-between gap-2 text-xs">
+                <span className="text-[#65766e] font-medium">Tiếp nhận mới trong kỳ</span>
+                <button
+                  type="button"
+                  onClick={() => router.push(`/repairs?date_type=created_at&${periodQueryString}`)}
+                  className="inline-flex items-center gap-1 font-bold text-[#176b58] hover:text-[#115042] cursor-pointer"
+                >
+                  <span>Xem đơn mới</span>
+                  <Icon name="arrow" size={12} />
+                </button>
+              </div>
+            </div>
+
+            {/* CARD 4: TỔNG DOANH THU THÁNG */}
+            <div
+              data-testid="zone1-card-monthly-revenue"
+              onClick={() =>
+                router.push('/repairs?status=completed&date_type=completed_at&date_filter=this_month')
+              }
+              className="bg-white border border-[#c5e1d4] rounded-[14px] p-4 sm:p-5 shadow-xs hover:border-[#176b58] transition-all cursor-pointer flex flex-col justify-between"
+            >
+              <div>
+                <div className="flex items-center justify-between gap-2 mb-2">
+                  <div className="flex items-center gap-1.5 flex-wrap">
+                    <span className="text-[11px] font-bold uppercase tracking-[0.8px] text-[#406856]">
+                      TỔNG DOANH THU THÁNG
+                    </span>
+                    <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-[#eaf4ef] text-[#176b58]">
+                      {monthlySummary?.month_label || 'Tháng này'}
+                    </span>
+                  </div>
+                  <span className="w-7 h-7 rounded-[7px] bg-[#eaf4ef] text-[#176b58] grid place-items-center flex-none">
+                    <Icon name="payments" size={15} />
+                  </span>
+                </div>
+
+                {isKpiLoading ? (
+                  <div data-testid="kpi-card-loading-skeleton" className="space-y-2 py-1">
+                    <div className="h-7 w-36 rounded bg-[#e5ece8] animate-pulse" />
+                    <div className="h-3.5 w-44 rounded bg-[#edf4f0] animate-pulse" />
+                  </div>
+                ) : (
+                  <>
+                    <div className="font-heading font-extrabold text-2xl text-[#176b58] tracking-tight">
+                      {formatVND(monthlyCollectedRevenue)}
+                    </div>
+                    <div className="text-xs text-[#5d6f67] mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-0.5">
+                      <span>
+                        TM: <b className="text-[#1c302b]">{formatVND(monthlyCashAmount)}</b>
+                      </span>
+                      <span className="text-[#c5d1cb]">|</span>
+                      <span>
+                        CK: <b className="text-[#2a6280]">{formatVND(monthlyTransferAmount)}</b>
+                      </span>
+                    </div>
+                  </>
+                )}
+              </div>
+
+              <div className="pt-2.5 mt-3 border-t border-[#edf2ee] flex items-center justify-between gap-2 text-xs">
+                <span className="text-[#287452] font-semibold">
+                  {monthlyCompletedCount} đơn hoàn tất tháng
+                </span>
+                <span className="inline-flex items-center gap-1 font-bold text-[#176b58]">
+                  <span>Xem</span>
+                  <Icon name="arrow" size={12} />
+                </span>
+              </div>
+            </div>
+          </div>
+
+          {/* Hàng 2 cột (50% / 50%): Biểu đồ xu hướng Doanh thu & Bảng Hiệu suất Nhân sự (Compact Pagination) */}
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 items-stretch">
+            {/* Cột trái (50%): Biểu đồ Xu hướng Doanh thu & Đơn bàn giao */}
+            <div className="bg-white rounded-[14px] border border-[#e5ece8] p-5 sm:p-6 shadow-xs flex flex-col justify-between">
+              <div>
+                <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
+                  <div>
+                    <div className="flex items-center gap-2 mb-1">
+                      <span className="w-2 h-2 rounded-full bg-[#176b58]" />
+                      <span className="text-xs font-bold text-[#819089] uppercase tracking-[1px]">
+                        XU HƯỚNG DOANH THU &amp; BÀN GIAO
+                      </span>
+                    </div>
+                    <h3 className="font-heading font-bold text-lg text-[#1c302b] m-0">
+                      Biểu đồ thực thu &amp; sản lượng bàn giao
+                    </h3>
+                    <p className="text-xs text-[#7e8d85] mt-0.5 mb-0">
+                      Biến động doanh thu bàn giao ({periodMetrics?.period_label || selectedDateDisplay})
+                    </p>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={() =>
+                      router.push(
+                        `/repairs?status=completed&date_type=completed_at&${periodQueryString}`
+                      )
+                    }
+                    className="inline-flex items-center gap-1 px-2.5 py-1 rounded-[7px] text-xs font-bold bg-[#f4f7f5] text-[#176b58] border border-[#d6e4dc] hover:bg-[#eaf3ee] cursor-pointer"
+                  >
+                    <span>Đối soát đơn hoàn tất</span>
+                    <Icon name="arrow" size={12} />
+                  </button>
+                </div>
+
+                {renderRevenueChart()}
+              </div>
+
+              <div className="flex flex-wrap items-center justify-between gap-3 text-xs text-[#808f87] pt-3 mt-3 border-t border-[#f0f3f1]">
+                <div className="flex items-center gap-5">
+                  <span className="flex items-center gap-1.5">
+                    <i className="w-2.5 h-2.5 rounded-full bg-[#176b58] inline-block" /> Doanh thu thực thu
+                  </span>
+                  <span className="flex items-center gap-1.5">
+                    <i className="w-2.5 h-2.5 rounded-full bg-[#bdc9c2] inline-block" /> Đơn bàn giao xong
+                  </span>
+                </div>
+                <span className="text-[11px] text-[#7c8982]">
+                  Tổng thực thu kỳ: <b className="text-[#176b58]">{formatVND(zone1CollectedRevenue)}</b>
+                </span>
+              </div>
+            </div>
+
+            {/* Cột phải (50%): Bảng Hiệu suất Nhân sự KTV / CSKH đồng bộ kỳ & phân trang gọn */}
+            <StaffPerformanceWidget
+              branchId={branchId}
+              selectedDate={selectedDate}
+              period={activePreset}
+              userRole={role}
+            />
+          </div>
+        </section>
+
+        {/* =================================================================== */}
+        {/* ZONE 2: ĐIỀU PHỐI XƯỞNG & TIỀN TỒN KHO THỜI GIAN THỰC (ALL-TIME)     */}
+        {/* =================================================================== */}
+        <section
+          data-testid="admin-zone2-live-workshop"
+          className="bg-white rounded-[14px] border border-[#e5ece8] p-5 sm:p-6 shadow-xs space-y-4"
+        >
+          <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[#f0f3f1] pb-3.5">
             <div>
-              <div className="text-xs font-bold text-[#819089] uppercase tracking-[1px] mb-1">
-                ĐỐI SOÁT VẬN HÀNH & DÒNG TIỀN
+              <div className="flex items-center gap-2 mb-1">
+                <span className="w-2 h-2 rounded-full bg-[#176b58]" />
+                <span className="text-xs font-bold text-[#819089] uppercase tracking-[1px]">
+                  TRẠM ĐIỀU PHỐI XƯỞNG &amp; DÒNG TIỀN ĐƠN ĐANG MỞ
+                </span>
               </div>
               <h3 className="font-heading font-bold text-lg text-[#1c302b] m-0">
-                Đối chiếu máy khách đã lấy vs chưa lấy
+                Tiền đang nằm tại cửa hàng &amp; Đường ống 6 bước xử lý
               </h3>
               <p className="text-xs text-[#7e8d85] mt-0.5 mb-0">
-                Cán cân doanh thu thực thu so với dòng tiền chờ thu tại quầy và thiết bị đang xử lý trong xưởng.
+                Số liệu thực tế toàn thời gian độc lập với bộ lọc ngày — khớp 100% với trang Quản lý đơn khi chọn chế độ &ldquo;Toàn bộ&rdquo;.
               </p>
             </div>
-            <div className="flex items-center gap-2">
-              <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-[#eaf4ef] text-[#176b58]">
-                <span className="w-2 h-2 rounded-full bg-[#176b58]" />
-                Tổng quan toàn quầy
-              </span>
-            </div>
+
+            <button
+              type="button"
+              onClick={() => router.push('/repairs?date_filter=all&status=open')}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-[8px] text-xs font-bold bg-[#eaf5ef] text-[#176b58] border border-[#c5e1d4] hover:bg-[#d8ede1] cursor-pointer"
+            >
+              <span>Tổng đơn đang mở: {liveOpenOrdersCount} máy</span>
+              <Icon name="arrow" size={12} />
+            </button>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-            {/* CỘT 1: Calm Jade - Máy khách đã lấy (Đã bàn giao) */}
-            <div className="bg-[#f2f8f5] border border-[#c5e1d4] rounded-[12px] p-5 flex flex-col justify-between relative overflow-hidden">
-              <div className="absolute top-0 right-0 w-28 h-28 bg-[#176b58]/5 rounded-bl-full pointer-events-none" />
-              <div>
-                <div className="flex items-center justify-between mb-3">
-                  <span className="inline-flex items-center gap-1.5 text-xs font-bold uppercase tracking-wider text-[#176b58] bg-white px-2.5 py-1 rounded-full border border-[#c5e1d4]">
-                    <span className="w-2 h-2 rounded-full bg-[#176b58]" />
-                    <span>Máy khách đã lấy (Đã bàn giao)</span>
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-5 items-stretch">
+            {/* CỘT TRÁI (1/3): TIỀN ĐANG NẰM TẠI CỬA HÀNG */}
+            <div className="lg:col-span-1 bg-[#fcfaf5] border border-[#ebd9bd] rounded-[12px] p-4 sm:p-5 flex flex-col justify-between space-y-3.5">
+              <div className="space-y-3.5">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-bold uppercase tracking-wider text-[#915e1b] flex items-center gap-1.5">
+                    <Icon name="account_balance_wallet" size={15} />
+                    <span>TIỀN ĐANG NẰM TẠI CỬA HÀNG</span>
                   </span>
-                  <span className="text-xs text-[#627a6f] font-medium">Hoàn tất quy trình</span>
+                  <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-white text-[#915e1b] border border-[#ebd9bd]">
+                    Thời gian thực
+                  </span>
                 </div>
 
-                <div className="mt-2 mb-4">
-                  <div className="flex items-baseline gap-2">
-                    {isKpiLoading ? (
-                      <span
-                        data-testid="kpi-card-loading-skeleton"
-                        className="inline-block h-9 w-16 rounded-[6px] bg-[#d5eadf] animate-pulse"
-                      />
-                    ) : (
-                      <span className="text-3xl md:text-4xl font-heading font-extrabold text-[#176b58]">
-                        {reconciliation?.handed_over_count ?? completedCount}
-                      </span>
-                    )}
-                    <span className="text-sm font-semibold text-[#406856]">máy đã giao khách</span>
+                {/* Khối 1: CHỜ KHÁCH NHẬN */}
+                <button
+                  type="button"
+                  data-testid="zone2-card-waiting-pickup"
+                  onClick={() =>
+                    router.push('/repairs?date_filter=all&status=waiting_pickup')
+                  }
+                  className="w-full text-left p-3.5 bg-white rounded-[10px] border border-[#e6d3b3] hover:border-[#176b58] transition-all cursor-pointer shadow-2xs"
+                >
+                  <div className="flex items-center justify-between mb-1">
+                    <span className="text-xs font-bold text-[#915e1b] uppercase">
+                      CHỜ KHÁCH NHẬN ({liveWaitingPickupCount} máy)
+                    </span>
+                    <Icon name="arrow" size={12} className="text-[#915e1b]" />
                   </div>
-                  <div className="mt-3 p-3 bg-white/80 rounded-[9px] border border-[#d2e8dd]">
-                    <div className="text-xs text-[#657d72] mb-0.5 font-medium">Doanh thu thực thu tích lũy toàn thời gian:</div>
-                    {isKpiLoading ? (
-                      <div className="h-7 w-40 rounded-[6px] bg-[#d5eadf] animate-pulse my-0.5" />
-                    ) : (
-                      <div className="text-xl md:text-2xl font-heading font-bold text-[#145747]">
-                        {reconciliation?.handed_over_revenue_formatted ??
-                          formatVND(reconciliation?.handed_over_revenue)}
-                      </div>
-                    )}
-                    <div className="text-[11px] text-[#718b7f] mt-1">
-                      Tích lũy toàn thời gian (tại quầy VietQR/tiền mặt & COD giao thành công)
+                  <div className="font-heading font-extrabold text-xl text-[#915e1b]">
+                    {formatVND(liveWaitingPickupUncollectedAmount)}
+                  </div>
+                  <div className="text-[11px] text-[#6d7f77] mt-1">
+                    Cần thu nốt khi khách lấy máy
+                  </div>
+                  <div className="text-[11px] text-[#8c7456] mt-1 pt-1 border-t border-[#f5eee2] font-medium">
+                    (Tổng giá: {formatVND(liveWaitingPickupTotalAmount)} - Đã thu/cọc:{' '}
+                    {formatVND(liveWaitingPickupDepositAmount)})
+                  </div>
+                </button>
+
+                {/* Khối 2: ĐANG TRONG XƯỞNG */}
+                <button
+                  type="button"
+                  data-testid="zone2-card-in-workshop"
+                  onClick={() =>
+                    router.push('/repairs?date_filter=all&status=in_workshop')
+                  }
+                  className="w-full text-left p-3.5 bg-white rounded-[10px] border border-[#dce6e0] hover:border-[#176b58] transition-all cursor-pointer shadow-2xs"
+                >
+                  <div className="flex items-center justify-between mb-1">
+                    <span className="text-xs font-bold text-[#1c302b] uppercase">
+                      ĐANG TRONG XƯỞNG ({liveInWorkshopCount} máy)
+                    </span>
+                    <Icon name="arrow" size={12} className="text-[#176b58]" />
+                  </div>
+                  <div className="font-heading font-extrabold text-xl text-[#1c302b]">
+                    {formatVND(liveInWorkshopExpectedAmount)}
+                  </div>
+                  <div className="text-[11px] text-[#6d7f77] mt-1">
+                    Dự kiến thu sau khi hoàn tất sửa chữa &amp; QC
+                  </div>
+                </button>
+              </div>
+
+              {/* Thanh tổng kết chân cột */}
+              <button
+                type="button"
+                data-testid="zone2-open-orders-footer"
+                onClick={() => router.push('/repairs?date_filter=all&status=open')}
+                className="w-full p-3 rounded-[9px] bg-[#f5ede0] hover:bg-[#ece2d1] border border-[#ebd9bd] text-left transition-colors cursor-pointer flex items-center justify-between gap-2"
+              >
+                <div className="text-xs font-bold text-[#7a4e16]">
+                  TỔNG ĐƠN ĐANG MỞ: {liveOpenOrdersCount} máy
+                  <span className="block text-[11px] font-medium text-[#8c7456] mt-0.5">
+                    ({liveInWorkshopCount} trong xưởng + {liveWaitingPickupCount} chờ nhận)
+                  </span>
+                </div>
+                <Icon name="arrow" size={13} className="text-[#7a4e16] flex-none" />
+              </button>
+            </div>
+
+            {/* CỘT PHẢI (2/3): ĐƯỜNG ỐNG 6 BƯỚC XỬ LÝ (PIPELINE) */}
+            <div className="lg:col-span-2 bg-[#fafcfa] border border-[#e5ece8] rounded-[12px] p-4 sm:p-5 flex flex-col justify-between space-y-4">
+              <div>
+                <div className="flex flex-wrap items-center justify-between gap-2 mb-3.5">
+                  <div>
+                    <span className="text-xs font-bold uppercase tracking-wider text-[#176b58] block">
+                      ĐƯỜNG ỐNG 6 BƯỚC XỬ LÝ (WORKSHOP PIPELINE)
+                    </span>
+                    <span className="text-xs text-[#6d7f77]">
+                      Tổng đơn đang mở: <b className="text-[#1c302b]">{liveOpenOrdersCount} máy</b> — Bấm vào từng khâu để lọc ngay danh sách đơn tương ứng
+                    </span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => router.push('/repairs?date_filter=all&status=open')}
+                    className="inline-flex items-center gap-1 text-xs font-bold text-[#176b58] hover:text-[#115042] cursor-pointer"
+                  >
+                    <span>Xem tất cả</span>
+                    <Icon name="arrow" size={12} />
+                  </button>
+                </div>
+
+                {/* 6 Thanh tiến độ tương tác */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  {pipelineSteps.map((step) => {
+                    const pct =
+                      liveOpenOrdersCount > 0
+                        ? Math.min(100, Math.round((step.count / liveOpenOrdersCount) * 100))
+                        : 0;
+                    return (
+                      <button
+                        key={step.key}
+                        type="button"
+                        data-testid={`zone2-pipeline-${step.key}`}
+                        onClick={() => router.push(step.href)}
+                        className="p-3 rounded-[10px] bg-white border border-[#e5ece8] hover:border-[#176b58] transition-all text-left cursor-pointer group"
+                      >
+                        <div className="flex items-center justify-between gap-2 mb-2">
+                          <div className="flex items-center gap-2 min-w-0">
+                            <span
+                              className={`w-7 h-7 rounded-[7px] grid place-items-center flex-none ${step.badgeBg}`}
+                            >
+                              <Icon name={step.icon} size={14} />
+                            </span>
+                            <span className="text-xs font-bold text-[#1c302b] group-hover:text-[#176b58] truncate">
+                              {step.label}
+                            </span>
+                          </div>
+                          <span className="font-heading font-extrabold text-sm text-[#1c302b] whitespace-nowrap">
+                            {step.count} đơn
+                          </span>
+                        </div>
+                        <div className="h-2 bg-[#edf2ef] rounded-full overflow-hidden">
+                          <div
+                            className={`h-full rounded-full transition-all ${step.barColor}`}
+                            style={{ width: `${pct}%` }}
+                          />
+                        </div>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Thanh cảnh báo đỏ ở đáy cho đơn Quá hạn > 24h */}
+              <div
+                data-testid="zone2-overdue-banner"
+                className={`p-3.5 rounded-[10px] border flex flex-wrap items-center justify-between gap-3 ${
+                  liveOverdueCount > 0
+                    ? 'bg-[#fbefed] border-[#f5c7c2]'
+                    : 'bg-[#eaf5ef] border-[#c5e1d4]'
+                }`}
+              >
+                <div className="flex items-center gap-2.5">
+                  <span
+                    className={`w-8 h-8 rounded-[8px] grid place-items-center flex-none ${
+                      liveOverdueCount > 0
+                        ? 'bg-white text-[#bc5b52] border border-[#f5c7c2]'
+                        : 'bg-white text-[#176b58] border border-[#c5e1d4]'
+                    }`}
+                  >
+                    <Icon name={liveOverdueCount > 0 ? 'alert' : 'check'} size={16} />
+                  </span>
+                  <div>
+                    <div
+                      className={`text-xs font-extrabold uppercase tracking-wide ${
+                        liveOverdueCount > 0 ? 'text-[#bc5b52]' : 'text-[#176b58]'
+                      }`}
+                    >
+                      {liveOverdueCount > 0
+                        ? `CẢNH BÁO ĐỎ: ${liveOverdueCount} đơn Quá hạn >24h trong xưởng`
+                        : 'ĐÚNG TIẾN ĐỘ: Không có đơn hàng nào quá hạn >24h'}
+                    </div>
+                    <div className="text-[11px] text-[#5e6f67]">
+                      {liveOverdueCount > 0
+                        ? 'Các thiết bị lưu xưởng quá 24h chưa hoàn tất sửa chữa cần ưu tiên can thiệp ngay.'
+                        : 'Toàn bộ thiết bị đang sửa trong xưởng đều nằm trong thời gian cam kết.'}
                     </div>
                   </div>
                 </div>
-              </div>
 
-              <div className="pt-3 border-t border-[#d5eadf]">
                 <button
                   type="button"
                   onClick={() =>
                     router.push(
-                      `/repairs?date=${selectedDate}&date_type=completed_at&status=completed`
+                      '/repairs?date_filter=all&status=in_workshop&workshop_step=overdue'
                     )
                   }
-                  className="w-full py-2.5 px-3 bg-[#176b58] hover:bg-[#135a4a] text-white text-xs font-bold rounded-[8px] transition-all flex items-center justify-center gap-1.5 cursor-pointer shadow-xs"
+                  className={`px-3.5 py-2 rounded-[8px] text-xs font-bold inline-flex items-center gap-1.5 cursor-pointer transition-colors ${
+                    liveOverdueCount > 0
+                      ? 'bg-[#bc5b52] hover:bg-[#a64b43] text-white'
+                      : 'bg-white text-[#176b58] border border-[#c5e1d4] hover:bg-[#eff6f2]'
+                  }`}
                 >
-                  <span>Xem danh sách máy đã bàn giao</span>
-                  <Icon name="arrow" size={14} />
-                </button>
-              </div>
-            </div>
-
-            {/* CỘT 2: Warm Ivory / Amber - Máy khách chưa lấy / dòng tiền chưa thu */}
-            <div className="bg-[#fcfaf5] border border-[#ebd9bd] rounded-[12px] p-5 flex flex-col justify-between relative overflow-hidden">
-              <div className="absolute top-0 right-0 w-28 h-28 bg-[#d2a25d]/5 rounded-bl-full pointer-events-none" />
-              <div>
-                <div className="flex items-center justify-between mb-3">
-                  <span className="inline-flex items-center gap-1.5 text-xs font-bold uppercase tracking-wider text-[#915e1b] bg-white px-2.5 py-1 rounded-full border border-[#ebd9bd]">
-                    <span className="w-2 h-2 rounded-full bg-[#d97706]" />
-                    <span>Máy khách chưa lấy (Tại cửa hàng)</span>
-                  </span>
-                  {isKpiLoading ? (
-                    <span className="inline-block h-4 w-24 rounded bg-[#ebd9bd] animate-pulse" />
-                  ) : (
-                    <span className="text-xs text-[#8c7456] font-medium">
-                      {(reconciliation?.ready_for_pickup_count ?? 0) + (reconciliation?.in_workshop_count ?? 0)} máy tồn tại shop
-                    </span>
-                  )}
-                </div>
-
-                <div className="mt-2 mb-4">
-                  <div className="flex items-baseline gap-2">
-                    {isKpiLoading ? (
-                      <span
-                        data-testid="kpi-card-loading-skeleton"
-                        className="inline-block h-9 w-16 rounded-[6px] bg-[#ebd9bd] animate-pulse"
-                      />
-                    ) : (
-                      <span className="text-3xl md:text-4xl font-heading font-extrabold text-[#915e1b]">
-                        {(reconciliation?.ready_for_pickup_count ?? 0) + (reconciliation?.in_workshop_count ?? 0)}
-                      </span>
-                    )}
-                    <span className="text-sm font-semibold text-[#8c7456]">máy chưa bàn giao</span>
-                  </div>
-
-                  {/* Card tổng kết nổi bật: TỔNG TIỀN CHƯA THU */}
-                  <div className="mt-3 p-3 bg-white/90 rounded-[9px] border border-[#ecdac1] shadow-2xs">
-                    <div className="flex items-center justify-between mb-0.5">
-                      <span className="text-xs font-bold uppercase tracking-wider text-[#915e1b]">
-                        Tổng tiền chưa thu:
-                      </span>
-                      <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-[#fbf3e5] text-[#915e1b] border border-[#ebd9bd]">
-                        Chờ thu & dở dang
-                      </span>
-                    </div>
-                    {isKpiLoading ? (
-                      <div className="h-7 w-40 rounded-[6px] bg-[#ebd9bd] animate-pulse my-0.5" />
-                    ) : (
-                      /* Đơn bàn giao chưa thu đủ */
-                      <div className="text-xl md:text-2xl font-heading font-bold text-[#915e1b]">
-                        {reconciliation?.total_uncollected_amount_formatted ||
-                          kpiData?.accounts_receivable_formatted ||
-                          formatVND(
-                            reconciliation?.total_uncollected_amount ??
-                              (reconciliation?.ready_for_pickup_amount || 0) +
-                                (reconciliation?.in_workshop_amount || 0)
-                          )}
-                      </div>
-                    )}
-                    <div className="text-[11px] text-[#a48a6e] mt-1">
-                      Bao gồm tiền chắc chắn thu khi giao và giá trị công dở dang trong xưởng
-                    </div>
-                  </div>
-
-                  {/* 2 dòng phân rã chi tiết theo Phương án A */}
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-3">
-                    {/* Dòng 1: Đã sửa xong chờ lấy / Chờ giao */}
-                    <div
-                      onClick={() => router.push('/repairs?status=waiting_pickup&date_filter=all')}
-                      className="p-3.5 bg-white rounded-[9px] border border-[#eddcc4] shadow-2xs cursor-pointer hover:border-[#176b58]/40 transition-colors"
-                    >
-                      <div className="flex items-center justify-between mb-1.5">
-                        <span className="text-xs font-bold text-[#915e1b]">Đã sửa xong chờ lấy / Chờ giao</span>
-                        {isKpiLoading ? (
-                          <span className="inline-block h-4 w-12 rounded-full bg-[#f0ece3] animate-pulse" />
-                        ) : (
-                          <span className="px-2 py-0.5 rounded-full text-[11px] font-bold bg-[#fbf3e5] text-[#915e1b]">
-                            {reconciliation?.ready_for_pickup_count ?? 0} máy
-                          </span>
-                        )}
-                      </div>
-                      <div className="text-xs text-[#7e8e86] mb-0.5">Tiền chắc chắn thu khi giao:</div>
-                      {isKpiLoading ? (
-                        <div className="h-6 w-28 rounded-[6px] bg-[#f0ece3] animate-pulse my-0.5" />
-                      ) : (
-                        <div className="text-lg font-heading font-bold text-[#915e1b]">
-                          {reconciliation?.ready_for_pickup_amount_formatted ??
-                            formatVND(reconciliation?.ready_for_pickup_amount)}
-                        </div>
-                      )}
-                      <div className="text-[11px] text-[#a48a6e] mt-1">
-                        Trạng thái: Sẵn sàng trả / Chờ nhận
-                      </div>
-                    </div>
-
-                    {/* Dòng 2: Đang sửa trong xưởng */}
-                    <div
-                      onClick={() => router.push('/repairs?status=in_workshop&date_filter=all')}
-                      className="p-3.5 bg-white rounded-[9px] border border-[#e5ece8] shadow-2xs cursor-pointer hover:border-[#d97706]/40 transition-colors"
-                    >
-                      <div className="flex items-center justify-between mb-1.5">
-                        <span className="text-xs font-bold text-[#2d3d35]">Đang sửa trong xưởng</span>
-                        {isKpiLoading ? (
-                          <span className="inline-block h-4 w-12 rounded-full bg-[#edf4f0] animate-pulse" />
-                        ) : (
-                          <span className="px-2 py-0.5 rounded-full text-[11px] font-bold bg-[#edf5f0] text-[#176b58]">
-                            {reconciliation?.in_workshop_count ?? 0} máy
-                          </span>
-                        )}
-                      </div>
-                      <div className="text-xs text-[#7e8e86] mb-0.5">Giá trị tạm tính dở dang:</div>
-                      {isKpiLoading ? (
-                        <div className="h-6 w-28 rounded-[6px] bg-[#edf4f0] animate-pulse my-0.5" />
-                      ) : (
-                        <div className="text-lg font-heading font-bold text-[#2d3d35]">
-                          {reconciliation?.in_workshop_amount_formatted ??
-                            formatVND(reconciliation?.in_workshop_amount)}
-                        </div>
-                      )}
-                      <div className="text-[11px] text-[#7e8e86] mt-1">
-                        Đang khám / chờ linh kiện / sửa / QC
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              <div className="pt-3 border-t border-[#ede2ce]">
-                <button
-                  type="button"
-                  onClick={() => router.push('/repairs?status=open&date_filter=all')}
-                  className="w-full py-2.5 px-3 bg-[#f5ede0] hover:bg-[#ece2d1] text-[#7a4e16] text-xs font-bold rounded-[8px] transition-all flex items-center justify-center gap-1.5 cursor-pointer border border-[#ebd9bd]"
-                >
-                  <span>Xem danh sách đơn chưa giao tại shop</span>
-                  <Icon name="arrow" size={14} />
+                  <span>Xử lý ngay</span>
+                  <Icon name="arrow" size={12} />
                 </button>
               </div>
             </div>
           </div>
-        </div>
-      )}
+        </section>
 
-      {/* [MỚI] KHU VỰC D & F: HIỆU SUẤT NHÂN SỰ & TÓM TẮT CA TRỰC SỔ QUỸ */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
-        <div className="lg:col-span-2">
-          <StaffPerformanceWidget
-            branchId={branchId}
-            selectedDate={selectedDate}
-            period={period}
-            userRole={role}
-          />
-        </div>
-        <div className="lg:col-span-1">
-          <ShiftCashbookSnapshot branchId={branchId} />
-        </div>
+        {/* =================================================================== */}
+        {/* ZONE 3: BÀN XỬ LÝ NGOẠI LỆ (ACTIONABLE TASKS CENTER — 1 BẢNG DUY NHẤT) */}
+        {/* =================================================================== */}
+        <ActionableTasksCenter
+          actionableTasks={kpiData?.actionable_tasks}
+          isLoading={isKpiLoading}
+          onOpenOrderDetail={handleOpenOrderDetail}
+          onOpenCheckout={handleOpenCheckout}
+          onNavigate={(path) => router.push(path)}
+        />
       </div>
-
-      {/* Khối Không gian Kỹ thuật - Máy chưa xong chi tiết */}
-      <div className="bg-white rounded-[12px] border border-[#e5ece8] p-5 sm:p-6 shadow-xs">
-        <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
-          <div className="flex items-center gap-3">
-            <span className="w-8 h-8 rounded-[8px] bg-[#eaf4ef] text-[#176b58] grid place-items-center flex-none">
-              <Icon name="wrench" size={17} />
-            </span>
-            <div>
-              <h3 className="font-heading font-bold text-base text-[#1c302b] m-0">
-                Không gian Kỹ thuật - Máy chưa xong chi tiết
-              </h3>
-              <p className="text-xs text-[#809088] mt-0.5 mb-0">
-                Danh sách các thiết bị đang xử lý dở dang tại xưởng ({unfinishedTechOrders.length} máy)
-              </p>
-            </div>
-          </div>
-          <Button
-            variant="secondary"
-            size="sm"
-            onClick={() => router.push('/tech')}
-            className="flex items-center gap-1.5"
-          >
-            <span>Mở Không gian Kỹ thuật</span>
-            <span>↗</span>
-          </Button>
-        </div>
-
-        {unfinishedTechOrders.length === 0 ? (
-          <div className="p-8 text-center rounded-[10px] border border-dashed border-[#d8e3dc] bg-[#fafcfa] text-xs text-[#667a70]">
-            Không có máy nào đang xử lý dở dang tại xưởng. Tất cả đơn đã được hoàn tất hoặc chuyển sang các khâu tiếp theo.
-          </div>
-        ) : (
-          <div className="overflow-x-auto -mx-5 sm:mx-0">
-            <table className="w-full text-left border-collapse min-w-[760px]">
-              <thead>
-                <tr className="border-y border-[#f0f3f1] bg-[#fafbfa] text-xs font-bold text-[#809088] uppercase tracking-wider h-9">
-                  <th className="px-4">Mã đơn</th>
-                  <th className="px-4">Khách hàng</th>
-                  <th className="px-4">Thiết bị</th>
-                  <th className="px-4">KTV phụ trách</th>
-                  <th className="px-4">Trạng thái</th>
-                  <th className="px-4 text-right">Thời gian lưu tại xưởng</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-[#f1f3f2] text-sm">
-                {unfinishedTechOrders.map((o, i) => (
-                  <tr
-                    key={o.id}
-                    onClick={() => handleOpenOrderDetail(o.id)}
-                    className="h-12 hover:bg-[#fafcfa] cursor-pointer transition-colors"
-                  >
-                    <td className="px-4 font-mono font-bold text-[#176b58]">{o.id}</td>
-                    <td className="px-4">
-                      <div className="flex items-center gap-2">
-                        <Avatar initials={o.name} variant={(i % 4) as any} size="sm" />
-                        <div>
-                          <span className="font-semibold text-[#273730] block">{o.name}</span>
-                          {o.phone && <span className="font-mono text-xs text-[#7e8e86]">{o.phone}</span>}
-                        </div>
-                      </div>
-                    </td>
-                    <td className="px-4 font-medium text-[#4b5b53]">{o.device}</td>
-                    <td className="px-4">
-                      <span className="inline-flex items-center gap-1.5 font-medium text-[#2d3d35] text-xs">
-                        <span className="w-2 h-2 rounded-full bg-[#176b58]" />
-                        {o.tech || 'Chưa phân công'}
-                      </span>
-                    </td>
-                    <td className="px-4">
-                      <StatusTag label={o.status} type={o.statusType} />
-                    </td>
-                    <td className="px-4 text-right font-mono text-xs text-[#52635a] font-semibold">
-                      {formatWorkshopDuration(o.createdAt || o.date)}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </div>
-
-      {/* Recent Orders table preview */}
-      <div className="bg-white rounded-[12px] border border-[#e5ece8] p-5 sm:p-6 shadow-xs">
-        <div className="flex items-center justify-between mb-4">
-          <div className="flex items-center gap-3">
-            <h3 className="font-heading font-bold text-base text-[#1c302b] m-0">
-              Đơn sửa chữa gần đây
-            </h3>
-            <span className="text-xs text-[#7e8e86] bg-[#f0f4f2] px-2.5 py-0.5 rounded-[10px] font-medium">
-              {branchOrders.slice(0, 5).length} đơn mới
-            </span>
-          </div>
-          <Button variant="secondary" size="sm" onClick={() => router.push('/repairs')}>
-            Xem tất cả đơn ↗
-          </Button>
-        </div>
-
-        <div className="overflow-x-auto -mx-5 sm:mx-0">
-          <table className="w-full text-left border-collapse min-w-[700px]">
-            <thead>
-              <tr className="border-y border-[#f0f3f1] bg-[#fafbfa] text-xs font-bold text-[#809088] uppercase tracking-wider h-9">
-                <th className="px-4">Mã đơn</th>
-                <th className="px-4">Khách hàng</th>
-                <th className="px-4">Thiết bị</th>
-                <th className="px-4">Trạng thái</th>
-                <th className="px-4">Chi phí</th>
-                <th className="px-4">Kỹ thuật</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-[#f1f3f2] text-sm">
-              {branchOrders.slice(0, 5).map((o, i) => (
-                <tr
-                  key={o.id}
-                  onClick={() => handleOpenOrderDetail(o.id)}
-                  className="h-12 hover:bg-[#fafcfa] cursor-pointer transition-colors"
-                >
-                  <td className="px-4 font-mono font-bold text-[#176b58]">{o.id}</td>
-                  <td className="px-4">
-                    <div className="flex items-center gap-2">
-                      <Avatar initials={o.name} variant={(i % 4) as any} size="sm" />
-                      <span className="font-semibold text-[#273730]">{o.name}</span>
-                    </div>
-                  </td>
-                  <td className="px-4 font-medium text-[#4b5b53]">{o.device}</td>
-                  <td className="px-4">
-                    <StatusTag label={o.status} type={o.statusType} />
-                  </td>
-                  <td className="px-4 font-semibold text-[#405048]">{moneyFormatted(o.price)}</td>
-                  <td className="px-4 text-[#667770]">{o.tech}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </div>
-
-      {/* Quick shortcuts */}
-      <div className="bg-white rounded-[12px] border border-[#e5ece8] p-5 sm:p-6 shadow-xs">
-        <h3 className="font-heading font-bold text-base text-[#1c302b] mb-4">
-          Thao tác nhanh
-        </h3>
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-          <button
-            onClick={() => setIntakeModalOpen(true)}
-            className="p-3.5 rounded-[10px] border border-[#edf1ee] bg-white hover:bg-[#f7faf8] hover:border-[#b4d6c4] flex items-center gap-3 text-left transition-all"
-          >
-            <div className="w-9 h-9 rounded-[8px] bg-[#eaf4ef] text-[#176b58] grid place-items-center flex-none">
-              <Icon name="plus" size={18} />
-            </div>
-            <div>
-              <b className="text-sm text-[#1c302b] block font-bold">Tạo đơn mới</b>
-              <small className="text-xs text-[#87968f]">Tiếp nhận thiết bị</small>
-            </div>
-          </button>
-
-          <button
-            onClick={() => router.push('/qc')}
-            className="p-3.5 rounded-[10px] border border-[#edf1ee] bg-white hover:bg-[#f7faf8] hover:border-[#b4d6c4] flex items-center gap-3 text-left transition-all"
-          >
-            <div className="w-9 h-9 rounded-[8px] bg-[#eaf4ef] text-[#176b58] grid place-items-center flex-none">
-              <Icon name="check" size={18} />
-            </div>
-            <div>
-              <b className="text-sm text-[#1c302b] block font-bold">Kiểm định QC</b>
-              <small className="text-xs text-[#87968f]">Thẩm định chất lượng</small>
-            </div>
-          </button>
-
-          <button
-            onClick={() => router.push('/track')}
-            className="p-3.5 rounded-[10px] border border-[#edf1ee] bg-white hover:bg-[#f7faf8] hover:border-[#b4d6c4] flex items-center gap-3 text-left transition-all"
-          >
-            <div className="w-9 h-9 rounded-[8px] bg-[#eaf4ef] text-[#176b58] grid place-items-center flex-none">
-              <Icon name="search" size={18} />
-            </div>
-            <div>
-              <b className="text-sm text-[#1c302b] block font-bold">Tra cứu đơn</b>
-              <small className="text-xs text-[#87968f]">Dành cho khách hàng</small>
-            </div>
-          </button>
-        </div>
-      </div>
-    </div>
-  );
+    );
+  };
 
   /* ========================================================================= */
   /* CSKH DASHBOARD VIEW                                                       */
@@ -2943,501 +2276,7 @@ export default function DashboardPage() {
           }}
         />
       )}
-
-      {/* Customer Revenue & Debt Drill-Down Modal (Admin 4 Top Financial Cards) */}
-      <Modal
-        isOpen={drilldownModalOpen}
-        onClose={() => setDrilldownModalOpen(false)}
-        maxWidth="2xl"
-        eyebrow="FIXO · ĐỐI SOÁT DOANH THU & CÔNG NỢ KHÁCH HÀNG"
-        title={
-          drilldownPeriod === 'month'
-            ? `Chi tiết Doanh thu & Công nợ Khách hàng — ${selectedMonthLabel}`
-            : `Chi tiết Doanh thu & Công nợ Khách hàng — Ngày ${selectedDateDisplay}`
-        }
-        subtitle="Đối chiếu đầy đủ từng đồng: Tổng phát sinh = Thực thu (Tiền mặt + Chuyển khoản) + Công nợ chưa thu."
-        footer={
-          <div className="flex flex-wrap items-center justify-between gap-2.5 w-full">
-            <div className="text-xs text-[#64786e]">
-              Đang hiển thị <b>{filteredAndSortedDrilldownItems.length}</b> / <b>{activeDrilldownRawItems.length}</b> đơn máy đã xong
-            </div>
-            <div className="flex items-center gap-2">
-              <Button
-                variant="secondary"
-                size="md"
-                onClick={() => setDrilldownModalOpen(false)}
-              >
-                Đóng
-              </Button>
-            </div>
-          </div>
-        }
-      >
-        <div data-testid="revenue-debt-drilldown-modal" className="space-y-4">
-          {/* Thanh chuyển đổi nhanh Kỳ xem: [ Theo Tháng ] / [ Theo Ngày chọn ] */}
-          <div className="flex flex-wrap items-center justify-between gap-3 bg-[#f7faf8] border border-[#dce8e1] rounded-[10px] p-3">
-            <div className="flex items-center gap-2 text-xs font-semibold text-[#2d3d35]">
-              <span className="w-2 h-2 rounded-full bg-[#176b58]" />
-              <span>
-                {drilldownPeriod === 'month'
-                  ? `Chi tiết Doanh thu & Công nợ Khách hàng — ${selectedMonthLabel}`
-                  : `Chi tiết Doanh thu & Công nợ Khách hàng — Ngày ${selectedDateDisplay}`}
-              </span>
-            </div>
-            <div className="flex items-center gap-2">
-              <button
-                type="button"
-                data-testid="drilldown-period-month"
-                onClick={() => setDrilldownPeriod('month')}
-                className={`px-3 py-1.5 rounded-[8px] text-xs font-bold transition-all cursor-pointer ${
-                  drilldownPeriod === 'month'
-                    ? 'bg-[#176b58] text-white shadow-xs'
-                    : 'bg-white text-[#52635a] border border-[#d6e2db] hover:bg-[#edf4f0]'
-                }`}
-              >
-                Theo Tháng ({selectedMonthLabel})
-              </button>
-              <button
-                type="button"
-                data-testid="drilldown-period-day"
-                onClick={() => setDrilldownPeriod('day')}
-                className={`px-3 py-1.5 rounded-[8px] text-xs font-bold transition-all cursor-pointer ${
-                  drilldownPeriod === 'day'
-                    ? 'bg-[#176b58] text-white shadow-xs'
-                    : 'bg-white text-[#52635a] border border-[#d6e2db] hover:bg-[#edf4f0]'
-                }`}
-              >
-                Theo Ngày chọn ({selectedDateDisplay})
-              </button>
-            </div>
-          </div>
-
-          {/* TẦNG 1: Thanh 3 ô tổng hợp dòng tiền của kỳ đang xem (Số tiền đầy đủ từng đồng) */}
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-3.5">
-            {/* 1. Tổng phát sinh (Máy đã xong) */}
-            <div className="p-4 rounded-[12px] bg-[#f2f8f5] border border-[#c5e1d4] flex flex-col justify-between">
-              <div className="flex items-center justify-between text-xs font-bold uppercase tracking-wider text-[#176b58]">
-                <span>Tổng phát sinh (Máy đã xong)</span>
-                {isKpiLoading ? (
-                  <span className="h-5 w-14 rounded-full bg-[#d5eadf] animate-pulse" />
-                ) : (
-                  <span className="px-2 py-0.5 rounded-full bg-white text-[#176b58] border border-[#c5e1d4]">
-                    {periodOrdersCount} đơn
-                  </span>
-                )}
-              </div>
-              {isKpiLoading ? (
-                <div data-testid="kpi-card-loading-skeleton" className="h-8 w-36 rounded-[6px] bg-[#d5eadf] animate-pulse my-2" />
-              ) : (
-                <div className="font-heading font-extrabold text-xl sm:text-2xl text-[#176b58] my-2">
-                  {formatVND(periodTotal)}
-                </div>
-              )}
-              <div className="text-xs text-[#406856] font-medium">
-                Tổng giá trị các đơn đã hoàn tất sửa chữa trong kỳ
-              </div>
-            </div>
-
-            {/* 2. Thực thu (Đã thanh toán) */}
-            <div className="p-4 rounded-[12px] bg-white border border-[#c5e1d4] flex flex-col justify-between">
-              <div className="flex items-center justify-between text-xs font-bold uppercase tracking-wider text-[#287452]">
-                <span>Thực thu (Đã thanh toán)</span>
-                <Icon name="check" size={15} className="text-[#176b58]" />
-              </div>
-              {isKpiLoading ? (
-                <div data-testid="kpi-card-loading-skeleton" className="h-8 w-36 rounded-[6px] bg-[#e5ece8] animate-pulse my-2" />
-              ) : (
-                <div className="font-heading font-extrabold text-xl sm:text-2xl text-[#1c302b] my-2">
-                  {formatVND(periodCollected)}
-                </div>
-              )}
-              <div className="text-xs text-[#52635a] font-medium flex flex-wrap items-center gap-x-2 gap-y-1">
-                {isKpiLoading ? (
-                  <span className="h-4 w-48 rounded bg-[#edf4f0] animate-pulse" />
-                ) : (
-                  <>
-                    <span>Tiền mặt: <b className="text-[#176b58]">{formatVND(periodCashAmount)}</b></span>
-                    <span>·</span>
-                    <span>Chuyển khoản: <b className="text-[#176b58]">{formatVND(periodTransferAmount)}</b></span>
-                  </>
-                )}
-              </div>
-            </div>
-
-            {/* 3. Công nợ chưa thu */}
-            <div
-              className={`p-4 rounded-[12px] border flex flex-col justify-between ${
-                !isKpiLoading && periodUncollected > 0
-                  ? 'bg-[#fcfaf5] border-[#ebd9bd]'
-                  : 'bg-white border-[#e5ece8]'
-              }`}
-            >
-              <div className="flex items-center justify-between text-xs font-bold uppercase tracking-wider text-[#915e1b]">
-                <span>Công nợ chưa thu</span>
-                {/* Badge: {periodUncollectedCount} ĐƠN CHỜ KHÁCH NHẬN */}
-                {isKpiLoading ? (
-                  <span className="h-5 w-28 rounded-full bg-[#f0ece3] animate-pulse" />
-                ) : (
-                  <span className="px-2 py-0.5 rounded-full bg-[#fbf3e5] text-[#915e1b] border border-[#ebd9bd]">
-                    {periodUncollectedCount} đơn chờ khách nhận
-                  </span>
-                )}
-              </div>
-              {isKpiLoading ? (
-                <div data-testid="kpi-card-loading-skeleton" className="h-8 w-36 rounded-[6px] bg-[#f0ece3] animate-pulse my-2" />
-              ) : (
-                <div
-                  className={`font-heading font-extrabold text-xl sm:text-2xl my-2 ${
-                    periodUncollected > 0 ? 'text-[#bc5b52]' : 'text-[#1c302b]'
-                  }`}
-                >
-                  {formatVND(periodUncollected)}
-                </div>
-              )}
-              <div className="text-xs text-[#8c6527] font-medium">
-                Chênh lệch Tổng phát sinh trừ Thực thu trong kỳ
-              </div>
-            </div>
-          </div>
-
-          {/* TẦNG 2: Thanh lọc (Tất cả / Đã thực thu / Còn nợ chưa thu) & Tìm kiếm */}
-          <div className="flex flex-wrap items-center justify-between gap-3 bg-white border border-[#e5ece8] rounded-[10px] p-3">
-            <div className="flex flex-wrap items-center gap-1.5">
-              <button
-                type="button"
-                data-testid="drilldown-tab-all"
-                onClick={() => setDrilldownFilter('all')}
-                className={`px-3 py-1.5 rounded-[8px] text-xs font-bold transition-all cursor-pointer ${
-                  drilldownFilter === 'all'
-                    ? 'bg-[#176b58] text-white shadow-xs'
-                    : 'bg-[#f4f7f5] text-[#52635a] hover:bg-[#e8efeb]'
-                }`}
-              >
-                Tất cả ({activeDrilldownRawItems.length})
-              </button>
-              <button
-                type="button"
-                data-testid="drilldown-tab-collected"
-                onClick={() => setDrilldownFilter('collected')}
-                className={`px-3 py-1.5 rounded-[8px] text-xs font-bold transition-all cursor-pointer ${
-                  drilldownFilter === 'collected'
-                    ? 'bg-[#176b58] text-white shadow-xs'
-                    : 'bg-[#f4f7f5] text-[#52635a] hover:bg-[#e8efeb]'
-                }`}
-              >
-                Đã thực thu (
-                {
-                  activeDrilldownRawItems.filter(
-                    (i) =>
-                      normalizeStatusCode(i.status) === 'completed' ||
-                      i.status === 'Hoàn tất' ||
-                      Number(i.collected_amount || 0) > 0
-                  ).length
-                }
-                )
-              </button>
-              <button
-                type="button"
-                data-testid="drilldown-tab-uncollected"
-                onClick={() => setDrilldownFilter('uncollected')}
-                className={`px-3 py-1.5 rounded-[8px] text-xs font-bold transition-all cursor-pointer ${
-                  drilldownFilter === 'uncollected'
-                    ? 'bg-[#bc5b52] text-white shadow-xs'
-                    : 'bg-[#fcf4f2] text-[#bc5b52] border border-[#f5c7c2] hover:bg-[#fbefed]'
-                }`}
-              >
-                Còn nợ chưa thu (
-                {
-                  activeDrilldownRawItems.filter(
-                    (i) =>
-                      (normalizeStatusCode(i.status) !== 'completed' && i.status !== 'Hoàn tất') ||
-                      Number(i.uncollected_amount || 0) > 0
-                  ).length
-                }
-                )
-              </button>
-            </div>
-
-            <div className="relative flex-1 min-w-[220px] max-w-[340px]">
-              <input
-                type="text"
-                data-testid="drilldown-search-input"
-                value={drilldownSearch}
-                onChange={(e) => setDrilldownSearch(e.target.value)}
-                placeholder="Tìm tên khách hàng, SĐT, mã đơn, thiết bị..."
-                className="w-full text-xs border border-[#dce6e0] bg-[#fafcfa] text-[#1c302b] rounded-[8px] pl-3 pr-8 py-2 outline-none focus:border-[#176b58] focus:bg-white transition-all"
-              />
-              {drilldownSearch && (
-                <button
-                  type="button"
-                  onClick={() => setDrilldownSearch('')}
-                  className="absolute right-2.5 top-1/2 -translate-y-1/2 text-xs text-[#7c8c84] hover:text-[#1c302b] cursor-pointer"
-                >
-                  ×
-                </button>
-              )}
-            </div>
-          </div>
-
-          {/* TẦNG 3: Bảng chi tiết theo từng Khách hàng & Đơn máy (Click tiêu đề cột để sắp xếp asc/desc) */}
-          {isKpiLoading ? (
-            <div
-              data-testid="kpi-card-loading-skeleton"
-              className="p-4 rounded-[12px] border border-[#e5ece8] bg-white space-y-3"
-            >
-              {[1, 2, 3].map((row) => (
-                <div
-                  key={row}
-                  className="flex items-center justify-between gap-4 py-2 border-b border-[#f1f3f2] last:border-b-0"
-                >
-                  <div className="flex items-center gap-2.5">
-                    <div className="w-8 h-8 rounded-full bg-[#e5ece8] animate-pulse" />
-                    <div className="space-y-1.5">
-                      <div className="h-3.5 w-32 rounded bg-[#e5ece8] animate-pulse" />
-                      <div className="h-3 w-24 rounded bg-[#edf4f0] animate-pulse" />
-                    </div>
-                  </div>
-                  <div className="h-4 w-28 rounded bg-[#edf4f0] animate-pulse" />
-                  <div className="h-4 w-20 rounded bg-[#e5ece8] animate-pulse" />
-                  <div className="h-4 w-20 rounded bg-[#edf4f0] animate-pulse" />
-                  <div className="h-6 w-24 rounded bg-[#f0ece3] animate-pulse" />
-                </div>
-              ))}
-            </div>
-          ) : filteredAndSortedDrilldownItems.length === 0 ? (
-            <div className="p-8 rounded-[12px] border border-dashed border-[#d8e3dc] bg-[#fafcfa] text-center text-xs text-[#667a70]">
-              Không có đơn hàng nào khớp với bộ lọc hiện tại trong kỳ đang chọn.
-            </div>
-          ) : (
-            <div className="overflow-x-auto border border-[#e5ece8] rounded-[12px] bg-white">
-              <table className="w-full text-left border-collapse min-w-[820px]">
-                <thead>
-                  <tr className="border-b border-[#e5ece8] bg-[#fafbfa] text-[11px] font-bold text-[#687871] uppercase tracking-wider h-10 select-none">
-                    <th
-                      data-testid="drilldown-sort-customer"
-                      onClick={() => handleDrilldownSort('customer')}
-                      className="px-4 cursor-pointer hover:text-[#176b58] transition-colors"
-                    >
-                      <span className="inline-flex items-center gap-1">
-                        <span>Khách hàng & Liên hệ</span>
-                        <span>
-                          {drilldownSortKey === 'customer'
-                            ? drilldownSortDir === 'asc'
-                              ? '▲'
-                              : '▼'
-                            : '↕'}
-                        </span>
-                      </span>
-                    </th>
-                    <th
-                      data-testid="drilldown-sort-order"
-                      onClick={() => handleDrilldownSort('order')}
-                      className="px-4 cursor-pointer hover:text-[#176b58] transition-colors"
-                    >
-                      <span className="inline-flex items-center gap-1">
-                        <span>Đơn & Thiết bị</span>
-                        <span>
-                          {drilldownSortKey === 'order'
-                            ? drilldownSortDir === 'asc'
-                              ? '▲'
-                              : '▼'
-                            : '↕'}
-                        </span>
-                      </span>
-                    </th>
-                    <th
-                      data-testid="drilldown-sort-total"
-                      onClick={() => handleDrilldownSort('total')}
-                      className="px-4 text-right cursor-pointer hover:text-[#176b58] transition-colors"
-                    >
-                      <span className="inline-flex items-center justify-end gap-1">
-                        <span>Tổng đơn</span>
-                        <span>
-                          {drilldownSortKey === 'total'
-                            ? drilldownSortDir === 'asc'
-                              ? '▲'
-                              : '▼'
-                            : '↕'}
-                        </span>
-                      </span>
-                    </th>
-                    <th
-                      data-testid="drilldown-sort-collected"
-                      onClick={() => handleDrilldownSort('collected')}
-                      className="px-4 text-right cursor-pointer hover:text-[#176b58] transition-colors"
-                    >
-                      <span className="inline-flex items-center justify-end gap-1">
-                        <span>Thực thu</span>
-                        <span>
-                          {drilldownSortKey === 'collected'
-                            ? drilldownSortDir === 'asc'
-                              ? '▲'
-                              : '▼'
-                            : '↕'}
-                        </span>
-                      </span>
-                    </th>
-                    <th
-                      data-testid="drilldown-sort-uncollected"
-                      onClick={() => handleDrilldownSort('uncollected')}
-                      className="px-4 text-right cursor-pointer hover:text-[#176b58] transition-colors"
-                    >
-                      <span className="inline-flex items-center justify-end gap-1">
-                        <span>Còn nợ chưa thu</span>
-                        <span>
-                          {drilldownSortKey === 'uncollected'
-                            ? drilldownSortDir === 'asc'
-                              ? '▲'
-                              : '▼'
-                            : '↕'}
-                        </span>
-                      </span>
-                    </th>
-                    <th className="px-4 text-right">Thao tác</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-[#f1f3f2] text-sm">
-                  {filteredAndSortedDrilldownItems.map((item, idx) => {
-                    const isLoyal = Number(item.customer_orders_count || 1) > 1;
-                    const normStatus = normalizeStatusCode(item.status);
-                    const isHandedOver =
-                      normStatus === 'completed' || item.status === 'Hoàn tất';
-                    const uncollectedVal = Number(item.uncollected_amount || 0);
-
-                    return (
-                      <tr
-                        key={`${item.order_code || item.id}-${idx}`}
-                        className="hover:bg-[#fafcfa] transition-colors"
-                      >
-                        {/* Cột 1: Khách hàng & Liên hệ */}
-                        <td className="px-4 py-3">
-                          <div className="flex items-center gap-2.5">
-                            <Avatar
-                              initials={item.customer_name || 'KH'}
-                              variant={(idx % 4) as any}
-                              size="sm"
-                            />
-                            <div>
-                              <div className="flex items-center gap-1.5 flex-wrap">
-                                <b className="text-[#1c302b] font-semibold">
-                                  {item.customer_name || 'Khách vãng lai'}
-                                </b>
-                                <span
-                                  className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
-                                    isLoyal
-                                      ? 'bg-[#eaf4ef] text-[#176b58] border border-[#c5e1d4]'
-                                      : 'bg-[#f4f6f5] text-[#64756d]'
-                                  }`}
-                                >
-                                  {isLoyal ? 'Khách quen' : 'Khách mới'}
-                                </span>
-                              </div>
-                              <div className="text-xs font-mono text-[#6e7f77] mt-0.5">
-                                {item.customer_phone || 'Chưa cập nhật SĐT'}
-                              </div>
-                            </div>
-                          </div>
-                        </td>
-
-                        {/* Cột 2: Đơn & Thiết bị */}
-                        <td className="px-4 py-3">
-                          <div className="flex items-center gap-2 flex-wrap">
-                            <button
-                              type="button"
-                              onClick={() => {
-                                setDrilldownModalOpen(false);
-                                handleOpenOrderDetail(
-                                  String(item.order_code || item.id),
-                                  typeof item.id === 'number' ? item.id : undefined
-                                );
-                              }}
-                              className="font-mono font-bold text-xs text-[#176b58] hover:underline cursor-pointer"
-                            >
-                              {item.order_code || item.id}
-                            </button>
-                            <span
-                              className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
-                                isHandedOver
-                                  ? 'bg-[#eaf4ef] text-[#176b58]'
-                                  : 'bg-[#fbf3e5] text-[#915e1b]'
-                              }`}
-                            >
-                              {isHandedOver ? 'Đã giao máy' : 'Chờ khách lấy'}
-                            </span>
-                          </div>
-                          <div className="text-xs text-[#4b5b53] font-medium mt-0.5">
-                            {item.device_name || 'Thiết bị'}
-                          </div>
-                        </td>
-
-                        {/* Cột 3: Tổng đơn */}
-                        <td className="px-4 py-3 text-right font-mono font-bold text-[#1c302b]">
-                          {formatVND(item.total_price)}
-                        </td>
-
-                        {/* Cột 4: Thực thu */}
-                        <td className="px-4 py-3 text-right font-mono font-semibold text-[#176b58]">
-                          {formatVND(item.collected_amount)}
-                        </td>
-
-                        {/* Cột 5: Còn nợ chưa thu */}
-                        <td className="px-4 py-3 text-right">
-                          {uncollectedVal > 0 ? (
-                            <span className="inline-flex items-center px-2.5 py-1 rounded-[8px] bg-[#fbefed] border border-[#f5c7c2] text-[#bc5b52] font-mono font-extrabold text-xs">
-                              {formatVND(uncollectedVal)}
-                            </span>
-                          ) : (
-                            <span className="inline-flex items-center px-2.5 py-1 rounded-[8px] bg-[#eaf4ef] text-[#176b58] font-bold text-xs">
-                              Đã thu đủ (0 ₫)
-                            </span>
-                          )}
-                        </td>
-
-                        {/* Cột 6: Thao tác */}
-                        <td className="px-4 py-3 text-right">
-                          <div className="inline-flex items-center justify-end gap-1.5">
-                            {uncollectedVal > 0 && (
-                              <Button
-                                variant="primary"
-                                size="sm"
-                                icon="payments"
-                                data-testid={`drilldown-btn-collect-${item.order_code || item.id}`}
-                                onClick={() => {
-                                  setDrilldownModalOpen(false);
-                                  handleOpenCheckout(item);
-                                }}
-                                className="bg-[#176b58] hover:bg-[#125848] text-white font-bold text-xs"
-                              >
-                                Thu tiền
-                              </Button>
-                            )}
-                            <Button
-                              variant="secondary"
-                              size="sm"
-                              data-testid={`drilldown-btn-customer-${item.order_code || item.id}`}
-                              onClick={() => {
-                                setDrilldownModalOpen(false);
-                                router.push(
-                                  `/customers?q=${encodeURIComponent(
-                                    item.customer_phone || item.customer_name || ''
-                                  )}`
-                                );
-                              }}
-                              className="text-xs font-semibold"
-                            >
-                              Hồ sơ khách
-                            </Button>
-                          </div>
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </div>
-      </Modal>
     </AppShell>
   );
 }
+

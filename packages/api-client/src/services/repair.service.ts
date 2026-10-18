@@ -8,21 +8,41 @@ import type {
   SimpleCheckoutPayload,
   HandoverPayload,
   OrderFilterDTO,
+  OrderListMetaSummary,
+  OrderStatusCardSummary,
+  OrderWorkshopStepsSummary,
+  OrderPaginationMeta,
 } from '@podscare/types';
+
+export type {
+  OrderFilterDTO,
+  OrderListMetaSummary,
+  OrderStatusCardSummary,
+  OrderWorkshopStepsSummary,
+  OrderPaginationMeta,
+};
 
 export class RepairService {
   constructor(private http: HttpClient = defaultHttpClient) {}
 
   async getRepairs(params?: OrderFilterDTO): Promise<any> {
+    const queryParams: Record<string, string | number | boolean | undefined> = {};
+    if (params) {
+      Object.entries(params).forEach(([key, value]) => {
+        if (value !== undefined && value !== null && value !== '') {
+          queryParams[key] = value;
+        }
+      });
+      if (params.q || params.search) {
+        queryParams.q = params.q || params.search;
+      }
+    }
     return this.http.get('/api/v1/orders', {
-      params: {
-        ...params,
-        q: params?.q || params?.search,
-      },
+      params: queryParams,
     });
   }
 
-  async getOrders(params?: any): Promise<any> {
+  async getOrders(params?: OrderFilterDTO): Promise<any> {
     return this.getRepairs(params);
   }
 

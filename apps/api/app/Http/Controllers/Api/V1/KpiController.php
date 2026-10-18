@@ -38,6 +38,92 @@ class KpiController extends Controller
         $roleFilter = $request->input('role');
         $fromDate = $request->input('from_date', $request->input('date_from'));
         $toDate = $request->input('to_date', $request->input('date_to'));
+        $periodInput = $request->input('period');
+        $dateInput = $request->input('date', $request->input('target_date'));
+
+        $tz = 'Asia/Ho_Chi_Minh';
+        $today = Carbon::today($tz);
+        $refDate = $today->copy();
+
+        if ($dateInput && is_string($dateInput) && preg_match('/^\d{4}-\d{2}-\d{2}$/', $dateInput)) {
+            try {
+                $parsed = Carbon::createFromFormat('Y-m-d', $dateInput, $tz);
+                if ($parsed && $parsed->format('Y-m-d') === $dateInput) {
+                    $refDate = $parsed;
+                }
+            } catch (\Throwable $e) {
+                // Fallback to today
+            }
+        }
+
+        $periodStart = null;
+        $periodEnd = null;
+        $hasPeriodFilter = $request->filled('period') || $request->filled('date') || $request->filled('target_date') || ! empty($fromDate) || ! empty($toDate);
+
+        if ($hasPeriodFilter && $periodInput !== 'all') {
+            $effectivePeriod = $periodInput ?: ((! empty($fromDate) || ! empty($toDate)) ? 'custom' : 'today');
+            switch ($effectivePeriod) {
+                case 'today':
+                    $periodStart = $refDate->copy()->startOfDay();
+                    $periodEnd = $refDate->copy()->endOfDay();
+                    break;
+                case 'yesterday':
+                    $y = $refDate->copy()->subDay();
+                    $periodStart = $y->copy()->startOfDay();
+                    $periodEnd = $y->copy()->endOfDay();
+                    break;
+                case '3_days':
+                    $periodStart = $refDate->copy()->subDays(2)->startOfDay();
+                    $periodEnd = $refDate->copy()->endOfDay();
+                    break;
+                case '7_days':
+                    $periodStart = $refDate->copy()->subDays(6)->startOfDay();
+                    $periodEnd = $refDate->copy()->endOfDay();
+                    break;
+                case '14_days':
+                    $periodStart = $refDate->copy()->subDays(13)->startOfDay();
+                    $periodEnd = $refDate->copy()->endOfDay();
+                    break;
+                case '30_days':
+                    $periodStart = $refDate->copy()->subDays(29)->startOfDay();
+                    $periodEnd = $refDate->copy()->endOfDay();
+                    break;
+                case 'this_month':
+                    $periodStart = $refDate->copy()->startOfMonth()->startOfDay();
+                    $periodEnd = $refDate->copy()->endOfMonth()->endOfDay();
+                    break;
+                case 'custom':
+                default:
+                    if ($fromDate) {
+                        $periodStart = Carbon::parse($fromDate, $tz)->startOfDay();
+                    }
+                    if ($toDate) {
+                        $periodEnd = Carbon::parse($toDate, $tz)->endOfDay();
+                    }
+                    if (! $periodStart && ! $periodEnd) {
+                        $periodStart = $refDate->copy()->startOfDay();
+                        $periodEnd = $refDate->copy()->endOfDay();
+                    }
+                    break;
+            }
+        }
+
+        $isTimestampInPeriod = function ($timestamp) use ($periodStart, $periodEnd, $tz): bool {
+            if (! $periodStart && ! $periodEnd) {
+                return true;
+            }
+            if (! $timestamp) {
+                return false;
+            }
+            $dt = Carbon::parse($timestamp)->setTimezone($tz);
+            if ($periodStart && $dt->lt($periodStart)) {
+                return false;
+            }
+            if ($periodEnd && $dt->gt($periodEnd)) {
+                return false;
+            }
+            return true;
+        };
 
         $queryTechnicians = ! $roleFilter || $roleFilter === 'all' || in_array($roleFilter, ['technician', 'tech'], true);
         $queryCskh = ! $roleFilter || $roleFilter === 'all' || $roleFilter === 'cskh';
@@ -100,26 +186,37 @@ class KpiController extends Controller
                 $ordersQuery->where('branch_id', $branchId);
             }
 
-            if ($fromDate) {
-                $ordersQuery->whereDate('created_at', '>=', $fromDate);
-            }
-
-            if ($toDate) {
-                $ordersQuery->whereDate('created_at', '<=', $toDate);
-            }
-
             $ordersGrouped = $ordersQuery->with('qcInspections')->get()->groupBy('technician_id');
 
             foreach ($technicians as $tech) {
-                /** @var \Illuminate\Support\Collection<int, RepairOrder> $techOrders */
-                $techOrders = $ordersGrouped->get($tech->id, collect());
+                /** @var \Illuminate\Support\Collection<int, RepairOrder> $allTechOrders */
+                $allTechOrders = $ordersGrouped->get($tech->id, collect());
+
+                // Số đơn đang sửa trực tiếp tại xưởng (Live state)
+                $liveInRepairCount = $allTechOrders->whereIn('status', ['assigned', 'in_repair', 'waiting_parts', 'waiting_qc'])->count();
+
+                // Tập đơn trong kỳ đã chọn:
+                // - Đơn completed: xét theo COALESCE(handed_over_at, updated_at)
+                // - Đơn khác: xét theo COALESCE(repair_completed_at, updated_at, created_at) hoặc created_at
+                $techOrders = ($periodStart || $periodEnd)
+                    ? $allTechOrders->filter(function (RepairOrder $order) use ($isTimestampInPeriod) {
+                        if ($order->status === 'completed') {
+                            return $isTimestampInPeriod($order->handed_over_at ?? $order->updated_at);
+                        }
+                        return $isTimestampInPeriod($order->created_at)
+                            || $isTimestampInPeriod($order->updated_at);
+                    })->values()
+                    : $allTechOrders;
+
                 $orderCount = $techOrders->count();
 
-                // Tổng đơn hoàn tất
-                $completedOrders = $techOrders->where('status', 'completed');
+                // Tổng đơn hoàn tất trong kỳ (theo COALESCE(handed_over_at, updated_at))
+                $completedOrders = $allTechOrders->where('status', 'completed')->filter(function (RepairOrder $order) use ($isTimestampInPeriod) {
+                    return $isTimestampInPeriod($order->handed_over_at ?? $order->updated_at);
+                });
                 $completedCount = $completedOrders->count();
 
-                // Doanh thu dịch vụ tạo ra (Task 1.1 & 1.2)
+                // Doanh thu dịch vụ tạo ra
                 $revenueGenerated = (float) $completedOrders->sum('total_price');
                 $revenueGeneratedFormatted = number_format($revenueGenerated, 0, ',', '.') . ' ₫';
 
@@ -237,7 +334,7 @@ class KpiController extends Controller
                     'warranty_count'               => $techWarrantyCount,
                     'warranty_rate'                => $techWarrantyRate,
                     'warranty_rate_formatted'      => "{$techWarrantyRate}%",
-                    'in_repair'                    => $techOrders->whereIn('status', ['assigned', 'in_repair', 'waiting_parts', 'waiting_qc'])->count(),
+                    'in_repair'                    => $liveInRepairCount,
                     'qc_passed'                    => $qcPassed,
                     'qc_total'                     => $qcTotal,
                     'qc_pass_rate'                 => $qcPassRate,
@@ -253,7 +350,7 @@ class KpiController extends Controller
             }
         }
 
-        // 2. Lọc và thống kê nhân sự CSKH (Task 1.3)
+        // 2. Lọc và thống kê nhân sự CSKH
         $cskhUsers = collect();
         $cskhKpis = [];
 
@@ -284,22 +381,23 @@ class KpiController extends Controller
                     $cskhOrdersQuery->where('branch_id', $branchId);
                 }
 
-                if ($fromDate) {
-                    $cskhOrdersQuery->whereDate('created_at', '>=', $fromDate);
-                }
-
-                if ($toDate) {
-                    $cskhOrdersQuery->whereDate('created_at', '<=', $toDate);
-                }
-
                 $cskhOrdersGrouped = $cskhOrdersQuery->get()->groupBy('created_by_user_id');
             }
 
             foreach ($cskhUsers as $cskh) {
-                /** @var \Illuminate\Support\Collection<int, RepairOrder> $cskhOrders */
-                $cskhOrders = $cskhOrdersGrouped->get($cskh->id, collect());
-                $createdCount = $cskhOrders->count();
-                $completedOrders = $cskhOrders->where('status', 'completed');
+                /** @var \Illuminate\Support\Collection<int, RepairOrder> $allCskhOrders */
+                $allCskhOrders = $cskhOrdersGrouped->get($cskh->id, collect());
+
+                // Số đơn tiếp nhận mới trong kỳ (theo created_at)
+                $createdOrdersInPeriod = ($periodStart || $periodEnd)
+                    ? $allCskhOrders->filter(fn (RepairOrder $o) => $isTimestampInPeriod($o->created_at))
+                    : $allCskhOrders;
+                $createdCount = $createdOrdersInPeriod->count();
+
+                // Số đơn hoàn tất và doanh thu tạo ra trong kỳ (theo COALESCE(handed_over_at, updated_at))
+                $completedOrders = $allCskhOrders->where('status', 'completed')->filter(function (RepairOrder $o) use ($isTimestampInPeriod) {
+                    return $isTimestampInPeriod($o->handed_over_at ?? $o->updated_at);
+                });
                 $completedCount = $completedOrders->count();
                 $conversionRate = $createdCount > 0 ? round(($completedCount / $createdCount) * 100, 1) : 0.0;
 
@@ -358,6 +456,10 @@ class KpiController extends Controller
             : 0.0;
 
         $summary = [
+            'period'                       => $periodInput ?: ($hasPeriodFilter ? 'today' : 'all'),
+            'date'                         => $refDate->toDateString(),
+            'from_date'                    => $periodStart?->toDateString(),
+            'to_date'                      => $periodEnd?->toDateString(),
             'total_technicians'            => count($technicians),
             'total_cskh'                   => count($cskhUsers),
             'total_orders'                 => $totalSystemOrders,
@@ -418,11 +520,12 @@ class KpiController extends Controller
     public function dashboard(Request $request): JsonResponse
     {
         $user = $request->user();
-        $isAdmin = $user && $user->role === 'admin';
+        $isAdmin = $user && in_array($user->role, ['admin', 'super_admin'], true);
         $branchId = $request->input('branch_id');
         if (! $isAdmin && $user) {
             $branchId = $user->branch_id;
         }
+        $hasExplicitPeriod = $request->filled('period');
         $periodInput = $request->input('period', '14_days');
 
         $daysCount = match ($periodInput) {
@@ -468,8 +571,61 @@ class KpiController extends Controller
             $targetDateStr = $today->toDateString();
         }
 
-        $targetDateStart = Carbon::parse($targetDateStr, $tz)->startOfDay();
-        $targetDateEnd = Carbon::parse($targetDateStr, $tz)->endOfDay();
+        $targetDate = Carbon::parse($targetDateStr, $tz);
+        $targetDateStart = $targetDate->copy()->startOfDay();
+        $targetDateEnd = $targetDate->copy()->endOfDay();
+
+        // Xác định khoảng thời gian của Kỳ đã chọn (Zone 1: period_metrics)
+        $activePeriodKey = $hasExplicitPeriod ? (string) $periodInput : 'today';
+        switch ($activePeriodKey) {
+            case 'yesterday':
+                $yesterdayDate = $targetDate->copy()->subDay();
+                $periodStart = $yesterdayDate->copy()->startOfDay();
+                $periodEnd = $yesterdayDate->copy()->endOfDay();
+                $periodLabel = 'Hôm qua (' . $yesterdayDate->format('d/m/Y') . ')';
+                break;
+            case '3_days':
+                $periodStart = $targetDate->copy()->subDays(2)->startOfDay();
+                $periodEnd = $targetDate->copy()->endOfDay();
+                $periodLabel = '3 ngày qua';
+                break;
+            case '7_days':
+                $periodStart = $targetDate->copy()->subDays(6)->startOfDay();
+                $periodEnd = $targetDate->copy()->endOfDay();
+                $periodLabel = '7 ngày qua';
+                break;
+            case '14_days':
+                $periodStart = $targetDate->copy()->subDays(13)->startOfDay();
+                $periodEnd = $targetDate->copy()->endOfDay();
+                $periodLabel = '14 ngày qua';
+                break;
+            case '30_days':
+                $periodStart = $targetDate->copy()->subDays(29)->startOfDay();
+                $periodEnd = $targetDate->copy()->endOfDay();
+                $periodLabel = '30 ngày qua';
+                break;
+            case 'this_month':
+                $periodStart = $targetDate->copy()->startOfMonth()->startOfDay();
+                $periodEnd = $targetDate->copy()->endOfMonth()->endOfDay();
+                $periodLabel = 'Tháng ' . $targetDate->format('m/Y');
+                break;
+            case 'custom':
+                $fromInput = $request->input('from_date', $request->input('date_from', $targetDateStr));
+                $toInput = $request->input('to_date', $request->input('date_to', $targetDateStr));
+                $periodStart = Carbon::parse($fromInput, $tz)->startOfDay();
+                $periodEnd = Carbon::parse($toInput, $tz)->endOfDay();
+                $periodLabel = $periodStart->format('d/m/Y') . ' - ' . $periodEnd->format('d/m/Y');
+                break;
+            case 'today':
+            default:
+                $activePeriodKey = 'today';
+                $periodStart = $targetDateStart->copy();
+                $periodEnd = $targetDateEnd->copy();
+                $periodLabel = $targetDate->isSameDay($today)
+                    ? 'Hôm nay (' . $targetDate->format('d/m/Y') . ')'
+                    : 'Ngày ' . $targetDate->format('d/m/Y');
+                break;
+        }
 
         // 3. Doanh thu hôm nay (cho tất cả các đơn completed: tại quầy và COD)
         $todayStart = Carbon::today($tz)->startOfDay();
@@ -514,7 +670,6 @@ class KpiController extends Controller
         }
 
         // 4. Doanh thu tháng này từ các đơn hoàn tất (theo $targetDate và COALESCE handed_over_at, updated_at)
-        $targetDate = Carbon::parse($targetDateStr, $tz);
         $startOfMonth = $targetDate->copy()->startOfMonth();
         $endOfMonth = $targetDate->copy()->endOfMonth();
 
@@ -611,6 +766,30 @@ class KpiController extends Controller
             ];
         }
 
+        // Kỳ đã chọn (Zone 1): Intake, Completed & Warranty count
+        $periodIntakeCount = (int) (clone $baseQuery)
+            ->whereBetween('created_at', [$periodStart, $periodEnd])
+            ->count();
+
+        $periodWarrantyCount = (int) (clone $baseQuery)
+            ->whereBetween('created_at', [$periodStart, $periodEnd])
+            ->where(function ($wq) {
+                $wq->where('order_type', 'warranty')
+                   ->orWhereNotNull('claim_id');
+            })
+            ->count();
+
+        $periodCompletedOrdersQuery = (clone $baseQuery)
+            ->where('status', 'completed')
+            ->where(function ($q) use ($periodStart, $periodEnd) {
+                $q->whereBetween('handed_over_at', [$periodStart, $periodEnd])
+                  ->orWhere(function ($sq) use ($periodStart, $periodEnd) {
+                      $sq->whereNull('handed_over_at')
+                         ->whereBetween('updated_at', [$periodStart, $periodEnd]);
+                  });
+            });
+        $periodCompletedCount = (int) (clone $periodCompletedOrdersQuery)->count();
+
         // Tính toán COGS, Gross Profit & Accounts Receivable cho Admin
         $selectedDateCogs = 0.0;
         $monthlyCogs = 0.0;
@@ -620,11 +799,13 @@ class KpiController extends Controller
         $monthlyGrossProfitMargin = 0.0;
         $grossProfitMargin = 0.0;
         $accountsReceivable = 0.0;
+        $accountsPayable = 0.0;
         $selectedDateCogsFormatted = '0 ₫';
         $monthlyCogsFormatted = '0 ₫';
         $selectedDateGrossProfitFormatted = '0 ₫';
         $monthlyGrossProfitFormatted = '0 ₫';
         $accountsReceivableFormatted = '0 ₫';
+        $accountsPayableFormatted = '0 ₫';
 
         // 4 ô tài chính hàng đầu (Tổng tháng / Thực thu tháng, Công nợ chưa thu ở tháng, Tổng ngày chọn / Thực thu ngày, Công nợ chưa thu theo ngày)
         $monthlyTotalRevenue = 0.0;
@@ -651,12 +832,21 @@ class KpiController extends Controller
         $selectedDateUncollectedOrdersCount = 0;
         $selectedDateOrdersBreakdown = [];
 
+        $periodHandoverStats = null;
+        $monthlyHandoverStats = null;
+        $periodProfitAndCogs = null;
+        $liveReadyForPickupStats = null;
+        $inWorkshopCollectedAmount = 0.0;
+        $inWorkshopUncollectedAmount = 0.0;
+
         if ($isAdmin) {
             $finishedStatuses = ['ready_for_return', 'waiting_pickup', 'completed'];
 
             $buildPeriodBreakdown = function ($orders) use ($formatCurrency): array {
                 $totalRevenue = 0.0;
                 $collectedAmount = 0.0;
+                $totalCash = 0.0;
+                $totalTransfer = 0.0;
                 $completedOrdersCount = 0;
                 $uncollectedOrdersCount = 0;
                 $breakdown = [];
@@ -673,7 +863,7 @@ class KpiController extends Controller
                         $paidSum += $normAmt;
                         if ($p->payment_method === 'cash') {
                             $orderCash += $normAmt;
-                        } elseif (in_array($p->payment_method, ['bank_transfer', 'transfer', 'vietqr', 'sepay'], true)) {
+                        } elseif (in_array($p->payment_method, ['bank_transfer', 'transfer', 'vietqr', 'sepay', 'banking'], true)) {
                             $orderTransfer += $normAmt;
                         }
                     }
@@ -696,6 +886,8 @@ class KpiController extends Controller
 
                     $totalRevenue += $effectiveOrderTotal;
                     $collectedAmount += $orderCollected;
+                    $totalCash += $orderCash;
+                    $totalTransfer += $orderTransfer;
 
                     $customerOrdersCount = max(
                         (int) ($order->customer?->orders_count ?? 0),
@@ -733,6 +925,8 @@ class KpiController extends Controller
                 return [
                     'total_revenue'            => $totalRevenue,
                     'collected_amount'         => $collectedAmount,
+                    'cash_amount'              => $totalCash,
+                    'transfer_amount'          => $totalTransfer,
                     'uncollected_amount'       => max(0.0, $totalRevenue - $collectedAmount),
                     'completed_orders_count'   => $completedOrdersCount,
                     'finished_orders_count'    => $orders->count(),
@@ -823,6 +1017,59 @@ class KpiController extends Controller
                 ->orderByDesc(DB::raw('COALESCE(handed_over_at, qc_passed_at, repair_completed_at, updated_at)'))
                 ->get();
 
+            // Đơn hoàn tất bàn giao trong kỳ đã chọn (Zone 1: period_metrics.handover_revenue)
+            $periodCompletedOrdersWithRelations = (clone $periodCompletedOrdersQuery)
+                ->with([
+                    'payments' => function ($q) {
+                        $q->whereIn('status', ['paid', 'completed']);
+                    },
+                    'customer' => function ($q) {
+                        $q->withCount('repairOrders');
+                    },
+                    'deviceModel',
+                ])
+                ->orderByDesc(DB::raw('COALESCE(handed_over_at, updated_at)'))
+                ->get();
+
+            $periodHandoverStats = $buildPeriodBreakdown($periodCompletedOrdersWithRelations);
+            $monthlyCompletedOrdersWithRelations = $monthlyFinishedOrders->where('status', 'completed')->values();
+            $monthlyHandoverStats = $buildPeriodBreakdown($monthlyCompletedOrdersWithRelations);
+
+            // Đơn đang chờ khách lấy tại cửa hàng (Zone 2: store_live_financials.ready_for_pickup)
+            $liveReadyForPickupOrders = (clone $baseQuery)
+                ->whereIn('status', ['ready_for_return', 'waiting_pickup'])
+                ->with([
+                    'payments' => function ($q) {
+                        $q->whereIn('status', ['paid', 'completed']);
+                    },
+                    'customer' => function ($q) {
+                        $q->withCount('repairOrders');
+                    },
+                    'deviceModel',
+                ])
+                ->orderByDesc(DB::raw('COALESCE(qc_passed_at, repair_completed_at, updated_at)'))
+                ->get();
+
+            $liveReadyForPickupStats = $buildPeriodBreakdown($liveReadyForPickupOrders);
+
+            // Tính phần cọc và phần chưa thu của các máy đang sửa trong xưởng
+            $liveInWorkshopOrders = (clone $baseQuery)
+                ->whereIn('status', $inWorkshopStatuses)
+                ->with([
+                    'payments' => function ($q) {
+                        $q->whereIn('status', ['paid', 'completed']);
+                    },
+                ])
+                ->get(['id', 'total_price', 'initial_price', 'status']);
+
+            foreach ($liveInWorkshopOrders as $wsOrder) {
+                $rawWs = (float) (($wsOrder->total_price ?? 0) > 1 ? $wsOrder->total_price : ($wsOrder->initial_price ?? 0));
+                $normWs = RepairOrder::normalizeVndAmount($rawWs);
+                $paidWs = (float) $wsOrder->payments->sum(fn ($p) => RepairOrder::normalizeVndAmount($p->amount));
+                $inWorkshopCollectedAmount += $paidWs;
+                $inWorkshopUncollectedAmount += max(0.0, $normWs - $paidWs);
+            }
+
             $monthlyPeriodStats = $buildPeriodBreakdown($monthlyFinishedOrders);
             $monthlyTotalRevenue = $monthlyPeriodStats['total_revenue'];
             $monthlyTotalRevenueFormatted = $formatCurrency($monthlyTotalRevenue);
@@ -887,18 +1134,25 @@ class KpiController extends Controller
 
             $selectedDateOrderIds = (clone $selectedDateOrdersQuery)->pluck('id')->all();
             $monthlyOrderIds = (clone $monthlyOrdersQuery)->pluck('id')->all();
+            $periodOrderIds = $periodCompletedOrdersWithRelations->pluck('id')->all();
 
             $selectedDateCogs = $calcCogsForOrderIds($selectedDateOrderIds);
             $monthlyCogs = $calcCogsForOrderIds($monthlyOrderIds);
+            $periodCogs = $calcCogsForOrderIds($periodOrderIds);
 
             $selectedDateGrossProfit = $selectedDateRevenue - $selectedDateCogs;
             $monthlyGrossProfit = $monthlyRevenue - $monthlyCogs;
+            $periodRevenueAmount = (float) $periodHandoverStats['total_revenue'];
+            $periodGrossProfit = $periodRevenueAmount - $periodCogs;
 
             $selectedDateGrossProfitMargin = $selectedDateRevenue > 0
                 ? round(($selectedDateGrossProfit / $selectedDateRevenue) * 100, 1)
                 : 0.0;
             $monthlyGrossProfitMargin = $monthlyRevenue > 0
                 ? round(($monthlyGrossProfit / $monthlyRevenue) * 100, 1)
+                : 0.0;
+            $periodGrossProfitMargin = $periodRevenueAmount > 0
+                ? round(($periodGrossProfit / $periodRevenueAmount) * 100, 1)
                 : 0.0;
             $grossProfitMargin = $monthlyGrossProfitMargin;
 
@@ -929,6 +1183,19 @@ class KpiController extends Controller
             }
             $accountsPayable = (float) $supplierQuery->sum('debt_balance');
             $accountsPayableFormatted = $formatCurrencyShort($accountsPayable);
+
+            $periodProfitAndCogs = [
+                'revenue'                    => $periodRevenueAmount,
+                'revenue_formatted'          => $formatCurrency($periodRevenueAmount),
+                'cogs'                       => $periodCogs,
+                'cogs_amount'                => $periodCogs,
+                'cogs_formatted'             => $formatCurrency($periodCogs),
+                'gross_profit'               => $periodGrossProfit,
+                'gross_profit_formatted'     => $formatCurrency($periodGrossProfit),
+                'gross_profit_margin'        => $periodGrossProfitMargin,
+                'accounts_payable'           => $accountsPayable,
+                'accounts_payable_formatted' => $formatCurrency($accountsPayable),
+            ];
 
             $selectedDateCogsFormatted = $formatCurrencyShort($selectedDateCogs);
             $monthlyCogsFormatted = $formatCurrencyShort($monthlyCogs);
@@ -1013,26 +1280,10 @@ class KpiController extends Controller
                                 + ($statusDistribution['waiting_pickup'] ?? 0),
         ];
 
-        // 7. Biểu đồ doanh thu chuỗi ngày gần nhất qua SQL Aggregation trực tiếp (Chỉ tính cho Admin)
+        // 7. Biểu đồ doanh thu qua SQL Aggregation trực tiếp (Chỉ tính cho Admin)
         $revenueChart = [];
+        $periodRevenueChart = [];
         if ($isAdmin) {
-            $startDate = Carbon::today($tz)->subDays($daysCount - 1)->startOfDay();
-            $endDate = Carbon::today($tz)->endOfDay();
-
-            $dailyStats = (clone $baseQuery)
-                ->where('status', 'completed')
-                ->where(function ($q) use ($startDate, $endDate) {
-                    $q->whereBetween('handed_over_at', [$startDate, $endDate])
-                      ->orWhere(function ($sq) use ($startDate, $endDate) {
-                          $sq->whereNull('handed_over_at')
-                             ->whereBetween('updated_at', [$startDate, $endDate]);
-                      });
-                })
-                ->selectRaw("DATE(COALESCE(handed_over_at, updated_at)) as day_date, COUNT(*) as order_count, SUM(total_price) as total_revenue")
-                ->groupBy('day_date')
-                ->get()
-                ->keyBy('day_date');
-
             $dayNames = [
                 0 => 'CN',
                 1 => 'T2',
@@ -1043,31 +1294,116 @@ class KpiController extends Controller
                 6 => 'T7',
             ];
 
-            for ($i = $daysCount - 1; $i >= 0; $i--) {
-                $date = Carbon::today($tz)->subDays($i);
-                $dateStr = $date->toDateString();
-                $dayOfWeek = $date->dayOfWeek;
-                $label = $dayNames[$dayOfWeek] ?? ('T' . ($dayOfWeek + 1));
+            $buildChartForRange = function (Carbon $rangeStart, Carbon $rangeEnd) use ($baseQuery, $dayNames, $tz): array {
+                $dailyStats = (clone $baseQuery)
+                    ->where('status', 'completed')
+                    ->where(function ($q) use ($rangeStart, $rangeEnd) {
+                        $q->whereBetween('handed_over_at', [$rangeStart, $rangeEnd])
+                          ->orWhere(function ($sq) use ($rangeStart, $rangeEnd) {
+                              $sq->whereNull('handed_over_at')
+                                 ->whereBetween('updated_at', [$rangeStart, $rangeEnd]);
+                          });
+                    })
+                    ->selectRaw("DATE(COALESCE(handed_over_at, updated_at)) as day_date, COUNT(*) as order_count, SUM(total_price) as total_revenue")
+                    ->groupBy('day_date')
+                    ->get()
+                    ->keyBy('day_date');
 
-                $stat = $dailyStats->get($dateStr);
+                $points = [];
+                $cursor = $rangeStart->copy()->startOfDay();
+                $endDay = $rangeEnd->copy()->startOfDay();
+                while ($cursor->lte($endDay)) {
+                    $dateStr = $cursor->toDateString();
+                    $dayOfWeek = $cursor->dayOfWeek;
+                    $label = $dayNames[$dayOfWeek] ?? ('T' . ($dayOfWeek + 1));
+                    $stat = $dailyStats->get($dateStr);
 
-                $revenueChart[] = [
-                    'date'             => $dateStr,
-                    'label'            => $label,
-                    'revenue'          => (float) ($stat?->total_revenue ?? 0),
-                    'completed_orders' => (int) ($stat?->order_count ?? 0),
-                ];
+                    $points[] = [
+                        'date'             => $dateStr,
+                        'label'            => $label,
+                        'revenue'          => (float) ($stat?->total_revenue ?? 0),
+                        'completed_orders' => (int) ($stat?->order_count ?? 0),
+                    ];
+                    $cursor->addDay();
+                }
+
+                return $points;
+            };
+
+            // Biểu đồ theo kỳ đã chọn (period_metrics.revenue_chart)
+            $chartRangeStart = match ($activePeriodKey) {
+                'this_month' => $startOfMonth->copy()->startOfDay(),
+                '30_days'    => $targetDate->copy()->subDays(29)->startOfDay(),
+                '14_days'    => $targetDate->copy()->subDays(13)->startOfDay(),
+                'custom'     => $periodStart->copy()->startOfDay(),
+                default      => $periodEnd->copy()->subDays(6)->startOfDay(),
+            };
+            $chartRangeEnd = match ($activePeriodKey) {
+                'this_month' => $endOfMonth->copy()->endOfDay(),
+                'custom'     => $periodEnd->copy()->endOfDay(),
+                default      => $periodEnd->copy()->endOfDay(),
+            };
+            $periodRevenueChart = $buildChartForRange($chartRangeStart, $chartRangeEnd);
+
+            // Top-level revenue_chart:
+            // Nếu client truyền period tường minh (this_month, today, yesterday, custom, 7_days, 30_days) thì trả theo period;
+            // nếu không truyền period thì trả 14 ngày mặc định để tương thích ngược với KpiTest.
+            if (! $hasExplicitPeriod) {
+                $defaultStart = Carbon::today($tz)->subDays(13)->startOfDay();
+                $defaultEnd = Carbon::today($tz)->endOfDay();
+                $revenueChart = $buildChartForRange($defaultStart, $defaultEnd);
+            } elseif (in_array($periodInput, ['7_days', '14_days', '30_days'], true) || is_numeric($periodInput)) {
+                $refEnd = ($request->filled('date') || $request->filled('target_date')) ? $targetDate->copy() : Carbon::today($tz);
+                $revenueChart = $buildChartForRange($refEnd->copy()->subDays($daysCount - 1)->startOfDay(), $refEnd->copy()->endOfDay());
+            } else {
+                $revenueChart = $periodRevenueChart;
             }
         }
 
-        // 8. Thống kê chỉ số điều hành (Operational Summary)
-        $activeOrdersOp = (clone $baseQuery)
+        // 8. Thống kê chỉ số điều hành (Operational Summary) & Tiến độ xưởng 6 bước loại trừ lẫn nhau (Zone 3: workshop_pipeline)
+        // Quy tắc phân vùng loại trừ lẫn nhau:
+        // - Bước 6 (ready_for_return / waiting_pickup): status IN ('ready_for_return', 'waiting_pickup')
+        // - Các đơn còn lại là in_workshop:
+        //   + Bước 4 (waiting_parts) ưu tiên kiểm tra trước: status = 'waiting_parts' OR special_parts_status = 'pending'
+        //   + Các đơn in_workshop còn lại (special_parts_status != 'pending'):
+        //     * Bước 1 (inspecting): status = 'inspecting'
+        //     * Bước 2 (waiting_approval): status IN ('waiting_approval', 'quote_pending')
+        //     * Bước 3 (in_repair): status IN ('waiting_tech', 'assigned', 'in_repair', 'rework_needed')
+        //     * Bước 5 (waiting_qc): status IN ('waiting_qc', 'qc_pending', 'qc_inspecting')
+        $activeOrdersRecords = (clone $baseQuery)
             ->whereNotIn('status', ['completed', 'cancelled', 'rejected'])
-            ->count();
+            ->get(['id', 'status', 'special_parts_status', 'created_at']);
 
-        $waitingPickupOrders = (clone $baseQuery)
-            ->whereIn('status', ['waiting_pickup', 'ready_for_return'])
-            ->count();
+        $pipelineCounts = [
+            'inspecting'       => 0,
+            'waiting_approval' => 0,
+            'in_repair'        => 0,
+            'waiting_parts'    => 0,
+            'waiting_qc'       => 0,
+            'ready_for_return' => 0,
+        ];
+
+        foreach ($activeOrdersRecords as $ao) {
+            $st = $ao->status;
+            $sp = $ao->special_parts_status;
+            if (in_array($st, ['ready_for_return', 'waiting_pickup'], true)) {
+                $pipelineCounts['ready_for_return']++;
+            } elseif ($st === 'waiting_parts' || $sp === 'pending') {
+                $pipelineCounts['waiting_parts']++;
+            } elseif (in_array($st, ['waiting_qc', 'qc_pending', 'qc_inspecting'], true)) {
+                $pipelineCounts['waiting_qc']++;
+            } elseif (in_array($st, ['waiting_approval', 'quote_pending'], true)) {
+                $pipelineCounts['waiting_approval']++;
+            } elseif (in_array($st, ['waiting_tech', 'assigned', 'in_repair', 'rework_needed'], true)) {
+                $pipelineCounts['in_repair']++;
+            } else {
+                $pipelineCounts['inspecting']++;
+            }
+        }
+
+        $activeOrdersOp = $activeOrdersRecords->count();
+        $waitingPickupOrders = $pipelineCounts['ready_for_return'];
+        $inWorkshopPipelineCount = $activeOrdersOp - $waitingPickupOrders;
 
         $waitingPartsOrders = (clone $baseQuery)
             ->where(function ($q) {
@@ -1090,7 +1426,23 @@ class KpiController extends Controller
             'overdue_orders'         => $overdueOrdersCount,
         ];
 
-        // 9. Danh sách công việc cần xử lý trong ca (Actionable Tasks)
+        $workshopPipeline = [
+            'total_active_orders' => $activeOrdersOp,
+            'open_orders_count'   => $activeOrdersOp,
+            'in_workshop_count'   => $inWorkshopPipelineCount,
+            'steps'               => $pipelineCounts,
+            'inspecting'          => $pipelineCounts['inspecting'],
+            'waiting_approval'    => $pipelineCounts['waiting_approval'],
+            'in_repair'           => $pipelineCounts['in_repair'],
+            'waiting_parts'       => $pipelineCounts['waiting_parts'],
+            'waiting_qc'          => $pipelineCounts['waiting_qc'],
+            'ready_for_return'    => $pipelineCounts['ready_for_return'],
+            'waiting_pickup'      => $pipelineCounts['ready_for_return'],
+            'overdue_count'       => $overdueOrdersCount,
+            'overdue_orders'      => $overdueOrdersCount,
+        ];
+
+        // 9. Danh sách công việc cần xử lý trong ca (Actionable Tasks - 5 Tabs)
         $overdueCount = $overdueOrdersCount;
         $overdueOrders = (clone $baseQuery)
             ->whereNotIn('status', ['completed', 'cancelled', 'rejected', 'ready_for_return', 'waiting_pickup'])
@@ -1119,7 +1471,11 @@ class KpiController extends Controller
             ->all();
 
         $waitingApprovalQuery = (clone $baseQuery)
-            ->whereIn('status', ['waiting_approval', 'quote_pending']);
+            ->whereIn('status', ['waiting_approval', 'quote_pending'])
+            ->where(function ($sq) {
+                $sq->whereNull('special_parts_status')
+                   ->orWhere('special_parts_status', '!=', 'pending');
+            });
         $waitingApprovalCount = (clone $waitingApprovalQuery)->count();
         $waitingApprovalOrders = $waitingApprovalQuery
             ->with(['customer', 'technician', 'deviceModel'])
@@ -1146,8 +1502,46 @@ class KpiController extends Controller
             ->values()
             ->all();
 
+        $waitingPartsTaskQuery = (clone $baseQuery)
+            ->whereNotIn('status', ['completed', 'cancelled', 'rejected', 'ready_for_return', 'waiting_pickup'])
+            ->where(function ($q) {
+                $q->where('status', 'waiting_parts')
+                  ->orWhere('special_parts_status', 'pending');
+            });
+        $waitingPartsTaskCount = (clone $waitingPartsTaskQuery)->count();
+        $waitingPartsTaskOrders = $waitingPartsTaskQuery
+            ->with(['customer', 'technician', 'deviceModel'])
+            ->orderBy('updated_at', 'desc')
+            ->limit(200)
+            ->get()
+            ->map(function (RepairOrder $order) use ($tz) {
+                $hoursWaiting = max(0, (int) Carbon::parse($order->updated_at ?? $order->created_at, $tz)->diffInHours(Carbon::now($tz)));
+                $rawPrice = (float) ($order->total_price ?? 0) > 1 ? $order->total_price : ($order->initial_price ?? 0);
+                return [
+                    'id'                   => $order->id,
+                    'order_code'           => $order->order_code,
+                    'customer_name'        => $order->customer?->name ?? 'Khách vãng lai',
+                    'customer_phone'       => $order->customer?->phone ?? '',
+                    'device_model'         => $order->deviceModel?->name ?? 'Thiết bị',
+                    'technician_name'      => $order->technician?->name ?? 'Chưa phân công',
+                    'total_price'          => RepairOrder::normalizeVndAmount($rawPrice),
+                    'issue_description'    => $order->issue_description ?? '',
+                    'special_parts_status' => $order->special_parts_status,
+                    'special_parts_note'   => $order->special_parts_note ?? '',
+                    'hours_waiting'        => $hoursWaiting,
+                    'status'               => $order->status,
+                    'created_at'           => $order->created_at?->toIso8601String(),
+                ];
+            })
+            ->values()
+            ->all();
+
         $waitingQcQuery = (clone $baseQuery)
-            ->whereIn('status', ['waiting_qc', 'qc_pending', 'qc_inspecting']);
+            ->whereIn('status', ['waiting_qc', 'qc_pending', 'qc_inspecting'])
+            ->where(function ($sq) {
+                $sq->whereNull('special_parts_status')
+                   ->orWhere('special_parts_status', '!=', 'pending');
+            });
         $waitingQcCount = (clone $waitingQcQuery)->count();
         $waitingQcOrders = $waitingQcQuery
             ->with(['customer', 'technician', 'deviceModel'])
@@ -1161,6 +1555,7 @@ class KpiController extends Controller
                     'id'                  => $order->id,
                     'order_code'          => $order->order_code,
                     'customer_name'       => $order->customer?->name ?? 'Khách vãng lai',
+                    'customer_phone'      => $order->customer?->phone ?? '',
                     'device_model'        => $order->deviceModel?->name ?? 'Thiết bị',
                     'technician_name'     => $order->technician?->name ?? 'Chưa phân công',
                     'repair_completed_at' => $order->repair_completed_at ? Carbon::parse($order->repair_completed_at)->toIso8601String() : null,
@@ -1225,6 +1620,8 @@ class KpiController extends Controller
             'overdue'          => $overdueOrders,
             'waiting_approval' => $waitingApprovalOrders,
             'pending_quotes'   => $waitingApprovalOrders,
+            'waiting_parts'    => $waitingPartsTaskOrders,
+            'special_parts'    => $waitingPartsTaskOrders,
             'waiting_qc'       => $waitingQcOrders,
             'pending_qc'       => $waitingQcOrders,
             'waiting_pickup'   => $waitingPickupList,
@@ -1233,11 +1630,109 @@ class KpiController extends Controller
             'counts'           => [
                 'overdue'          => $overdueCount,
                 'waiting_approval' => $waitingApprovalCount,
+                'waiting_parts'    => $waitingPartsTaskCount,
                 'waiting_qc'       => $waitingQcCount,
                 'waiting_pickup'   => $waitingPickupCount,
+                'ready_pickup'     => $waitingPickupCount,
                 'low_stock'        => $lowStockCount,
                 'total'            => $overdueCount + $waitingQcCount + $waitingPickupCount,
             ],
+        ];
+
+        // Cấu trúc 3 vùng ngữ nghĩa (Zone 1: period_metrics, Zone 2: store_live_financials, Zone 3: workshop_pipeline)
+        $periodMetrics = [
+            'period'          => $activePeriodKey,
+            'date'            => $targetDateStr,
+            'from_date'       => $periodStart->toDateString(),
+            'to_date'         => $periodEnd->toDateString(),
+            'period_label'    => $periodLabel,
+            'intake_count'    => $periodIntakeCount,
+            'completed_count' => $periodCompletedCount,
+            'warranty_count'  => $periodWarrantyCount,
+            'order_flow'      => [
+                'intake_count'    => $periodIntakeCount,
+                'completed_count' => $periodCompletedCount,
+                'warranty_count'  => $periodWarrantyCount,
+            ],
+            'handover_revenue'=> $isAdmin && $periodHandoverStats ? [
+                'total_revenue'                => $periodHandoverStats['total_revenue'],
+                'total_revenue_formatted'      => $formatCurrency($periodHandoverStats['total_revenue']),
+                'collected_amount'             => $periodHandoverStats['collected_amount'],
+                'collected_amount_formatted'   => $formatCurrency($periodHandoverStats['collected_amount']),
+                'cash_amount'                  => $periodHandoverStats['cash_amount'],
+                'cash_amount_formatted'        => $formatCurrency($periodHandoverStats['cash_amount']),
+                'transfer_amount'              => $periodHandoverStats['transfer_amount'],
+                'transfer_amount_formatted'    => $formatCurrency($periodHandoverStats['transfer_amount']),
+                'uncollected_amount'           => $periodHandoverStats['uncollected_amount'],
+                'uncollected_amount_formatted' => $formatCurrency($periodHandoverStats['uncollected_amount']),
+                'completed_orders_count'       => $periodHandoverStats['completed_orders_count'],
+                'orders_breakdown'             => $periodHandoverStats['orders_breakdown'],
+            ] : null,
+            'profit_and_cogs' => $isAdmin ? $periodProfitAndCogs : null,
+            'monthly_revenue_summary' => $isAdmin && $monthlyHandoverStats ? [
+                'month_label'                  => 'Tháng ' . $targetDate->format('m/Y'),
+                'total_revenue'                => $monthlyHandoverStats['total_revenue'],
+                'total_revenue_formatted'      => $formatCurrency($monthlyHandoverStats['total_revenue']),
+                'collected_amount'             => $monthlyHandoverStats['collected_amount'],
+                'collected_amount_formatted'   => $formatCurrency($monthlyHandoverStats['collected_amount']),
+                'cash_amount'                  => $monthlyHandoverStats['cash_amount'],
+                'cash_amount_formatted'        => $formatCurrency($monthlyHandoverStats['cash_amount']),
+                'transfer_amount'              => $monthlyHandoverStats['transfer_amount'],
+                'transfer_amount_formatted'    => $formatCurrency($monthlyHandoverStats['transfer_amount']),
+                'completed_orders_count'       => $monthlyHandoverStats['completed_orders_count'],
+                'gross_profit'                 => $monthlyGrossProfit,
+                'cogs_amount'                  => $monthlyCogs,
+            ] : null,
+            'revenue_chart'   => $isAdmin ? $periodRevenueChart : [],
+        ];
+
+        $waitingPickupTotalAmt = $isAdmin && $liveReadyForPickupStats ? (float) $liveReadyForPickupStats['total_revenue'] : 0.0;
+        $waitingPickupDepositAmt = $isAdmin && $liveReadyForPickupStats ? (float) $liveReadyForPickupStats['collected_amount'] : 0.0;
+        $waitingPickupUncollectedAmt = $isAdmin && $liveReadyForPickupStats ? (float) $liveReadyForPickupStats['uncollected_amount'] : 0.0;
+
+        $storeLiveFinancials = [
+            'open_orders_count'                 => $readyForPickupCount + $inWorkshopCount,
+            'open_orders_amount'                => $isAdmin ? ($waitingPickupTotalAmt + $inWorkshopAmount) : null,
+            'waiting_pickup_count'              => $readyForPickupCount,
+            'waiting_pickup_total_amount'       => $isAdmin ? $waitingPickupTotalAmt : null,
+            'waiting_pickup_deposit_amount'     => $isAdmin ? $waitingPickupDepositAmt : null,
+            'waiting_pickup_uncollected_amount' => $isAdmin ? $waitingPickupUncollectedAmt : null,
+            'in_workshop_count'                 => $inWorkshopCount,
+            'in_workshop_expected_amount'       => $isAdmin ? $inWorkshopAmount : null,
+            'ready_for_pickup' => $isAdmin && $liveReadyForPickupStats ? [
+                'count'                        => $readyForPickupCount,
+                'total_amount'                 => $liveReadyForPickupStats['total_revenue'],
+                'total_amount_formatted'       => $formatCurrency($liveReadyForPickupStats['total_revenue']),
+                'collected_amount'             => $liveReadyForPickupStats['collected_amount'],
+                'collected_amount_formatted'   => $formatCurrency($liveReadyForPickupStats['collected_amount']),
+                'deposit_amount'               => $liveReadyForPickupStats['collected_amount'],
+                'deposit_amount_formatted'     => $formatCurrency($liveReadyForPickupStats['collected_amount']),
+                'uncollected_amount'           => $liveReadyForPickupStats['uncollected_amount'],
+                'uncollected_amount_formatted' => $formatCurrency($liveReadyForPickupStats['uncollected_amount']),
+                'orders_breakdown'             => $liveReadyForPickupStats['orders_breakdown'],
+            ] : [
+                'count' => $readyForPickupCount,
+            ],
+            'in_workshop' => $isAdmin ? [
+                'count'                        => $inWorkshopCount,
+                'expected_amount'              => $inWorkshopAmount,
+                'expected_amount_formatted'    => $formatCurrency($inWorkshopAmount),
+                'estimated_amount'             => $inWorkshopAmount,
+                'estimated_amount_formatted'   => $formatCurrency($inWorkshopAmount),
+                'collected_amount'             => $inWorkshopCollectedAmount,
+                'uncollected_amount'           => $inWorkshopUncollectedAmount,
+                'uncollected_amount_formatted' => $formatCurrency($inWorkshopUncollectedAmount),
+            ] : [
+                'count' => $inWorkshopCount,
+            ],
+            'outstanding_debt' => $isAdmin ? [
+                'accounts_receivable'                => $accountsReceivable,
+                'accounts_receivable_formatted'      => $formatCurrency($accountsReceivable),
+                'accounts_payable'                   => $accountsPayable,
+                'accounts_payable_formatted'         => $formatCurrency($accountsPayable),
+                'total_uncollected_amount'           => $totalUncollectedAmount,
+                'total_uncollected_amount_formatted' => $totalUncollectedAmountFormatted,
+            ] : null,
         ];
 
         $summary = [
@@ -1254,6 +1749,9 @@ class KpiController extends Controller
             'reconciliation'                 => $reconciliation,
             'operational_summary'            => $operationalSummary,
             'actionable_tasks'               => $actionableTasks,
+            'period_metrics'                 => $periodMetrics,
+            'store_live_financials'          => $storeLiveFinancials,
+            'workshop_pipeline'              => $workshopPipeline,
         ];
 
         if ($isAdmin) {
@@ -1319,10 +1817,13 @@ class KpiController extends Controller
             'warranty_claims_count'           => $warrantyClaimsCount,
             'total_orders'                    => $totalOrders,
             'completed_orders'                => $completedOrders,
-            'status_distribution'            => $statusDistribution,
+            'status_distribution'             => $statusDistribution,
             'workload_by_status'              => $workloadByStatus,
             'operational_summary'             => $operationalSummary,
             'actionable_tasks'                => $actionableTasks,
+            'period_metrics'                  => $periodMetrics,
+            'store_live_financials'           => $storeLiveFinancials,
+            'workshop_pipeline'               => $workshopPipeline,
         ];
 
         if ($isAdmin) {

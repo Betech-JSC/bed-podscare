@@ -45,71 +45,16 @@ class OrderController extends Controller
             'qcInspector',
             'createdByUser:id,name,role',
             'tenant:id,name,code,logo_url,hotline,receipt_footer_note',
+            'payments',
         ]);
 
         $status = $request->input('status');
         $filter = $request->input('filter');
-
-        if ($filter === 'overdue' || $status === 'overdue') {
-            $query->whereNotIn('status', ['completed', 'cancelled', 'rejected', 'ready_for_return', 'waiting_pickup'])
-                  ->where('created_at', '<=', Carbon::now('Asia/Ho_Chi_Minh')->subHours(24));
-        }
-
-        if ($status && $status !== 'overdue') {
-            if ($status === 'special_parts') {
-                $query->specialPartsPending();
-            } elseif ($status === 'open') {
-                $query->whereNotIn('status', ['completed', 'cancelled', 'rejected']);
-            } elseif ($status === 'in_workshop') {
-                $query->whereNotIn('status', ['completed', 'cancelled', 'rejected', 'ready_for_return', 'waiting_pickup']);
-            } elseif (in_array($status, ['waiting_pickup', 'ready_for_return'], true)) {
-                $query->whereIn('status', ['waiting_pickup', 'ready_for_return']);
-            } elseif ($status === 'waiting_parts') {
-                $query->where(function ($q) {
-                    $q->where('status', 'waiting_parts')
-                      ->orWhere('special_parts_status', 'pending');
-                })->whereNotIn('status', ['completed', 'cancelled', 'rejected']);
-            } else {
-                $normalized = $this->normalizeStatus($status);
-                if ($normalized === 'waiting_qc') {
-                    $query->whereIn('status', ['waiting_qc', 'qc_pending', 'qc_inspecting']);
-                } elseif ($normalized === 'waiting_approval') {
-                    $query->whereIn('status', ['waiting_approval', 'quote_pending']);
-                } else {
-                    $query->where('status', $status);
-                }
-            }
-        } elseif ($filter && $filter !== 'overdue') {
-            if ($filter === 'open') {
-                $query->whereNotIn('status', ['completed', 'cancelled', 'rejected']);
-            } elseif ($filter === 'in_workshop') {
-                $query->whereNotIn('status', ['completed', 'cancelled', 'rejected', 'ready_for_return', 'waiting_pickup']);
-            } elseif (in_array($filter, ['waiting_pickup', 'ready_for_return'], true)) {
-                $query->whereIn('status', ['waiting_pickup', 'ready_for_return']);
-            } elseif ($filter === 'waiting_parts') {
-                $query->where(function ($q) {
-                    $q->where('status', 'waiting_parts')
-                      ->orWhere('special_parts_status', 'pending');
-                })->whereNotIn('status', ['completed', 'cancelled', 'rejected']);
-            }
-        }
-
-        if ($specialPartsStatus = $request->input('special_parts_status')) {
-            if ($specialPartsStatus === 'pending') {
-                $query->specialPartsPending();
-            } elseif ($specialPartsStatus === 'purchased') {
-                $query->specialPartsPurchased();
-            } elseif ($specialPartsStatus === 'all') {
-                $query->whereNotNull('special_parts_status');
-            } else {
-                $query->where('special_parts_status', $specialPartsStatus);
-            }
-        } elseif ($request->boolean('special_parts') || $request->input('special_parts') === 'true') {
-            $query->specialPartsPending();
-        }
+        $workshopStep = $request->input('workshop_step');
+        $orderType = $request->input('order_type', $request->input('intake_type'));
 
         $user = $request->user();
-        if ($user && $user->role !== 'admin') {
+        if ($user && ! in_array($user->role, ['admin', 'super_admin'], true)) {
             $query->where('branch_id', $user->branch_id);
         } elseif ($branchId = $request->input('branch_id')) {
             if ($branchId !== 'all') {
@@ -129,12 +74,6 @@ class OrderController extends Controller
             $query->where('intake_batch_code', $batchCode);
         }
 
-        if ($orderType = $request->input('order_type')) {
-            if ($orderType !== 'all') {
-                $query->where('order_type', $orderType);
-            }
-        }
-
         $rawSearch = $request->input('q') ?? $request->input('search');
         $search = PhoneHelper::sanitizeText($rawSearch);
 
@@ -152,6 +91,7 @@ class OrderController extends Controller
 
         // Xử lý bộ lọc thời gian và phân quyền phạm vi lịch sử (Shift Scope & RBAC)
         $tz = 'Asia/Ho_Chi_Minh';
+        $hasExplicitDateFilter = $request->filled('date_filter');
         $dateFilter = (string) $request->input('date_filter', 'today');
         $dateType = (string) $request->input('date_type', 'created_at');
         $isCompletedDate = in_array($dateType, ['completed_at', 'handed_over_at'], true);
@@ -159,13 +99,14 @@ class OrderController extends Controller
 
         $filterDateRange = function ($q, $start, $end) use ($isCompletedDate) {
             if ($isCompletedDate) {
-                $q->where(function ($sq) use ($start, $end) {
-                    $sq->whereBetween('handed_over_at', [$start, $end])
-                       ->orWhere(function ($sub) use ($start, $end) {
-                           $sub->whereNull('handed_over_at')
-                               ->whereBetween('updated_at', [$start, $end]);
-                       });
-                });
+                $q->where('status', 'completed')
+                  ->where(function ($sq) use ($start, $end) {
+                      $sq->whereBetween('handed_over_at', [$start, $end])
+                         ->orWhere(function ($sub) use ($start, $end) {
+                             $sub->whereNull('handed_over_at')
+                                 ->whereBetween('updated_at', [$start, $end]);
+                         });
+                  });
             } else {
                 $q->whereBetween('created_at', [$start, $end]);
             }
@@ -173,63 +114,67 @@ class OrderController extends Controller
 
         $filterDateFrom = function ($q, $start) use ($isCompletedDate) {
             if ($isCompletedDate) {
-                $q->where(function ($sq) use ($start) {
-                    $sq->where('handed_over_at', '>=', $start)
-                       ->orWhere(function ($sub) use ($start) {
-                           $sub->whereNull('handed_over_at')
-                               ->where('updated_at', '>=', $start);
-                       });
-                });
+                $q->where('status', 'completed')
+                  ->where(function ($sq) use ($start) {
+                      $sq->where('handed_over_at', '>=', $start)
+                         ->orWhere(function ($sub) use ($start) {
+                             $sub->whereNull('handed_over_at')
+                                 ->where('updated_at', '>=', $start);
+                         });
+                  });
             } else {
                 $q->where('created_at', '>=', $start);
             }
         };
 
-        // Nếu có date cụ thể (YYYY-MM-DD), ưu tiên lọc theo ngày đó thay vì preset
         $specificDate = $request->input('date') ?? $request->input('exact_date');
-        $hasSpecificDate = false;
+        $refDate = Carbon::today($tz);
+        $hasValidSpecificDate = false;
 
         if ($specificDate && is_string($specificDate) && preg_match('/^\d{4}-\d{2}-\d{2}$/', $specificDate)) {
             try {
                 $parsed = Carbon::createFromFormat('Y-m-d', $specificDate, $tz);
                 if ($parsed && $parsed->format('Y-m-d') === $specificDate) {
-                    $dayStart = $parsed->copy()->startOfDay();
-                    $dayEnd = $parsed->copy()->endOfDay();
-                    $filterDateRange($query, $dayStart, $dayEnd);
-                    $hasSpecificDate = true;
+                    $refDate = $parsed;
+                    $hasValidSpecificDate = true;
                 }
             } catch (\Throwable $e) {
-                $hasSpecificDate = false;
+                $hasValidSpecificDate = false;
             }
         }
 
-        if (! $hasSpecificDate) {
+        // Nếu truyền date=YYYY-MM-DD mà không truyền date_filter khác ngoài today/exact -> lọc đúng ngày đó
+        if ($hasValidSpecificDate && (! $hasExplicitDateFilter || in_array($dateFilter, ['today', 'exact'], true))) {
+            $dayStart = $refDate->copy()->startOfDay();
+            $dayEnd = $refDate->copy()->endOfDay();
+            $filterDateRange($query, $dayStart, $dayEnd);
+        } else {
             $hasSpecialPartsFilter = $request->has('special_parts_status')
                 || $request->boolean('special_parts')
                 || $request->input('special_parts') === 'true'
+                || ! empty($workshopStep)
                 || in_array($status, ['special_parts', 'open', 'in_workshop', 'waiting_pickup', 'ready_for_return', 'waiting_parts', 'overdue'], true)
                 || in_array($filter, ['open', 'in_workshop', 'waiting_pickup', 'ready_for_return', 'waiting_parts', 'overdue'], true);
 
-            if ($search !== '' && ($dateFilter === 'today' || ! $request->filled('date_filter'))) {
+            if ($search !== '' && ($dateFilter === 'today' || ! $hasExplicitDateFilter)) {
                 $dateFilter = 'all';
-            } elseif ($hasSpecialPartsFilter && ! $request->has('date_filter')) {
+            } elseif ($hasSpecialPartsFilter && ! $hasExplicitDateFilter) {
                 $dateFilter = 'all';
             } elseif ($isTechnician) {
-                if ($search === '' && (in_array($dateFilter, ['all', '30_days'], true) || ! in_array($dateFilter, ['today', '3_days', 'yesterday', '7_days'], true))) {
+                if ($search === '' && (in_array($dateFilter, ['all', '30_days', 'this_month', 'custom'], true) || ! in_array($dateFilter, ['today', '3_days', 'yesterday', '7_days'], true))) {
                     $dateFilter = '7_days';
                 }
             } else {
-                if (! in_array($dateFilter, ['today', '3_days', 'yesterday', '7_days', '30_days', 'all'], true)) {
+                if (! in_array($dateFilter, ['today', '3_days', 'yesterday', '7_days', '30_days', 'this_month', 'custom', 'all'], true)) {
                     $dateFilter = 'today';
                 }
             }
 
             if ($dateFilter === 'today') {
-                $todayStart = Carbon::today($tz)->startOfDay();
-                $todayEnd = Carbon::today($tz)->endOfDay();
+                $todayStart = $refDate->copy()->startOfDay();
+                $todayEnd = $refDate->copy()->endOfDay();
                 if ($isTechnician && ! $isCompletedDate) {
-                    // KTV xem ca hôm nay: Bao gồm các đơn hôm nay HOẶC các đơn dở dang từ 7 ngày gần nhất (hôm nay và 6 ngày trước)
-                    $sevenDaysAgoStart = Carbon::today($tz)->subDays(6)->startOfDay();
+                    $sevenDaysAgoStart = $refDate->copy()->subDays(6)->startOfDay();
                     $query->where(function ($q) use ($todayStart, $todayEnd, $sevenDaysAgoStart) {
                         $q->whereBetween('created_at', [$todayStart, $todayEnd])
                           ->orWhere(function ($sub) use ($sevenDaysAgoStart) {
@@ -241,15 +186,37 @@ class OrderController extends Controller
                     $filterDateRange($query, $todayStart, $todayEnd);
                 }
             } elseif ($dateFilter === 'yesterday') {
-                $yesterdayStart = Carbon::yesterday($tz)->startOfDay();
-                $yesterdayEnd = Carbon::yesterday($tz)->endOfDay();
+                $yesterdayStart = $refDate->copy()->subDay()->startOfDay();
+                $yesterdayEnd = $refDate->copy()->subDay()->endOfDay();
                 $filterDateRange($query, $yesterdayStart, $yesterdayEnd);
             } elseif ($dateFilter === '3_days') {
-                $filterDateFrom($query, Carbon::today($tz)->subDays(2)->startOfDay());
+                if ($hasValidSpecificDate) {
+                    $filterDateRange($query, $refDate->copy()->subDays(2)->startOfDay(), $refDate->copy()->endOfDay());
+                } else {
+                    $filterDateFrom($query, Carbon::today($tz)->subDays(2)->startOfDay());
+                }
             } elseif ($dateFilter === '7_days') {
-                $filterDateFrom($query, Carbon::today($tz)->subDays(6)->startOfDay());
+                if ($hasValidSpecificDate) {
+                    $filterDateRange($query, $refDate->copy()->subDays(6)->startOfDay(), $refDate->copy()->endOfDay());
+                } else {
+                    $filterDateFrom($query, Carbon::today($tz)->subDays(6)->startOfDay());
+                }
             } elseif ($dateFilter === '30_days') {
-                $filterDateFrom($query, Carbon::now($tz)->subDays(30)->startOfDay());
+                if ($hasValidSpecificDate) {
+                    $filterDateRange($query, $refDate->copy()->subDays(30)->startOfDay(), $refDate->copy()->endOfDay());
+                } else {
+                    $filterDateFrom($query, Carbon::now($tz)->subDays(30)->startOfDay());
+                }
+            } elseif ($dateFilter === 'this_month') {
+                $monthStart = $refDate->copy()->startOfMonth()->startOfDay();
+                $monthEnd = $refDate->copy()->endOfMonth()->endOfDay();
+                $filterDateRange($query, $monthStart, $monthEnd);
+            } elseif ($dateFilter === 'custom') {
+                $fromInput = $request->input('from_date', $request->input('date_from'));
+                $toInput = $request->input('to_date', $request->input('date_to'));
+                $customStart = $fromInput ? Carbon::parse($fromInput, $tz)->startOfDay() : $refDate->copy()->startOfMonth()->startOfDay();
+                $customEnd = $toInput ? Carbon::parse($toInput, $tz)->endOfDay() : $refDate->copy()->endOfDay();
+                $filterDateRange($query, $customStart, $customEnd);
             } elseif ($dateFilter === 'all') {
                 if ($isTechnician && ! $isCompletedDate && $search === '') {
                     $query->where('created_at', '>=', Carbon::today($tz)->subDays(6)->startOfDay());
@@ -257,9 +224,412 @@ class OrderController extends Controller
             }
         }
 
+        // $contextQuery đã áp dụng: tenant, branch_id, technician_id, intake_batch_code, search, date_type + date_filter/date
+        $contextQuery = clone $query;
+
+        // Tính order_type_counts trên toàn bộ tập dữ liệu theo ngữ cảnh thời gian & chi nhánh
+        $orderTypeCounts = [
+            'all'           => (int) (clone $contextQuery)->count(),
+            'in_store'      => (int) (clone $contextQuery)->where('order_type', 'in_store')->whereNull('claim_id')->count(),
+            'cod'           => (int) (clone $contextQuery)->where('order_type', 'cod')->count(),
+            'warranty'      => (int) (clone $contextQuery)->where(function ($wq) {
+                $wq->where('order_type', 'warranty')
+                   ->orWhereNotNull('claim_id');
+            })->count(),
+            'special_parts' => (int) (clone $contextQuery)->where(function ($sq) {
+                $sq->where('status', 'waiting_parts')
+                   ->orWhereIn('special_parts_status', ['pending', 'purchased']);
+            })->count(),
+        ];
+
+        // Áp dụng bộ lọc Loại đơn (order_type / intake_type) và special_parts_status
+        if ($orderType && $orderType !== 'all') {
+            if ($orderType === 'warranty') {
+                $query->where(function ($wq) {
+                    $wq->where('order_type', 'warranty')
+                       ->orWhereNotNull('claim_id');
+                });
+            } elseif ($orderType === 'special_parts') {
+                $query->where(function ($sq) {
+                    $sq->where('status', 'waiting_parts')
+                       ->orWhereIn('special_parts_status', ['pending', 'purchased']);
+                });
+            } elseif ($orderType === 'in_store') {
+                $query->where('order_type', 'in_store');
+            } else {
+                $query->where('order_type', $orderType);
+            }
+        }
+
+        if ($specialPartsStatus = $request->input('special_parts_status')) {
+            if ($specialPartsStatus === 'pending') {
+                $query->specialPartsPending();
+            } elseif ($specialPartsStatus === 'purchased') {
+                $query->specialPartsPurchased();
+            } elseif ($specialPartsStatus === 'all') {
+                $query->whereNotNull('special_parts_status');
+            } else {
+                $query->where('special_parts_status', $specialPartsStatus);
+            }
+        } elseif ($request->boolean('special_parts') || $request->input('special_parts') === 'true') {
+            $query->specialPartsPending();
+        }
+
+        // $typeScopedQuery đã áp dụng thêm order_type / special_parts_status, dùng để tính status_cards và workshop_steps
+        $typeScopedQuery = clone $query;
+        $twentyFourHoursAgo = Carbon::now($tz)->subHours(24);
+        $canViewFinancials = ! $isTechnician;
+
+        $scopedRecords = (clone $typeScopedQuery)
+            ->without(['customer', 'deviceModel', 'technician', 'branch', 'quotes'])
+            ->with(['payments' => function ($q) {
+                $q->whereIn('status', ['paid', 'completed']);
+            }])
+            ->select(['id', 'status', 'special_parts_status', 'created_at', 'total_price', 'initial_price'])
+            ->get();
+
+        $statusCounts = [
+            'all'              => $scopedRecords->count(),
+            'open'             => 0,
+            'in_workshop'      => 0,
+            'ready_for_return' => 0,
+            'waiting_pickup'   => 0,
+            'completed'        => 0,
+            'cancelled'        => 0,
+        ];
+
+        $allTotalAmount = 0.0;
+        $openTotalAmount = 0.0;
+        $inWorkshopExpectedAmount = 0.0;
+        $inWorkshopCollectedAmount = 0.0;
+        $inWorkshopUncollectedAmount = 0.0;
+        $waitingPickupTotalAmount = 0.0;
+        $waitingPickupDepositAmount = 0.0;
+        $waitingPickupUncollectedAmount = 0.0;
+        $completedTotalAmount = 0.0;
+        $completedCollectedAmount = 0.0;
+        $completedCashAmount = 0.0;
+        $completedTransferAmount = 0.0;
+        $cancelledTotalAmount = 0.0;
+
+        $workshopStepsSummary = [
+            'all'              => 0,
+            'in_workshop'      => 0,
+            'inspecting'       => 0,
+            'waiting_approval' => 0,
+            'in_repair'        => 0,
+            'waiting_parts'    => 0,
+            'waiting_qc'       => 0,
+            'ready_for_return' => 0,
+            'waiting_pickup'   => 0,
+            'overdue'          => 0,
+            'total_active'     => 0,
+        ];
+
+        foreach ($scopedRecords as $rec) {
+            $st = $rec->status;
+            $sp = $rec->special_parts_status;
+
+            $rawRecTotal = (float) (($rec->total_price ?? 0) > 1 ? $rec->total_price : ($rec->initial_price ?? 0));
+            $recTotal = RepairOrder::normalizeVndAmount($rawRecTotal);
+            $recPaid = 0.0;
+            $recCash = 0.0;
+            $recTransfer = 0.0;
+            foreach ($rec->payments as $p) {
+                $amt = RepairOrder::normalizeVndAmount($p->amount);
+                $recPaid += $amt;
+                if ($p->payment_method === 'cash') {
+                    $recCash += $amt;
+                } elseif (in_array($p->payment_method, ['bank_transfer', 'transfer', 'vietqr', 'sepay', 'banking'], true)) {
+                    $recTransfer += $amt;
+                }
+            }
+
+            $allTotalAmount += $recTotal;
+
+            if ($st === 'completed') {
+                $statusCounts['completed']++;
+                $effCollected = $recPaid > 0 ? $recPaid : $recTotal;
+                $effCash = ($recPaid <= 0 && $effCollected > 0) ? $effCollected : $recCash;
+                $completedTotalAmount += $effCollected;
+                $completedCollectedAmount += $effCollected;
+                $completedCashAmount += $effCash;
+                $completedTransferAmount += $recTransfer;
+                continue;
+            }
+            if (in_array($st, ['cancelled', 'rejected'], true)) {
+                $statusCounts['cancelled']++;
+                $cancelledTotalAmount += $recTotal;
+                continue;
+            }
+
+            // Đơn đang mở (active)
+            $statusCounts['open']++;
+            $openTotalAmount += $recTotal;
+            $workshopStepsSummary['total_active']++;
+
+            if (in_array($st, ['ready_for_return', 'waiting_pickup'], true)) {
+                $statusCounts['ready_for_return']++;
+                $statusCounts['waiting_pickup']++;
+                $workshopStepsSummary['ready_for_return']++;
+                $workshopStepsSummary['waiting_pickup']++;
+                $waitingPickupTotalAmount += $recTotal;
+                $waitingPickupDepositAmount += $recPaid;
+                $waitingPickupUncollectedAmount += max(0.0, $recTotal - $recPaid);
+            } else {
+                $statusCounts['in_workshop']++;
+                $workshopStepsSummary['all']++;
+                $workshopStepsSummary['in_workshop']++;
+                $inWorkshopExpectedAmount += $recTotal;
+                $inWorkshopCollectedAmount += $recPaid;
+                $inWorkshopUncollectedAmount += max(0.0, $recTotal - $recPaid);
+
+                if ($rec->created_at && Carbon::parse($rec->created_at, $tz)->lte($twentyFourHoursAgo)) {
+                    $workshopStepsSummary['overdue']++;
+                }
+
+                // Phân vùng 5 bước trong xưởng: waiting_parts được ưu tiên kiểm tra trước
+                if ($st === 'waiting_parts' || $sp === 'pending') {
+                    $workshopStepsSummary['waiting_parts']++;
+                } elseif (in_array($st, ['waiting_qc', 'qc_pending', 'qc_inspecting'], true)) {
+                    $workshopStepsSummary['waiting_qc']++;
+                } elseif (in_array($st, ['waiting_approval', 'quote_pending'], true)) {
+                    $workshopStepsSummary['waiting_approval']++;
+                } elseif (in_array($st, ['waiting_tech', 'assigned', 'in_repair', 'rework_needed'], true)) {
+                    $workshopStepsSummary['in_repair']++;
+                } else {
+                    $workshopStepsSummary['inspecting']++;
+                }
+            }
+        }
+
+        $statusCards = [
+            'all' => [
+                'count'        => $statusCounts['all'],
+                'total_amount' => $canViewFinancials ? $allTotalAmount : null,
+            ],
+            'open' => [
+                'count'        => $statusCounts['open'],
+                'total_amount' => $canViewFinancials ? $openTotalAmount : null,
+            ],
+            'in_workshop' => [
+                'count'              => $statusCounts['in_workshop'],
+                'total_amount'       => $canViewFinancials ? $inWorkshopExpectedAmount : null,
+                'expected_amount'    => $canViewFinancials ? $inWorkshopExpectedAmount : null,
+                'collected_amount'   => $canViewFinancials ? $inWorkshopCollectedAmount : null,
+                'uncollected_amount' => $canViewFinancials ? $inWorkshopUncollectedAmount : null,
+            ],
+            'waiting_pickup' => [
+                'count'              => $statusCounts['waiting_pickup'],
+                'total_amount'       => $canViewFinancials ? $waitingPickupTotalAmount : null,
+                'deposit_amount'     => $canViewFinancials ? $waitingPickupDepositAmount : null,
+                'collected_amount'   => $canViewFinancials ? $waitingPickupDepositAmount : null,
+                'uncollected_amount' => $canViewFinancials ? $waitingPickupUncollectedAmount : null,
+            ],
+            'ready_for_return' => [
+                'count'              => $statusCounts['ready_for_return'],
+                'total_amount'       => $canViewFinancials ? $waitingPickupTotalAmount : null,
+                'deposit_amount'     => $canViewFinancials ? $waitingPickupDepositAmount : null,
+                'collected_amount'   => $canViewFinancials ? $waitingPickupDepositAmount : null,
+                'uncollected_amount' => $canViewFinancials ? $waitingPickupUncollectedAmount : null,
+            ],
+            'completed' => [
+                'count'            => $statusCounts['completed'],
+                'total_amount'     => $canViewFinancials ? $completedTotalAmount : null,
+                'collected_amount' => $canViewFinancials ? $completedCollectedAmount : null,
+                'cash_amount'      => $canViewFinancials ? $completedCashAmount : null,
+                'transfer_amount'  => $canViewFinancials ? $completedTransferAmount : null,
+            ],
+            'cancelled' => [
+                'count'        => $statusCounts['cancelled'],
+                'total_amount' => $canViewFinancials ? $cancelledTotalAmount : null,
+            ],
+        ];
+
+        // Áp dụng bộ lọc Bước tiến độ xưởng (workshop_step) loại trừ lẫn nhau
+        if ($workshopStep && $workshopStep !== 'all') {
+            $query->whereNotIn('status', ['completed', 'cancelled', 'rejected']);
+
+            if ($workshopStep === 'in_workshop') {
+                $query->whereNotIn('status', ['ready_for_return', 'waiting_pickup']);
+            } elseif (in_array($workshopStep, ['ready_for_return', 'waiting_pickup'], true)) {
+                $query->whereIn('status', ['ready_for_return', 'waiting_pickup']);
+            } elseif ($workshopStep === 'waiting_parts') {
+                $query->whereNotIn('status', ['ready_for_return', 'waiting_pickup'])
+                      ->where(function ($sq) {
+                          $sq->where('status', 'waiting_parts')
+                             ->orWhere('special_parts_status', 'pending');
+                      });
+            } elseif ($workshopStep === 'waiting_qc') {
+                $query->whereIn('status', ['waiting_qc', 'qc_pending', 'qc_inspecting'])
+                      ->where(function ($sq) {
+                          $sq->whereNull('special_parts_status')
+                             ->orWhere('special_parts_status', '!=', 'pending');
+                      });
+            } elseif ($workshopStep === 'waiting_approval') {
+                $query->whereIn('status', ['waiting_approval', 'quote_pending'])
+                      ->where(function ($sq) {
+                          $sq->whereNull('special_parts_status')
+                             ->orWhere('special_parts_status', '!=', 'pending');
+                      });
+            } elseif ($workshopStep === 'in_repair') {
+                $query->whereIn('status', ['waiting_tech', 'assigned', 'in_repair', 'rework_needed'])
+                      ->where(function ($sq) {
+                          $sq->whereNull('special_parts_status')
+                             ->orWhere('special_parts_status', '!=', 'pending');
+                      });
+            } elseif ($workshopStep === 'inspecting') {
+                $query->where('status', 'inspecting')
+                      ->where(function ($sq) {
+                          $sq->whereNull('special_parts_status')
+                             ->orWhere('special_parts_status', '!=', 'pending');
+                      });
+            } elseif ($workshopStep === 'overdue') {
+                $query->whereNotIn('status', ['ready_for_return', 'waiting_pickup'])
+                      ->where('created_at', '<=', $twentyFourHoursAgo);
+            }
+        }
+
+        // Áp dụng bộ lọc status / filter
+        if ($filter === 'overdue' || $status === 'overdue') {
+            $query->whereNotIn('status', ['completed', 'cancelled', 'rejected', 'ready_for_return', 'waiting_pickup'])
+                  ->where('created_at', '<=', $twentyFourHoursAgo);
+        }
+
+        if ($status && ! in_array($status, ['overdue', 'all'], true)) {
+            if ($status === 'special_parts') {
+                $query->specialPartsPending();
+            } elseif ($status === 'open') {
+                $query->whereNotIn('status', ['completed', 'cancelled', 'rejected']);
+            } elseif ($status === 'in_workshop') {
+                $query->whereNotIn('status', ['completed', 'cancelled', 'rejected', 'ready_for_return', 'waiting_pickup']);
+            } elseif (in_array($status, ['waiting_pickup', 'ready_for_return'], true)) {
+                $query->whereIn('status', ['waiting_pickup', 'ready_for_return']);
+            } elseif ($status === 'waiting_parts') {
+                $query->where(function ($q) {
+                    $q->where('status', 'waiting_parts')
+                      ->orWhere('special_parts_status', 'pending');
+                })->whereNotIn('status', ['completed', 'cancelled', 'rejected', 'ready_for_return', 'waiting_pickup']);
+            } elseif ($status === 'cancelled') {
+                $query->whereIn('status', ['cancelled', 'rejected']);
+            } else {
+                $normalized = $this->normalizeStatus($status);
+                if ($normalized === 'waiting_qc') {
+                    $query->whereIn('status', ['waiting_qc', 'qc_pending', 'qc_inspecting']);
+                } elseif ($normalized === 'waiting_approval') {
+                    $query->whereIn('status', ['waiting_approval', 'quote_pending']);
+                } else {
+                    $query->where('status', $status);
+                }
+            }
+        } elseif ($filter && ! in_array($filter, ['overdue', 'all'], true)) {
+            if ($filter === 'open') {
+                $query->whereNotIn('status', ['completed', 'cancelled', 'rejected']);
+            } elseif ($filter === 'in_workshop') {
+                $query->whereNotIn('status', ['completed', 'cancelled', 'rejected', 'ready_for_return', 'waiting_pickup']);
+            } elseif (in_array($filter, ['waiting_pickup', 'ready_for_return'], true)) {
+                $query->whereIn('status', ['waiting_pickup', 'ready_for_return']);
+            } elseif ($filter === 'waiting_parts') {
+                $query->where(function ($q) {
+                    $q->where('status', 'waiting_parts')
+                      ->orWhere('special_parts_status', 'pending');
+                })->whereNotIn('status', ['completed', 'cancelled', 'rejected', 'ready_for_return', 'waiting_pickup']);
+            } elseif ($filter === 'cancelled') {
+                $query->whereIn('status', ['cancelled', 'rejected']);
+            }
+        }
+
         $orders = $query->latest('id')->paginate($request->input('per_page', 15));
 
-        return $this->success($orders, 'Lấy danh sách đơn sửa chữa thành công.');
+        // Bổ sung các trường thanh toán đã chuẩn hóa trên từng dòng đơn hàng (Task 2.2)
+        $orders->getCollection()->transform(function (RepairOrder $order) use ($canViewFinancials) {
+            $rawTotal = (float) (($order->total_price ?? 0) > 1 ? $order->total_price : ($order->initial_price ?? 0));
+            $normalizedTotal = RepairOrder::normalizeVndAmount($rawTotal);
+
+            $paidPayments = $order->relationLoaded('payments')
+                ? $order->payments->whereIn('status', ['paid', 'completed'])
+                : collect();
+
+            $paidSum = 0.0;
+            $cashPaid = 0.0;
+            $transferPaid = 0.0;
+
+            foreach ($paidPayments as $p) {
+                $amt = RepairOrder::normalizeVndAmount($p->amount);
+                $paidSum += $amt;
+                if ($p->payment_method === 'cash') {
+                    $cashPaid += $amt;
+                } elseif (in_array($p->payment_method, ['bank_transfer', 'transfer', 'vietqr', 'sepay', 'banking'], true)) {
+                    $transferPaid += $amt;
+                }
+            }
+
+            $remainingAmount = max(0.0, $normalizedTotal - $paidSum);
+            if ($order->status === 'completed' && $paidSum <= 0 && $normalizedTotal > 0) {
+                // Nếu đơn đã hoàn tất nhưng không tạo bản ghi payment riêng lẻ, remaining_amount = 0 khi đối chiếu bàn giao
+                $remainingAmount = 0.0;
+            }
+
+            if ($cashPaid > 0 && $transferPaid > 0) {
+                $paymentMethodSummary = 'mixed';
+            } elseif ($cashPaid > 0) {
+                $paymentMethodSummary = 'cash';
+            } elseif ($transferPaid > 0) {
+                $paymentMethodSummary = 'transfer';
+            } elseif ($paidSum > 0) {
+                $paymentMethodSummary = 'other';
+            } else {
+                $paymentMethodSummary = 'unpaid';
+            }
+
+            if ($normalizedTotal <= 0) {
+                $paymentStatusLabel = 'Miễn phí / BH';
+            } elseif ($paidSum >= $normalizedTotal || ($order->status === 'completed' && $remainingAmount <= 0)) {
+                $paymentStatusLabel = 'Đã thu đủ';
+            } elseif ($paidSum > 0) {
+                $paymentStatusLabel = 'Đã cọc';
+            } else {
+                $paymentStatusLabel = 'Chưa thu';
+            }
+
+            $order->setAttribute('normalized_total_price', $canViewFinancials ? $normalizedTotal : null);
+            $order->setAttribute('paid_amount', $canViewFinancials ? $paidSum : null);
+            $order->setAttribute('cash_paid_amount', $canViewFinancials ? $cashPaid : null);
+            $order->setAttribute('transfer_paid_amount', $canViewFinancials ? $transferPaid : null);
+            $order->setAttribute('remaining_amount', $canViewFinancials ? $remainingAmount : null);
+            $order->setAttribute('payment_method_summary', $paymentMethodSummary);
+            $order->setAttribute('payment_status_label', $paymentStatusLabel);
+
+            return $order;
+        });
+
+        $summaryPayload = [
+            'order_type_counts' => $orderTypeCounts,
+            'status_counts'     => $statusCounts,
+            'status_cards'      => $statusCards,
+            'workshop_steps'    => $workshopStepsSummary,
+        ];
+
+        $metaPayload = [
+            'current_page' => $orders->currentPage(),
+            'last_page'    => $orders->lastPage(),
+            'per_page'     => $orders->perPage(),
+            'total'        => $orders->total(),
+            'from'         => $orders->firstItem(),
+            'to'           => $orders->lastItem(),
+            'summary'      => $summaryPayload,
+        ];
+
+        $paginatorArray = $orders->toArray();
+        $paginatorArray['meta'] = $metaPayload;
+        $paginatorArray['summary'] = $summaryPayload;
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Lấy danh sách đơn sửa chữa thành công.',
+            'data'    => $paginatorArray,
+            'meta'    => $metaPayload,
+        ], 200);
     }
 
     /**
