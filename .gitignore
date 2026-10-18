@@ -17,7 +17,6 @@ dist/
 .env*.local
 .env.*.local
 .env.testing
-.env
 
 # Logs & Debugging
 npm-debug.log*
@@ -35,3 +34,6 @@ scratch_*
 .composer/
 *.tsbuildinfo
 vendor/
+graphify-out/
+.claude/
+config.bat

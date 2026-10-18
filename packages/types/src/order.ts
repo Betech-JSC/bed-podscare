@@ -2,14 +2,33 @@ export type OrderStatusType = 'wait' | 'progress' | 'ready' | 'danger' | 'new' |
 
 export type SpecialPartsStatus = 'pending' | 'purchased';
 
-export type OrderDateFilter = 'today' | 'yesterday' | 'day_before' | '3_days' | '7_days' | '30_days' | 'all';
+export type OrderDateFilter =
+  | 'today'
+  | 'yesterday'
+  | 'day_before'
+  | '3_days'
+  | '7_days'
+  | 'this_month'
+  | '30_days'
+  | 'custom'
+  | 'all';
+
+export type OrderWorkshopStepFilter =
+  | 'all'
+  | 'inspecting'
+  | 'waiting_approval'
+  | 'in_repair'
+  | 'waiting_parts'
+  | 'waiting_qc'
+  | 'overdue';
 
 export interface OrderFilterDTO {
   search?: string;
   status?: string;
+  workshop_step?: OrderWorkshopStepFilter | string;
   role?: string;
   branch_id?: string | number;
-  order_type?: 'in_store' | 'cod' | 'all' | string;
+  order_type?: 'in_store' | 'cod' | 'warranty' | 'special_parts' | 'all' | string;
   date_filter?: OrderDateFilter;
   date?: string;
   date_type?: 'created_at' | 'completed_at' | 'handed_over_at';
@@ -21,6 +40,66 @@ export interface OrderFilterDTO {
   special_parts?: boolean | string;
   special_parts_status?: SpecialPartsStatus | 'all' | string;
   [key: string]: any;
+}
+
+export interface OrderStatusCardSummary {
+  count: number;
+  total_amount?: number | null;
+  paid_amount?: number | null;
+  deposit_amount?: number | null;
+  uncollected_amount?: number | null;
+  expected_amount?: number | null;
+  collected_amount?: number | null;
+  cash_amount?: number | null;
+  transfer_amount?: number | null;
+}
+
+export interface OrderWorkshopStepsSummary {
+  all: number;
+  in_workshop?: number;
+  inspecting: number;
+  waiting_approval: number;
+  in_repair: number;
+  waiting_parts: number;
+  waiting_qc: number;
+  overdue: number;
+}
+
+export interface OrderListMetaSummary {
+  order_type_counts: {
+    all: number;
+    in_store: number;
+    cod: number;
+    warranty: number;
+    special_parts: number;
+  };
+  status_counts?: {
+    all: number;
+    open: number;
+    in_workshop: number;
+    waiting_pickup: number;
+    completed: number;
+    cancelled?: number;
+    overdue?: number;
+  };
+  status_cards: {
+    all: OrderStatusCardSummary;
+    open: OrderStatusCardSummary;
+    in_workshop: OrderStatusCardSummary;
+    waiting_pickup: OrderStatusCardSummary;
+    completed: OrderStatusCardSummary;
+  };
+  workshop_steps: OrderWorkshopStepsSummary;
+}
+
+export interface OrderPaginationMeta {
+  current_page: number;
+  last_page: number;
+  per_page: number;
+  total: number;
+  from: number | null;
+  to: number | null;
+  summary?: OrderListMetaSummary;
 }
 
 export type HandoverReasonTag = 'wrong_order' | 'complex_repair' | 'shift_change' | 'missing_parts_tools';
@@ -99,6 +178,13 @@ export interface RepairOrder {
   address?: string | null;
   price: number;
   total_price?: number;
+  normalized_total_price?: number | null;
+  paid_amount?: number | null;
+  cash_paid_amount?: number | null;
+  transfer_paid_amount?: number | null;
+  remaining_amount?: number | null;
+  payment_method_summary?: 'cash' | 'transfer' | 'mixed' | 'other' | 'unpaid' | string;
+  payment_status_label?: string;
   initial_price?: number;
   initialPrice?: number;
   additional_services?: AdditionalServiceItem[];

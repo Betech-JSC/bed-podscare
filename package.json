@@ -2,8 +2,8 @@
   "name": "bed-podscare-monorepo",
   "private": true,
   "scripts": {
-    "build": "turbo build",
-    "dev": "turbo dev",
+    "build": "node init && turbo build",
+    "dev": "node init && turbo dev",
     "lint": "turbo lint",
     "check-types": "turbo check-types",
     "clean": "turbo clean"
