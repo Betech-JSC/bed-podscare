@@ -45,6 +45,29 @@ class GeminiFunctionCallingClient
     }
 
     /**
+     * Lấy Base URL tùy chỉnh (ví dụ 9Router: http://127.0.0.1:20128 hoặc http://127.0.0.1:20128/v1).
+     */
+    public function resolveBaseUrl(): string
+    {
+        if (! app()->runningUnitTests()) {
+            $hotBaseUrl = $this->readHotEnvValue('GEMINI_BASE_URL');
+            if ($hotBaseUrl !== '') {
+                return rtrim($hotBaseUrl, '/');
+            }
+        }
+
+        $baseUrl = trim((string) config('services.gemini.base_url', ''));
+        if ($baseUrl === '' && ! app()->runningUnitTests()) {
+            $baseUrl = trim((string) env('GEMINI_BASE_URL', ''));
+        }
+        if ($baseUrl === '' && ! app()->runningUnitTests()) {
+            $baseUrl = $this->readHotEnvValue('GEMINI_BASE_URL');
+        }
+
+        return rtrim($baseUrl, '/');
+    }
+
+    /**
      * Lấy Gemini API Key từ cấu hình, biến môi trường hoặc đọc nóng trực tiếp từ file .env trên đĩa.
      */
     public function resolveApiKey(): string
@@ -60,8 +83,12 @@ class GeminiFunctionCallingClient
         if ($apiKey === '') {
             $apiKey = trim((string) env('GEMINI_API_KEY', ''));
         }
-        if ($apiKey === '') {
+        if ($apiKey === '' && ! app()->runningUnitTests()) {
             $apiKey = $this->readHotEnvValue('GEMINI_API_KEY');
+        }
+
+        if ($apiKey === '' && $this->resolveBaseUrl() !== '') {
+            return '9router-local';
         }
 
         return $apiKey;
@@ -111,14 +138,306 @@ class GeminiFunctionCallingClient
     }
 
     /**
-     * Gọi Google Gemini generateContent hỗ trợ Function Calling và tự động chuyển đổi model dự phòng (Auto-Fallback).
+     * Chuẩn hóa URL đích cho 9Router / OpenAI-compatible endpoint (/v1/chat/completions).
+     */
+    public function buildOpenAiChatEndpoint(string $baseUrl): string
+    {
+        $clean = rtrim(trim($baseUrl), '/');
+        if (str_ends_with($clean, '/chat/completions')) {
+            return $clean;
+        }
+        if (str_ends_with($clean, '/v1')) {
+            return $clean . '/chat/completions';
+        }
+
+        return $clean . '/v1/chat/completions';
+    }
+
+    /**
+     * Chuyển đổi danh sách functionDeclarations chuẩn Gemini sang mảng tools chuẩn OpenAI.
+     */
+    public function convertDeclarationsToOpenAiTools(array $functionDeclarations): array
+    {
+        $tools = [];
+        foreach ($functionDeclarations as $decl) {
+            if (! is_array($decl) || empty($decl['name'])) {
+                continue;
+            }
+
+            $params = isset($decl['parameters']) && is_array($decl['parameters'])
+                ? $this->normalizeJsonSchemaTypes($decl['parameters'])
+                : ['type' => 'object', 'properties' => (object) []];
+
+            $tools[] = [
+                'type'     => 'function',
+                'function' => [
+                    'name'        => (string) $decl['name'],
+                    'description' => (string) ($decl['description'] ?? ''),
+                    'parameters'  => $params,
+                ],
+            ];
+        }
+
+        return $tools;
+    }
+
+    /**
+     * Đổi đệ quy kiểu dữ liệu JSON Schema từ chữ hoa (OBJECT/STRING/...) của Gemini sang chữ thường (object/string/...) chuẩn OpenAI.
+     */
+    protected function normalizeJsonSchemaTypes(array $schema): array
+    {
+        if (isset($schema['type']) && is_string($schema['type'])) {
+            $schema['type'] = strtolower($schema['type']);
+        }
+
+        if (array_key_exists('properties', $schema)) {
+            if (is_array($schema['properties'])) {
+                if (empty($schema['properties'])) {
+                    $schema['properties'] = (object) [];
+                } else {
+                    $normalizedProps = [];
+                    foreach ($schema['properties'] as $propName => $propDef) {
+                        $normalizedProps[$propName] = is_array($propDef)
+                            ? $this->normalizeJsonSchemaTypes($propDef)
+                            : $propDef;
+                    }
+                    $schema['properties'] = $normalizedProps;
+                }
+            }
+        }
+
+        if (isset($schema['items']) && is_array($schema['items'])) {
+            $schema['items'] = $this->normalizeJsonSchemaTypes($schema['items']);
+        }
+
+        return $schema;
+    }
+
+    /**
+     * Chuyển đổi contents chuẩn Gemini và systemInstruction sang mảng messages chuẩn OpenAI.
+     */
+    protected function convertContentsToOpenAiMessages(array $contents, ?string $systemInstruction = null): array
+    {
+        $messages = [];
+
+        if ($systemInstruction !== null && trim($systemInstruction) !== '') {
+            $messages[] = [
+                'role'    => 'system',
+                'content' => trim($systemInstruction),
+            ];
+        }
+
+        foreach ($contents as $item) {
+            if (! is_array($item)) {
+                continue;
+            }
+
+            $rawRole = strtolower(trim((string) ($item['role'] ?? 'user')));
+            $role = $rawRole === 'model' ? 'assistant' : $rawRole;
+
+            if (isset($item['content']) && is_string($item['content'])) {
+                $messages[] = [
+                    'role'    => $role,
+                    'content' => $item['content'],
+                ];
+                continue;
+            }
+
+            $textChunks = [];
+            $parts = $item['parts'] ?? [];
+            if (is_array($parts)) {
+                foreach ($parts as $part) {
+                    if (is_array($part) && isset($part['text']) && is_string($part['text'])) {
+                        $textChunks[] = $part['text'];
+                    }
+                }
+            }
+
+            if (! empty($textChunks)) {
+                $messages[] = [
+                    'role'    => $role,
+                    'content' => implode("\n", $textChunks),
+                ];
+            }
+        }
+
+        return $messages;
+    }
+
+    /**
+     * Gọi cổng 9Router / OpenAI-compatible (/v1/chat/completions) hỗ trợ Tool Calling và Auto-Fallback qua chuỗi model/combo.
+     */
+    protected function generateViaOpenAiCompatible(
+        string $baseUrl,
+        string $apiKey,
+        array $contents,
+        array $functionDeclarations = [],
+        ?string $systemInstruction = null
+    ): array {
+        $endpoint = $this->buildOpenAiChatEndpoint($baseUrl);
+        $messages = $this->convertContentsToOpenAiMessages($contents, $systemInstruction);
+        $openAiTools = $this->convertDeclarationsToOpenAiTools($functionDeclarations);
+
+        $timeout = (int) config('services.gemini.timeout', 15);
+        if ($timeout <= 0) {
+            $timeout = 15;
+        }
+
+        $models = $this->resolveModelChain();
+        $retryableStatuses = [404, 429, 500, 502, 503, 504];
+
+        foreach ($models as $model) {
+            $payload = [
+                'model'       => $model,
+                'messages'    => $messages,
+                'temperature' => 0.1,
+            ];
+
+            if (! empty($openAiTools)) {
+                $payload['tools'] = $openAiTools;
+                $payload['tool_choice'] = 'auto';
+            }
+
+            try {
+                $response = Http::connectTimeout(5)
+                    ->timeout($timeout)
+                    ->withOptions(['force_ip_resolve' => 'v4'])
+                    ->withToken($apiKey)
+                    ->post($endpoint, $payload);
+
+                if ($response->successful()) {
+                    $json = $response->json() ?? [];
+                    $message = data_get($json, 'choices.0.message', []);
+                    if (! is_array($message)) {
+                        $message = [];
+                    }
+
+                    $functionCalls = [];
+                    $toolCalls = data_get($message, 'tool_calls', []);
+                    if (is_array($toolCalls)) {
+                        foreach ($toolCalls as $tc) {
+                            if (! is_array($tc)) {
+                                continue;
+                            }
+
+                            $fnName = trim((string) data_get($tc, 'function.name', data_get($tc, 'name', '')));
+                            $rawArgs = data_get($tc, 'function.arguments', data_get($tc, 'arguments', '{}'));
+
+                            if (is_string($rawArgs)) {
+                                $decodedArgs = json_decode($rawArgs, true);
+                                $parsedArgs = is_array($decodedArgs) ? $decodedArgs : [];
+                            } elseif (is_array($rawArgs)) {
+                                $parsedArgs = $rawArgs;
+                            } elseif (is_object($rawArgs)) {
+                                $parsedArgs = (array) $rawArgs;
+                            } else {
+                                $parsedArgs = [];
+                            }
+
+                            if ($fnName !== '') {
+                                $functionCalls[] = [
+                                    'name' => $fnName,
+                                    'args' => $parsedArgs,
+                                ];
+                            }
+                        }
+                    }
+
+                    $legacyFnCall = data_get($message, 'function_call');
+                    if (empty($functionCalls) && is_array($legacyFnCall)) {
+                        $fnName = trim((string) ($legacyFnCall['name'] ?? ''));
+                        $rawArgs = $legacyFnCall['arguments'] ?? '{}';
+                        $parsedArgs = is_string($rawArgs)
+                            ? (json_decode($rawArgs, true) ?: [])
+                            : (is_array($rawArgs) ? $rawArgs : (array) $rawArgs);
+
+                        if ($fnName !== '') {
+                            $functionCalls[] = [
+                                'name' => $fnName,
+                                'args' => is_array($parsedArgs) ? $parsedArgs : [],
+                            ];
+                        }
+                    }
+
+                    $text = trim((string) data_get($message, 'content', ''));
+
+                    return [
+                        'ok'             => true,
+                        'model'          => $model,
+                        'function_call'  => $functionCalls[0] ?? null,
+                        'function_calls' => $functionCalls,
+                        'text'           => $text,
+                        'model_content'  => $message,
+                        'raw'            => $json,
+                    ];
+                }
+
+                $status = $response->status();
+                if (in_array($status, $retryableStatuses, true)) {
+                    Log::warning("9Router/OpenAI model {$model} failed with status {$status}, trying fallback model...", [
+                        'endpoint' => $endpoint,
+                        'model'    => $model,
+                        'status'   => $status,
+                        'body'     => $response->body(),
+                    ]);
+                    continue;
+                }
+
+                Log::error("9Router/OpenAI model {$model} failed with non-retryable status {$status}.", [
+                    'endpoint' => $endpoint,
+                    'model'    => $model,
+                    'status'   => $status,
+                    'body'     => $response->body(),
+                ]);
+
+                return [
+                    'ok'             => false,
+                    'error'          => "http_{$status}",
+                    'model'          => $model,
+                    'function_call'  => null,
+                    'function_calls' => [],
+                    'text'           => '',
+                ];
+            } catch (\Throwable $e) {
+                Log::warning("9Router/OpenAI model {$model} threw exception ({$e->getMessage()}), trying fallback model...", [
+                    'endpoint' => $endpoint,
+                    'model'    => $model,
+                ]);
+                continue;
+            }
+        }
+
+        return [
+            'ok'             => false,
+            'error'          => 'all_models_failed',
+            'model'          => null,
+            'function_call'  => null,
+            'function_calls' => [],
+            'text'           => '',
+        ];
+    }
+
+    /**
+     * Gọi Google Gemini generateContent (hoặc 9Router OpenAI-compatible khi có GEMINI_BASE_URL) hỗ trợ Function Calling và Auto-Fallback.
      */
     public function generateWithTools(
         array $contents,
         array $functionDeclarations = [],
         ?string $systemInstruction = null
     ): array {
+        $baseUrl = $this->resolveBaseUrl();
         $apiKey = $this->resolveApiKey();
+
+        if ($baseUrl !== '') {
+            return $this->generateViaOpenAiCompatible(
+                $baseUrl,
+                $apiKey,
+                $contents,
+                $functionDeclarations,
+                $systemInstruction
+            );
+        }
+
         if ($apiKey === '') {
             Log::warning('GeminiFunctionCallingClient: GEMINI_API_KEY is missing.');
             return [

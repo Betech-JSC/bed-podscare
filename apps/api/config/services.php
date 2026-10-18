@@ -54,6 +54,7 @@ return [
     ],
 
     'gemini' => [
+        'base_url'        => env('GEMINI_BASE_URL', ''),
         'api_key'         => env('GEMINI_API_KEY', ''),
         'model'           => env('GEMINI_MODEL', 'gemini-2.0-flash'),
         'fallback_models' => env('GEMINI_FALLBACK_MODELS', 'gemini-2.0-flash-lite,gemini-2.5-flash'),

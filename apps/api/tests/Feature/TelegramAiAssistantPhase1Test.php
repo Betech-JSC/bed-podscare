@@ -30,6 +30,7 @@ class TelegramAiAssistantPhase1Test extends TestCase
         Config::set('services.telegram.bot_token', 'test_bot_token_phase1');
         Config::set('services.telegram.bot_username', 'PodsCareNotifyBot');
         Config::set('services.telegram.webhook_secret', '');
+        Config::set('services.gemini.base_url', '');
         Config::set('services.gemini.api_key', 'test_gemini_api_key_phase1');
         Config::set('services.gemini.model', 'gemini-2.0-flash');
         Config::set('services.gemini.fallback_models', 'gemini-2.0-flash-lite,gemini-2.5-flash');
@@ -496,6 +497,99 @@ class TelegramAiAssistantPhase1Test extends TestCase
         $this->assertStringNotContainsString('{', $warHtml);
         $this->assertStringNotContainsString('}', $warHtml);
     }
+
+    /**
+     * 7. Kiểm tra chế độ 9Router (GEMINI_BASE_URL chuẩn OpenAI /v1/chat/completions):
+     *    - Tự động nối /v1/chat/completions khi GEMINI_BASE_URL=http://127.0.0.1:20128
+     *    - Chuyển đổi functionDeclarations sang chuẩn OpenAI tools (type: "function", parameters.type: "object")
+     *    - Tự động fallback từ combo-primary (HTTP 429) sang combo-backup (HTTP 200)
+     *    - Bóc tách choices.0.message.tool_calls, chạy RevenueSummaryTool và gửi thẳng báo cáo HTML tiếng Việt về Telegram
+     */
+    public function test_9router_openai_compatible_base_url_executes_tool_calls_and_supports_fallback(): void
+    {
+        Config::set('services.gemini.base_url', 'http://127.0.0.1:20128');
+        Config::set('services.gemini.api_key', '');
+        Config::set('services.gemini.model', 'combo-primary');
+        Config::set('services.gemini.fallback_models', 'combo-backup');
+
+        $routerPayloads = [];
+
+        Http::fake(function ($request) use (&$routerPayloads) {
+            if (str_contains($request->url(), '127.0.0.1:20128/v1/chat/completions')) {
+                $body = $request->data();
+                $routerPayloads[] = $body;
+
+                if (($body['model'] ?? '') === 'combo-primary') {
+                    return Http::response([
+                        'error' => [
+                            'message' => 'All accounts in combo-primary are rate-limited',
+                            'type'    => 'rate_limit_error',
+                        ],
+                    ], 429);
+                }
+
+                return Http::response([
+                    'id'      => 'chatcmpl-9router-001',
+                    'object'  => 'chat.completion',
+                    'model'   => 'combo-backup',
+                    'choices' => [
+                        [
+                            'index'   => 0,
+                            'message' => [
+                                'role'       => 'assistant',
+                                'content'    => null,
+                                'tool_calls' => [
+                                    [
+                                        'id'       => 'call_rev_today_01',
+                                        'type'     => 'function',
+                                        'function' => [
+                                            'name'      => 'get_revenue_summary',
+                                            'arguments' => '{"period":"today"}',
+                                        ],
+                                    ],
+                                ],
+                            ],
+                            'finish_reason' => 'tool_calls',
+                        ],
+                    ],
+                ], 200);
+            }
+
+            return Http::response(['ok' => true], 200);
+        });
+
+        $response = $this->postJson('/api/v1/webhooks/telegram', [
+            'update_id' => 90007,
+            'message'   => [
+                'message_id' => 107,
+                'chat'       => ['id' => 8841956211, 'type' => 'private'],
+                'text'       => 'Báo cáo doanh thu hôm nay qua 9Router',
+            ],
+        ]);
+
+        $response->assertStatus(200)
+            ->assertJsonPath('success', true)
+            ->assertJsonPath('data.handled', true);
+
+        // Xác nhận 9Router được gọi đúng 2 lần (lần 1: combo-primary 429, lần 2: combo-backup 200) và không gọi lại lần 3
+        $this->assertCount(2, $routerPayloads);
+        $this->assertSame('combo-primary', $routerPayloads[0]['model'] ?? null);
+        $this->assertSame('combo-backup', $routerPayloads[1]['model'] ?? null);
+
+        // Xác nhận schema tools gửi sang 9Router theo đúng chuẩn OpenAI (type: function, parameters.type: object chữ thường)
+        $firstTool = $routerPayloads[0]['tools'][0] ?? [];
+        $this->assertSame('function', $firstTool['type'] ?? null);
+        $this->assertSame('object', $firstTool['function']['parameters']['type'] ?? null);
+
+        // Xác nhận báo cáo HTML tiếng Việt được gửi thẳng về Telegram
+        Http::assertSent(function ($request) {
+            return str_contains($request->url(), '/sendMessage')
+                && (string) $request['chat_id'] === '8841956211'
+                && str_contains($request['text'], '<b>Báo cáo doanh thu - Hôm nay')
+                && str_contains($request['text'], 'Chi nhánh: <b>Chi nhánh Trung Tâm</b>');
+        });
+    }
 }
+
 
 
