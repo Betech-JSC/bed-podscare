@@ -93,7 +93,7 @@ class TelegramAiAssistantService
 
             if (! ($step1['ok'] ?? false)) {
                 $errorMsg = "<b>Hệ thống Trợ lý AI tạm thời gián đoạn</b>\n"
-                    . "Vui lòng kiểm tra cấu hình GEMINI_API_KEY hoặc thử lại sau ít phút.";
+                    . "Vui lòng kiểm tra kết nối 9Router hoặc thử lại sau ít phút.";
                 $this->telegramService->sendMessage($chatId, $errorMsg, $recipient->telegram_thread_id);
                 return false;
             }

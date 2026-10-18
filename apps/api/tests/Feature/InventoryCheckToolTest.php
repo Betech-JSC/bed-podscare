@@ -40,6 +40,7 @@ class InventoryCheckToolTest extends TestCase
         Config::set('services.telegram.bot_token', 'test_bot_token_phase4');
         Config::set('services.telegram.bot_username', 'PodsCareNotifyBot');
         Config::set('services.telegram.webhook_secret', '');
+        Config::set('services.gemini.base_url', '');
         Config::set('services.gemini.api_key', 'test_gemini_api_key_phase4');
         Config::set('services.gemini.model', 'gemini-2.0-flash');
         Config::set('services.gemini.fallback_models', 'gemini-2.0-flash-lite,gemini-2.5-flash');

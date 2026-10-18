@@ -588,6 +588,20 @@ class TelegramAiAssistantPhase1Test extends TestCase
                 && str_contains($request['text'], '<b>Báo cáo doanh thu - Hôm nay')
                 && str_contains($request['text'], 'Chi nhánh: <b>Chi nhánh Trung Tâm</b>');
         });
+
+        // Kiểm tra cấu hình mặc định của GeminiFunctionCallingClient trỏ về 9Router (http://127.0.0.1:20128/v1, key 9router-local, model podscare-ai)
+        Config::set('services.gemini.base_url', 'http://127.0.0.1:20128/v1');
+        Config::set('services.gemini.api_key', '');
+        Config::set('services.gemini.model', '');
+        Config::set('services.gemini.fallback_models', '');
+
+        $client = new \App\Services\TelegramAi\GeminiFunctionCallingClient();
+        $this->assertSame('http://127.0.0.1:20128/v1', $client->resolveBaseUrl());
+        $this->assertSame('9router-local', $client->resolveApiKey());
+        $this->assertSame(
+            ['podscare-ai', 'gemini-2.5-flash', 'gemini-2.5-flash-lite', 'gemini-2.0-flash'],
+            $client->resolveModelChain()
+        );
     }
 }
 

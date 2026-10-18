@@ -45,30 +45,47 @@ class GeminiFunctionCallingClient
     }
 
     /**
-     * Lấy Base URL tùy chỉnh (ví dụ 9Router: http://127.0.0.1:20128 hoặc http://127.0.0.1:20128/v1).
+     * Lấy Base URL của cổng AI (mặc định là 9Router: http://127.0.0.1:20128/v1).
+     * Chỉ khi cấu hình tường minh GEMINI_BASE_URL=direct (hoặc đặt rỗng trong unit test) mới gọi trực tiếp Google Gemini API.
      */
     public function resolveBaseUrl(): string
     {
-        if (! app()->runningUnitTests()) {
-            $hotBaseUrl = $this->readHotEnvValue('GEMINI_BASE_URL');
-            if ($hotBaseUrl !== '') {
-                return rtrim($hotBaseUrl, '/');
+        if (app()->runningUnitTests()) {
+            $testBaseUrl = trim((string) config('services.gemini.base_url', 'http://127.0.0.1:20128/v1'));
+            if (strtolower($testBaseUrl) === 'direct') {
+                return '';
             }
+
+            return rtrim($testBaseUrl, '/');
+        }
+
+        $hotBaseUrl = $this->readHotEnvValue('GEMINI_BASE_URL');
+        if ($hotBaseUrl !== '') {
+            if (strtolower($hotBaseUrl) === 'direct') {
+                return '';
+            }
+
+            return rtrim($hotBaseUrl, '/');
         }
 
         $baseUrl = trim((string) config('services.gemini.base_url', ''));
-        if ($baseUrl === '' && ! app()->runningUnitTests()) {
+        if ($baseUrl === '') {
             $baseUrl = trim((string) env('GEMINI_BASE_URL', ''));
         }
-        if ($baseUrl === '' && ! app()->runningUnitTests()) {
-            $baseUrl = $this->readHotEnvValue('GEMINI_BASE_URL');
+        if ($baseUrl === '') {
+            $baseUrl = 'http://127.0.0.1:20128/v1';
+        }
+
+        if (strtolower($baseUrl) === 'direct') {
+            return '';
         }
 
         return rtrim($baseUrl, '/');
     }
 
     /**
-     * Lấy Gemini API Key từ cấu hình, biến môi trường hoặc đọc nóng trực tiếp từ file .env trên đĩa.
+     * Lấy API Key cho 9Router / Gemini từ cấu hình, biến môi trường hoặc đọc nóng trực tiếp từ file .env trên đĩa.
+     * Khi chạy qua 9Router (baseUrl !== ''), nếu chưa truyền key thì mặc định dùng '9router-local'.
      */
     public function resolveApiKey(): string
     {
@@ -80,7 +97,7 @@ class GeminiFunctionCallingClient
         }
 
         $apiKey = trim((string) config('services.gemini.api_key', ''));
-        if ($apiKey === '') {
+        if ($apiKey === '' && ! app()->runningUnitTests()) {
             $apiKey = trim((string) env('GEMINI_API_KEY', ''));
         }
         if ($apiKey === '' && ! app()->runningUnitTests()) {
@@ -95,7 +112,8 @@ class GeminiFunctionCallingClient
     }
 
     /**
-     * Xây dựng chuỗi model ưu tiên (Primary model + Fallback models).
+     * Xây dựng chuỗi model/combo ưu tiên (Primary model + Fallback models).
+     * Mặc định ưu tiên combo 'podscare-ai' của 9Router, dự phòng qua 'gemini-2.5-flash,gemini-2.5-flash-lite,gemini-2.0-flash'.
      *
      * @return array<int, string>
      */
@@ -105,28 +123,28 @@ class GeminiFunctionCallingClient
         $primaryModel = $hotPrimary !== ''
             ? $hotPrimary
             : trim((string) config('services.gemini.model', ''));
-        if ($primaryModel === '') {
+        if ($primaryModel === '' && ! app()->runningUnitTests()) {
             $primaryModel = trim((string) env('GEMINI_MODEL', ''));
         }
-        if ($primaryModel === '') {
+        if ($primaryModel === '' && ! app()->runningUnitTests()) {
             $primaryModel = $this->readHotEnvValue('GEMINI_MODEL');
         }
         if ($primaryModel === '') {
-            $primaryModel = 'gemini-2.0-flash';
+            $primaryModel = 'podscare-ai';
         }
 
         $hotFallback = ! app()->runningUnitTests() ? $this->readHotEnvValue('GEMINI_FALLBACK_MODELS') : '';
         $fallbackRaw = $hotFallback !== ''
             ? $hotFallback
             : trim((string) config('services.gemini.fallback_models', ''));
-        if ($fallbackRaw === '') {
+        if ($fallbackRaw === '' && ! app()->runningUnitTests()) {
             $fallbackRaw = trim((string) env('GEMINI_FALLBACK_MODELS', ''));
         }
-        if ($fallbackRaw === '') {
+        if ($fallbackRaw === '' && ! app()->runningUnitTests()) {
             $fallbackRaw = $this->readHotEnvValue('GEMINI_FALLBACK_MODELS');
         }
         if ($fallbackRaw === '') {
-            $fallbackRaw = 'gemini-2.0-flash-lite,gemini-2.5-flash';
+            $fallbackRaw = 'gemini-2.5-flash,gemini-2.5-flash-lite,gemini-2.0-flash';
         }
 
         $fallbackList = array_map('trim', explode(',', $fallbackRaw));
