@@ -3,6 +3,7 @@ import type {
   WorkShift,
   CurrentShiftSnapshot,
   CurrentShiftResponse,
+  AggregatedShiftSummaryItem,
   ShiftFilterParams,
   OpenShiftDTO,
   CloseShiftDTO,
@@ -12,7 +13,7 @@ import type {
   PaginatedResponse,
 } from '@podscare/types';
 
-export type { CurrentShiftSnapshot, CurrentShiftResponse };
+export type { CurrentShiftSnapshot, CurrentShiftResponse, AggregatedShiftSummaryItem };
 
 export class ShiftService {
   constructor(private http: HttpClient = defaultHttpClient) {}
@@ -27,11 +28,11 @@ export class ShiftService {
   }
 
   /**
-   * Lấy ca đang mở của chi nhánh hiện tại kèm snapshot vận hành và két tiền.
+   * Lấy ca đang mở của chi nhánh hiện tại (hoặc gộp toàn hệ thống khi branchId = 'all') kèm snapshot vận hành và két tiền.
    */
-  async getCurrentShift(branchId?: number | string): Promise<CurrentShiftResponse> {
+  async getCurrentShift(branchId: number | string = 'all'): Promise<CurrentShiftResponse> {
     return this.http.get('/api/v1/shifts/current', {
-      params: branchId !== undefined ? { branch_id: branchId } : undefined,
+      params: branchId !== undefined ? { branch_id: branchId } : { branch_id: 'all' },
     });
   }
 

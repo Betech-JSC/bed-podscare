@@ -44,6 +44,12 @@ export const StaffPerformanceWidget: React.FC<StaffPerformanceWidgetProps> = ({
   const [techSortDir, setTechSortDir] = useState<SortDirection>('desc');
   const [cskhSortKey, setCskhSortKey] = useState<CskhSortKey>('orders_created_count');
   const [cskhSortDir, setCskhSortDir] = useState<SortDirection>('desc');
+  const [currentPage, setCurrentPage] = useState<number>(1);
+  const [pageSize, setPageSize] = useState<5 | 8>(5);
+
+  React.useEffect(() => {
+    setCurrentPage(1);
+  }, [activeTab, branchId, selectedDate, period, pageSize]);
 
   const { data, isLoading, isError, refetch, isFetching } = useQuery({
     queryKey: ['staff-kpi', branchId, selectedDate, period],
@@ -177,6 +183,21 @@ export const StaffPerformanceWidget: React.FC<StaffPerformanceWidgetProps> = ({
     return list;
   }, [cskhStaff, cskhSortKey, cskhSortDir]);
 
+  const activeListLength =
+    activeTab === 'technicians' ? sortedTechnicians.length : sortedCskhStaff.length;
+  const totalPages = Math.max(1, Math.ceil(activeListLength / pageSize));
+  const safePage = Math.min(currentPage, totalPages);
+
+  const paginatedTechnicians = useMemo(() => {
+    const start = (safePage - 1) * pageSize;
+    return sortedTechnicians.slice(start, start + pageSize);
+  }, [sortedTechnicians, safePage, pageSize]);
+
+  const paginatedCskhStaff = useMemo(() => {
+    const start = (safePage - 1) * pageSize;
+    return sortedCskhStaff.slice(start, start + pageSize);
+  }, [sortedCskhStaff, safePage, pageSize]);
+
   const renderSortIcon = (active: boolean, dir: SortDirection) => {
     if (!active) {
       return <span className="ml-1 text-[10px] text-[#b4c2bb]">↕</span>;
@@ -213,7 +234,7 @@ export const StaffPerformanceWidget: React.FC<StaffPerformanceWidgetProps> = ({
             <div className="flex items-center gap-2 mb-1">
               <span className="w-2 h-2 rounded-full bg-[#176b58]" />
               <span className="text-xs font-bold text-[#819089] uppercase tracking-[1px]">
-                KHU VỰC D · HIỆU SUẤT NHÂN SỰ
+                HIỆU SUẤT NHÂN SỰ
               </span>
               {isStaffLoading ? (
                 <span
@@ -441,16 +462,17 @@ export const StaffPerformanceWidget: React.FC<StaffPerformanceWidgetProps> = ({
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-[#f1f3f2] text-xs">
-                  {sortedTechnicians.map((tech, idx) => {
+                  {paginatedTechnicians.map((tech, idx) => {
                     const formattedRev = moneyFormatted(tech.revenue_generated, tech.revenue_generated_formatted);
                     const qcRate = tech.qc_pass_rate;
                     const warrantyRate = getTechWarrantyRate(tech);
+                    const globalIdx = (safePage - 1) * pageSize + idx;
 
                     return (
-                      <tr key={tech.id || idx} className="h-13 hover:bg-[#fafcfa] transition-colors">
+                      <tr key={tech.id || globalIdx} className="h-12 hover:bg-[#fafcfa] transition-colors">
                         <td className="px-4">
                           <div className="flex items-center gap-2.5">
-                            <Avatar initials={tech.name} variant={(idx % 4) as any} size="sm" />
+                            <Avatar initials={tech.name} variant={(globalIdx % 4) as any} size="sm" />
                             <div>
                               <div className="font-bold text-[#1c302b]">{tech.name}</div>
                               <div className="text-[11px] text-[#7e8d85] flex items-center gap-1.5">
@@ -612,15 +634,16 @@ export const StaffPerformanceWidget: React.FC<StaffPerformanceWidgetProps> = ({
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-[#f1f3f2] text-xs">
-                  {sortedCskhStaff.map((staff, idx) => {
+                  {paginatedCskhStaff.map((staff, idx) => {
                     const formattedRev = moneyFormatted(staff.revenue_generated, staff.revenue_generated_formatted);
                     const convRate = staff.conversion_rate;
+                    const globalIdx = (safePage - 1) * pageSize + idx;
 
                     return (
-                      <tr key={staff.id || idx} className="h-13 hover:bg-[#fafcfa] transition-colors">
+                      <tr key={staff.id || globalIdx} className="h-12 hover:bg-[#fafcfa] transition-colors">
                         <td className="px-4">
                           <div className="flex items-center gap-2.5">
-                            <Avatar initials={staff.name} variant={(idx % 4) as any} size="sm" />
+                            <Avatar initials={staff.name} variant={(globalIdx % 4) as any} size="sm" />
                             <div>
                               <div className="font-bold text-[#1c302b]">{staff.name}</div>
                               <div className="text-[11px] text-[#7e8d85]">
@@ -684,14 +707,63 @@ export const StaffPerformanceWidget: React.FC<StaffPerformanceWidgetProps> = ({
         )}
       </div>
 
-      {/* Footer Info */}
-      <div className="pt-3 mt-3 border-t border-[#f0f3f1] flex flex-wrap items-center justify-between gap-2 text-[11px] text-[#809088]">
-        <div className="flex items-center gap-1.5">
+      {/* Compact Pagination + Footer Info */}
+      <div className="pt-3 mt-3 border-t border-[#f0f3f1] flex flex-wrap items-center justify-between gap-2.5 text-[11px] text-[#809088]">
+        <div className="flex items-center gap-2">
           <Icon name="shield" size={13} className="text-[#176b58]" />
-          <span>Chính sách bảo mật Zero-Trust: Doanh thu nhân sự được mã hóa theo vai trò đăng nhập.</span>
+          <span>
+            {activeListLength > 0
+              ? `Hiển thị ${(safePage - 1) * pageSize + 1}–${Math.min(
+                  safePage * pageSize,
+                  activeListLength
+                )} / ${activeListLength} nhân sự`
+              : 'Chính sách bảo mật Zero-Trust theo vai trò'}
+          </span>
         </div>
-        <div>
-          <span>Cập nhật theo dữ liệu đơn hàng hoàn tất thực tế</span>
+
+        <div
+          data-testid="staff-kpi-compact-pagination"
+          className="flex items-center gap-2"
+        >
+          <div className="flex items-center gap-1 bg-[#f4f7f5] p-0.5 rounded-[7px] border border-[#e5ece8]">
+            {([5, 8] as const).map((size) => (
+              <button
+                key={size}
+                type="button"
+                onClick={() => setPageSize(size)}
+                className={`px-2 py-0.5 rounded-[5px] text-[11px] font-bold transition-colors cursor-pointer ${
+                  pageSize === size
+                    ? 'bg-[#176b58] text-white'
+                    : 'text-[#5b6c64] hover:text-[#1c302b]'
+                }`}
+              >
+                {size} dòng
+              </button>
+            ))}
+          </div>
+
+          <span className="font-semibold text-[#2d3d35] px-1">
+            Trang {safePage}/{totalPages}
+          </span>
+
+          <div className="flex items-center gap-1">
+            <button
+              type="button"
+              disabled={safePage <= 1}
+              onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+              className="px-2 py-1 rounded-[6px] border border-[#d9e3dd] bg-white text-[#2d3d35] font-bold disabled:opacity-40 disabled:cursor-not-allowed hover:bg-[#f2f6f4] cursor-pointer"
+            >
+              Trước
+            </button>
+            <button
+              type="button"
+              disabled={safePage >= totalPages}
+              onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
+              className="px-2 py-1 rounded-[6px] border border-[#d9e3dd] bg-white text-[#2d3d35] font-bold disabled:opacity-40 disabled:cursor-not-allowed hover:bg-[#f2f6f4] cursor-pointer"
+            >
+              Sau
+            </button>
+          </div>
         </div>
       </div>
     </div>
