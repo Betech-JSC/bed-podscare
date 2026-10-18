@@ -4,6 +4,8 @@ namespace App\Services;
 
 use App\Models\RepairOrder;
 use App\Models\TelegramRecipient;
+use App\Services\TelegramAi\TelegramAiAssistantService;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 
@@ -20,6 +22,38 @@ class TelegramNotificationService
         }
 
         return $token;
+    }
+
+    /**
+     * Gửi trạng thái hoạt động (typing) qua Telegram Bot API (Fail-safe).
+     */
+    public function sendChatAction(
+        string $chatId,
+        string $action = 'typing',
+        ?string $threadId = null
+    ): void {
+        $token = $this->resolveBotToken();
+        if ($token === '' || trim($chatId) === '') {
+            return;
+        }
+
+        $payload = [
+            'chat_id' => $chatId,
+            'action'  => $action,
+        ];
+
+        if ($threadId !== null && trim($threadId) !== '') {
+            $payload['message_thread_id'] = is_numeric($threadId) ? (int) $threadId : $threadId;
+        }
+
+        try {
+            Http::connectTimeout(3)
+                ->timeout(3)
+                ->withOptions(['force_ip_resolve' => 'v4'])
+                ->post("https://api.telegram.org/bot{$token}/sendChatAction", $payload);
+        } catch (\Throwable $e) {
+            // Bỏ qua lỗi sendChatAction để không ảnh hưởng luồng chính
+        }
     }
 
     /**
@@ -223,7 +257,7 @@ class TelegramNotificationService
     }
 
     /**
-     * Xử lý payload update từ Webhook Telegram.
+     * Xử lý payload update từ Webhook Telegram (Hỗ trợ cả liên kết /start và Trợ lý AI hội thoại).
      */
     public function handleWebhookUpdate(array $update): ?TelegramRecipient
     {
@@ -234,16 +268,44 @@ class TelegramNotificationService
             return null;
         }
 
-        $recipient = $this->resolveRecipientFromMessage($text);
-        if (! $recipient) {
+        $updateId = data_get($update, 'update_id');
+        if ($updateId !== null && ! Cache::add("telegram_processed_update_{$updateId}", true, now()->addDay())) {
             return null;
         }
 
-        return $this->handleStartCommand((string) $recipient->connect_token, $chatId);
+        $isStartOrTokenCommand = (bool) preg_match('#^/start(?:\s|$|@)#i', $text) || str_starts_with($text, 'adm_');
+
+        $activeRecipient = TelegramRecipient::with(['tenant', 'branch'])
+            ->where('telegram_chat_id', $chatId)
+            ->where('is_active', true)
+            ->orderByDesc('id')
+            ->first();
+
+        if ($isStartOrTokenCommand || ! $activeRecipient) {
+            $pendingRecipient = $this->resolveRecipientFromMessage($text);
+            if ($pendingRecipient) {
+                return $this->handleStartCommand((string) $pendingRecipient->connect_token, $chatId);
+            }
+
+            if ($isStartOrTokenCommand && ! $activeRecipient) {
+                return null;
+            }
+        }
+
+        if ($activeRecipient) {
+            app(TelegramAiAssistantService::class)->handleIncomingMessage($activeRecipient, $text, $update);
+            return $activeRecipient;
+        }
+
+        $unregisteredMsg = "<b>Tài khoản Telegram chưa được kích hoạt</b>\n"
+            . "Vui lòng truy cập trang Cài đặt thương hiệu trên hệ thống PodsCare để thêm số điện thoại và bấm kích hoạt kết nối.";
+        $this->sendMessage($chatId, $unregisteredMsg);
+
+        return null;
     }
 
     /**
-     * Chủ động đồng bộ các lệnh /start qua getUpdates (hỗ trợ Localhost & Telegram Web).
+     * Chủ động đồng bộ các lệnh /start và tin nhắn AI mới qua getUpdates (hỗ trợ Localhost & Telegram Web).
      */
     public function syncUpdates(?int $tenantId = null): int
     {
@@ -253,10 +315,29 @@ class TelegramNotificationService
         }
 
         try {
+            $offset = (int) Cache::get('telegram_last_update_offset', 0);
+            $queryParams = ['timeout' => 2];
+            if ($offset > 0) {
+                $queryParams['offset'] = $offset;
+            }
+
             $response = Http::connectTimeout(5)
                 ->timeout(8)
                 ->withOptions(['force_ip_resolve' => 'v4'])
-                ->get("https://api.telegram.org/bot{$token}/getUpdates");
+                ->get("https://api.telegram.org/bot{$token}/getUpdates", $queryParams);
+
+            if ($response->status() === 409) {
+                Http::connectTimeout(5)
+                    ->timeout(5)
+                    ->withOptions(['force_ip_resolve' => 'v4'])
+                    ->post("https://api.telegram.org/bot{$token}/deleteWebhook");
+
+                $response = Http::connectTimeout(5)
+                    ->timeout(8)
+                    ->withOptions(['force_ip_resolve' => 'v4'])
+                    ->get("https://api.telegram.org/bot{$token}/getUpdates", $queryParams);
+            }
+
             if (! $response->successful()) {
                 return 0;
             }
@@ -264,6 +345,18 @@ class TelegramNotificationService
             $updates = $response->json('result', []);
             if (! is_array($updates) || empty($updates)) {
                 return 0;
+            }
+
+            $maxUpdateId = $offset > 0 ? $offset - 1 : 0;
+            foreach ($updates as $update) {
+                $uid = (int) data_get($update, 'update_id', 0);
+                if ($uid > $maxUpdateId) {
+                    $maxUpdateId = $uid;
+                }
+            }
+
+            if ($maxUpdateId > 0) {
+                Cache::put('telegram_last_update_offset', $maxUpdateId + 1, now()->addDays(7));
             }
 
             $syncedCount = 0;
@@ -276,13 +369,32 @@ class TelegramNotificationService
                 }
 
                 $recipient = $this->resolveRecipientFromMessage($text, $tenantId);
-                if (! $recipient) {
+                if ($recipient) {
+                    if (empty($recipient->telegram_chat_id) || (string) $recipient->telegram_chat_id !== $chatId) {
+                        $this->handleStartCommand((string) $recipient->connect_token, $chatId);
+                        $syncedCount++;
+                    }
                     continue;
                 }
 
-                if (empty($recipient->telegram_chat_id) || (string) $recipient->telegram_chat_id !== $chatId) {
-                    $this->handleStartCommand((string) $recipient->connect_token, $chatId);
-                    $syncedCount++;
+                $updateId = data_get($update, 'update_id');
+                $messageDate = (int) data_get($update, 'message.date', 0);
+                if ($updateId !== null && $messageDate > 0 && $messageDate >= now()->subMinutes(2)->timestamp) {
+                    if (Cache::add("telegram_processed_update_{$updateId}", true, now()->addDay())) {
+                        $activeQuery = TelegramRecipient::with(['tenant', 'branch'])
+                            ->where('telegram_chat_id', $chatId)
+                            ->where('is_active', true);
+
+                        if ($tenantId !== null) {
+                            $activeQuery->where('tenant_id', $tenantId);
+                        }
+
+                        $activeRecipient = $activeQuery->orderByDesc('id')->first();
+                        if ($activeRecipient) {
+                            app(TelegramAiAssistantService::class)->handleIncomingMessage($activeRecipient, $text, $update);
+                            $syncedCount++;
+                        }
+                    }
                 }
             }
 

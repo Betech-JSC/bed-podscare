@@ -53,4 +53,11 @@ return [
         'frontend_url'   => env('FRONTEND_URL', env('APP_URL', 'http://localhost:3000')),
     ],
 
+    'gemini' => [
+        'api_key'         => env('GEMINI_API_KEY', ''),
+        'model'           => env('GEMINI_MODEL', 'gemini-2.0-flash'),
+        'fallback_models' => env('GEMINI_FALLBACK_MODELS', 'gemini-2.0-flash-lite,gemini-2.5-flash'),
+        'timeout'         => (int) env('GEMINI_TIMEOUT', 15),
+    ],
+
 ];

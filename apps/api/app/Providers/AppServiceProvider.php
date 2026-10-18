@@ -11,7 +11,15 @@ class AppServiceProvider extends ServiceProvider
      */
     public function register(): void
     {
-        //
+        $this->app->singleton(
+            \App\Services\TelegramAi\TelegramAiToolRegistry::class,
+            fn () => new \App\Services\TelegramAi\TelegramAiToolRegistry([
+                new \App\Services\TelegramAi\Tools\LookupOrderTool(),
+                new \App\Services\TelegramAi\Tools\RevenueSummaryTool(),
+                new \App\Services\TelegramAi\Tools\InventoryCheckTool(),
+                new \App\Services\TelegramAi\Tools\WarrantyLookupTool(),
+            ])
+        );
     }
 
     /**

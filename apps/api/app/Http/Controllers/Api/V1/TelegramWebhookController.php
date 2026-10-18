@@ -10,7 +10,7 @@ use Illuminate\Http\Request;
 class TelegramWebhookController extends Controller
 {
     /**
-     * Nhận Webhook Update từ Telegram Bot API để xử lý lệnh /start <connect_token>.
+     * Nhận Webhook Update từ Telegram Bot API để xử lý lệnh /start <connect_token> và Trợ lý AI hội thoại.
      */
     public function handle(Request $request, TelegramNotificationService $service): JsonResponse
     {
