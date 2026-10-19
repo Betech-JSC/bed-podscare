@@ -105,10 +105,65 @@ class GeminiFunctionCallingClient
         }
 
         if ($apiKey === '' && $this->resolveBaseUrl() !== '') {
-            return '9router-local';
+            $diskKey = $this->resolveNineRouterApiKeyFromDisk();
+            return $diskKey !== '' ? $diskKey : '9router-local';
         }
 
         return $apiKey;
+    }
+
+    /**
+     * Đọc API key thật từ file cấu hình của 9Router (/root/.9router/db.json hoặc ~/.9router/db.json) nếu tồn tại.
+     *
+     * @param  array<int, string>|null  $candidatePaths
+     */
+    public function resolveNineRouterApiKeyFromDisk(?array $candidatePaths = null): string
+    {
+        if ($candidatePaths === null) {
+            if (app()->runningUnitTests()) {
+                $testDbPath = trim((string) config('services.gemini.nine_router_db_path', ''));
+                $candidatePaths = $testDbPath !== '' ? [$testDbPath] : [];
+            } else {
+                $home = trim((string) (getenv('HOME') ?: ''));
+                $candidatePaths = array_values(array_unique(array_filter([
+                    '/root/.9router/db.json',
+                    $home !== '' ? rtrim($home, '/') . '/.9router/db.json' : '',
+                ])));
+            }
+        }
+
+        foreach ($candidatePaths as $path) {
+            if ($path === '' || ! is_file($path) || ! is_readable($path)) {
+                continue;
+            }
+
+            $raw = @file_get_contents($path);
+            if (! is_string($raw) || trim($raw) === '') {
+                continue;
+            }
+
+            $db = json_decode($raw, true);
+            if (! is_array($db)) {
+                continue;
+            }
+
+            $apiKeys = data_get($db, 'apiKeys');
+            if (is_array($apiKeys)) {
+                foreach ($apiKeys as $entry) {
+                    if (is_string($entry) && trim($entry) !== '') {
+                        return trim($entry);
+                    }
+                    if (is_array($entry)) {
+                        $key = trim((string) ($entry['key'] ?? $entry['apiKey'] ?? $entry['token'] ?? $entry['value'] ?? ''));
+                        if ($key !== '') {
+                            return $key;
+                        }
+                    }
+                }
+            }
+        }
+
+        return '';
     }
 
     /**
@@ -304,6 +359,12 @@ class GeminiFunctionCallingClient
         $models = $this->resolveModelChain();
         $retryableStatuses = [404, 429, 500, 502, 503, 504];
 
+        $diskKey = $this->resolveNineRouterApiKeyFromDisk();
+        $effectiveKey = trim($apiKey);
+        if ($effectiveKey === '' || $effectiveKey === '9router-local') {
+            $effectiveKey = $diskKey;
+        }
+
         foreach ($models as $model) {
             $payload = [
                 'model'       => $model,
@@ -317,11 +378,35 @@ class GeminiFunctionCallingClient
             }
 
             try {
-                $response = Http::connectTimeout(5)
-                    ->timeout($timeout)
-                    ->withOptions(['force_ip_resolve' => 'v4'])
-                    ->withToken($apiKey)
-                    ->post($endpoint, $payload);
+                $sendRequest = static function (string $bearerToken) use ($timeout, $endpoint, $payload) {
+                    $pending = Http::connectTimeout(5)
+                        ->timeout($timeout)
+                        ->withOptions(['force_ip_resolve' => 'v4']);
+
+                    if ($bearerToken !== '') {
+                        $pending = $pending->withToken($bearerToken);
+                    }
+
+                    return $pending->post($endpoint, $payload);
+                };
+
+                $response = $sendRequest($effectiveKey);
+
+                if ($response->status() === 401 && $effectiveKey !== '') {
+                    if ($diskKey !== '' && $diskKey !== $effectiveKey) {
+                        $diskRetryResponse = $sendRequest($diskKey);
+                        if ($diskRetryResponse->status() !== 401) {
+                            $response = $diskRetryResponse;
+                            $effectiveKey = $diskKey;
+                        } else {
+                            $response = $sendRequest('');
+                            $effectiveKey = '';
+                        }
+                    } else {
+                        $response = $sendRequest('');
+                        $effectiveKey = '';
+                    }
+                }
 
                 if ($response->successful()) {
                     $json = $response->json() ?? [];

@@ -513,11 +513,13 @@ class TelegramAiAssistantPhase1Test extends TestCase
         Config::set('services.gemini.fallback_models', 'combo-backup');
 
         $routerPayloads = [];
+        $routerAuthHeaders = [];
 
-        Http::fake(function ($request) use (&$routerPayloads) {
+        Http::fake(function ($request) use (&$routerPayloads, &$routerAuthHeaders) {
             if (str_contains($request->url(), '127.0.0.1:20128/v1/chat/completions')) {
                 $body = $request->data();
                 $routerPayloads[] = $body;
+                $routerAuthHeaders[] = $request->header('Authorization');
 
                 if (($body['model'] ?? '') === 'combo-primary') {
                     return Http::response([
@@ -575,6 +577,9 @@ class TelegramAiAssistantPhase1Test extends TestCase
         $this->assertCount(2, $routerPayloads);
         $this->assertSame('combo-primary', $routerPayloads[0]['model'] ?? null);
         $this->assertSame('combo-backup', $routerPayloads[1]['model'] ?? null);
+        // Không gắn header Authorization giả 'Bearer 9router-local' khi gọi local 9Router không có key
+        $this->assertEmpty($routerAuthHeaders[0]);
+        $this->assertEmpty($routerAuthHeaders[1]);
 
         // Xác nhận schema tools gửi sang 9Router theo đúng chuẩn OpenAI (type: function, parameters.type: object chữ thường)
         $firstTool = $routerPayloads[0]['tools'][0] ?? [];
@@ -602,6 +607,16 @@ class TelegramAiAssistantPhase1Test extends TestCase
             ['podscare-ai', 'gemini-2.5-flash', 'gemini-2.5-flash-lite', 'gemini-2.0-flash'],
             $client->resolveModelChain()
         );
+
+        // Kiểm tra đọc key từ db.json của 9Router
+        $tmpDb = sys_get_temp_dir() . '/test_9router_db_' . uniqid() . '.json';
+        file_put_contents($tmpDb, json_encode([
+            'apiKeys' => [
+                ['id' => 'k1', 'name' => 'PodsCare VPS', 'key' => 'sk_9router_real_disk_key'],
+            ],
+        ]));
+        $this->assertSame('sk_9router_real_disk_key', $client->resolveNineRouterApiKeyFromDisk([$tmpDb]));
+        @unlink($tmpDb);
     }
 }
 
