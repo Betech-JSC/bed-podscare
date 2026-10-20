@@ -22,7 +22,18 @@ class TelegramWebhookController extends Controller
             }
         }
 
-        $recipient = $service->handleWebhookUpdate($request->all());
+        $payload = $request->all();
+
+        if (! $service->acquireWebhookIdempotencyLock($payload)) {
+            return $this->success([
+                'status'       => 'ok',
+                'handled'      => false,
+                'recipient_id' => null,
+                'reason'       => 'duplicate_update_ignored',
+            ], 'OK');
+        }
+
+        $recipient = $service->handleWebhookUpdate($payload, true);
 
         return $this->success([
             'handled'      => $recipient !== null,

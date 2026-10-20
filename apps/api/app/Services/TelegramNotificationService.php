@@ -11,6 +11,9 @@ use Illuminate\Support\Facades\Log;
 
 class TelegramNotificationService
 {
+    public const WEBHOOK_IDEMPOTENCY_TTL_SECONDS = 300;
+    public const MAX_SAFE_HTML_LENGTH = 3900;
+
     /**
      * Lấy Bot Token từ config hoặc fallback sang biến môi trường.
      */
@@ -57,6 +60,82 @@ class TelegramNotificationService
     }
 
     /**
+     * Cắt gọn an toàn chuỗi HTML gửi qua Telegram khi vượt quá ngưỡng ký tự cho phép (mặc định 3900 ký tự UTF-8):
+     * - Ưu tiên cắt ở vị trí xuống dòng (\n) hoặc khoảng trắng gần nhất.
+     * - Đảm bảo không cắt ngang giữa thẻ HTML (<...>) hoặc thực thể HTML (&...;).
+     * - Tự động đóng toàn bộ các thẻ HTML còn mở (<b>, <strong>, <i>, <em>, <u>, <ins>, <s>, <strike>, <del>, <code>, <pre>, <a>) theo thứ tự LIFO.
+     * - Nối thêm dòng ghi chú hướng dẫn lọc hẹp từ khóa/khoảng ngày và đảm bảo tổng độ dài cuối cùng <= 4096 ký tự.
+     */
+    public function truncateTelegramHtmlSafely(string $html, int $maxLength = self::MAX_SAFE_HTML_LENGTH): string
+    {
+        if (mb_strlen($html, 'UTF-8') <= $maxLength) {
+            return $html;
+        }
+
+        $suffix = "\n\n<i>... (Danh sách còn tiếp, vui lòng lọc hẹp từ khóa hoặc khoảng ngày để xem chi tiết)</i>";
+        $suffixLen = mb_strlen($suffix, 'UTF-8');
+        $reservedForClosingTags = 64;
+        $cutLimit = max(100, $maxLength - $suffixLen - $reservedForClosingTags);
+
+        $slice = mb_substr($html, 0, $cutLimit, 'UTF-8');
+
+        // Ưu tiên cắt tại dấu xuống dòng (\n) hoặc khoảng trắng gần nhất để không đứt giữa dòng/từ
+        $minAcceptableCut = (int) floor($cutLimit * 0.6);
+        $lastNewline = mb_strrpos($slice, "\n", 0, 'UTF-8');
+        if ($lastNewline !== false && $lastNewline >= $minAcceptableCut) {
+            $slice = mb_substr($slice, 0, $lastNewline, 'UTF-8');
+        } else {
+            $lastSpace = mb_strrpos($slice, ' ', 0, 'UTF-8');
+            if ($lastSpace !== false && $lastSpace >= $minAcceptableCut) {
+                $slice = mb_substr($slice, 0, $lastSpace, 'UTF-8');
+            }
+        }
+
+        // Nếu cắt trúng giữa một thẻ HTML đang mở (<... mà chưa có >), cắt lùi về trước dấu <
+        $lastOpenAngle = mb_strrpos($slice, '<', 0, 'UTF-8');
+        $lastCloseAngle = mb_strrpos($slice, '>', 0, 'UTF-8');
+        if ($lastOpenAngle !== false && ($lastCloseAngle === false || $lastOpenAngle > $lastCloseAngle)) {
+            $slice = mb_substr($slice, 0, $lastOpenAngle, 'UTF-8');
+        }
+
+        // Loại bỏ thực thể HTML bị cắt dở ở cuối chuỗi (ví dụ &quot, &amp, &#123)
+        $slice = preg_replace('/&[a-zA-Z0-9#]*$/u', '', $slice) ?? $slice;
+        $slice = rtrim($slice);
+
+        // Quét các thẻ HTML đã mở và đóng theo thứ tự LIFO
+        $openTags = [];
+        if (preg_match_all('/<(\/?)(b|strong|i|em|u|ins|s|strike|del|code|pre|a)\b[^>]*>/iu', $slice, $matches, PREG_SET_ORDER)) {
+            foreach ($matches as $match) {
+                $fullTag = $match[0];
+                $isClosing = $match[1] === '/';
+                $tagName = strtolower($match[2]);
+
+                if (! $isClosing && str_ends_with(rtrim($fullTag, '>'), '/')) {
+                    continue;
+                }
+
+                if (! $isClosing) {
+                    $openTags[] = $tagName;
+                } else {
+                    for ($idx = count($openTags) - 1; $idx >= 0; $idx--) {
+                        if ($openTags[$idx] === $tagName) {
+                            array_splice($openTags, $idx, 1);
+                            break;
+                        }
+                    }
+                }
+            }
+        }
+
+        $closingTags = '';
+        foreach (array_reverse($openTags) as $openTag) {
+            $closingTags .= "</{$openTag}>";
+        }
+
+        return $slice . $closingTags . $suffix;
+    }
+
+    /**
      * Gửi tin nhắn HTML qua Telegram Bot API (Fail-safe).
      */
     public function sendMessage(
@@ -69,6 +148,10 @@ class TelegramNotificationService
         if ($token === '') {
             Log::warning('TelegramNotificationService: TELEGRAM_BOT_TOKEN is not configured.');
             return false;
+        }
+
+        if (mb_strlen($htmlText, 'UTF-8') > self::MAX_SAFE_HTML_LENGTH) {
+            $htmlText = $this->truncateTelegramHtmlSafely($htmlText, self::MAX_SAFE_HTML_LENGTH);
         }
 
         $payload = [
@@ -162,7 +245,9 @@ class TelegramNotificationService
             return null;
         }
 
-        $recipient = TelegramRecipient::where('connect_token', $connectToken)->first();
+        $recipient = TelegramRecipient::where('connect_token', $connectToken)
+            ->where('is_active', true)
+            ->first();
         if (! $recipient) {
             return null;
         }
@@ -184,7 +269,8 @@ class TelegramNotificationService
     }
 
     /**
-     * Tìm bản ghi người nhận tương ứng với nội dung tin nhắn (/start <token>, /start thuần trên Telegram Web, hoặc SĐT/mã kết nối).
+     * Tìm bản ghi người nhận tương ứng với nội dung tin nhắn (/start <token>, hoặc SĐT đang chờ kích hoạt / mã kết nối).
+     * Tuyệt đối KHÔNG tự động liên kết lệnh /start trống (không kèm connect_token) để tránh chiếm quyền bản ghi đang chờ.
      */
     protected function resolveRecipientFromMessage(string $text, ?int $tenantId = null): ?TelegramRecipient
     {
@@ -193,32 +279,27 @@ class TelegramNotificationService
             return null;
         }
 
-        // Trường hợp 1: /start <connect_token_hoặc_sđt>
+        // Trường hợp 1: /start <connect_token_hoặc_sđt_đang_chờ>
         if (preg_match('#^/start(?:@\S+)?\s+(.+)$#i', $text, $matches)) {
             $param = trim($matches[1]);
             if ($param === '') {
                 return null;
             }
 
-            $query = TelegramRecipient::query()->where(function ($q) use ($param) {
-                $q->where('connect_token', $param)
-                    ->orWhere('phone', $param);
-            });
+            $cleanParamPhone = preg_replace('/[\s.\-]+/', '', $param);
 
-            if ($tenantId !== null) {
-                $query->where('tenant_id', $tenantId);
-            }
-
-            return $query->orderByDesc('id')->first();
-        }
-
-        // Trường hợp 2: /start thuần (Telegram Web làm rớt ?start=<token>) -> lấy bản ghi đang chờ kích hoạt mới nhất
-        if (preg_match('#^/start(?:@\S+)?$#i', $text)) {
             $query = TelegramRecipient::query()
                 ->where('is_active', true)
-                ->where(function ($q) {
-                    $q->whereNull('telegram_chat_id')
-                        ->orWhere('telegram_chat_id', '');
+                ->where(function ($q) use ($param, $cleanParamPhone) {
+                    $q->where('connect_token', $param)
+                        ->orWhere(function ($pq) use ($param, $cleanParamPhone) {
+                            $phones = array_values(array_unique(array_filter([$param, (string) $cleanParamPhone])));
+                            $pq->whereIn('phone', $phones)
+                                ->where(function ($sub) {
+                                    $sub->whereNull('telegram_chat_id')
+                                        ->orWhere('telegram_chat_id', '');
+                                });
+                        });
                 });
 
             if ($tenantId !== null) {
@@ -228,9 +309,16 @@ class TelegramNotificationService
             return $query->orderByDesc('id')->first();
         }
 
-        // Trường hợp 3: Nhập trực tiếp mã adm_... hoặc số điện thoại
+        // Lệnh /start thuần không kèm tham số -> từ chối liên kết tự động
+        if (preg_match('#^/start(?:@\S+)?$#i', $text)) {
+            return null;
+        }
+
+        // Trường hợp 2: Nhập trực tiếp mã adm_... hoặc số điện thoại đang chờ kích hoạt
         if (str_starts_with($text, 'adm_')) {
-            $query = TelegramRecipient::query()->where('connect_token', $text);
+            $query = TelegramRecipient::query()
+                ->where('is_active', true)
+                ->where('connect_token', $text);
             if ($tenantId !== null) {
                 $query->where('tenant_id', $tenantId);
             }
@@ -240,6 +328,7 @@ class TelegramNotificationService
         $cleanPhone = preg_replace('/[\s.\-]+/', '', $text);
         if ($cleanPhone !== null && preg_match('/^0\d{8,10}$/', $cleanPhone)) {
             $query = TelegramRecipient::query()
+                ->where('is_active', true)
                 ->where('phone', $cleanPhone)
                 ->where(function ($q) {
                     $q->whereNull('telegram_chat_id')
@@ -257,9 +346,78 @@ class TelegramNotificationService
     }
 
     /**
+     * Thiết lập khóa chống lặp Idempotency cho Webhook Telegram theo cả update_id và cặp chat_id + message_id.
+     * Trả về false nếu phát hiện bản cập nhật hoặc tin nhắn đã được xử lý trước đó.
+     */
+    public function acquireWebhookIdempotencyLock(
+        array $update,
+        int $ttlSeconds = self::WEBHOOK_IDEMPOTENCY_TTL_SECONDS
+    ): bool {
+        $ttl = max(self::WEBHOOK_IDEMPOTENCY_TTL_SECONDS, $ttlSeconds);
+
+        $rawUpdateId = data_get($update, 'update_id');
+        $updateId = $rawUpdateId !== null ? trim((string) $rawUpdateId) : '';
+
+        $chatId = trim((string) data_get($update, 'message.chat.id', ''));
+        $rawMessageId = data_get($update, 'message.message_id');
+        $messageId = $rawMessageId !== null ? trim((string) $rawMessageId) : '';
+
+        if ($updateId !== '') {
+            $lockedPrimary = Cache::add("tg_webhook_update:{$updateId}", true, $ttl);
+            $lockedLegacy = Cache::add("telegram_processed_update_{$updateId}", true, $ttl);
+            if (! $lockedPrimary || ! $lockedLegacy) {
+                Log::info('Duplicate Telegram webhook update_id ignored.', [
+                    'update_id'  => $updateId,
+                    'chat_id'    => $chatId,
+                    'message_id' => $messageId,
+                ]);
+                return false;
+            }
+        }
+
+        if ($chatId !== '' && $messageId !== '') {
+            $lockedMsgPrimary = Cache::add("tg_webhook_msg:{$chatId}:{$messageId}", true, $ttl);
+            $lockedMsgLegacy = Cache::add("telegram_processed_msg_{$chatId}_{$messageId}", true, $ttl);
+            if (! $lockedMsgPrimary || ! $lockedMsgLegacy) {
+                Log::info('Duplicate Telegram webhook chat_id + message_id ignored.', [
+                    'update_id'  => $updateId,
+                    'chat_id'    => $chatId,
+                    'message_id' => $messageId,
+                ]);
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    /**
+     * Xử lý payload Webhook Telegram và trả về mảng trạng thái chi tiết kèm lý do nếu bị bỏ qua do trùng lặp.
+     *
+     * @return array{handled: bool, recipient_id: int|null, reason?: string}
+     */
+    public function handleWebhookPayload(array $update): array
+    {
+        if (! $this->acquireWebhookIdempotencyLock($update)) {
+            return [
+                'handled'      => true,
+                'recipient_id' => null,
+                'reason'       => 'duplicate_update_ignored',
+            ];
+        }
+
+        $recipient = $this->handleWebhookUpdate($update, true);
+
+        return [
+            'handled'      => $recipient !== null,
+            'recipient_id' => $recipient?->id,
+        ];
+    }
+
+    /**
      * Xử lý payload update từ Webhook Telegram (Hỗ trợ cả liên kết /start và Trợ lý AI hội thoại).
      */
-    public function handleWebhookUpdate(array $update): ?TelegramRecipient
+    public function handleWebhookUpdate(array $update, bool $idempotencyVerified = false): ?TelegramRecipient
     {
         $text = trim((string) data_get($update, 'message.text', ''));
         $chatId = trim((string) data_get($update, 'message.chat.id', ''));
@@ -268,8 +426,7 @@ class TelegramNotificationService
             return null;
         }
 
-        $updateId = data_get($update, 'update_id');
-        if ($updateId !== null && ! Cache::add("telegram_processed_update_{$updateId}", true, now()->addDay())) {
+        if (! $idempotencyVerified && ! $this->acquireWebhookIdempotencyLock($update)) {
             return null;
         }
 
@@ -286,19 +443,19 @@ class TelegramNotificationService
             if ($pendingRecipient) {
                 return $this->handleStartCommand((string) $pendingRecipient->connect_token, $chatId);
             }
-
-            if ($isStartOrTokenCommand && ! $activeRecipient) {
-                return null;
-            }
         }
 
         if ($activeRecipient) {
+            if ($isStartOrTokenCommand) {
+                return $activeRecipient;
+            }
+
             app(TelegramAiAssistantService::class)->handleIncomingMessage($activeRecipient, $text, $update);
             return $activeRecipient;
         }
 
         $unregisteredMsg = "<b>Tài khoản Telegram chưa được kích hoạt</b>\n"
-            . "Vui lòng truy cập trang Cài đặt thương hiệu trên hệ thống PodsCare để thêm số điện thoại và bấm kích hoạt kết nối.";
+            . "Vui lòng truy cập trang Cài đặt thương hiệu trên hệ thống PodsCare để thêm số điện thoại và bấm kích hoạt kết nối (<code>/start &lt;connect_token&gt;</code>).";
         $this->sendMessage($chatId, $unregisteredMsg);
 
         return null;
@@ -380,7 +537,7 @@ class TelegramNotificationService
                 $updateId = data_get($update, 'update_id');
                 $messageDate = (int) data_get($update, 'message.date', 0);
                 if ($updateId !== null && $messageDate > 0 && $messageDate >= now()->subMinutes(2)->timestamp) {
-                    if (Cache::add("telegram_processed_update_{$updateId}", true, now()->addDay())) {
+                    if ($this->acquireWebhookIdempotencyLock($update, 86400)) {
                         $activeQuery = TelegramRecipient::with(['tenant', 'branch'])
                             ->where('telegram_chat_id', $chatId)
                             ->where('is_active', true);

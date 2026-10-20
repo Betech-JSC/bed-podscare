@@ -22,12 +22,19 @@ class TelegramRecipient extends Model
         'subscribed_events',
         'is_active',
         'connected_at',
+        'ai_message_count',
+        'ai_context_summary',
+        'ai_recent_messages',
+        'ai_last_interaction_at',
     ];
 
     protected $casts = [
-        'subscribed_events' => 'array',
-        'is_active' => 'boolean',
-        'connected_at' => 'datetime',
+        'subscribed_events'      => 'array',
+        'is_active'              => 'boolean',
+        'connected_at'           => 'datetime',
+        'ai_message_count'       => 'integer',
+        'ai_recent_messages'     => 'array',
+        'ai_last_interaction_at' => 'datetime',
     ];
 
     protected $appends = [

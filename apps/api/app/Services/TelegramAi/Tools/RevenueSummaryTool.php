@@ -13,14 +13,31 @@ use Carbon\Carbon;
 
 class RevenueSummaryTool implements TelegramAiToolInterface
 {
+    /**
+     * Danh sách trạng thái đơn hàng bị hủy hoặc khách từ chối sửa, bắt buộc loại trừ khỏi doanh thu và thực thu.
+     *
+     * @var array<int, string>
+     */
+    public const EXCLUDED_STATUSES = ['cancelled', 'rejected'];
+
     public function name(): string
     {
         return 'get_revenue_summary';
     }
 
+    /**
+     * Chỉ cho phép Quản trị viên (admin, super_admin) truy cập báo cáo doanh thu và sổ quỹ.
+     *
+     * @return array<int, string>
+     */
+    public function allowedRoles(): array
+    {
+        return ['admin', 'super_admin'];
+    }
+
     public function description(): string
     {
-        return 'Thống kê báo cáo doanh thu, số lượng đơn sửa chữa (đơn mới, đơn hoàn thành, phân loại tại quầy/COD/bảo hành), thực thu thanh toán và thu chi sổ quỹ của cửa hàng theo khoảng thời gian (today, yesterday, this_week, this_month, hoặc từ ngày date_from đến date_to) và chi nhánh (branch_name).';
+        return 'Thống kê báo cáo doanh thu, số lượng đơn sửa chữa, thực thu thanh toán, thu chi sổ quỹ và phân tích/so sánh doanh thu đa chiều theo khoảng thời gian (period: today, yesterday, this_week, this_month, hoặc date_from/date_to), chi nhánh (branch_name), lọc theo dòng thiết bị (device_category: AirPods, Apple Watch...) và gom nhóm so sánh (group_by: device_category, technician, service, branch, order_type). Khi người dùng hỏi so sánh giữa các dòng máy, kỹ thuật viên hoặc dịch vụ, bắt buộc truyền group_by tương ứng.';
     }
 
     public function parametersSchema(): array
@@ -34,27 +51,78 @@ class RevenueSummaryTool implements TelegramAiToolInterface
                 ],
                 'date_from' => [
                     'type'        => 'STRING',
-                    'description' => 'Ngày bắt đầu (định dạng YYYY-MM-DD hoặc DD/MM/YYYY) nếu tra cứu theo ngày cụ thể.',
+                    'description' => 'Ngày bắt đầu (định dạng YYYY-MM-DD, DD/MM/YYYY hoặc DD/MM) nếu tra cứu theo ngày cụ thể.',
                 ],
                 'date_to' => [
                     'type'        => 'STRING',
-                    'description' => 'Ngày kết thúc (định dạng YYYY-MM-DD hoặc DD/MM/YYYY) nếu tra cứu theo ngày cụ thể.',
+                    'description' => 'Ngày kết thúc (định dạng YYYY-MM-DD, DD/MM/YYYY hoặc DD/MM) nếu tra cứu theo ngày cụ thể.',
                 ],
                 'branch_name' => [
                     'type'        => 'STRING',
                     'description' => 'Tên hoặc mã chi nhánh cần xem báo cáo (ví dụ: Quận 1). Để trống nếu xem toàn bộ chi nhánh được phân quyền.',
                 ],
+                'device_category' => [
+                    'type'        => 'STRING',
+                    'description' => 'Lọc riêng doanh thu cho một dòng thiết bị cụ thể (ví dụ: "AirPods", "Apple Watch"). Để trống nếu đang cần so sánh nhiều dòng thiết bị với nhau.',
+                ],
+                'group_by' => [
+                    'type'        => 'STRING',
+                    'description' => 'Tiêu chí gom nhóm để phân tích & xếp hạng doanh thu: device_category (theo dòng máy AirPods / Apple Watch...), technician (theo kỹ thuật viên), service (theo hạng mục dịch vụ sửa chữa), branch (theo chi nhánh), order_type (theo loại đơn tại quầy / COD / bảo hành).',
+                ],
             ],
         ];
     }
 
+    /**
+     * Escape các ký tự wildcard SQL (%, _, \) trước khi đưa vào điều kiện LIKE.
+     */
+    protected function escapeLike(string $value): string
+    {
+        return strtr($value, ['\\' => '\\\\', '%' => '\\%', '_' => '\\_']);
+    }
+
+    /**
+     * Chuẩn hóa an toàn tham số đầu vào thành chuỗi đơn (chống lỗi Array to string conversion khi LLM trả về mảng).
+     */
+    protected function scalarString(mixed $value, string $default = ''): string
+    {
+        if (is_array($value)) {
+            $parts = [];
+            array_walk_recursive($value, static function (mixed $item) use (&$parts): void {
+                if (is_string($item) || is_int($item) || is_float($item)) {
+                    $trimmed = trim((string) $item);
+                    if ($trimmed !== '') {
+                        $parts[] = $trimmed;
+                    }
+                }
+            });
+
+            return ! empty($parts) ? implode(' ', $parts) : $default;
+        }
+
+        if (is_string($value) || is_int($value) || is_float($value)) {
+            $trimmed = trim((string) $value);
+
+            return $trimmed !== '' ? $trimmed : $default;
+        }
+
+        return $default;
+    }
+
     public function execute(array $args, TelegramRecipient $recipient): array
     {
+        $role = strtolower(trim((string) ($recipient->target_role ?? '')));
+        if (! in_array($role, ['admin', 'super_admin'], true)) {
+            return [
+                'error' => 'Bạn không có quyền truy cập báo cáo doanh thu và sổ quỹ.',
+            ];
+        }
+
         // Bước 1: Tự kiểm tra & chuẩn hóa khoảng thời gian và chi nhánh (Sanitize & Normalize)
         $tenantId = (int) $recipient->tenant_id;
 
-        $rawDateFrom = trim((string) ($args['date_from'] ?? ''));
-        $rawDateTo = trim((string) ($args['date_to'] ?? ''));
+        $rawDateFrom = $this->scalarString($args['date_from'] ?? '');
+        $rawDateTo = $this->scalarString($args['date_to'] ?? '');
         $parsedFrom = $this->parseDate($rawDateFrom);
         $parsedTo = $this->parseDate($rawDateTo);
 
@@ -73,7 +141,7 @@ class RevenueSummaryTool implements TelegramAiToolInterface
                 ? 'Ngày ' . $startDate->format('d/m/Y')
                 : 'Từ ' . $startDate->format('d/m/Y') . ' đến ' . $endDate->format('d/m/Y');
         } else {
-            $rawPeriod = strtolower(trim((string) ($args['period'] ?? 'today')));
+            $rawPeriod = strtolower($this->scalarString($args['period'] ?? 'today', 'today'));
 
             switch ($rawPeriod) {
                 case 'yesterday':
@@ -109,7 +177,7 @@ class RevenueSummaryTool implements TelegramAiToolInterface
         // Xác định phạm vi chi nhánh (khóa cứng theo recipient->branch_id nếu người nhận bị giới hạn chi nhánh)
         $branchId = null;
         $branchLabel = TelegramAiAssistantService::resolveBranchDisplay($recipient);
-        $branchNameArg = trim((string) ($args['branch_name'] ?? ''));
+        $branchNameArg = $this->scalarString($args['branch_name'] ?? '');
 
         if ($recipient->branch_id !== null) {
             $branchId = (int) $recipient->branch_id;
@@ -119,11 +187,12 @@ class RevenueSummaryTool implements TelegramAiToolInterface
                 ->first();
             $branchLabel = $lockedBranch ? (string) $lockedBranch->name : "Chi nhánh #{$branchId}";
         } elseif ($branchNameArg !== '') {
+            $escapedBranchName = $this->escapeLike($branchNameArg);
             $matchedBranch = Branch::withoutGlobalScopes()
                 ->where('tenant_id', $tenantId)
-                ->where(function ($q) use ($branchNameArg) {
-                    $q->where('name', 'like', "%{$branchNameArg}%")
-                        ->orWhere('code', 'like', "%{$branchNameArg}%");
+                ->where(function ($q) use ($escapedBranchName) {
+                    $q->where('name', 'like', "%{$escapedBranchName}%")
+                        ->orWhere('code', 'like', "%{$escapedBranchName}%");
                 })
                 ->first();
 
@@ -132,6 +201,11 @@ class RevenueSummaryTool implements TelegramAiToolInterface
                 $branchLabel = (string) $matchedBranch->name;
             }
         }
+
+        $deviceCategory = $this->scalarString($args['device_category'] ?? '');
+        $rawGroupBy = strtolower($this->scalarString($args['group_by'] ?? ''));
+        $allowedGroupBys = ['device_category', 'technician', 'service', 'branch', 'order_type'];
+        $groupBy = in_array($rawGroupBy, $allowedGroupBys, true) ? $rawGroupBy : null;
 
         // Bước 2: Thực thi Eloquent Query khóa cứng tenant_id & branch_id
         // 1. Thống kê Đơn sửa chữa (RepairOrder) tạo trong khoảng [$startDate, $endDate]
@@ -158,6 +232,13 @@ class RevenueSummaryTool implements TelegramAiToolInterface
             }
         }
 
+        if ($deviceCategory !== '') {
+            $this->applyDeviceCategoryFilter($orderBaseQuery, $deviceCategory);
+        }
+
+        $completedStatuses = ['completed', 'delivered', 'handed_over', 'ready_for_pickup', 'qc_passed'];
+        $excludedStatuses = self::EXCLUDED_STATUSES;
+
         $totalNewOrders = (clone $orderBaseQuery)->count();
         $inStoreOrders = (clone $orderBaseQuery)
             ->where(function ($q) {
@@ -169,17 +250,27 @@ class RevenueSummaryTool implements TelegramAiToolInterface
         $codOrders = (clone $orderBaseQuery)->where('order_type', 'cod')->count();
         $warrantyOrders = (clone $orderBaseQuery)->where('order_type', 'warranty')->count();
         $completedOrders = (clone $orderBaseQuery)
-            ->whereIn('status', ['completed', 'delivered', 'handed_over', 'ready_for_pickup', 'qc_passed'])
+            ->whereIn('status', $completedStatuses)
             ->count();
-        $estimatedOrderRevenue = (float) (clone $orderBaseQuery)->sum('total_price');
+        $cancelledOrders = (clone $orderBaseQuery)
+            ->whereIn('status', $excludedStatuses)
+            ->count();
+        $estimatedOrderRevenue = (float) (clone $orderBaseQuery)
+            ->whereNotIn('status', $excludedStatuses)
+            ->sum('total_price');
 
-        // 2. Thực thu Thanh toán Đơn hàng (Payment)
+        // 2. Thực thu Thanh toán Đơn hàng (Payment) - loại trừ đơn đã hủy/từ chối sửa để khớp 100% với breakdown
         $paymentQuery = Payment::withoutGlobalScopes()
             ->whereIn('status', ['completed', 'paid', 'success'])
-            ->whereHas('repairOrder', function ($q) use ($tenantId, $branchId) {
-                $q->withoutGlobalScopes()->where('tenant_id', $tenantId);
+            ->whereHas('repairOrder', function ($q) use ($tenantId, $branchId, $deviceCategory, $excludedStatuses) {
+                $q->withoutGlobalScopes()
+                    ->where('tenant_id', $tenantId)
+                    ->whereNotIn('status', $excludedStatuses);
                 if ($branchId !== null) {
                     $q->where('branch_id', $branchId);
+                }
+                if ($deviceCategory !== '') {
+                    $this->applyDeviceCategoryFilter($q, $deviceCategory);
                 }
             })
             ->where(function ($q) use ($startDate, $endDate) {
@@ -207,6 +298,19 @@ class RevenueSummaryTool implements TelegramAiToolInterface
         $cashbookExpense = (float) (clone $cashBaseQuery)->where('type', 'expense')->sum('amount');
         $netCashflow = $cashbookIncome - $cashbookExpense;
 
+        // 4. Phân rã & So sánh đa chiều (breakdown & comparison_summary) khi có group_by
+        $breakdown = [];
+        $comparisonSummary = null;
+
+        if ($groupBy !== null) {
+            [$breakdown, $comparisonSummary] = $this->buildGroupByBreakdown(
+                $groupBy,
+                (clone $orderBaseQuery)->whereNotIn('status', $excludedStatuses),
+                clone $paymentQuery,
+                $completedStatuses
+            );
+        }
+
         return [
             'period'                            => $period,
             'period_label'                      => $periodLabel,
@@ -215,11 +319,14 @@ class RevenueSummaryTool implements TelegramAiToolInterface
             'branch_id'                         => $branchId,
             'branch_name'                       => $branchLabel,
             'branch_scope'                      => $branchLabel,
+            'device_category'                   => $deviceCategory !== '' ? $deviceCategory : null,
+            'group_by'                          => $groupBy,
             'total_new_orders'                  => $totalNewOrders,
             'in_store_orders'                   => $inStoreOrders,
             'cod_orders'                        => $codOrders,
             'warranty_orders'                   => $warrantyOrders,
             'completed_orders'                  => $completedOrders,
+            'cancelled_orders'                  => $cancelledOrders,
             'estimated_order_revenue'           => $estimatedOrderRevenue,
             'formatted_estimated_order_revenue' => $this->formatVnd($estimatedOrderRevenue),
             'net_payment_collected'             => $netPaymentCollected,
@@ -230,13 +337,385 @@ class RevenueSummaryTool implements TelegramAiToolInterface
             'formatted_cashbook_expense'        => $this->formatVnd($cashbookExpense),
             'net_cashflow'                      => $netCashflow,
             'formatted_net_cashflow'            => $this->formatVnd($netCashflow),
+            'breakdown'                         => $breakdown,
+            'comparison_summary'                => $comparisonSummary,
         ];
     }
 
     /**
-     * Parse ngày an toàn từ chuỗi YYYY-MM-DD hoặc DD/MM/YYYY.
+     * Áp dụng bộ lọc dòng thiết bị (device_category) lên query của RepairOrder.
      */
-    protected function parseDate(string $value): ?Carbon
+    protected function applyDeviceCategoryFilter($orderQuery, string $deviceCategory): void
+    {
+        $normCat = mb_strtolower(trim($deviceCategory), 'UTF-8');
+        $escapedCategory = $this->escapeLike(trim($deviceCategory));
+
+        $orderQuery->whereHas('deviceModel', function ($dq) use ($escapedCategory, $normCat) {
+            $dq->withoutGlobalScopes()->where(function ($sub) use ($escapedCategory, $normCat) {
+                if (str_contains($normCat, 'watch') || str_contains($normCat, 'đồng hồ')) {
+                    $sub->where('category', 'like', '%Watch%')
+                        ->orWhere('name', 'like', '%Watch%');
+                } elseif (str_contains($normCat, 'airpod') || str_contains($normCat, 'tai nghe')) {
+                    $sub->where('category', 'like', '%AirPod%')
+                        ->orWhere('name', 'like', '%AirPod%');
+                } else {
+                    $sub->where('category', 'like', "%{$escapedCategory}%")
+                        ->orWhere('name', 'like', "%{$escapedCategory}%");
+                }
+            });
+        });
+    }
+
+    /**
+     * Tính toán bảng phân rã breakdown và chuỗi nhận xét so sánh trực diện comparison_summary.
+     *
+     * @param  array<int, string>  $completedStatuses
+     * @return array{0: array<int, array<string, mixed>>, 1: string|null}
+     */
+    protected function buildGroupByBreakdown(
+        string $groupBy,
+        $orderQuery,
+        $paymentQuery,
+        array $completedStatuses
+    ): array {
+        $orders = (clone $orderQuery)
+            ->whereNotIn('status', ['cancelled', 'rejected'])
+            ->with([
+                'deviceModel'   => fn ($q) => $q->withoutGlobalScopes(),
+                'technician'    => fn ($q) => $q->withoutGlobalScopes(),
+                'branch'        => fn ($q) => $q->withoutGlobalScopes(),
+                'quotes'        => fn ($q) => $q->withoutGlobalScopes()->with(['items.service']),
+            ])
+            ->get();
+
+        $payments = $paymentQuery
+            ->with([
+                'repairOrder' => fn ($q) => $q->withoutGlobalScopes()->with([
+                    'deviceModel' => fn ($dq) => $dq->withoutGlobalScopes(),
+                    'technician'  => fn ($tq) => $tq->withoutGlobalScopes(),
+                    'branch'      => fn ($bq) => $bq->withoutGlobalScopes(),
+                    'quotes'      => fn ($qq) => $qq->withoutGlobalScopes()->with(['items.service']),
+                ]),
+            ])
+            ->get();
+
+        // Map thực thu ròng theo repair_order_id
+        $netPayByOrderId = [];
+        foreach ($payments as $payment) {
+            $oid = (int) $payment->repair_order_id;
+            $net = max(0.0, (float) $payment->amount - (float) $payment->refund_amount);
+            $netPayByOrderId[$oid] = ($netPayByOrderId[$oid] ?? 0.0) + $net;
+        }
+
+        $groups = [];
+        $orderIdsIncluded = [];
+
+        foreach ($orders as $order) {
+            /** @var RepairOrder $order */
+            if (in_array((string) $order->status, ['cancelled', 'rejected'], true)) {
+                continue;
+            }
+            $orderIdsIncluded[(int) $order->id] = true;
+            $isCompleted = in_array((string) $order->status, $completedStatuses, true);
+            $orderEst = (float) ($order->total_price ?? 0);
+            $orderNetPay = (float) ($netPayByOrderId[(int) $order->id] ?? 0.0);
+
+            if ($groupBy === 'service') {
+                $serviceEntries = $this->extractOrderServiceEntries($order, $orderEst, $orderNetPay);
+                foreach ($serviceEntries as $srvEntry) {
+                    $key = $srvEntry['key'];
+                    $label = $srvEntry['label'];
+                    if (! isset($groups[$key])) {
+                        $groups[$key] = [
+                            'group_key'             => $key,
+                            'group_label'           => $label,
+                            'orders_count'          => 0,
+                            'completed_orders'      => 0,
+                            'estimated_revenue'     => 0.0,
+                            'net_payment_collected' => 0.0,
+                        ];
+                    }
+                    $groups[$key]['orders_count']++;
+                    if ($isCompleted) {
+                        $groups[$key]['completed_orders']++;
+                    }
+                    $groups[$key]['estimated_revenue'] += $srvEntry['estimated_revenue'];
+                    $groups[$key]['net_payment_collected'] += $srvEntry['net_payment_collected'];
+                }
+                continue;
+            }
+
+            [$key, $label] = $this->resolveOrderGroupKeyAndLabel($order, $groupBy);
+
+            if (! isset($groups[$key])) {
+                $groups[$key] = [
+                    'group_key'             => $key,
+                    'group_label'           => $label,
+                    'orders_count'          => 0,
+                    'completed_orders'      => 0,
+                    'estimated_revenue'     => 0.0,
+                    'net_payment_collected' => 0.0,
+                ];
+            }
+
+            $groups[$key]['orders_count']++;
+            if ($isCompleted) {
+                $groups[$key]['completed_orders']++;
+            }
+            $groups[$key]['estimated_revenue'] += $orderEst;
+            $groups[$key]['net_payment_collected'] += $orderNetPay;
+        }
+
+        // Cộng thêm các khoản thanh toán của đơn cũ được thu tiền trong kỳ (nếu đơn gốc tạo trước kỳ báo cáo)
+        foreach ($payments as $payment) {
+            $oid = (int) $payment->repair_order_id;
+            if (
+                isset($orderIdsIncluded[$oid])
+                || ! $payment->repairOrder
+                || in_array((string) $payment->repairOrder->status, ['cancelled', 'rejected'], true)
+            ) {
+                continue;
+            }
+
+            $net = max(0.0, (float) $payment->amount - (float) $payment->refund_amount);
+            if ($net <= 0) {
+                continue;
+            }
+
+            if ($groupBy === 'service') {
+                $serviceEntries = $this->extractOrderServiceEntries($payment->repairOrder, 0.0, $net);
+                foreach ($serviceEntries as $srvEntry) {
+                    $key = $srvEntry['key'];
+                    $label = $srvEntry['label'];
+                    if (! isset($groups[$key])) {
+                        $groups[$key] = [
+                            'group_key'             => $key,
+                            'group_label'           => $label,
+                            'orders_count'          => 0,
+                            'completed_orders'      => 0,
+                            'estimated_revenue'     => 0.0,
+                            'net_payment_collected' => 0.0,
+                        ];
+                    }
+                    $groups[$key]['net_payment_collected'] += $srvEntry['net_payment_collected'];
+                }
+                continue;
+            }
+
+            [$key, $label] = $this->resolveOrderGroupKeyAndLabel($payment->repairOrder, $groupBy);
+            if (! isset($groups[$key])) {
+                $groups[$key] = [
+                    'group_key'             => $key,
+                    'group_label'           => $label,
+                    'orders_count'          => 0,
+                    'completed_orders'      => 0,
+                    'estimated_revenue'     => 0.0,
+                    'net_payment_collected' => 0.0,
+                ];
+            }
+            $groups[$key]['net_payment_collected'] += $net;
+        }
+
+        $totalEst = array_sum(array_column($groups, 'estimated_revenue'));
+        $totalNet = array_sum(array_column($groups, 'net_payment_collected'));
+        $totalOrd = array_sum(array_column($groups, 'orders_count'));
+
+        $breakdown = [];
+        foreach ($groups as $g) {
+            $est = (float) $g['estimated_revenue'];
+            $net = (float) $g['net_payment_collected'];
+            $ord = (int) $g['orders_count'];
+            $comp = (int) $g['completed_orders'];
+
+            if ($totalEst > 0) {
+                $share = round(($est / $totalEst) * 100, 1);
+            } elseif ($totalNet > 0) {
+                $share = round(($net / $totalNet) * 100, 1);
+            } elseif ($totalOrd > 0) {
+                $share = round(($ord / $totalOrd) * 100, 1);
+            } else {
+                $share = 0.0;
+            }
+
+            $breakdown[] = [
+                'group_key'                       => (string) $g['group_key'],
+                'group_label'                     => (string) $g['group_label'],
+                'label'                           => (string) $g['group_label'],
+                'orders_count'                    => $ord,
+                'completed_orders'                => $comp,
+                'estimated_revenue'               => $est,
+                'formatted_estimated_revenue'     => $this->formatVnd($est),
+                'net_payment_collected'           => $net,
+                'formatted_net_payment_collected' => $this->formatVnd($net),
+                'share_percent'                   => $share,
+            ];
+        }
+
+        usort($breakdown, static function (array $a, array $b): int {
+            if ($b['estimated_revenue'] !== $a['estimated_revenue']) {
+                return $b['estimated_revenue'] <=> $a['estimated_revenue'];
+            }
+            if ($b['net_payment_collected'] !== $a['net_payment_collected']) {
+                return $b['net_payment_collected'] <=> $a['net_payment_collected'];
+            }
+
+            return $b['orders_count'] <=> $a['orders_count'];
+        });
+
+        $comparisonSummary = null;
+        if (count($breakdown) >= 2) {
+            $first = $breakdown[0];
+            $second = $breakdown[1];
+            $diff = max(0.0, (float) $first['estimated_revenue'] - (float) $second['estimated_revenue']);
+            $formattedDiff = $this->formatVnd($diff);
+
+            if ($diff > 0) {
+                $comparisonSummary = sprintf(
+                    '%s cao hơn %s %s (%s: %s / %d đơn vs %s: %s / %d đơn)',
+                    $first['group_label'],
+                    $second['group_label'],
+                    $formattedDiff,
+                    $first['group_label'],
+                    $first['formatted_estimated_revenue'],
+                    $first['orders_count'],
+                    $second['group_label'],
+                    $second['formatted_estimated_revenue'],
+                    $second['orders_count']
+                );
+            } else {
+                $comparisonSummary = sprintf(
+                    '%s và %s ngang nhau ở mức %s (%s: %d đơn vs %s: %d đơn)',
+                    $first['group_label'],
+                    $second['group_label'],
+                    $first['formatted_estimated_revenue'],
+                    $first['group_label'],
+                    $first['orders_count'],
+                    $second['group_label'],
+                    $second['orders_count']
+                );
+            }
+        } elseif (count($breakdown) === 1) {
+            $first = $breakdown[0];
+            $comparisonSummary = sprintf(
+                '%s dẫn đầu với %s / %d đơn (chiếm 100%% doanh thu)',
+                $first['group_label'],
+                $first['formatted_estimated_revenue'],
+                $first['orders_count']
+            );
+        }
+
+        return [$breakdown, $comparisonSummary];
+    }
+
+    /**
+     * Xác định cặp [group_key, group_label] của một đơn sửa chữa theo tiêu chí group_by.
+     *
+     * @return array{0: string, 1: string}
+     */
+    protected function resolveOrderGroupKeyAndLabel(RepairOrder $order, string $groupBy): array
+    {
+        return match ($groupBy) {
+            'device_category' => (static function () use ($order): array {
+                $label = LookupOrderTool::resolveDeviceCategoryLabel($order->deviceModel);
+                $key = mb_strtolower(preg_replace('/\s+/u', '_', trim($label)) ?: 'airpods', 'UTF-8');
+                return [$key, $label];
+            })(),
+            'technician' => (static function () use ($order): array {
+                $techName = trim((string) ($order->technician?->name ?? ''));
+                if ($techName === '') {
+                    return ['unassigned', 'Chưa phân công'];
+                }
+                $key = $order->technician_id ? 'tech_' . (int) $order->technician_id : mb_strtolower($techName, 'UTF-8');
+                return [$key, $techName];
+            })(),
+            'branch' => (static function () use ($order): array {
+                $branchName = trim((string) ($order->branch?->name ?? '')) ?: 'Chi nhánh chính';
+                $key = $order->branch_id ? 'branch_' . (int) $order->branch_id : 'branch_default';
+                return [$key, $branchName];
+            })(),
+            'order_type' => (static function () use ($order): array {
+                $type = strtolower((string) ($order->order_type ?: 'in_store'));
+                $label = match ($type) {
+                    'cod'      => 'Đơn COD (Khách tỉnh)',
+                    'warranty' => 'Tiếp nhận bảo hành',
+                    default    => 'Khách tại cửa hàng',
+                };
+                return [$type, $label];
+            })(),
+            default => ['all', 'Tất cả'],
+        };
+    }
+
+    /**
+     * Trích xuất danh sách hạng mục dịch vụ của một đơn hàng để gom nhóm theo 'service'.
+     *
+     * @return array<int, array{key: string, label: string, estimated_revenue: float, net_payment_collected: float}>
+     */
+    protected function extractOrderServiceEntries(RepairOrder $order, float $orderEst, float $orderNetPay): array
+    {
+        $quoteItems = [];
+        if ($order->relationLoaded('quotes')) {
+            foreach ($order->quotes as $quote) {
+                if ($quote->relationLoaded('items')) {
+                    foreach ($quote->items as $qi) {
+                        $label = trim((string) ($qi->service?->name ?? $qi->description ?? ''));
+                        if ($label === '') {
+                            continue;
+                        }
+                        $amt = (float) ($qi->amount ?? ((float) ($qi->unit_price ?? 0) * max(1, (int) ($qi->quantity ?? 1))));
+                        $quoteItems[] = [
+                            'label'  => $label,
+                            'amount' => $amt,
+                        ];
+                    }
+                }
+            }
+        }
+
+        if (! empty($quoteItems)) {
+            $sumItems = array_sum(array_column($quoteItems, 'amount'));
+            $mergedByKey = [];
+            foreach ($quoteItems as $qi) {
+                $label = $qi['label'];
+                $key = mb_strtolower($label, 'UTF-8');
+                $estShare = $sumItems > 0 ? $qi['amount'] : ($orderEst / count($quoteItems));
+                $netShare = $sumItems > 0
+                    ? ($orderNetPay * ($qi['amount'] / $sumItems))
+                    : ($orderNetPay / count($quoteItems));
+
+                if (! isset($mergedByKey[$key])) {
+                    $mergedByKey[$key] = [
+                        'key'                   => $key,
+                        'label'                 => $label,
+                        'estimated_revenue'     => 0.0,
+                        'net_payment_collected' => 0.0,
+                    ];
+                }
+                $mergedByKey[$key]['estimated_revenue'] += $estShare;
+                $mergedByKey[$key]['net_payment_collected'] += $netShare;
+            }
+
+            return array_values($mergedByKey);
+        }
+
+        $fallbackLabel = trim((string) ($order->issue_description ?? '')) ?: 'Dịch vụ sửa chữa chung';
+        $fallbackKey = mb_strtolower($fallbackLabel, 'UTF-8');
+
+        return [
+            [
+                'key'                   => $fallbackKey,
+                'label'                 => $fallbackLabel,
+                'estimated_revenue'     => $orderEst,
+                'net_payment_collected' => $orderNetPay,
+            ],
+        ];
+    }
+
+    /**
+     * Parse ngày an toàn từ chuỗi YYYY-MM-DD, DD/MM/YYYY hoặc DD/MM (tự động gán năm hiện tại).
+     * Bắt buộc kiểm tra checkdate() để tránh Carbon tự động tràn ngày/tháng.
+     */
+    public function parseDate(string $value): ?Carbon
     {
         $value = trim($value);
         if ($value === '') {
@@ -245,11 +724,36 @@ class RevenueSummaryTool implements TelegramAiToolInterface
 
         try {
             if (preg_match('/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})$/', $value, $matches)) {
-                return Carbon::createFromDate((int) $matches[3], (int) $matches[2], (int) $matches[1]);
+                $day = (int) $matches[1];
+                $month = (int) $matches[2];
+                $year = (int) $matches[3];
+                if (! checkdate($month, $day, $year)) {
+                    return null;
+                }
+
+                return Carbon::createFromDate($year, $month, $day);
             }
 
             if (preg_match('/^(\d{4})[\/\-](\d{1,2})[\/\-](\d{1,2})$/', $value, $matches)) {
-                return Carbon::createFromDate((int) $matches[1], (int) $matches[2], (int) $matches[3]);
+                $year = (int) $matches[1];
+                $month = (int) $matches[2];
+                $day = (int) $matches[3];
+                if (! checkdate($month, $day, $year)) {
+                    return null;
+                }
+
+                return Carbon::createFromDate($year, $month, $day);
+            }
+
+            if (preg_match('/^(\d{1,2})[\/\-](\d{1,2})$/', $value, $matches)) {
+                $day = (int) $matches[1];
+                $month = (int) $matches[2];
+                $year = (int) now()->year;
+                if (! checkdate($month, $day, $year)) {
+                    return null;
+                }
+
+                return Carbon::createFromDate($year, $month, $day);
             }
 
             return Carbon::parse($value);
@@ -264,10 +768,16 @@ class RevenueSummaryTool implements TelegramAiToolInterface
     }
 
     /**
-     * Kết xuất trực tiếp báo cáo doanh thu & thu chi sổ quỹ sang văn bản HTML tiếng Việt chuẩn gửi về Telegram.
+     * Kết xuất trực tiếp báo cáo doanh thu & thu chi sổ quỹ (kèm bảng phân rã breakdown & comparison_summary) sang văn bản HTML tiếng Việt.
      */
     public function formatHtml(array $result): string
     {
+        if (isset($result['error']) && trim((string) $result['error']) !== '') {
+            $safeError = htmlspecialchars(trim((string) $result['error']), ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
+
+            return "<b>Từ chối quyền truy cập</b>\n{$safeError}";
+        }
+
         $branchScope = htmlspecialchars(
             (string) ($result['branch_scope'] ?? $result['branch_name'] ?? 'Chi nhánh chính'),
             ENT_QUOTES | ENT_SUBSTITUTE,
@@ -279,22 +789,53 @@ class RevenueSummaryTool implements TelegramAiToolInterface
         $cod = (int) ($result['cod_orders'] ?? 0);
         $warranty = (int) ($result['warranty_orders'] ?? 0);
         $completed = (int) ($result['completed_orders'] ?? 0);
+        $cancelled = (int) ($result['cancelled_orders'] ?? 0);
         $formattedEstimated = htmlspecialchars((string) ($result['formatted_estimated_order_revenue'] ?? '0 đ'), ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
         $formattedPayment = htmlspecialchars((string) ($result['formatted_net_payment_collected'] ?? '0 đ'), ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
         $formattedIncome = htmlspecialchars((string) ($result['formatted_cashbook_income'] ?? '0 đ'), ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
         $formattedExpense = htmlspecialchars((string) ($result['formatted_cashbook_expense'] ?? '0 đ'), ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
         $formattedNetCashflow = htmlspecialchars((string) ($result['formatted_net_cashflow'] ?? '0 đ'), ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
 
-        return implode("\n", [
+        $lines = [
             "<b>Báo cáo doanh thu - {$periodLabel}</b>",
             "Chi nhánh: <b>{$branchScope}</b>",
             "- Tổng số đơn mới: <b>{$totalNew}</b> đơn (Tại cửa hàng: {$inStore}, COD: {$cod}, Bảo hành: {$warranty})",
             "- Số đơn đã hoàn thành/bàn giao: <b>{$completed}</b> đơn",
-            "- Doanh thu ước tính từ đơn hàng: <b>{$formattedEstimated}</b>",
-            "- Thực thu thanh toán: <b>{$formattedPayment}</b>",
-            "- Thu sổ quỹ: <b>{$formattedIncome}</b> | Chi sổ quỹ: <b>{$formattedExpense}</b>",
-            "- Dòng tiền ròng sổ quỹ: <b>{$formattedNetCashflow}</b>",
-        ]);
+        ];
+
+        if ($cancelled > 0) {
+            $lines[] = "- Số đơn đã hủy/từ chối sửa: <b>{$cancelled}</b> đơn (đã loại trừ khỏi doanh thu ước tính)";
+        }
+
+        $lines[] = "- Doanh thu ước tính từ đơn hàng: <b>{$formattedEstimated}</b>";
+        $lines[] = "- Thực thu thanh toán: <b>{$formattedPayment}</b>";
+        $lines[] = "- Thu sổ quỹ: <b>{$formattedIncome}</b> | Chi sổ quỹ: <b>{$formattedExpense}</b>";
+        $lines[] = "- Dòng tiền ròng sổ quỹ: <b>{$formattedNetCashflow}</b>";
+
+        $comparisonSummary = trim((string) ($result['comparison_summary'] ?? ''));
+        if ($comparisonSummary !== '') {
+            $safeComparison = htmlspecialchars($comparisonSummary, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
+            $lines[] = "Nhận xét so sánh: <b>{$safeComparison}</b>";
+        }
+
+        $breakdown = is_array($result['breakdown'] ?? null) ? $result['breakdown'] : [];
+        if (! empty($breakdown)) {
+            $lines[] = "<b>Phân tích chi tiết theo nhóm:</b>";
+            foreach ($breakdown as $item) {
+                if (! is_array($item)) {
+                    continue;
+                }
+                $gLabel = htmlspecialchars((string) ($item['group_label'] ?? $item['label'] ?? 'Nhóm'), ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
+                $gOrders = (int) ($item['orders_count'] ?? 0);
+                $gCompleted = (int) ($item['completed_orders'] ?? 0);
+                $gEst = htmlspecialchars((string) ($item['formatted_estimated_revenue'] ?? '0 đ'), ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
+                $gNet = htmlspecialchars((string) ($item['formatted_net_payment_collected'] ?? '0 đ'), ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
+                $gShare = number_format((float) ($item['share_percent'] ?? 0), 1, ',', '.');
+
+                $lines[] = "- <b>{$gLabel}</b>: <b>{$gEst}</b> (Thực thu: {$gNet}) | Số đơn: <b>{$gOrders}</b> (Hoàn thành: {$gCompleted}) | Tỷ trọng: <b>{$gShare}%</b>";
+            }
+        }
+
+        return implode("\n", $lines);
     }
 }
-

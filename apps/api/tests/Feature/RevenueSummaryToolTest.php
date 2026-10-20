@@ -45,11 +45,11 @@ class RevenueSummaryToolTest extends TestCase
         Config::set('services.telegram.bot_token', 'test_bot_token_phase3');
         Config::set('services.telegram.bot_username', 'PodsCareNotifyBot');
         Config::set('services.telegram.webhook_secret', '');
-        Config::set('services.gemini.base_url', '');
-        Config::set('services.gemini.api_key', 'test_gemini_api_key_phase3');
-        Config::set('services.gemini.model', 'gemini-2.0-flash');
-        Config::set('services.gemini.fallback_models', 'gemini-2.0-flash-lite,gemini-2.5-flash');
-        Config::set('services.gemini.timeout', 15);
+        Config::set('services.gemini.base_url', 'http://127.0.0.1:20128/v1');
+        Config::set('services.gemini.api_key', '9router-local');
+        Config::set('services.gemini.model', 'podscare-ai');
+        Config::set('services.gemini.fallback_models', '');
+        Config::set('services.gemini.timeout', 20);
 
         $this->tenantA = Tenant::create([
             'name'   => 'PodsCare Sài Gòn (Tenant A)',
@@ -467,24 +467,30 @@ class RevenueSummaryToolTest extends TestCase
         $geminiCallCount = 0;
 
         Http::fake(function ($request) use (&$geminiCallCount) {
-            if (str_contains($request->url(), 'generativelanguage.googleapis.com')) {
+            if (str_contains($request->url(), '127.0.0.1:20128/v1/chat/completions')) {
                 $geminiCallCount++;
                 return Http::response([
-                    'candidates' => [
+                    'id'      => 'chatcmpl-p3-001',
+                    'object'  => 'chat.completion',
+                    'model'   => 'podscare-ai',
+                    'choices' => [
                         [
-                            'content' => [
-                                'role'  => 'model',
-                                'parts' => [
+                            'index'   => 0,
+                            'message' => [
+                                'role'       => 'assistant',
+                                'content'    => null,
+                                'tool_calls' => [
                                     [
-                                        'functionCall' => [
-                                            'name' => 'get_revenue_summary',
-                                            'args' => [
-                                                'period' => 'today',
-                                            ],
+                                        'id'       => 'call_rev_01',
+                                        'type'     => 'function',
+                                        'function' => [
+                                            'name'      => 'get_revenue_summary',
+                                            'arguments' => json_encode(['period' => 'today']),
                                         ],
                                     ],
                                 ],
                             ],
+                            'finish_reason' => 'tool_calls',
                         ],
                     ],
                 ], 200);
@@ -506,7 +512,7 @@ class RevenueSummaryToolTest extends TestCase
             ->assertJsonPath('success', true)
             ->assertJsonPath('data.handled', true);
 
-        // Xác nhận chỉ gọi Gemini đúng 1 lần duy nhất ở Bước 1 (cắt bỏ Bước 3)
+        // Xác nhận chỉ gọi 9Router đúng 1 lần duy nhất cho báo cáo đơn giản
         $this->assertSame(1, $geminiCallCount);
 
         // Kiểm tra tin nhắn gửi về Telegram do RevenueSummaryTool::formatHtml tạo ra có HTML tiếng Việt sạch, đúng số liệu thật
@@ -528,5 +534,358 @@ class RevenueSummaryToolTest extends TestCase
         $this->assertStringNotContainsString('{', $sentTelegramText);
         $this->assertStringNotContainsString('}', $sentTelegramText);
     }
+
+    /**
+     * 5. Phân tích & so sánh doanh thu đa chiều (group_by: device_category, technician, service, branch, order_type)
+     *    và lọc riêng theo device_category, đảm bảo cô lập tuyệt đối tenant_id.
+     */
+    public function test_revenue_summary_tool_supports_group_by_device_category_technician_service_branch_order_type_and_device_filter(): void
+    {
+        $watchModel = DeviceModel::create([
+            'name'         => 'Apple Watch Ultra 49mm',
+            'category'     => 'Apple Watch',
+            'model_code'   => 'A2684-' . rand(10, 99),
+            'release_year' => 2023,
+            'manufacturer' => 'Apple',
+            'has_anc'      => false,
+            'is_active'    => true,
+        ]);
+
+        // Tạo 1 đơn Apple Watch của Tenant A hôm nay: 1.850.000 đ (lớn hơn tổng AirPods 1.250.000 đ)
+        $watchOrderA = RepairOrder::withoutGlobalScopes()->create([
+            'tenant_id'          => $this->tenantA->id,
+            'branch_id'          => $this->branchA1->id,
+            'order_code'         => 'PCQ1-WATCH-01',
+            'customer_id'        => $this->customerA->id,
+            'device_model_id'    => $watchModel->id,
+            'issue_description'  => 'Thay màn hình Apple Watch Ultra',
+            'status'             => 'completed',
+            'order_type'         => 'in_store',
+            'total_price'        => 1850000,
+            'initial_price'      => 1850000,
+            'created_by_user_id' => $this->staffA->id,
+            'technician_id'      => $this->staffA->id,
+        ]);
+
+        Payment::withoutGlobalScopes()->create([
+            'payment_code'        => 'PAY-WATCH-A1-' . uniqid(),
+            'repair_order_id'     => $watchOrderA->id,
+            'amount'              => 1850000,
+            'refund_amount'       => 0,
+            'payment_method'      => 'bank_transfer',
+            'status'              => 'paid',
+            'paid_at'             => now(),
+            'received_by_user_id' => $this->staffA->id,
+        ]);
+
+        $tool = new RevenueSummaryTool();
+
+        // A. So sánh doanh thu AirPods vs Apple Watch (group_by = device_category)
+        $byDevice = $tool->execute([
+            'period'   => 'today',
+            'group_by' => 'device_category',
+        ], $this->recipientTenantAllBranches);
+
+        $this->assertSame('device_category', $byDevice['group_by']);
+        $this->assertCount(2, $byDevice['breakdown']);
+
+        // Nhóm đứng đầu: Apple Watch (1.850.000 đ / 1 đơn) > AirPods (1.250.000 đ / 4 đơn), chênh lệch 600.000 đ
+        $this->assertSame('Apple Watch', $byDevice['breakdown'][0]['group_label']);
+        $this->assertSame(1850000.0, $byDevice['breakdown'][0]['estimated_revenue']);
+        $this->assertSame(1850000.0, $byDevice['breakdown'][0]['net_payment_collected']);
+        $this->assertSame(1, $byDevice['breakdown'][0]['orders_count']);
+
+        $this->assertSame('AirPods', $byDevice['breakdown'][1]['group_label']);
+        $this->assertSame(1250000.0, $byDevice['breakdown'][1]['estimated_revenue']);
+        $this->assertSame(650000.0, $byDevice['breakdown'][1]['net_payment_collected']);
+        $this->assertSame(4, $byDevice['breakdown'][1]['orders_count']);
+
+        $this->assertStringContainsString(
+            'Apple Watch cao hơn AirPods 600.000 đ (Apple Watch: 1.850.000 đ / 1 đơn vs AirPods: 1.250.000 đ / 4 đơn)',
+            (string) $byDevice['comparison_summary']
+        );
+
+        $html = $tool->formatHtml($byDevice);
+        $this->assertStringContainsString('Nhận xét so sánh: <b>Apple Watch cao hơn AirPods 600.000 đ', $html);
+        $this->assertStringContainsString('<b>Phân tích chi tiết theo nhóm:</b>', $html);
+        $this->assertStringContainsString('- <b>Apple Watch</b>: <b>1.850.000 đ</b>', $html);
+        $this->assertStringContainsString('- <b>AirPods</b>: <b>1.250.000 đ</b>', $html);
+
+        // B. Gom nhóm theo kỹ thuật viên (group_by = technician)
+        $byTech = $tool->execute([
+            'period'   => 'today',
+            'group_by' => 'technician',
+        ], $this->recipientTenantAllBranches);
+
+        $this->assertNotEmpty($byTech['breakdown']);
+        $this->assertSame('Quản lý Thu Hà', $byTech['breakdown'][0]['group_label']);
+        $this->assertSame(1850000.0, $byTech['breakdown'][0]['estimated_revenue']);
+
+        // C. Gom nhóm theo dịch vụ (group_by = service)
+        $byService = $tool->execute([
+            'period'   => 'today',
+            'group_by' => 'service',
+        ], $this->recipientTenantAllBranches);
+
+        $this->assertNotEmpty($byService['breakdown']);
+        $this->assertSame('Thay màn hình Apple Watch Ultra', $byService['breakdown'][0]['group_label']);
+
+        // D. Gom nhóm theo chi nhánh (group_by = branch) và loại đơn (group_by = order_type)
+        $byBranch = $tool->execute([
+            'period'   => 'today',
+            'group_by' => 'branch',
+        ], $this->recipientTenantAllBranches);
+        $this->assertCount(2, $byBranch['breakdown']);
+        $this->assertSame('Chi nhánh Quận 1', $byBranch['breakdown'][0]['group_label']);
+
+        $byOrderType = $tool->execute([
+            'period'   => 'today',
+            'group_by' => 'order_type',
+        ], $this->recipientTenantAllBranches);
+        $this->assertNotEmpty($byOrderType['breakdown']);
+        $this->assertSame('Khách tại cửa hàng', $byOrderType['breakdown'][0]['group_label']);
+
+        // E. Lọc riêng theo device_category = 'Apple Watch'
+        $onlyWatch = $tool->execute([
+            'period'          => 'today',
+            'device_category' => 'Apple Watch',
+        ], $this->recipientTenantAllBranches);
+
+        $this->assertSame('Apple Watch', $onlyWatch['device_category']);
+        $this->assertSame(1, $onlyWatch['total_new_orders']);
+        $this->assertSame(1850000.0, $onlyWatch['estimated_order_revenue']);
+        $this->assertSame(1850000.0, $onlyWatch['net_payment_collected']);
+    }
+
+    /**
+     * 6. Loại trừ tuyệt đối các đơn cancelled và rejected khỏi estimated_order_revenue,
+     *    bảng phân rã breakdown và comparison_summary, đồng thời đếm chính xác cancelled_orders.
+     */
+    public function test_revenue_summary_tool_excludes_cancelled_and_rejected_orders_from_estimated_revenue_and_breakdown(): void
+    {
+        $watchModel = DeviceModel::create([
+            'name'         => 'Apple Watch Series 9 45mm',
+            'category'     => 'Apple Watch',
+            'model_code'   => 'A2980-' . rand(10, 99),
+            'release_year' => 2023,
+            'manufacturer' => 'Apple',
+            'has_anc'      => false,
+            'is_active'    => true,
+        ]);
+
+        // Đơn Apple Watch hợp lệ (completed) - 1.850.000 đ
+        RepairOrder::withoutGlobalScopes()->create([
+            'tenant_id'          => $this->tenantA->id,
+            'branch_id'          => $this->branchA1->id,
+            'order_code'         => 'PCQ1-WATCH-VALID-01',
+            'customer_id'        => $this->customerA->id,
+            'device_model_id'    => $watchModel->id,
+            'issue_description'  => 'Thay mặt kính cảm ứng Apple Watch Series 9',
+            'status'             => 'completed',
+            'order_type'         => 'in_store',
+            'total_price'        => 1850000,
+            'initial_price'      => 1850000,
+            'created_by_user_id' => $this->staffA->id,
+            'technician_id'      => $this->staffA->id,
+        ]);
+
+        // Đơn AirPods đã hủy (cancelled) - 900.000 đ -> KHÔNG được cộng vào doanh thu ước tính và breakdown
+        RepairOrder::withoutGlobalScopes()->create([
+            'tenant_id'          => $this->tenantA->id,
+            'branch_id'          => $this->branchA1->id,
+            'order_code'         => 'PCQ1-AIRPODS-CANCEL-01',
+            'customer_id'        => $this->customerA->id,
+            'device_model_id'    => $this->deviceModel->id,
+            'issue_description'  => 'Đơn khách hủy không sửa nữa',
+            'status'             => 'cancelled',
+            'order_type'         => 'in_store',
+            'total_price'        => 900000,
+            'initial_price'      => 900000,
+            'created_by_user_id' => $this->staffA->id,
+        ]);
+
+        // Đơn Apple Watch khách từ chối sửa (rejected) - 2.500.000 đ -> KHÔNG được cộng vào doanh thu ước tính và breakdown
+        RepairOrder::withoutGlobalScopes()->create([
+            'tenant_id'          => $this->tenantA->id,
+            'branch_id'          => $this->branchA2->id,
+            'order_code'         => 'PCQ3-WATCH-REJECT-01',
+            'customer_id'        => $this->customerA->id,
+            'device_model_id'    => $watchModel->id,
+            'issue_description'  => 'Khách từ chối báo giá thay màn hình',
+            'status'             => 'rejected',
+            'order_type'         => 'in_store',
+            'total_price'        => 2500000,
+            'initial_price'      => 2500000,
+            'created_by_user_id' => $this->staffA->id,
+        ]);
+
+        $tool = new RevenueSummaryTool();
+
+        $result = $tool->execute([
+            'period'   => 'today',
+            'group_by' => 'device_category',
+        ], $this->recipientTenantAllBranches);
+
+        // Tổng số đơn mới phát sinh: 4 đơn cũ + 1 đơn Watch hợp lệ + 2 đơn hủy/từ chối = 7
+        $this->assertSame(7, $result['total_new_orders']);
+        $this->assertSame(2, $result['cancelled_orders']);
+
+        // Doanh thu ước tính chỉ cộng các đơn hợp lệ: 1.250.000 (AirPods) + 1.850.000 (Apple Watch) = 3.100.000 đ
+        $this->assertSame(3100000.0, $result['estimated_order_revenue']);
+        $this->assertSame('3.100.000 đ', $result['formatted_estimated_order_revenue']);
+
+        // Bảng breakdown tuyệt đối không tính đơn cancelled/rejected vào orders_count hay estimated_revenue
+        $this->assertCount(2, $result['breakdown']);
+        $this->assertSame('Apple Watch', $result['breakdown'][0]['group_label']);
+        $this->assertSame(1, $result['breakdown'][0]['orders_count']);
+        $this->assertSame(1850000.0, $result['breakdown'][0]['estimated_revenue']);
+
+        $this->assertSame('AirPods', $result['breakdown'][1]['group_label']);
+        $this->assertSame(4, $result['breakdown'][1]['orders_count']);
+        $this->assertSame(1250000.0, $result['breakdown'][1]['estimated_revenue']);
+
+        $this->assertStringContainsString(
+            'Apple Watch cao hơn AirPods 600.000 đ (Apple Watch: 1.850.000 đ / 1 đơn vs AirPods: 1.250.000 đ / 4 đơn)',
+            (string) $result['comparison_summary']
+        );
+
+        $html = $tool->formatHtml($result);
+        $this->assertStringContainsString('- Số đơn đã hủy/từ chối sửa: <b>2</b> đơn', $html);
+        $this->assertStringContainsString('<b>3.100.000 đ</b>', $html);
+    }
+
+    /**
+     * 7. Kiểm tra phân quyền: Người nhận có target_role là 'admin' hoặc 'super_admin' được phép truy cập,
+     *    còn 'technician' và 'receptionist' bị từ chối truy cập báo cáo doanh thu và sổ quỹ.
+     */
+    public function test_revenue_summary_tool_denies_non_admin_recipients(): void
+    {
+        $superAdminRecipient = TelegramRecipient::create([
+            'tenant_id'         => $this->tenantA->id,
+            'branch_id'         => null,
+            'label'             => 'Super Admin Hệ Thống',
+            'phone'             => '0909111000',
+            'target_role'       => 'super_admin',
+            'telegram_chat_id'  => '8841956390',
+            'connect_token'     => 'sadm_p1_' . uniqid(),
+            'subscribed_events' => ['order.created'],
+            'is_active'         => true,
+            'connected_at'      => now(),
+        ]);
+
+        $techRecipient = TelegramRecipient::create([
+            'tenant_id'         => $this->tenantA->id,
+            'branch_id'         => $this->branchA1->id,
+            'label'             => 'KTV Quận 1',
+            'phone'             => '0909111222',
+            'target_role'       => 'technician',
+            'telegram_chat_id'  => '8841956399',
+            'connect_token'     => 'tech_p1_' . uniqid(),
+            'subscribed_events' => ['order.created'],
+            'is_active'         => true,
+            'connected_at'      => now(),
+        ]);
+
+        $receptionistRecipient = TelegramRecipient::create([
+            'tenant_id'         => $this->tenantA->id,
+            'branch_id'         => $this->branchA1->id,
+            'label'             => 'Lễ tân Quận 1',
+            'phone'             => '0909111333',
+            'target_role'       => 'receptionist',
+            'telegram_chat_id'  => '8841956398',
+            'connect_token'     => 'rec_p1_' . uniqid(),
+            'subscribed_events' => ['order.created'],
+            'is_active'         => true,
+            'connected_at'      => now(),
+        ]);
+
+        $tool = new RevenueSummaryTool();
+
+        // Super Admin được phép truy cập đầy đủ số liệu doanh thu và sổ quỹ như Admin
+        $superAdminRes = $tool->execute(['period' => 'today'], $superAdminRecipient);
+        $this->assertArrayNotHasKey('error', $superAdminRes);
+        $this->assertSame(1250000.0, $superAdminRes['estimated_order_revenue']);
+        $this->assertSame(650000.0, $superAdminRes['net_payment_collected']);
+
+        foreach ([$techRecipient, $receptionistRecipient] as $nonAdmin) {
+            $result = $tool->execute(['period' => 'today'], $nonAdmin);
+
+            $this->assertSame('Bạn không có quyền truy cập báo cáo doanh thu và sổ quỹ.', $result['error'] ?? null);
+            $this->assertArrayNotHasKey('estimated_order_revenue', $result);
+            $this->assertArrayNotHasKey('cashbook_income', $result);
+
+            $html = $tool->formatHtml($result);
+            $this->assertStringContainsString('<b>Từ chối quyền truy cập</b>', $html);
+            $this->assertStringContainsString('Bạn không có quyền truy cập báo cáo doanh thu và sổ quỹ.', $html);
+            $this->assertStringNotContainsString('1.250.000 đ', $html);
+        }
+    }
+
+    /**
+     * 8. Giai đoạn 3 (Task 3.1, 3.2, 3.4):
+     *    - Loại trừ các khoản thanh toán (Payment) thuộc đơn sửa chữa đã hủy (cancelled) hoặc từ chối sửa (rejected)
+     *      khỏi Tổng thực thu (net_payment_collected) để khớp 100% với tổng thực thu trong bảng phân rã (breakdown).
+     *    - Kiểm tra checkdate() trong parseDate() và escapeLike() đối với branch_name / device_category.
+     */
+    public function test_phase3_excludes_cancelled_and_rejected_order_payments_from_net_payment_collected_and_escapes_like_wildcards(): void
+    {
+        $cancelledOrder = RepairOrder::withoutGlobalScopes()->create([
+            'tenant_id'          => $this->tenantA->id,
+            'branch_id'          => $this->branchA1->id,
+            'order_code'         => 'PCQ1-CANCEL-PAY-01',
+            'customer_id'        => $this->customerA->id,
+            'device_model_id'    => $this->deviceModel->id,
+            'issue_description'  => 'Đơn khách đặt cọc rồi hủy',
+            'status'             => 'cancelled',
+            'order_type'         => 'in_store',
+            'total_price'        => 600000,
+            'initial_price'      => 600000,
+            'created_by_user_id' => $this->staffA->id,
+        ]);
+
+        // Khoản thanh toán gắn với đơn đã hủy (chưa cập nhật refund_amount) -> KHÔNG được cộng vào thực thu hợp lệ
+        Payment::withoutGlobalScopes()->create([
+            'payment_code'        => 'PAY-CANCEL-' . uniqid(),
+            'repair_order_id'     => $cancelledOrder->id,
+            'amount'              => 200000,
+            'refund_amount'       => 0,
+            'payment_method'      => 'cash',
+            'status'              => 'paid',
+            'paid_at'             => now(),
+            'received_by_user_id' => $this->staffA->id,
+        ]);
+
+        $tool = new RevenueSummaryTool();
+
+        // 1. Kiểm tra parseDate() với checkdate()
+        $this->assertNull($tool->parseDate('31/02/2026'));
+        $this->assertNull($tool->parseDate('45/18'));
+
+        // 2. Kiểm tra net_payment_collected khớp 100% với tổng net_collected trong breakdown (650.000 đ, không cộng 200.000 đ của đơn hủy)
+        $result = $tool->execute([
+            'period'   => 'today',
+            'group_by' => 'branch',
+        ], $this->recipientTenantAllBranches);
+
+        $breakdownNetSum = array_sum(array_map(
+            static fn (array $row): float => (float) ($row['net_payment_collected'] ?? 0),
+            $result['breakdown']
+        ));
+
+        $this->assertSame(650000.0, $result['net_payment_collected']);
+        $this->assertSame($breakdownNetSum, $result['net_payment_collected']);
+
+        // 3. Kiểm tra escapeLike() khi lọc device_category = '%' (không khớp bừa mọi dòng thiết bị)
+        $wildcardCategoryRes = $tool->execute([
+            'period'          => 'today',
+            'device_category' => '%',
+        ], $this->recipientTenantAllBranches);
+
+        $this->assertSame(0, $wildcardCategoryRes['total_new_orders']);
+        $this->assertSame(0.0, $wildcardCategoryRes['estimated_order_revenue']);
+        $this->assertSame(0.0, $wildcardCategoryRes['net_payment_collected']);
+    }
 }
+
+
 

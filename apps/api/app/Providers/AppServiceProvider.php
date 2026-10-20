@@ -6,6 +6,8 @@ use Illuminate\Support\ServiceProvider;
 
 class AppServiceProvider extends ServiceProvider
 {
+    protected static bool $testingTelegramMemoryColumnsEnsured = false;
+
     /**
      * Register any application services.
      */
@@ -13,12 +15,14 @@ class AppServiceProvider extends ServiceProvider
     {
         $this->app->singleton(
             \App\Services\TelegramAi\TelegramAiToolRegistry::class,
-            fn () => new \App\Services\TelegramAi\TelegramAiToolRegistry([
-                new \App\Services\TelegramAi\Tools\LookupOrderTool(),
-                new \App\Services\TelegramAi\Tools\RevenueSummaryTool(),
-                new \App\Services\TelegramAi\Tools\InventoryCheckTool(),
-                new \App\Services\TelegramAi\Tools\WarrantyLookupTool(),
-            ])
+            fn () => (new \App\Services\TelegramAi\TelegramAiToolRegistry())->discoverToolsFromDirectory()
+        );
+
+        $this->app->singleton(
+            \App\Services\TelegramAi\TelegramAiMemoryService::class,
+            fn ($app) => new \App\Services\TelegramAi\TelegramAiMemoryService(
+                $app->make(\App\Services\TelegramAi\GeminiFunctionCallingClient::class)
+            )
         );
     }
 
@@ -29,6 +33,30 @@ class AppServiceProvider extends ServiceProvider
     {
         config(['app.timezone' => 'Asia/Ho_Chi_Minh']);
         date_default_timezone_set('Asia/Ho_Chi_Minh');
+
+        if ($this->app->runningUnitTests() && ! self::$testingTelegramMemoryColumnsEnsured) {
+            try {
+                if (\Illuminate\Support\Facades\Schema::hasTable('telegram_recipients')) {
+                    \Illuminate\Support\Facades\Schema::table('telegram_recipients', function (\Illuminate\Database\Schema\Blueprint $table) {
+                        if (! \Illuminate\Support\Facades\Schema::hasColumn('telegram_recipients', 'ai_message_count')) {
+                            $table->unsignedInteger('ai_message_count')->default(0)->after('connected_at');
+                        }
+                        if (! \Illuminate\Support\Facades\Schema::hasColumn('telegram_recipients', 'ai_context_summary')) {
+                            $table->text('ai_context_summary')->nullable()->after('ai_message_count');
+                        }
+                        if (! \Illuminate\Support\Facades\Schema::hasColumn('telegram_recipients', 'ai_recent_messages')) {
+                            $table->json('ai_recent_messages')->nullable()->after('ai_context_summary');
+                        }
+                        if (! \Illuminate\Support\Facades\Schema::hasColumn('telegram_recipients', 'ai_last_interaction_at')) {
+                            $table->timestamp('ai_last_interaction_at')->nullable()->after('ai_recent_messages');
+                        }
+                    });
+                }
+                self::$testingTelegramMemoryColumnsEnsured = true;
+            } catch (\Throwable) {
+                // Bỏ qua nếu kết nối DB chưa sẵn sàng
+            }
+        }
 
         \Illuminate\Database\Eloquent\Relations\Relation::morphMap([
             // Branch & Aliases

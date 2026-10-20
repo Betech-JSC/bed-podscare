@@ -40,10 +40,10 @@ class InventoryCheckToolTest extends TestCase
         Config::set('services.telegram.bot_token', 'test_bot_token_phase4');
         Config::set('services.telegram.bot_username', 'PodsCareNotifyBot');
         Config::set('services.telegram.webhook_secret', '');
-        Config::set('services.gemini.base_url', '');
-        Config::set('services.gemini.api_key', 'test_gemini_api_key_phase4');
-        Config::set('services.gemini.model', 'gemini-2.0-flash');
-        Config::set('services.gemini.fallback_models', 'gemini-2.0-flash-lite,gemini-2.5-flash');
+        Config::set('services.gemini.base_url', 'http://127.0.0.1:20128/v1');
+        Config::set('services.gemini.api_key', '9router-local');
+        Config::set('services.gemini.model', 'podscare-ai');
+        Config::set('services.gemini.fallback_models', '');
         Config::set('services.gemini.timeout', 15);
 
         $this->tenantA = Tenant::create([
@@ -305,7 +305,7 @@ class InventoryCheckToolTest extends TestCase
 
     /**
      * 4. Luồng 2 bước End-to-End qua Webhook Telegram (POST /api/v1/webhooks/telegram):
-     *    - Bước 1: Gemini bóc tách tham số gọi 'check_inventory_parts' (chỉ gọi Gemini đúng 1 lần duy nhất).
+     *    - Bước 1: 9Router bóc tách tham số gọi 'check_inventory_parts'.
      *    - Bước 2: InventoryCheckTool truy vấn DB thật và tự format kết quả HTML tiếng Việt gửi thẳng về Telegram.
      */
     public function test_end_to_end_webhook_calls_inventory_check_tool_and_sends_clean_html_reply(): void
@@ -317,20 +317,23 @@ class InventoryCheckToolTest extends TestCase
         $geminiCallCount = 0;
 
         Http::fake(function ($request) use (&$geminiCallCount) {
-            if (str_contains($request->url(), 'generativelanguage.googleapis.com')) {
+            if (str_contains($request->url(), '/v1/chat/completions')) {
                 $geminiCallCount++;
                 return Http::response([
-                    'candidates' => [
+                    'choices' => [
                         [
-                            'content' => [
-                                'role'  => 'model',
-                                'parts' => [
+                            'message' => [
+                                'role'       => 'assistant',
+                                'content'    => null,
+                                'tool_calls' => [
                                     [
-                                        'functionCall' => [
-                                            'name' => 'check_inventory_parts',
-                                            'args' => [
+                                        'id'       => 'call_inventory_1',
+                                        'type'     => 'function',
+                                        'function' => [
+                                            'name'      => 'check_inventory_parts',
+                                            'arguments' => json_encode([
                                                 'keyword' => 'AirPods 2',
-                                            ],
+                                            ]),
                                         ],
                                     ],
                                 ],
@@ -356,7 +359,7 @@ class InventoryCheckToolTest extends TestCase
             ->assertJsonPath('success', true)
             ->assertJsonPath('data.handled', true);
 
-        // Xác nhận chỉ gọi Gemini đúng 1 lần duy nhất ở Bước 1 (cắt bỏ Bước 3)
+        // Xác nhận chỉ gọi 9Router đúng 1 lần duy nhất cho truy vấn tra cứu cơ bản
         $this->assertSame(1, $geminiCallCount);
 
         // Kiểm tra tin nhắn gửi về Telegram do InventoryCheckTool::formatHtml tạo ra
@@ -377,5 +380,120 @@ class InventoryCheckToolTest extends TestCase
         $this->assertStringNotContainsString('{', $sentTelegramText);
         $this->assertStringNotContainsString('}', $sentTelegramText);
     }
+
+    /**
+     * 5. Kiểm thử bộ lọc đa chiều (device_category, category) và sắp xếp (sort_by) trên InventoryCheckTool.
+     */
+    public function test_inventory_check_tool_supports_device_category_category_and_sort_by(): void
+    {
+        Part::withoutGlobalScopes()->create([
+            'tenant_id'         => $this->tenantA->id,
+            'sku'               => 'VO-AW7-THEP-DEN',
+            'name'              => 'Vỏ thép đen Apple Watch Series 7 45mm',
+            'category'          => 'Vỏ',
+            'compatible_models' => 'Apple Watch Series 7 45mm',
+            'storage_location'  => 'Tủ D - Ngăn 01',
+            'stock_quantity'    => 6,
+            'min_stock_alert'   => 2,
+            'cost_price'        => 400000,
+            'retail_price'      => 850000,
+            'unit'              => 'bộ',
+            'is_active'         => true,
+        ]);
+
+        $tool = new InventoryCheckTool();
+
+        // 5.1 Lọc theo device_category = Apple Watch
+        $watchParts = $tool->execute([
+            'device_category' => 'Apple Watch',
+        ], $this->recipientTenantAllBranches);
+
+        $this->assertSame(1, $watchParts['total_matched']);
+        $this->assertSame('VO-AW7-THEP-DEN', $watchParts['parts'][0]['sku']);
+
+        // 5.2 Lọc theo category = Vỏ và sort_by = price_desc
+        $shellParts = $tool->execute([
+            'category' => 'Vỏ',
+            'sort_by'  => 'price_desc',
+        ], $this->recipientTenantAllBranches);
+
+        $this->assertSame(2, $shellParts['total_matched']);
+        $this->assertSame('VO-AW7-THEP-DEN', $shellParts['parts'][0]['sku']); // 850.000 đ
+        $this->assertSame('BANLE-AP3-01', $shellParts['parts'][1]['sku']); // 280.000 đ
+
+        // 5.3 Sắp xếp theo stock_desc trên toàn bộ kho Tenant A
+        $byStockDesc = $tool->execute([
+            'sort_by' => 'stock_desc',
+        ], $this->recipientTenantAllBranches);
+
+        $this->assertSame(4, $byStockDesc['total_matched']);
+        $this->assertSame('PIN-AP2-ZIN', $byStockDesc['parts'][0]['sku']); // 28 viên
+        $this->assertSame('BANLE-AP3-01', $byStockDesc['parts'][3]['sku']); // 0 bộ
+    }
+
+    /**
+     * 6. Giai đoạn 3 (Task 3.1 & 3.4):
+     *    - Escape ký tự wildcard SQL (%, _, \) trong keyword, category, device_category của InventoryCheckTool.
+     *    - Bảo toàn token có dấu '/' như 'AirPods 1/2' khi tìm linh kiện.
+     */
+    public function test_phase3_escapes_like_wildcards_and_matches_airpods_1_2_in_inventory_check_tool(): void
+    {
+        Part::withoutGlobalScopes()->create([
+            'tenant_id'         => $this->tenantA->id,
+            'sku'               => 'SKU_100%_AP12',
+            'name'              => 'Pin AirPods 1/2 dung lượng 100% chuẩn hãng',
+            'category'          => 'Pin_Zin',
+            'compatible_models' => 'AirPods 1/2',
+            'storage_location'  => 'Tủ A - Ngăn 09',
+            'stock_quantity'    => 12,
+            'min_stock_alert'   => 3,
+            'cost_price'        => 70000,
+            'retail_price'      => 220000,
+            'unit'              => 'viên',
+            'is_active'         => true,
+        ]);
+
+        Part::withoutGlobalScopes()->create([
+            'tenant_id'         => $this->tenantA->id,
+            'sku'               => 'SKUX100MA_AP3',
+            'name'              => 'Pin dung lượng 100mA thường',
+            'category'          => 'PinXThường',
+            'compatible_models' => 'AirPods 3',
+            'storage_location'  => 'Tủ A - Ngăn 10',
+            'stock_quantity'    => 10,
+            'min_stock_alert'   => 3,
+            'cost_price'        => 50000,
+            'retail_price'      => 150000,
+            'unit'              => 'viên',
+            'is_active'         => true,
+        ]);
+
+        $tool = new InventoryCheckTool();
+
+        // 1. Tìm '100%' chỉ khớp linh kiện chứa ký tự '%' thật, không khớp '100mA'
+        $byPercent = $tool->execute([
+            'keyword' => '100%',
+        ], $this->recipientTenantAllBranches);
+
+        $this->assertSame(1, $byPercent['total_matched']);
+        $this->assertSame('SKU_100%_AP12', $byPercent['parts'][0]['sku']);
+
+        // 2. Tìm category = 'Pin_Zin' chỉ khớp đúng 'Pin_Zin', không khớp 'PinXThường'
+        $byUnderscoreCategory = $tool->execute([
+            'category' => 'Pin_Zin',
+        ], $this->recipientTenantAllBranches);
+
+        $this->assertSame(1, $byUnderscoreCategory['total_matched']);
+        $this->assertSame('SKU_100%_AP12', $byUnderscoreCategory['parts'][0]['sku']);
+
+        // 3. Tìm 'AirPods 1/2' giữ nguyên '1/2' và khớp chính xác linh kiện AirPods 1/2
+        $byAirpods12 = $tool->execute([
+            'keyword' => 'AirPods 1/2',
+        ], $this->recipientTenantAllBranches);
+
+        $this->assertSame(1, $byAirpods12['total_matched']);
+        $this->assertSame('SKU_100%_AP12', $byAirpods12['parts'][0]['sku']);
+    }
 }
+
 

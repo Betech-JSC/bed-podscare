@@ -53,10 +53,10 @@ class WarrantyLookupToolTest extends TestCase
         Config::set('services.telegram.bot_token', 'test_bot_token_phase5');
         Config::set('services.telegram.bot_username', 'PodsCareNotifyBot');
         Config::set('services.telegram.webhook_secret', '');
-        Config::set('services.gemini.base_url', '');
-        Config::set('services.gemini.api_key', 'test_gemini_api_key_phase5');
-        Config::set('services.gemini.model', 'gemini-2.0-flash');
-        Config::set('services.gemini.fallback_models', 'gemini-2.0-flash-lite,gemini-2.5-flash');
+        Config::set('services.gemini.base_url', 'http://127.0.0.1:20128/v1');
+        Config::set('services.gemini.api_key', '9router-local');
+        Config::set('services.gemini.model', 'podscare-ai');
+        Config::set('services.gemini.fallback_models', '');
         Config::set('services.gemini.timeout', 15);
 
         $this->tenantA = Tenant::create([
@@ -389,7 +389,7 @@ class WarrantyLookupToolTest extends TestCase
 
     /**
      * 4. Luồng 2 bước End-to-End qua Webhook Telegram (POST /api/v1/webhooks/telegram):
-     *    - Bước 1: Gemini bóc tách tham số gọi 'lookup_warranties' (chỉ gọi Gemini đúng 1 lần duy nhất).
+     *    - Bước 1: 9Router bóc tách tham số gọi 'lookup_warranties'.
      *    - Bước 2: WarrantyLookupTool truy vấn DB thật và tự format HTML tiếng Việt gửi thẳng về Telegram,
      *      hiển thị trạng thái bảo hành và khiếu nại hoàn toàn bằng tiếng Việt.
      */
@@ -402,21 +402,24 @@ class WarrantyLookupToolTest extends TestCase
         $geminiCallCount = 0;
 
         Http::fake(function ($request) use (&$geminiCallCount) {
-            if (str_contains($request->url(), 'generativelanguage.googleapis.com')) {
+            if (str_contains($request->url(), '/v1/chat/completions')) {
                 $geminiCallCount++;
                 return Http::response([
-                    'candidates' => [
+                    'choices' => [
                         [
-                            'content' => [
-                                'role'  => 'model',
-                                'parts' => [
+                            'message' => [
+                                'role'       => 'assistant',
+                                'content'    => null,
+                                'tool_calls' => [
                                     [
-                                        'functionCall' => [
-                                            'name' => 'lookup_warranties',
-                                            'args' => [
+                                        'id'       => 'call_warranty_1',
+                                        'type'     => 'function',
+                                        'function' => [
+                                            'name'      => 'lookup_warranties',
+                                            'arguments' => json_encode([
                                                 'customer_phone' => '0779550864',
                                                 'only_active'    => true,
-                                            ],
+                                            ]),
                                         ],
                                     ],
                                 ],
@@ -442,7 +445,7 @@ class WarrantyLookupToolTest extends TestCase
             ->assertJsonPath('success', true)
             ->assertJsonPath('data.handled', true);
 
-        // Xác nhận chỉ gọi Gemini đúng 1 lần duy nhất ở Bước 1 (cắt bỏ Bước 3)
+        // Xác nhận chỉ gọi 9Router đúng 1 lần duy nhất cho truy vấn tra cứu cơ bản
         $this->assertSame(1, $geminiCallCount);
 
         // Kiểm tra tin nhắn gửi về Telegram do WarrantyLookupTool::formatHtml tạo ra
@@ -461,8 +464,163 @@ class WarrantyLookupToolTest extends TestCase
         $this->assertStringContainsString('<code>CLM-202610-0088</code>', $sentTelegramText);
         $this->assertStringContainsString('<b>Đang còn hạn bảo hành (còn 60 ngày)</b>', $sentTelegramText);
         $this->assertStringContainsString('<b>Đang đợi xử lý bảo hành</b>', $sentTelegramText);
+        $this->assertStringContainsString('Kỹ thuật viên đơn gốc: <b>KTV Minh Tuấn</b>', $sentTelegramText);
         $this->assertStringNotContainsString('{', $sentTelegramText);
         $this->assertStringNotContainsString('}', $sentTelegramText);
     }
+
+    /**
+     * 5. Kiểm thử bộ lọc đa chiều trên WarrantyLookupTool:
+     *    - keyword (tìm trong coverage_item, claims.issue_description, deviceModel.name)
+     *    - date_from, date_to
+     *    - device_category
+     *    - technician_name
+     */
+    public function test_warranty_lookup_tool_supports_keyword_date_range_device_category_and_technician_name(): void
+    {
+        $watchModel = DeviceModel::create([
+            'name'         => 'Apple Watch Series 8 45mm',
+            'category'     => 'apple_watch',
+            'model_code'   => 'A2771-' . rand(100, 999),
+            'release_year' => 2022,
+            'manufacturer' => 'Apple',
+            'has_anc'      => false,
+            'is_active'    => true,
+        ]);
+
+        $techHoang = User::withoutGlobalScopes()->create([
+            'tenant_id' => $this->tenantA->id,
+            'branch_id' => $this->branchA1->id,
+            'name'      => 'KTV Hoàng Nam',
+            'email'     => 'ktv.hoang.w.' . uniqid() . '@podscare.vn',
+            'phone'     => '0944555666',
+            'password'  => 'password123',
+            'is_active' => true,
+        ]);
+
+        $orderWatch = RepairOrder::withoutGlobalScopes()->create([
+            'tenant_id'          => $this->tenantA->id,
+            'branch_id'          => $this->branchA1->id,
+            'order_code'         => 'PCAW18102609',
+            'customer_id'        => $this->customerA1->id,
+            'device_model_id'    => $watchModel->id,
+            'issue_description'  => 'Thay vỏ thép đen và ép kính cảm ứng',
+            'status'             => 'completed',
+            'order_type'         => 'in_store',
+            'total_price'        => 1200000,
+            'initial_price'      => 1200000,
+            'created_by_user_id' => $this->staffA->id,
+            'technician_id'      => $techHoang->id,
+        ]);
+
+        $warrantyWatch = Warranty::withoutGlobalScopes()->create([
+            'warranty_code'   => 'BH-PCAW18102609',
+            'repair_order_id' => $orderWatch->id,
+            'customer_id'     => $this->customerA1->id,
+            'device_model_id' => $watchModel->id,
+            'coverage_item'   => 'Bảo hành vỏ thép đen và keo chống nước 180 ngày',
+            'start_date'      => '2026-10-18',
+            'duration_days'   => 180,
+            'end_date'        => '2027-04-16',
+            'status'          => 'active',
+        ]);
+
+        $tool = new WarrantyLookupTool();
+
+        // 5.1 Tìm theo keyword trong coverage_item + date_from/date_to
+        $byKeywordAndDate = $tool->execute([
+            'keyword'   => 'vỏ thép đen',
+            'date_from' => '18/10/2026',
+            'date_to'   => '18/10/2026',
+        ], $this->recipientTenantAllBranches);
+
+        $this->assertSame(1, $byKeywordAndDate['total_matched']);
+        $this->assertSame($warrantyWatch->warranty_code, $byKeywordAndDate['warranties'][0]['warranty_code']);
+        $this->assertSame('Apple Watch', $byKeywordAndDate['warranties'][0]['device_category']);
+        $this->assertSame('KTV Hoàng Nam', $byKeywordAndDate['warranties'][0]['technician_name']);
+
+        // 5.2 Tìm theo keyword trong claims.issue_description ("nhỏ tiếng")
+        $byClaimKeyword = $tool->execute([
+            'keyword' => 'nhỏ tiếng',
+        ], $this->recipientTenantAllBranches);
+
+        $this->assertSame(1, $byClaimKeyword['total_matched']);
+        $this->assertSame('BH-PCQ117102602', $byClaimKeyword['warranties'][0]['warranty_code']);
+
+        // 5.3 Lọc theo device_category = Apple Watch và technician_name = Hoàng Nam
+        $byDeviceAndTech = $tool->execute([
+            'device_category' => 'Apple Watch',
+            'technician_name' => 'Hoàng Nam',
+        ], $this->recipientTenantAllBranches);
+
+        $this->assertSame(1, $byDeviceAndTech['total_matched']);
+        $this->assertSame('BH-PCAW18102609', $byDeviceAndTech['warranties'][0]['warranty_code']);
+
+        $html = $tool->formatHtml($byDeviceAndTech);
+        $this->assertStringContainsString('Kỹ thuật viên đơn gốc: <b>KTV Hoàng Nam</b>', $html);
+        $this->assertStringContainsString('Bảo hành vỏ thép đen', $html);
+    }
+
+    /**
+     * 6. Giai đoạn 3 (Task 3.1 & 3.4):
+     *    - Escape ký tự wildcard SQL (%, _, \) trong warranty_code, order_code, keyword, device_category, technician_name.
+     *    - Kiểm tra parseDate() tích hợp checkdate().
+     */
+    public function test_phase3_escapes_like_wildcards_and_validates_checkdate_in_warranty_lookup_tool(): void
+    {
+        $warrantySpecial = Warranty::withoutGlobalScopes()->create([
+            'warranty_code'   => 'BH_100%_AP12',
+            'repair_order_id' => $this->orderA1->id,
+            'customer_id'     => $this->customerA1->id,
+            'device_model_id' => $this->deviceModel->id,
+            'coverage_item'   => 'Bảo hành pin AirPods 1/2 dung lượng 100% mã ERR_09',
+            'start_date'      => now()->subDays(5)->toDateString(),
+            'duration_days'   => 90,
+            'end_date'        => now()->addDays(85)->toDateString(),
+            'status'          => 'active',
+        ]);
+
+        Warranty::withoutGlobalScopes()->create([
+            'warranty_code'   => 'BHX100MA_AP3',
+            'repair_order_id' => $this->orderA1->id,
+            'customer_id'     => $this->customerA1->id,
+            'device_model_id' => $this->deviceModel->id,
+            'coverage_item'   => 'Bảo hành pin dung lượng 100mA mã ERRX09',
+            'start_date'      => now()->subDays(5)->toDateString(),
+            'duration_days'   => 90,
+            'end_date'        => now()->addDays(85)->toDateString(),
+            'status'          => 'active',
+        ]);
+
+        $tool = new WarrantyLookupTool();
+
+        // 1. Kiểm tra parseDate() với checkdate()
+        $this->assertNull($tool->parseDate('31/02/2026'));
+        $this->assertNull($tool->parseDate('45/18'));
+
+        // 2. Tìm theo warranty_code có '%' và '_' chỉ khớp đúng phiếu chứa ký tự literal
+        $byCode = $tool->execute([
+            'warranty_code' => 'BH_100%',
+        ], $this->recipientTenantAllBranches);
+
+        $this->assertSame(1, $byCode['total_matched']);
+        $this->assertSame($warrantySpecial->warranty_code, $byCode['warranties'][0]['warranty_code']);
+
+        // 3. Tìm theo keyword = 'ERR_09' không khớp nhầm 'ERRX09'
+        $byUnderscoreKeyword = $tool->execute([
+            'keyword' => 'ERR_09',
+        ], $this->recipientTenantAllBranches);
+
+        $this->assertSame(1, $byUnderscoreKeyword['total_matched']);
+        $this->assertSame($warrantySpecial->warranty_code, $byUnderscoreKeyword['warranties'][0]['warranty_code']);
+
+        // 4. Tìm theo order_code = '%' không khớp bừa toàn bộ phiếu bảo hành
+        $byWildcardOrder = $tool->execute([
+            'order_code' => '%',
+        ], $this->recipientTenantAllBranches);
+
+        $this->assertSame(0, $byWildcardOrder['total_matched']);
+    }
 }
+
 

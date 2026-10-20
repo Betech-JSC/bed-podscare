@@ -57,7 +57,7 @@ return [
         'base_url'        => env('GEMINI_BASE_URL', 'http://127.0.0.1:20128/v1'),
         'api_key'         => env('GEMINI_API_KEY', '9router-local'),
         'model'           => env('GEMINI_MODEL', 'podscare-ai'),
-        'fallback_models' => env('GEMINI_FALLBACK_MODELS', 'gemini-2.5-flash,gemini-2.5-flash-lite,gemini-2.0-flash'),
-        'timeout'         => (int) env('GEMINI_TIMEOUT', 15),
+        'fallback_models' => env('GEMINI_FALLBACK_MODELS', ''),
+        'timeout'         => (int) env('GEMINI_TIMEOUT_SECONDS', env('GEMINI_TIMEOUT', 20)),
     ],
 ];

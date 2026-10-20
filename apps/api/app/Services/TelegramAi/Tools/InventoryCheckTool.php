@@ -17,7 +17,7 @@ class InventoryCheckTool implements TelegramAiToolInterface
 
     public function description(): string
     {
-        return 'Kiểm tra số lượng tồn kho linh kiện, giá bán lẻ, vị trí lưu kho hoặc lọc danh sách các linh kiện sắp hết hàng / hết hàng (low_stock_only = true) của cửa hàng theo từ khóa (keyword: tên linh kiện, mã SKU, dòng máy tương thích, danh mục).';
+        return 'Kiểm tra số lượng tồn kho linh kiện, giá bán lẻ, vị trí lưu kho hoặc lọc danh sách các linh kiện sắp hết hàng / hết hàng (low_stock_only = true) của cửa hàng theo từ khóa (keyword: tên linh kiện, mã SKU, dòng máy tương thích, danh mục), dòng thiết bị (device_category), danh mục (category), và tiêu chí sắp xếp (sort_by: stock_asc, stock_desc, price_desc, name_asc).';
     }
 
     public function parametersSchema(): array
@@ -27,11 +27,23 @@ class InventoryCheckTool implements TelegramAiToolInterface
             'properties' => [
                 'keyword' => [
                     'type'        => 'STRING',
-                    'description' => 'Từ khóa tìm kiếm linh kiện (tên linh kiện, mã SKU, hoặc dòng máy tương thích như AirPods 2, AirPods Pro). Bỏ trống nếu muốn xem toàn bộ hoặc lọc linh kiện sắp hết.',
+                    'description' => 'Từ khóa tìm kiếm linh kiện (tên linh kiện, mã SKU, hoặc dòng máy tương thích như AirPods 2, AirPods Pro, Vỏ thép đen). Bỏ trống nếu muốn xem toàn bộ hoặc lọc linh kiện sắp hết.',
+                ],
+                'device_category' => [
+                    'type'        => 'STRING',
+                    'description' => 'Lọc linh kiện theo dòng máy tương thích hoặc danh mục thiết bị (ví dụ: AirPods, Apple Watch, iPhone, iPad, MacBook).',
+                ],
+                'category' => [
+                    'type'        => 'STRING',
+                    'description' => 'Lọc theo danh mục linh kiện (ví dụ: Pin, Vỏ, Loa, Mic, Cáp) hoặc dòng thiết bị.',
                 ],
                 'low_stock_only' => [
                     'type'        => 'BOOLEAN',
                     'description' => 'Đặt là true nếu chỉ muốn liệt kê các linh kiện sắp hết hàng hoặc đã hết hàng (stock_quantity <= min_stock_alert).',
+                ],
+                'sort_by' => [
+                    'type'        => 'STRING',
+                    'description' => 'Tiêu chí sắp xếp danh sách linh kiện: "stock_asc" (tồn kho tăng dần - mặc định), "stock_desc" (tồn kho giảm dần), "price_desc" (giá bán lẻ cao đến thấp), "name_asc" (tên linh kiện A-Z).',
                 ],
                 'limit' => [
                     'type'        => 'INTEGER',
@@ -41,12 +53,110 @@ class InventoryCheckTool implements TelegramAiToolInterface
         ];
     }
 
+    /**
+     * Escape các ký tự wildcard SQL (%, _, \) trước khi đưa vào điều kiện LIKE.
+     */
+    protected function escapeLike(string $value): string
+    {
+        return strtr($value, [
+            '\\' => '\\\\',
+            '%'  => '\\%',
+            '_'  => '\\_',
+        ]);
+    }
+
+    protected function applyCategoryCondition($query, string $rawCategory): void
+    {
+        $trimmed = trim($rawCategory);
+        $normalized = mb_strtolower($trimmed, 'UTF-8');
+        if ($normalized === '') {
+            return;
+        }
+
+        $escaped = $this->escapeLike($trimmed);
+
+        $query->where(function ($sub) use ($escaped, $normalized) {
+            $sub->where('category', 'like', "%{$escaped}%")
+                ->orWhere('compatible_models', 'like', "%{$escaped}%")
+                ->orWhere('name', 'like', "%{$escaped}%");
+
+            if (str_contains($normalized, 'watch') || str_contains($normalized, 'đồng hồ')) {
+                $sub->orWhere('category', 'like', '%apple_watch%')
+                    ->orWhere('category', 'like', '%Watch%')
+                    ->orWhere('compatible_models', 'like', '%Watch%')
+                    ->orWhere('name', 'like', '%Watch%');
+            } elseif (str_contains($normalized, 'airpod') || str_contains($normalized, 'tai nghe')) {
+                $sub->orWhere('category', 'like', '%airpods%')
+                    ->orWhere('category', 'like', '%AirPods%')
+                    ->orWhere('compatible_models', 'like', '%AirPods%')
+                    ->orWhere('name', 'like', '%AirPods%');
+            } elseif (str_contains($normalized, 'iphone')) {
+                $sub->orWhere('category', 'like', '%iphone%')
+                    ->orWhere('compatible_models', 'like', '%iPhone%')
+                    ->orWhere('name', 'like', '%iPhone%');
+            } elseif (str_contains($normalized, 'ipad')) {
+                $sub->orWhere('category', 'like', '%ipad%')
+                    ->orWhere('compatible_models', 'like', '%iPad%')
+                    ->orWhere('name', 'like', '%iPad%');
+            } elseif (str_contains($normalized, 'macbook')) {
+                $sub->orWhere('category', 'like', '%macbook%')
+                    ->orWhere('compatible_models', 'like', '%MacBook%')
+                    ->orWhere('name', 'like', '%MacBook%');
+            }
+        });
+    }
+
+    protected function applyKeywordTokenCondition($query, string $token): void
+    {
+        $escaped = $this->escapeLike($token);
+        $like = "%{$escaped}%";
+        $query->where(function ($q) use ($like) {
+            $q->where('name', 'like', $like)
+                ->orWhere('sku', 'like', $like)
+                ->orWhere('compatible_models', 'like', $like)
+                ->orWhere('category', 'like', $like);
+        });
+    }
+
+    /**
+     * Chuẩn hóa an toàn tham số đầu vào thành chuỗi đơn (chống lỗi Array to string conversion khi LLM trả về mảng).
+     */
+    protected function scalarString(mixed $value, string $default = ''): string
+    {
+        if (is_array($value)) {
+            $parts = [];
+            array_walk_recursive($value, static function (mixed $item) use (&$parts): void {
+                if (is_string($item) || is_int($item) || is_float($item)) {
+                    $trimmed = trim((string) $item);
+                    if ($trimmed !== '') {
+                        $parts[] = $trimmed;
+                    }
+                }
+            });
+
+            return ! empty($parts) ? implode(' ', $parts) : $default;
+        }
+
+        if (is_string($value) || is_int($value) || is_float($value)) {
+            $trimmed = trim((string) $value);
+
+            return $trimmed !== '' ? $trimmed : $default;
+        }
+
+        return $default;
+    }
+
     public function execute(array $args, TelegramRecipient $recipient): array
     {
         // Bước 1: Tự kiểm tra & chuẩn hóa tham số đầu vào (Sanitize & Normalize)
-        $keyword = trim((string) ($args['keyword'] ?? ''));
+        $keyword = $this->scalarString($args['keyword'] ?? '');
+        $deviceCategory = $this->scalarString($args['device_category'] ?? '');
+        $category = $this->scalarString($args['category'] ?? '');
         $lowStockOnly = filter_var($args['low_stock_only'] ?? false, FILTER_VALIDATE_BOOLEAN);
-        $limit = max(1, min(20, (int) ($args['limit'] ?? 10)));
+        $rawSortBy = strtolower($this->scalarString($args['sort_by'] ?? 'stock_asc', 'stock_asc'));
+        $allowedSortBy = ['stock_asc', 'stock_desc', 'price_desc', 'name_asc'];
+        $sortBy = in_array($rawSortBy, $allowedSortBy, true) ? $rawSortBy : 'stock_asc';
+        $limit = max(1, min(20, (int) $this->scalarString($args['limit'] ?? null, '10')));
         $tenantId = (int) $recipient->tenant_id;
         $recipientBranchId = $recipient->branch_id !== null ? (int) $recipient->branch_id : null;
         $branchDisplay = TelegramAiAssistantService::resolveBranchDisplay($recipient);
@@ -59,13 +169,31 @@ class InventoryCheckTool implements TelegramAiToolInterface
             ->where('tenant_id', $tenantId)
             ->where('is_active', true);
 
+        if ($deviceCategory !== '') {
+            $this->applyCategoryCondition($query, $deviceCategory);
+        }
+
+        if ($category !== '') {
+            $this->applyCategoryCondition($query, $category);
+        }
+
         if ($keyword !== '') {
-            $query->where(function ($q) use ($keyword) {
-                $q->where('name', 'like', "%{$keyword}%")
-                    ->orWhere('sku', 'like', "%{$keyword}%")
-                    ->orWhere('compatible_models', 'like', "%{$keyword}%")
-                    ->orWhere('category', 'like', "%{$keyword}%");
-            });
+            $exactClone = clone $query;
+            $this->applyKeywordTokenCondition($exactClone, $keyword);
+
+            if ($exactClone->count() > 0) {
+                $this->applyKeywordTokenCondition($query, $keyword);
+            } else {
+                $lookupHelper = new LookupOrderTool();
+                $tokens = $lookupHelper->extractSearchTokens($keyword);
+                if (! empty($tokens)) {
+                    foreach ($tokens as $token) {
+                        $this->applyKeywordTokenCondition($query, $token);
+                    }
+                } else {
+                    $this->applyKeywordTokenCondition($query, $keyword);
+                }
+            }
         }
 
         if ($lowStockOnly === true) {
@@ -90,11 +218,15 @@ class InventoryCheckTool implements TelegramAiToolInterface
         }
 
         $totalMatched = (clone $query)->count();
-        $parts = $query
-            ->orderBy('stock_quantity', 'asc')
-            ->orderBy('id', 'asc')
-            ->limit($limit)
-            ->get();
+
+        match ($sortBy) {
+            'stock_desc' => $query->orderBy('stock_quantity', 'desc')->orderBy('id', 'asc'),
+            'price_desc' => $query->orderBy('retail_price', 'desc')->orderBy('id', 'asc'),
+            'name_asc'   => $query->orderBy('name', 'asc')->orderBy('id', 'asc'),
+            default      => $query->orderBy('stock_quantity', 'asc')->orderBy('id', 'asc'),
+        };
+
+        $parts = $query->limit($limit)->get();
 
         $items = $parts->map(function (Part $part) use ($recipient, $recipientBranchId): array {
             $totalStockQuantity = (int) $part->stock_quantity;
@@ -158,9 +290,12 @@ class InventoryCheckTool implements TelegramAiToolInterface
             'branch_name'     => $branchDisplay,
             'branch_scope'    => $branchDisplay,
             'filters_applied' => [
-                'keyword'        => $keyword !== '' ? $keyword : null,
-                'low_stock_only' => $lowStockOnly,
-                'limit'          => $limit,
+                'keyword'         => $keyword !== '' ? $keyword : null,
+                'device_category' => $deviceCategory !== '' ? $deviceCategory : null,
+                'category'        => $category !== '' ? $category : null,
+                'low_stock_only'  => $lowStockOnly,
+                'sort_by'         => $sortBy,
+                'limit'           => $limit,
             ],
             'total_matched'  => $totalMatched,
             'returned_count' => count($items),

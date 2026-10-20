@@ -17,7 +17,7 @@ class WarrantyLookupTool implements TelegramAiToolInterface
 
     public function description(): string
     {
-        return 'Tra cứu thông tin phiếu bảo hành điện tử, thời hạn bảo hành còn lại và lịch sử yêu cầu bảo hành (claims) của khách hàng theo mã bảo hành (warranty_code), mã đơn sửa chữa gốc (order_code), số điện thoại khách hàng (customer_phone), hoặc lọc các phiếu còn hạn bảo hành (only_active = true).';
+        return 'Tra cứu thông tin phiếu bảo hành điện tử, thời hạn bảo hành còn lại và lịch sử yêu cầu bảo hành (claims) của khách hàng theo mã bảo hành (warranty_code), mã đơn sửa chữa gốc (order_code), số điện thoại khách hàng (customer_phone), từ khóa hạng mục/lỗi bảo hành (keyword), khoảng ngày (date_from, date_to), dòng thiết bị (device_category), tên kỹ thuật viên đơn gốc (technician_name), hoặc lọc các phiếu còn hạn bảo hành (only_active = true).';
     }
 
     public function parametersSchema(): array
@@ -36,6 +36,26 @@ class WarrantyLookupTool implements TelegramAiToolInterface
                 'customer_phone' => [
                     'type'        => 'STRING',
                     'description' => 'Số điện thoại khách hàng cần tra cứu bảo hành.',
+                ],
+                'keyword' => [
+                    'type'        => 'STRING',
+                    'description' => 'Từ khóa tìm kiếm trong hạng mục bảo hành (coverage_item), mô tả lỗi khiếu nại (claims.issue_description) hoặc tên thiết bị (deviceModel.name).',
+                ],
+                'date_from' => [
+                    'type'        => 'STRING',
+                    'description' => 'Ngày bắt đầu tra cứu theo ngày kích hoạt bảo hành hoặc ngày tạo (hỗ trợ DD/MM, DD/MM/YYYY, YYYY-MM-DD).',
+                ],
+                'date_to' => [
+                    'type'        => 'STRING',
+                    'description' => 'Ngày kết thúc tra cứu theo ngày kích hoạt bảo hành hoặc ngày tạo (hỗ trợ DD/MM, DD/MM/YYYY, YYYY-MM-DD).',
+                ],
+                'device_category' => [
+                    'type'        => 'STRING',
+                    'description' => 'Lọc theo dòng thiết bị (ví dụ: AirPods, Apple Watch, iPhone, iPad, MacBook).',
+                ],
+                'technician_name' => [
+                    'type'        => 'STRING',
+                    'description' => 'Lọc theo tên kỹ thuật viên phụ trách đơn sửa chữa gốc.',
                 ],
                 'only_active' => [
                     'type'        => 'BOOLEAN',
@@ -86,15 +106,91 @@ class WarrantyLookupTool implements TelegramAiToolInterface
         };
     }
 
+    /**
+     * Escape các ký tự wildcard SQL (%, _, \) trước khi đưa vào điều kiện LIKE.
+     */
+    protected function escapeLike(string $value): string
+    {
+        return strtr($value, [
+            '\\' => '\\\\',
+            '%'  => '\\%',
+            '_'  => '\\_',
+        ]);
+    }
+
+    /**
+     * Parse chuỗi ngày an toàn ủy quyền qua LookupOrderTool::parseDate() (có kiểm tra checkdate).
+     */
+    public function parseDate(string $value): ?\Illuminate\Support\Carbon
+    {
+        return (new LookupOrderTool())->parseDate($value);
+    }
+
+    protected function applySingleTokenCondition($query, string $token): void
+    {
+        $escaped = $this->escapeLike($token);
+        $like = "%{$escaped}%";
+
+        $query->where(function ($q) use ($like) {
+            $q->where('coverage_item', 'like', $like)
+                ->orWhereHas('claims', function ($cq) use ($like) {
+                    $cq->where('issue_description', 'like', $like);
+                })
+                ->orWhereHas('deviceModel', function ($dq) use ($like) {
+                    $dq->withoutGlobalScopes()->where(function ($sub) use ($like) {
+                        $sub->where('name', 'like', $like)
+                            ->orWhere('category', 'like', $like);
+                    });
+                });
+        });
+    }
+
+    /**
+     * Chuẩn hóa an toàn tham số đầu vào thành chuỗi đơn (chống lỗi Array to string conversion khi LLM trả về mảng).
+     */
+    protected function scalarString(mixed $value, string $default = ''): string
+    {
+        if (is_array($value)) {
+            $parts = [];
+            array_walk_recursive($value, static function (mixed $item) use (&$parts): void {
+                if (is_string($item) || is_int($item) || is_float($item)) {
+                    $trimmed = trim((string) $item);
+                    if ($trimmed !== '') {
+                        $parts[] = $trimmed;
+                    }
+                }
+            });
+
+            return ! empty($parts) ? implode(' ', $parts) : $default;
+        }
+
+        if (is_string($value) || is_int($value) || is_float($value)) {
+            $trimmed = trim((string) $value);
+
+            return $trimmed !== '' ? $trimmed : $default;
+        }
+
+        return $default;
+    }
+
     public function execute(array $args, TelegramRecipient $recipient): array
     {
         // Bước 1: Tự kiểm tra & chuẩn hóa tham số đầu vào (Sanitize & Normalize)
-        $warrantyCode = strtoupper(ltrim(trim((string) ($args['warranty_code'] ?? '')), '#'));
-        $orderCode = strtoupper(ltrim(trim((string) ($args['order_code'] ?? '')), '#'));
-        $customerPhone = preg_replace('/[\s.\-]+/', '', trim((string) ($args['customer_phone'] ?? ''))) ?? '';
+        $warrantyCode = strtoupper(ltrim($this->scalarString($args['warranty_code'] ?? ''), '#'));
+        $orderCode = strtoupper(ltrim($this->scalarString($args['order_code'] ?? ''), '#'));
+        $customerPhone = preg_replace('/[\s.\-]+/', '', $this->scalarString($args['customer_phone'] ?? '')) ?? '';
+        $keyword = $this->scalarString($args['keyword'] ?? '');
+        $rawDateFrom = $this->scalarString($args['date_from'] ?? '');
+        $rawDateTo = $this->scalarString($args['date_to'] ?? '');
+        $deviceCategory = $this->scalarString($args['device_category'] ?? '');
+        $technicianName = $this->scalarString($args['technician_name'] ?? '');
         $onlyActive = filter_var($args['only_active'] ?? false, FILTER_VALIDATE_BOOLEAN);
-        $limit = max(1, min(10, (int) ($args['limit'] ?? 5)));
+        $limit = max(1, min(10, (int) $this->scalarString($args['limit'] ?? null, '5')));
         $branchDisplay = TelegramAiAssistantService::resolveBranchDisplay($recipient);
+
+        $lookupHelper = new LookupOrderTool();
+        $parsedFrom = $lookupHelper->parseDate($rawDateFrom);
+        $parsedTo = $lookupHelper->parseDate($rawDateTo);
 
         // Bước 2: Thực thi Eloquent Query khóa cứng tenant_id & branch_id
         $query = Warranty::withoutGlobalScopes()
@@ -102,7 +198,8 @@ class WarrantyLookupTool implements TelegramAiToolInterface
                 'customer'    => fn ($q) => $q->withoutGlobalScopes(),
                 'deviceModel' => fn ($q) => $q->withoutGlobalScopes(),
                 'repairOrder' => fn ($q) => $q->withoutGlobalScopes()->with([
-                    'branch' => fn ($bq) => $bq->withoutGlobalScopes(),
+                    'branch'     => fn ($bq) => $bq->withoutGlobalScopes(),
+                    'technician' => fn ($tq) => $tq->withoutGlobalScopes(),
                 ]),
                 'claims',
             ])
@@ -114,15 +211,100 @@ class WarrantyLookupTool implements TelegramAiToolInterface
             });
 
         if ($warrantyCode !== '') {
-            $query->where('warranty_code', 'like', "%{$warrantyCode}%");
+            $escapedWarrantyCode = $this->escapeLike($warrantyCode);
+            $query->where('warranty_code', 'like', "%{$escapedWarrantyCode}%");
         }
 
         if ($orderCode !== '') {
-            $query->whereHas('repairOrder', fn ($rq) => $rq->withoutGlobalScopes()->where('order_code', 'like', "%{$orderCode}%"));
+            $escapedOrderCode = $this->escapeLike($orderCode);
+            $query->whereHas('repairOrder', fn ($rq) => $rq->withoutGlobalScopes()->where('order_code', 'like', "%{$escapedOrderCode}%"));
         }
 
         if ($customerPhone !== '') {
-            $query->whereHas('customer', fn ($cq) => $cq->withoutGlobalScopes()->where('phone', 'like', "%{$customerPhone}%"));
+            $escapedCustomerPhone = $this->escapeLike($customerPhone);
+            $query->whereHas('customer', fn ($cq) => $cq->withoutGlobalScopes()->where('phone', 'like', "%{$escapedCustomerPhone}%"));
+        }
+
+        $startDateFilter = null;
+        $endDateFilter = null;
+        if ($parsedFrom !== null || $parsedTo !== null) {
+            $start = ($parsedFrom ?? $parsedTo)->copy();
+            $end = ($parsedTo ?? $parsedFrom)->copy();
+
+            if ($end->lt($start)) {
+                [$start, $end] = [$end, $start];
+            }
+
+            $startDateFilter = $start->startOfDay();
+            $endDateFilter = $end->endOfDay();
+
+            $query->where(function ($dq) use ($startDateFilter, $endDateFilter) {
+                $dq->whereBetween('start_date', [$startDateFilter->toDateString(), $endDateFilter->toDateString()])
+                    ->orWhere(function ($sub) use ($startDateFilter, $endDateFilter) {
+                        $sub->whereNull('start_date')->whereBetween('created_at', [$startDateFilter, $endDateFilter]);
+                    });
+            });
+        }
+
+        if ($deviceCategory !== '') {
+            $normalizedCat = mb_strtolower($deviceCategory, 'UTF-8');
+            $escapedCategory = $this->escapeLike($deviceCategory);
+            $query->whereHas('deviceModel', function ($dq) use ($escapedCategory, $normalizedCat) {
+                $dq->withoutGlobalScopes()->where(function ($sub) use ($escapedCategory, $normalizedCat) {
+                    $sub->where('category', 'like', "%{$escapedCategory}%")
+                        ->orWhere('name', 'like', "%{$escapedCategory}%");
+
+                    if (str_contains($normalizedCat, 'watch') || str_contains($normalizedCat, 'đồng hồ')) {
+                        $sub->orWhere('category', 'like', '%apple_watch%')
+                            ->orWhere('name', 'like', '%Watch%');
+                    } elseif (str_contains($normalizedCat, 'airpod') || str_contains($normalizedCat, 'tai nghe')) {
+                        $sub->orWhere('category', 'like', '%airpods%')
+                            ->orWhere('name', 'like', '%AirPods%');
+                    } elseif (str_contains($normalizedCat, 'iphone')) {
+                        $sub->orWhere('category', 'like', '%iphone%')
+                            ->orWhere('name', 'like', '%iPhone%');
+                    } elseif (str_contains($normalizedCat, 'ipad')) {
+                        $sub->orWhere('category', 'like', '%ipad%')
+                            ->orWhere('name', 'like', '%iPad%');
+                    } elseif (str_contains($normalizedCat, 'macbook')) {
+                        $sub->orWhere('category', 'like', '%macbook%')
+                            ->orWhere('name', 'like', '%MacBook%');
+                    }
+                });
+            });
+        }
+
+        if ($technicianName !== '') {
+            $escapedTechnicianName = $this->escapeLike($technicianName);
+            $query->whereHas('repairOrder.technician', function ($tq) use ($escapedTechnicianName) {
+                $tq->withoutGlobalScopes()->where('name', 'like', "%{$escapedTechnicianName}%");
+            });
+        }
+
+        if ($keyword !== '') {
+            $tokens = $lookupHelper->extractSearchTokens($keyword);
+            if (! empty($tokens)) {
+                $andClone = clone $query;
+                foreach ($tokens as $token) {
+                    $this->applySingleTokenCondition($andClone, $token);
+                }
+
+                if ($andClone->count() > 0) {
+                    foreach ($tokens as $token) {
+                        $this->applySingleTokenCondition($query, $token);
+                    }
+                } else {
+                    $query->where(function ($orGroup) use ($tokens) {
+                        foreach ($tokens as $token) {
+                            $orGroup->orWhere(function ($tokenGroup) use ($token) {
+                                $this->applySingleTokenCondition($tokenGroup, $token);
+                            });
+                        }
+                    });
+                }
+            } else {
+                $this->applySingleTokenCondition($query, $keyword);
+            }
         }
 
         if ($onlyActive === true) {
@@ -160,22 +342,24 @@ class WarrantyLookupTool implements TelegramAiToolInterface
             $rawWarrantyStatus = (string) $warranty->status;
 
             return [
-                'warranty_code'  => (string) $warranty->warranty_code,
-                'status'         => $rawWarrantyStatus,
-                'status_label'   => self::formatWarrantyStatusLabel($rawWarrantyStatus, $isValidNow, $daysRemaining),
-                'is_valid_now'   => $isValidNow,
-                'days_remaining' => $daysRemaining,
-                'order_code'     => (string) ($warranty->repairOrder?->order_code ?? ''),
-                'branch_name'    => (string) ($warranty->repairOrder?->branch?->name ?? $branchDisplay),
-                'customer_name'  => (string) ($warranty->customer?->name ?? 'Khách lẻ'),
-                'customer_phone' => (string) ($warranty->customer?->phone ?? ''),
-                'device_name'    => (string) ($warranty->deviceModel?->name ?? 'Thiết bị AirPods'),
-                'coverage_item'  => (string) ($warranty->coverage_item ?? ''),
-                'duration_days'  => (int) ($warranty->duration_days ?? 0),
-                'start_date'     => optional($warranty->start_date)->format('d/m/Y'),
-                'end_date'       => optional($warranty->end_date)->format('d/m/Y'),
-                'claims_count'   => $warranty->claims->count(),
-                'claims'         => $claims,
+                'warranty_code'   => (string) $warranty->warranty_code,
+                'status'          => $rawWarrantyStatus,
+                'status_label'    => self::formatWarrantyStatusLabel($rawWarrantyStatus, $isValidNow, $daysRemaining),
+                'is_valid_now'    => $isValidNow,
+                'days_remaining'  => $daysRemaining,
+                'order_code'      => (string) ($warranty->repairOrder?->order_code ?? ''),
+                'branch_name'     => (string) ($warranty->repairOrder?->branch?->name ?? $branchDisplay),
+                'customer_name'   => (string) ($warranty->customer?->name ?? 'Khách lẻ'),
+                'customer_phone'  => (string) ($warranty->customer?->phone ?? ''),
+                'device_name'     => (string) ($warranty->deviceModel?->name ?? 'Thiết bị AirPods'),
+                'device_category' => LookupOrderTool::resolveDeviceCategoryLabel($warranty->deviceModel),
+                'technician_name' => (string) ($warranty->repairOrder?->technician?->name ?? 'Chưa phân công'),
+                'coverage_item'   => (string) ($warranty->coverage_item ?? ''),
+                'duration_days'   => (int) ($warranty->duration_days ?? 0),
+                'start_date'      => optional($warranty->start_date)->format('d/m/Y'),
+                'end_date'        => optional($warranty->end_date)->format('d/m/Y'),
+                'claims_count'    => $warranty->claims->count(),
+                'claims'          => $claims,
             ];
         })->values()->all();
 
@@ -189,10 +373,12 @@ class WarrantyLookupTool implements TelegramAiToolInterface
                     ->where('tenant_id', (int) $recipient->tenant_id);
 
                 if ($orderCode !== '') {
-                    $latestOrderQuery->where('order_code', 'like', "%{$orderCode}%");
+                    $escapedOrderCode = $this->escapeLike($orderCode);
+                    $latestOrderQuery->where('order_code', 'like', "%{$escapedOrderCode}%");
                 }
                 if ($customerPhone !== '') {
-                    $latestOrderQuery->whereHas('customer', fn ($cq) => $cq->withoutGlobalScopes()->where('phone', 'like', "%{$customerPhone}%"));
+                    $escapedCustomerPhone = $this->escapeLike($customerPhone);
+                    $latestOrderQuery->whereHas('customer', fn ($cq) => $cq->withoutGlobalScopes()->where('phone', 'like', "%{$escapedCustomerPhone}%"));
                 }
 
                 $latestOrder = $latestOrderQuery->orderByDesc('id')->first();
@@ -206,11 +392,16 @@ class WarrantyLookupTool implements TelegramAiToolInterface
             'branch_name'     => $branchDisplay,
             'branch_scope'    => $branchDisplay,
             'filters_applied' => [
-                'warranty_code'  => $warrantyCode !== '' ? $warrantyCode : null,
-                'order_code'     => $orderCode !== '' ? $orderCode : null,
-                'customer_phone' => $customerPhone !== '' ? $customerPhone : null,
-                'only_active'    => $onlyActive,
-                'limit'          => $limit,
+                'warranty_code'   => $warrantyCode !== '' ? $warrantyCode : null,
+                'order_code'      => $orderCode !== '' ? $orderCode : null,
+                'customer_phone'  => $customerPhone !== '' ? $customerPhone : null,
+                'keyword'         => $keyword !== '' ? $keyword : null,
+                'date_from'       => $startDateFilter?->format('Y-m-d'),
+                'date_to'         => $endDateFilter?->format('Y-m-d'),
+                'device_category' => $deviceCategory !== '' ? $deviceCategory : null,
+                'technician_name' => $technicianName !== '' ? $technicianName : null,
+                'only_active'     => $onlyActive,
+                'limit'           => $limit,
             ],
             'total_matched'  => $totalMatched,
             'returned_count' => count($items),
@@ -252,6 +443,7 @@ class WarrantyLookupTool implements TelegramAiToolInterface
             $customerName = htmlspecialchars((string) ($w['customer_name'] ?? 'Khách lẻ'), ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
             $customerPhone = htmlspecialchars((string) ($w['customer_phone'] ?? ''), ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
             $deviceName = htmlspecialchars((string) ($w['device_name'] ?? 'Thiết bị AirPods'), ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
+            $technicianName = htmlspecialchars((string) (($w['technician_name'] ?? '') ?: 'Chưa phân công'), ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
             $coverageItem = htmlspecialchars((string) (($w['coverage_item'] ?? '') ?: 'Theo tiêu chuẩn cửa hàng'), ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
             $startDate = htmlspecialchars((string) ($w['start_date'] ?? ''), ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
             $endDate = htmlspecialchars((string) ($w['end_date'] ?? ''), ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
@@ -271,7 +463,7 @@ class WarrantyLookupTool implements TelegramAiToolInterface
 
             $entry = "- Mã bảo hành: <code>{$warrantyCode}</code> | Đơn gốc: <code>{$orderCode}</code> | Chi nhánh: <b>{$wBranch}</b>\n"
                 . "  Khách hàng: {$customerInfo} | Thiết bị: {$deviceName}\n"
-                . "  Hạng mục: {$coverageItem}\n"
+                . "  Hạng mục: {$coverageItem} | Kỹ thuật viên đơn gốc: <b>{$technicianName}</b>\n"
                 . "  Thời hạn: {$startDate} - {$endDate} | Trạng thái: <b>{$statusLabel}</b> | Số lần bảo hành: <b>{$claimsCount}</b>";
 
             foreach ($claims as $claim) {

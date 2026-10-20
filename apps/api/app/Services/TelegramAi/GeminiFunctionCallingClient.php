@@ -7,64 +7,181 @@ use Illuminate\Support\Facades\Log;
 
 class GeminiFunctionCallingClient
 {
+    public const DEFAULT_NINE_ROUTER_BASE_URL = 'http://127.0.0.1:20128/v1';
+    public const DEFAULT_NINE_ROUTER_COMBO = 'podscare-ai';
+    public const DEFAULT_NINE_ROUTER_API_KEY = '9router-local';
+
     /**
-     * Đọc trực tiếp giá trị từ file .env trên đĩa để nhận cấu hình mới tức thì mà không cần restart process.
+     * Bộ nhớ đệm in-memory trong phạm vi request cho các biến đọc từ file .env.
+     *
+     * @var array<string, string>|null
      */
-    protected function readHotEnvValue(string $key): string
+    protected ?array $hotEnvCache = null;
+
+    /**
+     * Bộ nhớ đệm in-memory trong phạm vi request cho dữ liệu cấu hình 9Router đọc từ db.json.
+     *
+     * @var array<string, array<int, array<string, mixed>>>
+     */
+    protected array $nineRouterDiskCache = [];
+
+    /**
+     * Bộ đếm số lần đọc đĩa thực tế của file .env trong vòng đời instance.
+     */
+    protected int $hotEnvReadCount = 0;
+
+    /**
+     * Bộ đếm số lần đọc đĩa thực tế của file db.json (9Router) trong vòng đời instance.
+     */
+    protected int $nineRouterDiskReadCount = 0;
+
+    /**
+     * Xóa bộ nhớ đệm cấu hình in-memory (.env và db.json của 9Router).
+     */
+    public function flushConfigCache(): void
     {
-        $envPath = base_path('.env');
-        if (! is_file($envPath) || ! is_readable($envPath)) {
-            return '';
-        }
-
-        $lines = @file($envPath, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES);
-        if (! is_array($lines)) {
-            return '';
-        }
-
-        $found = '';
-        foreach ($lines as $line) {
-            $trimmed = trim($line);
-            if ($trimmed === '' || str_starts_with($trimmed, '#')) {
-                continue;
-            }
-
-            if (preg_match('/^(?:export\s+)?' . preg_quote($key, '/') . '\s*=\s*(.*)$/', $trimmed, $matches)) {
-                $val = trim($matches[1]);
-                if (
-                    (str_starts_with($val, '"') && str_ends_with($val, '"'))
-                    || (str_starts_with($val, "'") && str_ends_with($val, "'"))
-                ) {
-                    $val = substr($val, 1, -1);
-                }
-                $found = trim($val);
-            }
-        }
-
-        return $found;
+        $this->hotEnvCache = null;
+        $this->nineRouterDiskCache = [];
+        $this->hotEnvReadCount = 0;
+        $this->nineRouterDiskReadCount = 0;
     }
 
     /**
-     * Lấy Base URL của cổng AI (mặc định là 9Router: http://127.0.0.1:20128/v1).
-     * Chỉ khi cấu hình tường minh GEMINI_BASE_URL=direct (hoặc đặt rỗng trong unit test) mới gọi trực tiếp Google Gemini API.
+     * Trả về thống kê số lần đọc đĩa thực tế trong vòng đời instance.
+     *
+     * @return array{env_reads: int, nine_router_db_reads: int}
+     */
+    public function getDiskReadCounts(): array
+    {
+        return [
+            'env_reads'            => $this->hotEnvReadCount,
+            'nine_router_db_reads' => $this->nineRouterDiskReadCount,
+        ];
+    }
+
+    /**
+     * Đọc giá trị từ file .env trên đĩa với bộ nhớ đệm in-memory trong phạm vi request.
+     */
+    protected function readHotEnvValue(string $key): string
+    {
+        if ($this->hotEnvCache === null) {
+            $this->hotEnvCache = [];
+            $envPath = base_path('.env');
+
+            if (is_file($envPath) && is_readable($envPath)) {
+                $this->hotEnvReadCount++;
+                $lines = @file($envPath, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES);
+                if (is_array($lines)) {
+                    foreach ($lines as $line) {
+                        $trimmed = trim($line);
+                        if ($trimmed === '' || str_starts_with($trimmed, '#')) {
+                            continue;
+                        }
+
+                        if (preg_match('/^(?:export\s+)?([A-Za-z0-9_]+)\s*=\s*(.*)$/', $trimmed, $matches)) {
+                            $envKey = trim($matches[1]);
+                            $val = trim($matches[2]);
+                            if (
+                                (str_starts_with($val, '"') && str_ends_with($val, '"'))
+                                || (str_starts_with($val, "'") && str_ends_with($val, "'"))
+                            ) {
+                                $val = substr($val, 1, -1);
+                            }
+                            $this->hotEnvCache[$envKey] = trim($val);
+                        }
+                    }
+                }
+            }
+        }
+
+        return $this->hotEnvCache[$key] ?? '';
+    }
+
+    /**
+     * Lấy danh sách đường dẫn ứng viên của file cấu hình 9Router db.json.
+     *
+     * @param  array<int, string>|null  $candidatePaths
+     * @return array<int, string>
+     */
+    protected function resolveNineRouterCandidatePaths(?array $candidatePaths = null): array
+    {
+        if ($candidatePaths !== null) {
+            return $candidatePaths;
+        }
+
+        if (app()->runningUnitTests()) {
+            $testDbPath = trim((string) config('services.gemini.nine_router_db_path', ''));
+            return $testDbPath !== '' ? [$testDbPath] : [];
+        }
+
+        $home = trim((string) (getenv('HOME') ?: ''));
+        $configuredPath = trim((string) config('services.gemini.nine_router_db_path', ''));
+
+        return array_values(array_unique(array_filter([
+            $configuredPath,
+            '/root/.9router/db.json',
+            $home !== '' ? rtrim($home, '/') . '/.9router/db.json' : '',
+        ])));
+    }
+
+    /**
+     * Đọc và giải mã dữ liệu db.json của 9Router với bộ nhớ đệm in-memory trong phạm vi request.
+     *
+     * @param  array<int, string>|null  $candidatePaths
+     * @return array<int, array<string, mixed>>
+     */
+    protected function loadNineRouterDiskConfigs(?array $candidatePaths = null): array
+    {
+        $paths = $this->resolveNineRouterCandidatePaths($candidatePaths);
+        if (empty($paths)) {
+            return [];
+        }
+
+        $cacheKey = implode("\0", $paths);
+        if (array_key_exists($cacheKey, $this->nineRouterDiskCache)) {
+            return $this->nineRouterDiskCache[$cacheKey];
+        }
+
+        $decodedConfigs = [];
+        foreach ($paths as $path) {
+            if ($path === '' || ! is_file($path) || ! is_readable($path)) {
+                continue;
+            }
+
+            $this->nineRouterDiskReadCount++;
+            $raw = @file_get_contents($path);
+            if (! is_string($raw) || trim($raw) === '') {
+                continue;
+            }
+
+            $db = json_decode($raw, true);
+            if (is_array($db)) {
+                $decodedConfigs[] = $db;
+            }
+        }
+
+        $this->nineRouterDiskCache[$cacheKey] = $decodedConfigs;
+
+        return $decodedConfigs;
+    }
+
+    /**
+     * Lấy Base URL của cổng 9Router (mặc định: http://127.0.0.1:20128/v1).
+     * Mọi yêu cầu AI đều đi qua cổng OpenAI-compatible của 9Router.
      */
     public function resolveBaseUrl(): string
     {
         if (app()->runningUnitTests()) {
-            $testBaseUrl = trim((string) config('services.gemini.base_url', 'http://127.0.0.1:20128/v1'));
-            if (strtolower($testBaseUrl) === 'direct') {
-                return '';
+            $testBaseUrl = trim((string) config('services.gemini.base_url', self::DEFAULT_NINE_ROUTER_BASE_URL));
+            if ($testBaseUrl === '' || strtolower($testBaseUrl) === 'direct') {
+                return self::DEFAULT_NINE_ROUTER_BASE_URL;
             }
 
             return rtrim($testBaseUrl, '/');
         }
 
         $hotBaseUrl = $this->readHotEnvValue('GEMINI_BASE_URL');
-        if ($hotBaseUrl !== '') {
-            if (strtolower($hotBaseUrl) === 'direct') {
-                return '';
-            }
-
+        if ($hotBaseUrl !== '' && strtolower($hotBaseUrl) !== 'direct') {
             return rtrim($hotBaseUrl, '/');
         }
 
@@ -72,26 +189,22 @@ class GeminiFunctionCallingClient
         if ($baseUrl === '') {
             $baseUrl = trim((string) env('GEMINI_BASE_URL', ''));
         }
-        if ($baseUrl === '') {
-            $baseUrl = 'http://127.0.0.1:20128/v1';
-        }
-
-        if (strtolower($baseUrl) === 'direct') {
-            return '';
+        if ($baseUrl === '' || strtolower($baseUrl) === 'direct') {
+            $baseUrl = self::DEFAULT_NINE_ROUTER_BASE_URL;
         }
 
         return rtrim($baseUrl, '/');
     }
 
     /**
-     * Lấy API Key cho 9Router / Gemini từ cấu hình, biến môi trường hoặc đọc nóng trực tiếp từ file .env trên đĩa.
-     * Khi chạy qua 9Router (baseUrl !== ''), nếu chưa truyền key thì mặc định dùng '9router-local'.
+     * Lấy API Key cho 9Router từ cấu hình, biến môi trường, file .env hoặc đọc tự động từ db.json của 9Router.
+     * Nếu chưa cấu hình key riêng thì mặc định dùng '9router-local'.
      */
     public function resolveApiKey(): string
     {
         if (! app()->runningUnitTests()) {
             $hotApiKey = $this->readHotEnvValue('GEMINI_API_KEY');
-            if ($hotApiKey !== '') {
+            if ($hotApiKey !== '' && $hotApiKey !== self::DEFAULT_NINE_ROUTER_API_KEY) {
                 return $hotApiKey;
             }
         }
@@ -104,12 +217,14 @@ class GeminiFunctionCallingClient
             $apiKey = $this->readHotEnvValue('GEMINI_API_KEY');
         }
 
-        if ($apiKey === '' && $this->resolveBaseUrl() !== '') {
+        if ($apiKey === '' || $apiKey === self::DEFAULT_NINE_ROUTER_API_KEY) {
             $diskKey = $this->resolveNineRouterApiKeyFromDisk();
-            return $diskKey !== '' ? $diskKey : '9router-local';
+            if ($diskKey !== '') {
+                return $diskKey;
+            }
         }
 
-        return $apiKey;
+        return $apiKey !== '' ? $apiKey : self::DEFAULT_NINE_ROUTER_API_KEY;
     }
 
     /**
@@ -119,34 +234,9 @@ class GeminiFunctionCallingClient
      */
     public function resolveNineRouterApiKeyFromDisk(?array $candidatePaths = null): string
     {
-        if ($candidatePaths === null) {
-            if (app()->runningUnitTests()) {
-                $testDbPath = trim((string) config('services.gemini.nine_router_db_path', ''));
-                $candidatePaths = $testDbPath !== '' ? [$testDbPath] : [];
-            } else {
-                $home = trim((string) (getenv('HOME') ?: ''));
-                $candidatePaths = array_values(array_unique(array_filter([
-                    '/root/.9router/db.json',
-                    $home !== '' ? rtrim($home, '/') . '/.9router/db.json' : '',
-                ])));
-            }
-        }
+        $configs = $this->loadNineRouterDiskConfigs($candidatePaths);
 
-        foreach ($candidatePaths as $path) {
-            if ($path === '' || ! is_file($path) || ! is_readable($path)) {
-                continue;
-            }
-
-            $raw = @file_get_contents($path);
-            if (! is_string($raw) || trim($raw) === '') {
-                continue;
-            }
-
-            $db = json_decode($raw, true);
-            if (! is_array($db)) {
-                continue;
-            }
-
+        foreach ($configs as $db) {
             $apiKeys = data_get($db, 'apiKeys');
             if (is_array($apiKeys)) {
                 foreach ($apiKeys as $entry) {
@@ -167,8 +257,63 @@ class GeminiFunctionCallingClient
     }
 
     /**
-     * Xây dựng chuỗi model/combo ưu tiên (Primary model + Fallback models).
-     * Mặc định ưu tiên combo 'podscare-ai' của 9Router, dự phòng qua 'gemini-2.5-flash,gemini-2.5-flash-lite,gemini-2.0-flash'.
+     * Đọc danh sách tên combo/alias điều phối từ file cấu hình của 9Router (/root/.9router/db.json hoặc ~/.9router/db.json).
+     * Hỗ trợ cấu trúc combos dạng mảng chuỗi, mảng object (name/id/alias/slug) hoặc map theo key.
+     *
+     * @param  array<int, string>|null  $candidatePaths
+     * @return array<int, string>
+     */
+    public function resolveNineRouterCombosFromDisk(?array $candidatePaths = null): array
+    {
+        $configs = $this->loadNineRouterDiskConfigs($candidatePaths);
+        $combos = [];
+
+        foreach ($configs as $db) {
+            $rawCombos = data_get($db, 'combos');
+            if (! is_array($rawCombos)) {
+                continue;
+            }
+
+            foreach ($rawCombos as $key => $entry) {
+                if (is_string($entry) && trim($entry) !== '') {
+                    $combos[] = trim($entry);
+                    continue;
+                }
+
+                if (is_array($entry)) {
+                    if (array_key_exists('enabled', $entry) && $entry['enabled'] === false) {
+                        continue;
+                    }
+                    if (array_key_exists('isActive', $entry) && $entry['isActive'] === false) {
+                        continue;
+                    }
+
+                    $comboName = trim((string) (
+                        $entry['name']
+                        ?? $entry['alias']
+                        ?? $entry['slug']
+                        ?? $entry['id']
+                        ?? (is_string($key) ? $key : '')
+                    ));
+
+                    if ($comboName !== '') {
+                        $combos[] = $comboName;
+                    }
+                }
+            }
+
+            if (! empty($combos)) {
+                break;
+            }
+        }
+
+        return array_values(array_unique(array_filter($combos, static fn (string $c) => $c !== '')));
+    }
+
+    /**
+     * Xây dựng chuỗi combo/alias ưu tiên cho 9Router (Zero Hardcoded Models).
+     * Tuyệt đối không gán cứng bất kỳ tên model đơn lẻ nào của nhà cung cấp;
+     * kết hợp GEMINI_MODEL, GEMINI_FALLBACK_MODELS (nếu có) và danh sách combo từ db.json của 9Router, mặc định luôn có 'podscare-ai'.
      *
      * @return array<int, string>
      */
@@ -184,9 +329,6 @@ class GeminiFunctionCallingClient
         if ($primaryModel === '' && ! app()->runningUnitTests()) {
             $primaryModel = $this->readHotEnvValue('GEMINI_MODEL');
         }
-        if ($primaryModel === '') {
-            $primaryModel = 'podscare-ai';
-        }
 
         $hotFallback = ! app()->runningUnitTests() ? $this->readHotEnvValue('GEMINI_FALLBACK_MODELS') : '';
         $fallbackRaw = $hotFallback !== ''
@@ -198,24 +340,46 @@ class GeminiFunctionCallingClient
         if ($fallbackRaw === '' && ! app()->runningUnitTests()) {
             $fallbackRaw = $this->readHotEnvValue('GEMINI_FALLBACK_MODELS');
         }
-        if ($fallbackRaw === '') {
-            $fallbackRaw = 'gemini-2.5-flash,gemini-2.5-flash-lite,gemini-2.0-flash';
+
+        $fallbackList = $fallbackRaw !== ''
+            ? array_map('trim', explode(',', $fallbackRaw))
+            : [];
+
+        $diskCombos = $this->resolveNineRouterCombosFromDisk();
+
+        $merged = [];
+        if ($primaryModel !== '') {
+            $merged[] = $primaryModel;
+        }
+        foreach ($fallbackList as $fb) {
+            if ($fb !== '') {
+                $merged[] = $fb;
+            }
+        }
+        foreach ($diskCombos as $combo) {
+            if ($combo !== '') {
+                $merged[] = $combo;
+            }
         }
 
-        $fallbackList = array_map('trim', explode(',', $fallbackRaw));
+        if (! in_array(self::DEFAULT_NINE_ROUTER_COMBO, $merged, true)) {
+            $merged[] = self::DEFAULT_NINE_ROUTER_COMBO;
+        }
 
-        $merged = array_merge([$primaryModel], $fallbackList);
         $filtered = array_filter($merged, static fn (string $m) => $m !== '');
 
         return array_values(array_unique($filtered));
     }
 
     /**
-     * Chuẩn hóa URL đích cho 9Router / OpenAI-compatible endpoint (/v1/chat/completions).
+     * Chuẩn hóa URL đích cho cổng 9Router OpenAI-compatible (/v1/chat/completions).
      */
     public function buildOpenAiChatEndpoint(string $baseUrl): string
     {
         $clean = rtrim(trim($baseUrl), '/');
+        if ($clean === '') {
+            $clean = self::DEFAULT_NINE_ROUTER_BASE_URL;
+        }
         if (str_ends_with($clean, '/chat/completions')) {
             return $clean;
         }
@@ -227,7 +391,7 @@ class GeminiFunctionCallingClient
     }
 
     /**
-     * Chuyển đổi danh sách functionDeclarations chuẩn Gemini sang mảng tools chuẩn OpenAI.
+     * Chuyển đổi danh sách functionDeclarations sang mảng tools chuẩn OpenAI.
      */
     public function convertDeclarationsToOpenAiTools(array $functionDeclarations): array
     {
@@ -255,7 +419,7 @@ class GeminiFunctionCallingClient
     }
 
     /**
-     * Đổi đệ quy kiểu dữ liệu JSON Schema từ chữ hoa (OBJECT/STRING/...) của Gemini sang chữ thường (object/string/...) chuẩn OpenAI.
+     * Đổi đệ quy kiểu dữ liệu JSON Schema từ chữ hoa (OBJECT/STRING/...) sang chữ thường (object/string/...) chuẩn OpenAI.
      */
     protected function normalizeJsonSchemaTypes(array $schema): array
     {
@@ -287,7 +451,7 @@ class GeminiFunctionCallingClient
     }
 
     /**
-     * Chuyển đổi contents chuẩn Gemini và systemInstruction sang mảng messages chuẩn OpenAI.
+     * Chuyển đổi contents và systemInstruction sang mảng messages chuẩn OpenAI.
      */
     protected function convertContentsToOpenAiMessages(array $contents, ?string $systemInstruction = null): array
     {
@@ -338,7 +502,7 @@ class GeminiFunctionCallingClient
     }
 
     /**
-     * Gọi cổng 9Router / OpenAI-compatible (/v1/chat/completions) hỗ trợ Tool Calling và Auto-Fallback qua chuỗi model/combo.
+     * Gọi cổng 9Router OpenAI-compatible (/v1/chat/completions) hỗ trợ Tool Calling và xoay vòng combo dự phòng.
      */
     protected function generateViaOpenAiCompatible(
         string $baseUrl,
@@ -351,9 +515,9 @@ class GeminiFunctionCallingClient
         $messages = $this->convertContentsToOpenAiMessages($contents, $systemInstruction);
         $openAiTools = $this->convertDeclarationsToOpenAiTools($functionDeclarations);
 
-        $timeout = (int) config('services.gemini.timeout', 15);
+        $timeout = (int) config('services.gemini.timeout', 20);
         if ($timeout <= 0) {
-            $timeout = 15;
+            $timeout = 20;
         }
 
         $models = $this->resolveModelChain();
@@ -361,7 +525,7 @@ class GeminiFunctionCallingClient
 
         $diskKey = $this->resolveNineRouterApiKeyFromDisk();
         $effectiveKey = trim($apiKey);
-        if ($effectiveKey === '' || $effectiveKey === '9router-local') {
+        if ($effectiveKey === '' || $effectiveKey === self::DEFAULT_NINE_ROUTER_API_KEY) {
             $effectiveKey = $diskKey;
         }
 
@@ -464,20 +628,44 @@ class GeminiFunctionCallingClient
 
                     $text = trim((string) data_get($message, 'content', ''));
 
+                    // Hỗ trợ tương thích ngược nếu mock response trả cấu trúc candidates
+                    if (empty($functionCalls) && $text === '' && is_array(data_get($json, 'candidates.0.content.parts'))) {
+                        $textChunks = [];
+                        foreach (data_get($json, 'candidates.0.content.parts', []) as $part) {
+                            if (! is_array($part) || ! empty($part['thought'])) {
+                                continue;
+                            }
+                            if (isset($part['functionCall']) && is_array($part['functionCall'])) {
+                                $fnName = trim((string) ($part['functionCall']['name'] ?? ''));
+                                $fnArgs = $part['functionCall']['args'] ?? [];
+                                if ($fnName !== '') {
+                                    $functionCalls[] = [
+                                        'name' => $fnName,
+                                        'args' => is_array($fnArgs) ? $fnArgs : (array) $fnArgs,
+                                    ];
+                                }
+                            }
+                            if (isset($part['text']) && is_string($part['text'])) {
+                                $textChunks[] = $part['text'];
+                            }
+                        }
+                        $text = trim(implode("\n", $textChunks));
+                    }
+
                     return [
                         'ok'             => true,
                         'model'          => $model,
                         'function_call'  => $functionCalls[0] ?? null,
                         'function_calls' => $functionCalls,
                         'text'           => $text,
-                        'model_content'  => $message,
+                        'model_content'  => $message ?: data_get($json, 'candidates.0.content'),
                         'raw'            => $json,
                     ];
                 }
 
                 $status = $response->status();
                 if (in_array($status, $retryableStatuses, true)) {
-                    Log::warning("9Router/OpenAI model {$model} failed with status {$status}, trying fallback model...", [
+                    Log::warning("9Router combo/model {$model} failed with status {$status}, trying next fallback combo...", [
                         'endpoint' => $endpoint,
                         'model'    => $model,
                         'status'   => $status,
@@ -486,7 +674,7 @@ class GeminiFunctionCallingClient
                     continue;
                 }
 
-                Log::error("9Router/OpenAI model {$model} failed with non-retryable status {$status}.", [
+                Log::error("9Router combo/model {$model} failed with non-retryable status {$status}.", [
                     'endpoint' => $endpoint,
                     'model'    => $model,
                     'status'   => $status,
@@ -502,7 +690,7 @@ class GeminiFunctionCallingClient
                     'text'           => '',
                 ];
             } catch (\Throwable $e) {
-                Log::warning("9Router/OpenAI model {$model} threw exception ({$e->getMessage()}), trying fallback model...", [
+                Log::warning("9Router combo/model {$model} threw exception ({$e->getMessage()}), trying next fallback combo...", [
                     'endpoint' => $endpoint,
                     'model'    => $model,
                 ]);
@@ -521,7 +709,7 @@ class GeminiFunctionCallingClient
     }
 
     /**
-     * Gọi Google Gemini generateContent (hoặc 9Router OpenAI-compatible khi có GEMINI_BASE_URL) hỗ trợ Function Calling và Auto-Fallback.
+     * Gọi cổng 9Router OpenAI-compatible (/v1/chat/completions) hỗ trợ Function Calling và xoay vòng combo dự phòng.
      */
     public function generateWithTools(
         array $contents,
@@ -531,175 +719,81 @@ class GeminiFunctionCallingClient
         $baseUrl = $this->resolveBaseUrl();
         $apiKey = $this->resolveApiKey();
 
-        if ($baseUrl !== '') {
-            return $this->generateViaOpenAiCompatible(
-                $baseUrl,
-                $apiKey,
-                $contents,
-                $functionDeclarations,
-                $systemInstruction
-            );
-        }
+        return $this->generateViaOpenAiCompatible(
+            $baseUrl,
+            $apiKey,
+            $contents,
+            $functionDeclarations,
+            $systemInstruction
+        );
+    }
 
-        if ($apiKey === '') {
-            Log::warning('GeminiFunctionCallingClient: GEMINI_API_KEY is missing.');
-            return [
-                'ok'             => false,
-                'error'          => 'missing_api_key',
-                'model'          => null,
-                'function_call'  => null,
-                'function_calls' => [],
-                'text'           => '',
-            ];
-        }
+    /**
+     * Alias tương thích cho generateWithTools().
+     */
+    public function generateOrCallTools(
+        array $contents,
+        array $functionDeclarations = [],
+        ?string $systemInstruction = null
+    ): array {
+        return $this->generateWithTools($contents, $functionDeclarations, $systemInstruction);
+    }
 
-        $payload = [
-            'contents'         => $contents,
-            'generationConfig' => [
-                'temperature' => 0.1,
-            ],
-        ];
+    /**
+     * Thực hiện Bước 2 (Turn 2 AI Synthesis) qua cổng 9Router:
+     * Gửi câu hỏi gốc của Admin kèm dữ liệu thực tế từ các Tool vừa chạy để AI tổng hợp câu trả lời phân tích/so sánh trực diện bằng HTML tiếng Việt.
+     *
+     * @param  string  $userQuestion
+     * @param  array<int, array{name: string, args?: array, result: array, formatted_html?: string}>  $executedTools
+     * @param  string|null  $systemInstruction
+     */
+    public function synthesizeToolResults(
+        string $userQuestion,
+        array $executedTools,
+        ?string $systemInstruction = null
+    ): array {
+        $toolBlocks = [];
 
-        if ($systemInstruction !== null && trim($systemInstruction) !== '') {
-            $payload['systemInstruction'] = [
-                'parts' => [
-                    ['text' => $systemInstruction],
-                ],
-            ];
-        }
-
-        if (! empty($functionDeclarations)) {
-            $payload['tools'] = [
-                [
-                    'functionDeclarations' => array_values($functionDeclarations),
-                ],
-            ];
-        }
-
-        $timeout = (int) config('services.gemini.timeout', 15);
-        if ($timeout <= 0) {
-            $timeout = 15;
-        }
-
-        $models = $this->resolveModelChain();
-        $retryableStatuses = [404, 429, 500, 502, 503, 504];
-
-        foreach ($models as $model) {
-            $endpoint = "https://generativelanguage.googleapis.com/v1beta/models/{$model}:generateContent?key={$apiKey}";
-
-            try {
-                $response = Http::connectTimeout(5)
-                    ->timeout($timeout)
-                    ->withOptions(['force_ip_resolve' => 'v4'])
-                    ->post($endpoint, $payload);
-
-                if (
-                    ! $response->successful()
-                    && in_array($response->status(), [400, 401, 403], true)
-                    && str_starts_with($apiKey, 'AQ.')
-                    && ! app()->runningUnitTests()
-                ) {
-                    $vertexEndpoint = "https://aiplatform.googleapis.com/v1/publishers/google/models/{$model}:generateContent?key={$apiKey}";
-                    $vertexPayload = $payload;
-                    if (isset($vertexPayload['systemInstruction']) && ! isset($vertexPayload['systemInstruction']['role'])) {
-                        $vertexPayload['systemInstruction']['role'] = 'system';
-                    }
-                    $vertexResponse = Http::connectTimeout(5)
-                        ->timeout($timeout)
-                        ->withOptions(['force_ip_resolve' => 'v4'])
-                        ->post($vertexEndpoint, $vertexPayload);
-                    if ($vertexResponse->successful()) {
-                        $response = $vertexResponse;
-                    }
-                }
-
-                if ($response->successful()) {
-                    $json = $response->json() ?? [];
-                    $parts = data_get($json, 'candidates.0.content.parts', []);
-                    if (! is_array($parts)) {
-                        $parts = [];
-                    }
-
-                    $functionCalls = [];
-                    $textChunks = [];
-
-                    foreach ($parts as $part) {
-                        if (! is_array($part)) {
-                            continue;
-                        }
-
-                        if (! empty($part['thought'])) {
-                            continue;
-                        }
-
-                        if (isset($part['functionCall']) && is_array($part['functionCall'])) {
-                            $fnName = trim((string) ($part['functionCall']['name'] ?? ''));
-                            $fnArgs = $part['functionCall']['args'] ?? [];
-                            if ($fnName !== '') {
-                                $functionCalls[] = [
-                                    'name' => $fnName,
-                                    'args' => is_array($fnArgs) ? $fnArgs : (array) $fnArgs,
-                                ];
-                            }
-                        }
-
-                        if (isset($part['text']) && is_string($part['text'])) {
-                            $textChunks[] = $part['text'];
-                        }
-                    }
-
-                    $functionCall = $functionCalls[0] ?? null;
-
-                    return [
-                        'ok'             => true,
-                        'model'          => $model,
-                        'function_call'  => $functionCall,
-                        'function_calls' => $functionCalls,
-                        'text'           => trim(implode("\n", $textChunks)),
-                        'model_content'  => data_get($json, 'candidates.0.content'),
-                        'raw'            => $json,
-                    ];
-                }
-
-                $status = $response->status();
-                if (in_array($status, $retryableStatuses, true)) {
-                    Log::warning("Gemini model {$model} failed with status {$status}, trying fallback model...", [
-                        'model'  => $model,
-                        'status' => $status,
-                        'body'   => $response->body(),
-                    ]);
-                    continue;
-                }
-
-                Log::error("Gemini model {$model} failed with non-retryable status {$status}.", [
-                    'model'  => $model,
-                    'status' => $status,
-                    'body'   => $response->body(),
-                ]);
-
-                return [
-                    'ok'             => false,
-                    'error'          => "http_{$status}",
-                    'model'          => $model,
-                    'function_call'  => null,
-                    'function_calls' => [],
-                    'text'           => '',
-                ];
-            } catch (\Throwable $e) {
-                Log::warning("Gemini model {$model} threw exception ({$e->getMessage()}), trying fallback model...", [
-                    'model' => $model,
-                ]);
+        foreach ($executedTools as $index => $item) {
+            if (! is_array($item)) {
                 continue;
             }
+
+            $toolName = trim((string) ($item['name'] ?? 'tool_' . ($index + 1)));
+            $toolResult = is_array($item['result'] ?? null) ? $item['result'] : [];
+            $formattedHtml = trim((string) ($item['formatted_html'] ?? ''));
+
+            $compactJson = json_encode($toolResult, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+            $section = "Công cụ đã thực thi: {$toolName}\nDữ liệu kết quả: {$compactJson}";
+
+            if ($formattedHtml !== '') {
+                $section .= "\nBản trình bày chuẩn từ hệ thống:\n{$formattedHtml}";
+            }
+
+            $toolBlocks[] = $section;
         }
 
-        return [
-            'ok'             => false,
-            'error'          => 'all_models_failed',
-            'model'          => null,
-            'function_call'  => null,
-            'function_calls' => [],
-            'text'           => '',
-        ];
+        $synthesisPrompt = implode("\n\n", [
+            "Câu hỏi của Quản trị viên: \"{$userQuestion}\"",
+            "Dữ liệu thực tế truy xuất từ hệ thống PodsCare:\n" . implode("\n\n---\n\n", $toolBlocks),
+            "YÊU CẦU TRẢ LỜI BẮT BUỘC:",
+            "1. Mở đầu bằng câu trả lời TRỰC DIỆN, đi thẳng vào trọng tâm câu hỏi của Quản trị viên:\n"
+                . "   - Nếu câu hỏi so sánh (ví dụ: cái nào cao hơn, chênh lệch bao nhiêu): phải khẳng định ngay đối tượng nào cao hơn, nêu rõ số tiền và số đơn của từng bên cùng mức chênh lệch.\n"
+                . "   - Nếu câu hỏi hỏi đích danh (ví dụ: ai thay, ai sửa, của khách nào): phải nêu ngay tên Kỹ thuật viên phụ trách, tên Khách hàng, mã đơn, hạng mục sửa chữa/báo giá và người tiếp nhận.",
+            "2. Ngay bên dưới phần kết luận mở đầu, trình bày đầy đủ số liệu chi tiết dựa trên dữ liệu thực tế ở trên.",
+            "3. Định dạng hoàn toàn bằng HTML Telegram hợp lệ (chỉ dùng thẻ <b>, <i>, <code> và gạch đầu dòng '- ' với ký tự xuống dòng thật).",
+            "4. CẤM TUYỆT ĐỐI mọi icon, emoji và CẤM in lại khối JSON thô.",
+        ]);
+
+        return $this->generateWithTools(
+            [
+                [
+                    'role'    => 'user',
+                    'content' => $synthesisPrompt,
+                ],
+            ],
+            [],
+            $systemInstruction
+        );
     }
 }
