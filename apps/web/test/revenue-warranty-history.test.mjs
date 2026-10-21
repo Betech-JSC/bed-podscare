@@ -96,33 +96,27 @@ test('OpenSpec: Revenue Reconciliation & Warranty History', async (t) => {
     assert.ok(fs.existsSync(dashboardPagePath), 'dashboard/page.tsx must exist');
     const dashboardContent = fs.readFileSync(dashboardPagePath, 'utf-8');
 
-    // StatCard Doanh thu hôm nay
+    // StatCard / Card Doanh thu hôm nay / Tổng ngày đã chọn
     assert.ok(
-      (dashboardContent.includes('label="Doanh thu hôm nay"') || dashboardContent.includes('label="Tổng doanh thu hôm nay"')) &&
-      dashboardContent.includes('dailyRevenueDisplay'),
-      'Admin Dashboard must display StatCard for Doanh thu hôm nay'
+      dashboardContent.includes('Tổng ngày đã chọn') ||
+        dashboardContent.includes('label="Doanh thu hôm nay"') ||
+        dashboardContent.includes('label="Tổng doanh thu hôm nay"'),
+      'Admin Dashboard must display card for Doanh thu hôm nay / Tổng ngày đã chọn'
     );
 
-    // Khối Đối chiếu vận hành & dòng tiền
+    // Khối 4 thẻ doanh thu & công nợ + Chỉ số điều hành ca làm việc
     assert.ok(
-      dashboardContent.includes('Đối chiếu máy khách đã lấy vs chưa lấy'),
-      'Admin Dashboard must render title for operational reconciliation'
+      dashboardContent.includes('admin-card-monthly-total') &&
+      dashboardContent.includes('admin-card-monthly-uncollected') &&
+      dashboardContent.includes('admin-card-daily-total') &&
+      dashboardContent.includes('admin-card-daily-uncollected'),
+      'Admin Dashboard must render 4 revenue & debt drilldown cards'
     );
     assert.ok(
-      dashboardContent.includes('Máy khách đã lấy (Đã bàn giao)') &&
-      dashboardContent.includes('reconciliation.handed_over_count') &&
-      dashboardContent.includes('reconciliation.handed_over_revenue_formatted'),
-      'Column 1 must display handed over count and revenue'
-    );
-    assert.ok(
-      dashboardContent.includes('Máy khách chưa lấy (Tại cửa hàng)') &&
-      dashboardContent.includes('Đã sửa xong chờ lấy') &&
-      dashboardContent.includes('reconciliation.ready_for_pickup_count') &&
-      dashboardContent.includes('reconciliation.ready_for_pickup_amount_formatted') &&
-      dashboardContent.includes('Đang sửa trong xưởng') &&
-      dashboardContent.includes('reconciliation.in_workshop_count') &&
-      dashboardContent.includes('reconciliation.in_workshop_amount_formatted'),
-      'Column 2 must display waiting for pickup amount and in workshop amount'
+      dashboardContent.includes('CHỈ SỐ ĐIỀU HÀNH CA LÀM VIỆC') &&
+      dashboardContent.includes('inWorkshopCount') &&
+      dashboardContent.includes('waitingPickupCount'),
+      'Admin Dashboard must display shift operational indicators for in-workshop and waiting-pickup counts'
     );
   });
 

@@ -24,6 +24,7 @@ import {
 import { AppShell } from '../components/AppShell';
 import { IntakeWizardModal } from '../components/IntakeWizardModal';
 import { CheckoutHandoverModal } from '../components/CheckoutHandoverModal';
+import { TechOrderDetailModal } from '../components/TechOrderDetailModal';
 import { AdminEditOrderModal } from '../components/AdminEditOrderModal';
 import { ConfirmDeleteOrderModal } from '../components/ConfirmDeleteOrderModal';
 import { RefundModal } from '../components/RefundModal';
@@ -35,6 +36,7 @@ import {
   normalizeStatusCode,
   getQuickActionsForStatus,
   isTechnicalStageStatus,
+  canCompleteTechnicalRepair,
 } from './fsm';
 import { useSilentPrint, PrintButtonDropdown } from '../components/print';
 
@@ -103,6 +105,7 @@ function RepairsPageContent() {
       : 'all'
   );
   const [selectedOrder, setSelectedOrder] = useState<RepairOrder | null>(null);
+  const [techCompleteOrder, setTechCompleteOrder] = useState<RepairOrder | null>(null);
   const [intakeModalOpen, setIntakeModalOpen] = useState(false);
   const [initialIntakeType, setInitialIntakeType] = useState<'in_store' | 'cod' | 'warranty'>('in_store');
   const [checkoutModalOpen, setCheckoutModalOpen] = useState(false);
@@ -1432,6 +1435,22 @@ function RepairsPageContent() {
                       </td>
                       <td className="px-4 text-right">
                         <div className="flex items-center justify-end gap-1.5">
+                          {canCompleteTechnicalRepair(o.status, role || currentUser?.role) && (
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              data-testid={`row-tech-complete-btn-${o.id}`}
+                              className="text-xs bg-[#eaf5ef] text-[#176b58] border-[#a9c9b9] hover:bg-[#d8ede1] font-bold flex items-center gap-1 whitespace-nowrap cursor-pointer"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setTechCompleteOrder(o);
+                              }}
+                            >
+                              <Icon name="check" size={12} />
+                              <span>Hoàn thành sửa chữa</span>
+                            </Button>
+                          )}
+
                           {['ready_for_return', 'waiting_pickup', 'in_repair'].includes(normalizeStatusCode(o.status)) ? (
                             <Button
                               variant="primary"
@@ -1545,6 +1564,20 @@ function RepairsPageContent() {
                   size="md"
                   buttonText="In phiếu tiếp nhận"
                 />
+
+                {/* CSKH / KTV / Admin Technical Completion Action */}
+                {canCompleteTechnicalRepair(selectedOrder.status, role || currentUser?.role) && (
+                  <Button
+                    variant="primary"
+                    size="md"
+                    icon="check"
+                    data-testid="repairs-modal-tech-complete-btn"
+                    onClick={() => setTechCompleteOrder(selectedOrder)}
+                    className="bg-[#176b58] hover:bg-[#125848] text-white font-bold text-xs sm:text-sm shadow-sm"
+                  >
+                    Hoàn thành sửa chữa
+                  </Button>
+                )}
 
                 {/* CSKH Simplified Checkout Button */}
                 {['ready_for_return', 'waiting_pickup', 'in_repair'].includes(normalizeStatusCode(selectedOrder.status)) && (
@@ -2105,6 +2138,24 @@ function RepairsPageContent() {
                       ))
                     )}
 
+                    {/* Nút Hoàn thành sửa chữa nhanh cho CSKH / Kỹ Thuật / Admin */}
+                    {canCompleteTechnicalRepair(currentStatusCode, role) && (
+                      <Button
+                        variant="primary"
+                        size="sm"
+                        icon="check_circle"
+                        data-testid="repairs-quick-tech-complete-btn"
+                        onClick={() => {
+                          const target = selectedOrder;
+                          setSelectedOrder(null);
+                          setTechCompleteOrder(target);
+                        }}
+                        className="bg-[#176b58] hover:bg-[#125848] text-white font-bold text-xs shadow-sm"
+                      >
+                        Hoàn thành sửa chữa
+                      </Button>
+                    )}
+
                     {/* Nút thanh toán & bàn giao nhanh cho CSKH */}
                     {['ready_for_return', 'waiting_pickup', 'in_repair'].includes(currentStatusCode) && (
                       <Button
@@ -2408,6 +2459,23 @@ function RepairsPageContent() {
             refetch();
             if (invalidateOrders) await invalidateOrders();
           }}
+        />
+      )}
+
+      {/* Tech Order Detail / Complete Repair Modal */}
+      {techCompleteOrder && (
+        <TechOrderDetailModal
+          isOpen={Boolean(techCompleteOrder)}
+          order={techCompleteOrder}
+          onClose={() => setTechCompleteOrder(null)}
+          onCompleteSuccess={() => {
+            setTechCompleteOrder(null);
+            refetch();
+            if (invalidateOrders) invalidateOrders();
+          }}
+          currentUser={currentUser}
+          invalidateOrders={invalidateOrders}
+          updateOrder={updateOrder}
         />
       )}
 

@@ -870,6 +870,7 @@ class OrderController extends Controller
             'repair_note'         => 'nullable|string',
             'parts_needed'        => 'nullable|string|max:1000',
             'parts_used'          => 'nullable|string',
+            'final_check_result'  => 'nullable|string|max:500',
             'rework_reason'       => 'nullable|string',
             'technician_id'       => 'nullable|exists:users,id',
         ]);
@@ -888,6 +889,7 @@ class OrderController extends Controller
                 'repair_note'         => $validated['repair_note'] ?? null,
                 'parts_needed'        => $validated['parts_needed'] ?? $request->input('parts_needed'),
                 'parts_used'          => $validated['parts_used'] ?? null,
+                'final_check_result'  => $validated['final_check_result'] ?? null,
                 'rework_reason'       => $validated['rework_reason'] ?? null,
                 'ip'                  => $request->ip(),
                 'user_agent'          => $request->userAgent(),

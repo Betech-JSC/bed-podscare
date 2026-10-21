@@ -562,6 +562,31 @@ class OrderTransitionTest extends TestCase
         $this->assertNotNull($fresh->tech_accepted_at);
     }
 
+    private function getTechnicianUser(?int $branchId = null, ?int $tenantId = null): User
+    {
+        $query = User::whereIn('role', ['technician', 'tech'])->where('is_active', true);
+        if ($branchId) {
+            $query->where('branch_id', $branchId);
+        }
+        $tech = $query->first();
+        if ($tech) {
+            return $tech;
+        }
+
+        $admin = $this->getAuthenticatedUser();
+
+        return User::forceCreate([
+            'tenant_id' => $tenantId ?? $admin->tenant_id ?? 1,
+            'branch_id' => $branchId ?? $admin->branch_id ?? (Branch::first()?->id ?? 1),
+            'name'      => 'KTV Test ' . uniqid(),
+            'email'     => 'ktv_test_' . uniqid() . '@podscare.vn',
+            'phone'     => '096' . random_int(1000000, 9999999),
+            'password'  => bcrypt('password'),
+            'role'      => 'technician',
+            'is_active' => true,
+        ]);
+    }
+
     /**
      * Test 15 (OpenSpec ktv-grab-dispatch Task 1.2 & 1.3): Chuyển trực tiếp từ in_repair sang ready_for_return tự động tạo QC pass và dispatch event cho CSKH.
      */
@@ -569,11 +594,11 @@ class OrderTransitionTest extends TestCase
     {
         \Illuminate\Support\Facades\Event::fake([\App\Events\OrderOperationalEvent::class]);
 
-        $user = $this->getAuthenticatedUser();
         $order = $this->createTestOrder('in_repair');
+        $tech = $this->getTechnicianUser((int) $order->branch_id, (int) $order->tenant_id);
 
         // Chuyển thẳng in_repair -> ready_for_return mà chưa có QC Inspection thủ công
-        $response = $this->actingAs($user, 'sanctum')->postJson("/api/v1/orders/{$order->id}/transition", [
+        $response = $this->actingAs($tech, 'sanctum')->postJson("/api/v1/orders/{$order->id}/transition", [
             'status'      => 'ready_for_return',
             'repair_note' => 'Đã thay thế linh kiện và kiểm tra âm thanh hoàn tất',
             'parts_used'  => 'Pin AirPods Pro 2, Loa tai trái',
@@ -585,6 +610,7 @@ class OrderTransitionTest extends TestCase
 
         $fresh = $order->fresh();
         $this->assertEquals('ready_for_return', $fresh->status);
+        $this->assertEquals($tech->id, $fresh->technician_id);
         $this->assertNotNull($fresh->repair_completed_at);
         $this->assertNotNull($fresh->qc_passed_at);
         $this->assertEquals('Đã thay thế linh kiện và kiểm tra âm thanh hoàn tất', $fresh->repair_note);
@@ -611,11 +637,11 @@ class OrderTransitionTest extends TestCase
      */
     public function test_fast_track_transition_from_assigned_to_ready_for_return(): void
     {
-        $user = $this->getAuthenticatedUser();
         $order = $this->createTestOrder('assigned');
+        $tech = $this->getTechnicianUser((int) $order->branch_id, (int) $order->tenant_id);
         $this->assertNull($order->repair_started_at);
 
-        $response = $this->actingAs($user, 'sanctum')->postJson("/api/v1/orders/{$order->id}/transition", [
+        $response = $this->actingAs($tech, 'sanctum')->postJson("/api/v1/orders/{$order->id}/transition", [
             'status'      => 'ready_for_return',
             'repair_note' => 'KTV hoàn tất trực tiếp từ trạng thái đã nhận',
             'parts_used'  => 'Thay pin Dock sạc',
@@ -627,6 +653,7 @@ class OrderTransitionTest extends TestCase
 
         $fresh = $order->fresh();
         $this->assertEquals('ready_for_return', $fresh->status);
+        $this->assertEquals($tech->id, $fresh->technician_id);
         $this->assertNotNull($fresh->repair_started_at);
         $this->assertNotNull($fresh->repair_completed_at);
         $this->assertNotNull($fresh->qc_passed_at);
@@ -645,10 +672,10 @@ class OrderTransitionTest extends TestCase
      */
     public function test_fast_track_transition_from_rework_needed_to_ready_for_return(): void
     {
-        $user = $this->getAuthenticatedUser();
         $order = $this->createTestOrder('rework_needed');
+        $tech = $this->getTechnicianUser((int) $order->branch_id, (int) $order->tenant_id);
 
-        $response = $this->actingAs($user, 'sanctum')->postJson("/api/v1/orders/{$order->id}/transition", [
+        $response = $this->actingAs($tech, 'sanctum')->postJson("/api/v1/orders/{$order->id}/transition", [
             'status'      => 'ready_for_return',
             'repair_note' => 'Đã khắc phục lỗi sau khi QC báo làm lại',
         ]);
@@ -659,6 +686,7 @@ class OrderTransitionTest extends TestCase
 
         $fresh = $order->fresh();
         $this->assertEquals('ready_for_return', $fresh->status);
+        $this->assertEquals($tech->id, $fresh->technician_id);
         $this->assertNotNull($fresh->repair_started_at);
         $this->assertNotNull($fresh->repair_completed_at);
         $this->assertNotNull($fresh->qc_passed_at);
@@ -687,6 +715,77 @@ class OrderTransitionTest extends TestCase
             ->assertJsonPath('data.status', 'waiting_parts');
 
         $this->assertEquals('waiting_parts', $order->fresh()->status);
+    }
+
+    /**
+     * Test 19: CSKH/Admin hoàn thành sửa chữa từ waiting_tech và waiting_parts khi chọn technician_id hợp lệ và lưu final_check_result.
+     */
+    public function test_cskh_can_complete_repair_from_waiting_tech_and_waiting_parts_with_explicit_technician_id(): void
+    {
+        $admin = $this->getAuthenticatedUser();
+        $orderWaitingTech = $this->createTestOrder('waiting_tech');
+        $tech = $this->getTechnicianUser((int) $orderWaitingTech->branch_id, (int) $orderWaitingTech->tenant_id);
+
+        $cskh = User::forceCreate([
+            'tenant_id' => $orderWaitingTech->tenant_id ?? $admin->tenant_id ?? 1,
+            'branch_id' => $orderWaitingTech->branch_id,
+            'name'      => 'Lễ Tân CSKH',
+            'email'     => 'cskh_comp_' . uniqid() . '@podscare.vn',
+            'phone'     => '093' . random_int(1000000, 9999999),
+            'password'  => bcrypt('password'),
+            'role'      => 'cskh',
+            'is_active' => true,
+        ]);
+
+        // 1. CSKH bấm Hoàn thành sửa chữa trên đơn chưa có KTV mà không truyền technician_id -> bị chặn 422
+        $blockedRes = $this->actingAs($cskh, 'sanctum')->postJson("/api/v1/orders/{$orderWaitingTech->id}/transition", [
+            'status'             => 'ready_for_return',
+            'repair_note'        => 'Đã vệ sinh và thay lưới loa tai phải',
+            'parts_used'         => 'Lưới loa tai phải',
+            'final_check_result' => 'Âm thanh cân bằng 2 bên, ANC hoạt động tốt',
+        ]);
+
+        $blockedRes->assertStatus(422)
+            ->assertJsonPath('success', false)
+            ->assertJsonPath('message', 'Vui lòng chọn kỹ thuật viên thực hiện trước khi hoàn thành sửa chữa.');
+
+        // 2. CSKH chọn KTV thực hiện (technician_id) -> thành công 200, không gán nhầm ID của CSKH
+        $successRes = $this->actingAs($cskh, 'sanctum')->postJson("/api/v1/orders/{$orderWaitingTech->id}/transition", [
+            'status'             => 'ready_for_return',
+            'technician_id'      => $tech->id,
+            'repair_note'        => 'Đã vệ sinh và thay lưới loa tai phải',
+            'parts_used'         => 'Lưới loa tai phải',
+            'final_check_result' => 'Âm thanh cân bằng 2 bên, ANC hoạt động tốt',
+        ]);
+
+        $successRes->assertStatus(200)
+            ->assertJsonPath('success', true)
+            ->assertJsonPath('data.status', 'ready_for_return')
+            ->assertJsonPath('data.technician_id', $tech->id)
+            ->assertJsonPath('data.final_check_result', 'Âm thanh cân bằng 2 bên, ANC hoạt động tốt');
+
+        $freshOrder = $orderWaitingTech->fresh();
+        $this->assertEquals($tech->id, $freshOrder->technician_id);
+        $this->assertNotEquals($cskh->id, $freshOrder->technician_id);
+        $this->assertNotNull($freshOrder->repair_started_at);
+        $this->assertNotNull($freshOrder->repair_completed_at);
+        $this->assertNotNull($freshOrder->qc_passed_at);
+
+        // 3. Từ waiting_parts chuyển thẳng sang ready_for_return
+        $orderWaitingParts = $this->createTestOrder('waiting_parts');
+        $orderWaitingParts->update(['technician_id' => $tech->id, 'paused_at' => now()]);
+
+        $partsRes = $this->actingAs($cskh, 'sanctum')->postJson("/api/v1/orders/{$orderWaitingParts->id}/transition", [
+            'status'             => 'ready_for_return',
+            'repair_note'        => 'Đã lắp linh kiện mới về và kiểm tra đạt chuẩn',
+            'parts_used'         => 'Cáp sạc MagSafe',
+            'final_check_result' => 'Sạc vào ổn định 100%',
+        ]);
+
+        $partsRes->assertStatus(200)
+            ->assertJsonPath('data.status', 'ready_for_return')
+            ->assertJsonPath('data.technician_id', $tech->id);
+        $this->assertNull($orderWaitingParts->fresh()->paused_at);
     }
 }
 

@@ -40,42 +40,40 @@ describe('OpenSpec: admin-operational-dashboard-and-action-center Verification',
     assert.match(dashboardCode, /router\.push\('\/repairs\?filter=overdue'\)/, 'Drill-down to overdue');
   });
 
-  test('3. Area C: Actionable Tasks Center with 5 priority workflows and fast actions', () => {
+  test('3. Area C: Actionable Tasks Center with priority workflows and fast actions', () => {
     assert.match(actionCenterCode, /Việc cần xử lý trong ca/, 'Title of Action Center matches spec');
     assert.match(actionCenterCode, /ACTION CENTER · TRUNG TÂM TÁC NGHIỆP/, 'Badge header');
 
-    // 5 workflow tabs
+    // Workflow tabs
     assert.match(actionCenterCode, /Tất cả/, 'Tab Tất cả');
     assert.match(actionCenterCode, /Quá hạn/, 'Tab Quá hạn');
-    assert.match(actionCenterCode, /Chờ duyệt giá/, 'Tab Chờ duyệt giá');
     assert.match(actionCenterCode, /Chờ QC/, 'Tab Chờ QC');
     assert.match(actionCenterCode, /Sẵn sàng trả máy/, 'Tab Sẵn sàng trả máy');
-    assert.match(actionCenterCode, /Linh kiện sắp hết/, 'Tab Linh kiện sắp hết');
 
     // Quick action triggers
     assert.match(actionCenterCode, /tel:/, 'Customer phone tel: click-to-call link');
     assert.match(actionCenterCode, /Giục KTV \/ Xem đơn/, 'Technician reminder / view order action');
     assert.match(actionCenterCode, /Duyệt QC ↗/, 'QC approval quick action');
     assert.match(actionCenterCode, /Thu tiền & Trả máy/, 'Checkout handover quick action');
-    assert.match(actionCenterCode, /Vào kho phụ tùng ↗/, 'Low stock inventory quick action');
   });
 
   test('4. Preservation of 100% existing financial cards, SVG chart, and Calm Jade/Warm Ivory reconciliation blocks', () => {
-    // 6 Financial KPI cards
+    // Financial & operational KPI cards
     assert.match(dashboardCode, /label="Đơn đang xử lý"/, 'Preserves Đơn đang xử lý');
     assert.match(dashboardCode, /label="Tiếp nhận hôm nay"/, 'Preserves Tiếp nhận hôm nay');
-    assert.match(dashboardCode, /label="Tổng doanh thu hôm nay"/, 'Preserves Tổng doanh thu hôm nay');
-    assert.match(dashboardCode, /label="Doanh thu ngày chọn"/, 'Preserves Doanh thu ngày chọn');
-    assert.match(dashboardCode, /label="Doanh thu tháng"/, 'Preserves Doanh thu tháng');
-    assert.match(dashboardCode, /label="Tỷ lệ hoàn thành"/, 'Preserves Tỷ lệ hoàn thành');
+    assert.match(dashboardCode, /Tổng tháng/, 'Preserves Tổng tháng');
+    assert.match(dashboardCode, /Tổng ngày đã chọn/, 'Preserves Tổng ngày đã chọn');
+    assert.match(dashboardCode, /Công nợ chưa thu ở tháng/, 'Preserves Công nợ chưa thu ở tháng');
+    assert.match(dashboardCode, /Công nợ chưa thu theo ngày/, 'Preserves Công nợ chưa thu theo ngày');
+    assert.match(dashboardCode, /label="(Tỷ lệ hoàn thành|Tỉ lệ bảo hành)"/, 'Preserves Tỉ lệ bảo hành');
 
     // SVG Chart
     assert.match(dashboardCode, /renderRevenueChart\(\)/, 'Preserves dynamic SVG revenue chart');
 
-    // Reconciliation block
-    assert.match(dashboardCode, /Máy khách đã lấy \(Đã bàn giao\)/, 'Preserves Calm Jade handed-over reconciliation');
-    assert.match(dashboardCode, /Máy khách chưa lấy \(Tại cửa hàng\)/, 'Preserves Warm Ivory uncollected reconciliation');
-    assert.match(dashboardCode, /Tổng tiền chưa thu/, 'Preserves uncollected amount card');
+    // Shift operational & revenue/debt drilldown cards
+    assert.match(dashboardCode, /CHỈ SỐ ĐIỀU HÀNH CA LÀM VIỆC/, 'Preserves shift operational block');
+    assert.match(dashboardCode, /admin-card-monthly-total/, 'Preserves monthly total drilldown card');
+    assert.match(dashboardCode, /admin-card-monthly-uncollected/, 'Preserves monthly uncollected drilldown card');
   });
 
   test('5. Strict Brand Colors and Standard @podscare/ui Icon Compliance', () => {

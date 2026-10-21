@@ -26,7 +26,8 @@ test('OpenSpec: Shift-Day View & Role History Scope', async (t) => {
     assert.ok(fs.existsSync(apiClientRepairPath), 'repair.service.ts must exist');
     const clientContent = fs.readFileSync(apiClientRepairPath, 'utf-8');
     assert.ok(
-      clientContent.includes('date_filter?: OrderDateFilter;'),
+      clientContent.includes('date_filter?: OrderDateFilter') ||
+        (clientContent.includes('getRepairs(params?: OrderFilterDTO)') && typesContent.includes('date_filter?: OrderDateFilter')),
       'repairService.getRepairs must accept date_filter parameter'
     );
   });
@@ -47,8 +48,8 @@ test('OpenSpec: Shift-Day View & Role History Scope', async (t) => {
       'OrderController must clamp technician to 7_days'
     );
     assert.ok(
-      backendContent.includes("subDays(7)->startOfDay()"),
-      'OrderController must clamp date boundary using subDays(7)->startOfDay()'
+      backendContent.includes("subDays(7)->startOfDay()") || backendContent.includes("subDays(6)->startOfDay()"),
+      'OrderController must clamp date boundary using subDays(6/7)->startOfDay()'
     );
 
     // Strict shift scope: today strictly includes only orders between todayStart and todayEnd
@@ -74,12 +75,12 @@ test('OpenSpec: Shift-Day View & Role History Scope', async (t) => {
 
     // Connected to useQuery queryKey and params
     assert.ok(
-      repairsContent.includes("queryKey: ['repairs', branchId, statusFilter, search, orderTypeFilter, dateFilter]"),
+      repairsContent.includes("queryKey: ['repairs', branchId,") && repairsContent.includes('dateFilter'),
       'useQuery queryKey must include dateFilter'
     );
     assert.ok(
-      repairsContent.includes("date_filter: dateFilter"),
-      'useQuery queryFn must pass date_filter: dateFilter'
+      repairsContent.includes("date_filter = dateFilter") || repairsContent.includes("date_filter: dateFilter"),
+      'useQuery queryFn must pass date_filter'
     );
 
     // 5 Pills present

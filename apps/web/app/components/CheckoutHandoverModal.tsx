@@ -62,6 +62,9 @@ export const CheckoutHandoverModal: React.FC<CheckoutHandoverModalProps> = ({
     return rounded;
   };
 
+  const isWarrantyOrder =
+    order.order_type === 'warranty' || (order as any).orderType === 'warranty';
+
   // 1. Service Price State (Nếu đơn chưa báo giá hoặc <= 1đ thì mặc định 0đ)
   const initialRawPrice = normalizeVndPrice(order.total_price !== undefined ? order.total_price : order.price);
   const [servicePrice, setServicePrice] = useState<number>(initialRawPrice <= 1 ? 0 : initialRawPrice);
@@ -148,7 +151,13 @@ export const CheckoutHandoverModal: React.FC<CheckoutHandoverModalProps> = ({
         amount: finalAmount,
         service_price: servicePrice,
         transaction_ref: transactionRef.trim() || undefined,
-        notes: notes.trim() || (paymentMethod === 'cash' ? 'Thu tiền mặt tại quầy CSKH' : 'Chuyển khoản trực tiếp ngoài quầy'),
+        notes:
+          notes.trim() ||
+          (isWarrantyOrder && finalAmount === 0
+            ? 'Bàn giao trả máy đơn bảo hành 0 ₫ tại quầy CSKH'
+            : paymentMethod === 'cash'
+            ? 'Thu tiền mặt tại quầy CSKH'
+            : 'Chuyển khoản trực tiếp ngoài quầy'),
         auto_confirm: true,
         discount_type: discountType !== 'none' ? discountType : undefined,
         discount_value: discountType === 'percent' ? (Number(discountPercent) || 0) : (discountType === 'fixed' ? (Number(discountFixed) || 0) : undefined),
@@ -181,9 +190,9 @@ export const CheckoutHandoverModal: React.FC<CheckoutHandoverModalProps> = ({
         price: servicePrice,
         status: 'Hoàn tất',
         statusType: 'gray',
-        warrantyTerm: `${warrantyMonths} tháng`,
-        warranty_terms_days: WARRANTY_MONTH_DAYS_MAP[warrantyMonths],
-        warranty_months: warrantyMonths,
+        warrantyTerm: isWarrantyOrder ? order.warrantyTerm : `${warrantyMonths} tháng`,
+        warranty_terms_days: isWarrantyOrder ? order.warranty_terms_days : WARRANTY_MONTH_DAYS_MAP[warrantyMonths],
+        warranty_months: isWarrantyOrder ? order.warranty_months : warrantyMonths,
         discount_type: discountType,
         discount_amount: calculatedDiscountAmount,
         handedAt: new Intl.DateTimeFormat('vi-VN').format(new Date()),
@@ -239,6 +248,21 @@ export const CheckoutHandoverModal: React.FC<CheckoutHandoverModalProps> = ({
           <div className="p-3 bg-[#fef2f2] border border-[#fecaca] rounded-[8px] text-xs text-[#b91c1c] font-medium flex items-center gap-1.5">
             <Icon name="alert" size={14} />
             <span>{errorMsg}</span>
+          </div>
+        )}
+
+        {isWarrantyOrder && (
+          <div
+            data-testid="checkout-warranty-free-banner"
+            className="p-3.5 bg-[#f0f7f4] border border-[#b8d9cb] rounded-[10px] text-xs text-[#176b58] space-y-1"
+          >
+            <div className="font-bold uppercase tracking-wider flex items-center gap-1.5">
+              <Icon name="shield" size={14} />
+              <span>Bàn giao đơn bảo hành miễn phí (0 ₫)</span>
+            </div>
+            <p className="m-0 text-[#2d3d35] leading-relaxed">
+              Đây là <strong>Đơn Bảo Hành</strong> (mặc định thực thu <strong>0 ₫</strong>, trừ khi phát sinh phụ phí nâng cấp ngoài phạm vi bảo hành). Khi xác nhận trả máy, hệ thống sẽ đóng đơn hoàn tất (<code>completed</code>) và <strong>giữ nguyên hạn bảo hành gốc</strong>, không cộng dồn thêm hạn bảo hành mới.
+            </p>
           </div>
         )}
 
@@ -305,9 +329,18 @@ export const CheckoutHandoverModal: React.FC<CheckoutHandoverModalProps> = ({
               Thời hạn bảo hành điện tử <span className="text-red-500">*</span>
             </label>
             <span className="text-[11px] font-semibold text-[#176b58] bg-[#eaf4ef] px-2 py-0.5 rounded">
-              {WARRANTY_MONTH_DAYS_MAP[warrantyMonths]} ngày
+              {isWarrantyOrder ? 'Giữ nguyên hạn gốc' : `${WARRANTY_MONTH_DAYS_MAP[warrantyMonths]} ngày`}
             </span>
           </div>
+
+          {isWarrantyOrder && (
+            <div
+              data-testid="checkout-warranty-preserve-notice"
+              className="p-2 bg-[#eaf4ef] border border-[#c2ded3] rounded-[6px] text-[11px] text-[#176b58] font-medium"
+            >
+              Đơn bảo hành giữ nguyên hạn bảo hành gốc từ đơn sửa chữa ban đầu — hệ thống không cộng dồn thêm hạn bảo hành mới chồng lên đơn bảo hành.
+            </div>
+          )}
 
           <div className="grid grid-cols-4 gap-2">
             {WARRANTY_OPTIONS.map((opt) => (

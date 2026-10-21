@@ -175,6 +175,33 @@ export const TECHNICAL_STAGE_STATUSES = [
   'rework_needed',
 ];
 
+export const TECH_COMPLETABLE_STATUSES = TECHNICAL_STAGE_STATUSES;
+
+export const FSM_TRANSITIONS: Record<string, string[]> = {
+  inspecting: ['waiting_approval', 'waiting_tech', 'cancelled'],
+  waiting_approval: ['waiting_tech', 'rejected', 'cancelled'],
+  waiting_tech: ['assigned', 'in_repair', 'ready_for_return'],
+  assigned: ['in_repair', 'waiting_tech', 'ready_for_return'],
+  in_repair: ['waiting_parts', 'waiting_qc', 'ready_for_return', 'waiting_tech'],
+  waiting_parts: ['in_repair', 'waiting_tech', 'assigned', 'ready_for_return'],
+  rework_needed: ['in_repair', 'waiting_qc', 'ready_for_return'],
+  waiting_qc: ['ready_for_return', 'rework_needed'],
+  ready_for_return: ['waiting_pickup', 'completed', 'rework_needed'],
+  waiting_pickup: ['completed'],
+  completed: ['refunded'],
+  rejected: ['cancelled'],
+  cancelled: [],
+  refunded: [],
+};
+
+export const TECH_COMPLETION_ALLOWED_ROLES = [
+  'cskh',
+  'tech',
+  'technician',
+  'admin',
+  'super_admin',
+];
+
 /**
  * Kiểm tra xem một trạng thái có thuộc giai đoạn kỹ thuật nội bộ hay không.
  */
@@ -182,6 +209,23 @@ export function isTechnicalStageStatus(status?: string | null): boolean {
   if (!status) return false;
   const normalized = normalizeStatusCode(status);
   return TECHNICAL_STAGE_STATUSES.includes(normalized);
+}
+
+/**
+ * Kiểm tra xem đơn hàng ở trạng thái hiện tại có thể mở modal "Hoàn thành sửa chữa"
+ * (nghiệm thu chuyển sang ready_for_return) cho vai trò người dùng hiện tại hay không.
+ */
+export function canCompleteTechnicalRepair(
+  status?: string | null,
+  userRole?: string | null
+): boolean {
+  if (!status) return false;
+  const normalized = normalizeStatusCode(status);
+  if (!TECHNICAL_STAGE_STATUSES.includes(normalized)) return false;
+  const allowedNext = FSM_TRANSITIONS[normalized] || [];
+  if (!allowedNext.includes('ready_for_return')) return false;
+  if (!userRole) return true;
+  return TECH_COMPLETION_ALLOWED_ROLES.includes(userRole);
 }
 
 /**

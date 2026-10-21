@@ -57,6 +57,19 @@ export class UserService {
     });
   }
 
+  async getTechnicians(params?: {
+    branch_id?: number | string;
+    is_active?: boolean;
+    per_page?: number;
+  }): Promise<any> {
+    return this.getUsers({
+      role: 'technician',
+      is_active: true,
+      per_page: 50,
+      ...params,
+    });
+  }
+
   async createUser(dto: CreateUserDTO): Promise<any> {
     return this.http.post('/api/v1/users', dto);
   }

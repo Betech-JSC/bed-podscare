@@ -220,9 +220,9 @@ class WarrantyClaimReworkFlowTest extends TestCase
     }
 
     /**
-     * Test 4: Chặn đơn bảo hành chuyển sang ready_for_return hoặc completed nếu chưa qua kiểm định QC đạt chuẩn.
+     * Test 4: Chặn đơn bảo hành chuyển sang ready_for_return nếu CSKH/Admin không chọn KTV hoặc ở bước waiting_qc chưa có QC Pass.
      */
-    public function test_warranty_order_transition_blocked_without_qc_pass(): void
+    public function test_warranty_order_transition_blocked_without_technician_or_qc_pass_in_waiting_qc(): void
     {
         [$originalOrder, $warranty] = $this->createOriginalOrderAndWarranty();
 
@@ -233,19 +233,17 @@ class WarrantyClaimReworkFlowTest extends TestCase
         ]);
         $reworkOrder = RepairOrder::find($claimRes->json('data.rework_order.id'));
 
-        // Giả lập KTV đang sửa (in_repair)
-        $reworkOrder->update(['status' => 'in_repair', 'technician_id' => $this->techUser->id]);
-
-        // KTV cố chuyển sang ready_for_return khi chưa có bản ghi QC nào
-        $transRes = $this->actingAs($this->techUser)->postJson("/api/v1/orders/{$reworkOrder->id}/transition", [
+        // 1. Admin/CSKH cố chuyển đơn bảo hành chưa phân công KTV (waiting_tech) sang ready_for_return mà không chọn technician_id -> 422
+        $transRes = $this->actingAs($this->adminUser)->postJson("/api/v1/orders/{$reworkOrder->id}/transition", [
             'status' => 'ready_for_return',
         ]);
 
         $transRes->assertStatus(422)
             ->assertJsonPath('success', false)
-            ->assertJsonPath('message', 'Đơn sửa chữa bảo hành bắt buộc phải hoàn thành kiểm định QC đạt chuẩn (Pass) trước khi sẵn sàng trả máy hoặc hoàn tất.');
+            ->assertJsonPath('message', 'Vui lòng chọn kỹ thuật viên thực hiện trước khi hoàn thành sửa chữa.');
 
-        // Giả lập biên bản QC thất bại (rework_needed)
+        // 2. Nếu đơn ở bước waiting_qc và mới chỉ có biên bản QC rework_needed (chưa có pass) -> chặn 422
+        $reworkOrder->update(['status' => 'waiting_qc', 'technician_id' => $this->techUser->id]);
         QcInspection::forceCreate([
             'tenant_id'       => $this->tenant->id,
             'repair_order_id' => $reworkOrder->id,
@@ -254,7 +252,6 @@ class WarrantyClaimReworkFlowTest extends TestCase
             'notes'           => 'Vẫn còn rè nhẹ',
         ]);
 
-        // Thử lại vẫn bị chặn
         $transRes2 = $this->actingAs($this->techUser)->postJson("/api/v1/orders/{$reworkOrder->id}/transition", [
             'status' => 'ready_for_return',
         ]);
@@ -264,36 +261,66 @@ class WarrantyClaimReworkFlowTest extends TestCase
     }
 
     /**
-     * Test 5: Cho phép chuyển trạng thái sau khi đã kiểm định QC Pass.
+     * Test 5: Đơn bảo hành tuân theo luồng 2 chặng: Chặng 1 tự động tạo QC Pass sang ready_for_return, Chặng 2 đóng WarrantyClaim sang resolved và không tạo trùng Warranty hay cộng trùng orders_count.
      */
-    public function test_warranty_order_transition_succeeds_when_qc_passed(): void
+    public function test_warranty_order_two_stage_completion_auto_creates_qc_and_resolves_claim(): void
     {
         [$originalOrder, $warranty] = $this->createOriginalOrderAndWarranty();
+        $initialWarrantyCount = Warranty::where('customer_id', $this->customer->id)->count();
+        $initialOrdersCount = (int) $this->customer->fresh()->orders_count;
 
         $claimRes = $this->actingAs($this->adminUser)->postJson('/api/v1/warranties/claims', [
             'warranty_id'       => $warranty->id,
             'issue_description' => 'Lỗi kết nối Bluetooth',
             'resolution_mode'   => 'send_tech',
         ]);
+        $claimId = $claimRes->json('data.id');
         $reworkOrder = RepairOrder::find($claimRes->json('data.rework_order.id'));
         $reworkOrder->update(['status' => 'in_repair', 'technician_id' => $this->techUser->id]);
 
-        // Tạo biên bản QC Pass
-        QcInspection::forceCreate([
-            'tenant_id'       => $this->tenant->id,
-            'repair_order_id' => $reworkOrder->id,
-            'inspector_id'    => $this->adminUser->id,
-            'result'          => 'pass',
-            'notes'           => 'Kiểm tra âm thanh và Bluetooth đạt chuẩn',
-        ]);
-
+        // Chặng 1: KTV bấm Hoàn thành sửa chữa -> tự động tạo QcInspection (pass) và chuyển sang ready_for_return
         $transRes = $this->actingAs($this->techUser)->postJson("/api/v1/orders/{$reworkOrder->id}/transition", [
-            'status' => 'ready_for_return',
+            'status'             => 'ready_for_return',
+            'repair_note'        => 'Đã hàn lại chân sạc và reset firmware',
+            'parts_used'         => 'Chân sạc tai phải',
+            'final_check_result' => 'Kết nối Bluetooth nhạy, pin sạc ổn định',
         ]);
 
         $transRes->assertOk()
             ->assertJsonPath('success', true)
-            ->assertJsonPath('data.status', 'ready_for_return');
+            ->assertJsonPath('data.status', 'ready_for_return')
+            ->assertJsonPath('data.technician_id', $this->techUser->id)
+            ->assertJsonPath('data.final_check_result', 'Kết nối Bluetooth nhạy, pin sạc ổn định');
+
+        $this->assertDatabaseHas('qc_inspections', [
+            'repair_order_id' => $reworkOrder->id,
+            'result'          => 'pass',
+        ]);
+
+        // Chặng 2: Bàn giao trả máy bảo hành 0 ₫ qua PaymentController -> đơn completed, claim resolved, không tạo trùng Warranty, không tăng orders_count
+        $payRes = $this->actingAs($this->adminUser)->postJson('/api/v1/payments', [
+            'repair_order_id' => $reworkOrder->id,
+            'amount'          => 0,
+            'service_price'   => 0,
+            'payment_method'  => 'cash',
+            'notes'           => 'Bàn giao máy bảo hành 0đ',
+        ]);
+
+        $payRes->assertStatus(201);
+
+        $reworkOrder->refresh();
+        $this->assertEquals('completed', $reworkOrder->status);
+        $this->assertEquals($this->techUser->id, $reworkOrder->technician_id);
+        $this->assertNotNull($reworkOrder->repair_started_at);
+        $this->assertNotNull($reworkOrder->repair_completed_at);
+        $this->assertNotNull($reworkOrder->qc_passed_at);
+        $this->assertNotNull($reworkOrder->handed_over_at);
+
+        $claim = WarrantyClaim::find($claimId);
+        $this->assertEquals('resolved', $claim->status);
+
+        $this->assertEquals($initialWarrantyCount, Warranty::where('customer_id', $this->customer->id)->count());
+        $this->assertEquals($initialOrdersCount, (int) $this->customer->fresh()->orders_count);
     }
 
     /**

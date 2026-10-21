@@ -429,6 +429,13 @@ class SystemE2ELifecycleTest extends TestCase
         $this->assertEquals('waiting_tech', $reworkOrder->status);
         $this->assertEquals($order->id, $reworkOrder->parent_order_id);
 
+        // Guardrail: CSKH/Thu ngân cố tình chuyển ready_for_return khi đơn chưa có KTV phụ trách mà không chọn technician_id -> Bị chặn 422
+        $blockedTransRes = $this->actingAs($this->cashierUser, 'sanctum')->postJson("/api/v1/orders/{$reworkOrder->id}/transition", [
+            'status' => 'ready_for_return',
+        ]);
+        $blockedTransRes->assertStatus(422)
+            ->assertJsonPath('success', false);
+
         // KTV nhận đơn rework
         $techAcceptRes = $this->actingAs($this->techUser, 'sanctum')->postJson("/api/v1/orders/{$reworkOrder->id}/transition", [
             'status'        => 'in_repair',
@@ -436,28 +443,18 @@ class SystemE2ELifecycleTest extends TestCase
         ]);
         $techAcceptRes->assertOk();
 
-        // QC Guardrail: Cố tình chuyển ready_for_return khi chưa có QC Pass -> Bị chặn 422
-        $blockedTransRes = $this->actingAs($this->techUser, 'sanctum')->postJson("/api/v1/orders/{$reworkOrder->id}/transition", [
-            'status' => 'ready_for_return',
-        ]);
-        $blockedTransRes->assertStatus(422)
-            ->assertJsonPath('success', false);
-
-        // Tạo biên bản QC Pass
-        QcInspection::forceCreate([
-            'tenant_id'       => $this->tenant->id,
-            'repair_order_id' => $reworkOrder->id,
-            'inspector_id'    => $this->adminUser->id,
-            'result'          => 'pass',
-            'notes'           => 'Kiểm tra pin và âm thanh đạt chuẩn nghiệm thu',
-        ]);
-
-        // Sau khi có QC Pass -> Chuyển ready_for_return thành công
+        // KTV hoàn thành sửa chữa -> Tự động tạo QC Pass và chuyển ready_for_return thành công
         $successTransRes = $this->actingAs($this->techUser, 'sanctum')->postJson("/api/v1/orders/{$reworkOrder->id}/transition", [
-            'status' => 'ready_for_return',
+            'status'      => 'ready_for_return',
+            'repair_note' => 'Kiểm tra pin và âm thanh đạt chuẩn nghiệm thu',
         ]);
         $successTransRes->assertOk()
             ->assertJsonPath('data.status', 'ready_for_return');
+
+        $this->assertDatabaseHas('qc_inspections', [
+            'repair_order_id' => $reworkOrder->id,
+            'result'          => 'pass',
+        ]);
 
         // -------------------------------------------------------------
         // BƯỚC 9: Hoàn tiền đơn hàng gốc 450.000 ₫ tiền mặt ➜ Full Rollback
@@ -843,29 +840,26 @@ class SystemE2ELifecycleTest extends TestCase
         $this->assertEquals('warranty', $reworkOrder->order_type);
         $this->assertEquals(0, (float) $reworkOrder->total_price);
 
-        // KTV nhận sửa
-        $reworkOrder->update(['status' => 'in_repair', 'technician_id' => $this->techUser->id]);
-
-        // Chặn chuyển trạng thái khi chưa có QC Pass
-        $blockedRes = $this->actingAs($this->techUser, 'sanctum')->postJson("/api/v1/orders/{$reworkOrder->id}/transition", [
+        // Chặn chuyển trạng thái khi CSKH/Thu ngân chưa chọn KTV phụ trách
+        $blockedRes = $this->actingAs($this->cashierUser, 'sanctum')->postJson("/api/v1/orders/{$reworkOrder->id}/transition", [
             'status' => 'ready_for_return',
         ]);
         $blockedRes->assertStatus(422);
 
-        // Đánh giá QC Pass
-        QcInspection::forceCreate([
-            'tenant_id'       => $this->tenant->id,
-            'repair_order_id' => $reworkOrder->id,
-            'inspector_id'    => $this->adminUser->id,
-            'result'          => 'pass',
-            'notes'           => 'Đã kiểm tra đạt chuẩn',
-        ]);
+        // KTV nhận sửa
+        $reworkOrder->update(['status' => 'in_repair', 'technician_id' => $this->techUser->id]);
 
-        // Chuyển ready_for_return thành công
+        // KTV hoàn thành sửa chữa -> Tự động tạo QC Pass và chuyển ready_for_return thành công
         $successRes = $this->actingAs($this->techUser, 'sanctum')->postJson("/api/v1/orders/{$reworkOrder->id}/transition", [
-            'status' => 'ready_for_return',
+            'status'      => 'ready_for_return',
+            'repair_note' => 'Đã kiểm tra đạt chuẩn',
         ]);
         $successRes->assertOk();
+
+        $this->assertDatabaseHas('qc_inspections', [
+            'repair_order_id' => $reworkOrder->id,
+            'result'          => 'pass',
+        ]);
     }
 
     /**

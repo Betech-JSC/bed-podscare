@@ -13,11 +13,20 @@ import {
   Icon,
 } from '@podscare/ui';
 import type { RepairOrder } from '@podscare/types';
-import { repairService } from '@podscare/api-client';
+import { repairService, userService } from '@podscare/api-client';
 import { normalizeStatusCode } from '../repairs/fsm';
+import { useOptionalPodsCare } from '../providers';
 import { useSilentPrint } from './print';
 import { HandoverTechModal } from './HandoverTechModal';
 import { SpecialPartsRequestModal } from './SpecialPartsRequestModal';
+
+export const TECH_COMPLETABLE_STATUSES = [
+  'waiting_tech',
+  'assigned',
+  'in_repair',
+  'waiting_parts',
+  'rework_needed',
+];
 
 export interface TechOrderDetailModalProps {
   isOpen: boolean;
@@ -41,12 +50,21 @@ export const TechOrderDetailModal: React.FC<TechOrderDetailModalProps> = ({
   updateOrder,
 }) => {
   const { toast } = useToast();
+  const podsCare = useOptionalPodsCare();
   const { printReceipt, isPrinting: isSilentPrinting } = useSilentPrint();
+
+  const effectiveUser = currentUser || podsCare?.currentUser || null;
+  const effectiveRole = effectiveUser?.role || podsCare?.role || '';
+  const isTechUser = effectiveRole === 'technician' || effectiveRole === 'tech';
+  const isCskhOrAdmin = ['cskh', 'admin', 'super_admin'].includes(effectiveRole);
 
   // Completion Form State
   const [repairNote, setRepairNote] = useState('');
   const [partsUsed, setPartsUsed] = useState('');
   const [finalCheck, setFinalCheck] = useState('Đã chạy thử, hoạt động hoàn hảo');
+  const [selectedTechnicianId, setSelectedTechnicianId] = useState<string>('');
+  const [technicians, setTechnicians] = useState<any[]>([]);
+  const [loadingTechnicians, setLoadingTechnicians] = useState(false);
   const [consentCheck, setConsentCheck] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [formError, setFormError] = useState('');
@@ -59,6 +77,37 @@ export const TechOrderDetailModal: React.FC<TechOrderDetailModalProps> = ({
   const [isRequestingParts, setIsRequestingParts] = useState(false);
   const [isSpecialPartsModalOpen, setIsSpecialPartsModalOpen] = useState(false);
 
+  // Tải danh sách KTV cùng chi nhánh cho CSKH / Admin chọn xác nhận KTV thực hiện
+  useEffect(() => {
+    let active = true;
+    if (!isOpen) return;
+
+    setLoadingTechnicians(true);
+    userService
+      .getUsers({ role: 'technician', is_active: true, per_page: 50 })
+      .then((res: any) => {
+        if (!active) return;
+        const list = Array.isArray(res?.data?.data)
+          ? res.data.data
+          : Array.isArray(res?.data)
+          ? res.data
+          : Array.isArray(res)
+          ? res
+          : [];
+        setTechnicians(list);
+      })
+      .catch((err) => {
+        console.warn('Could not fetch branch technicians:', err);
+      })
+      .finally(() => {
+        if (active) setLoadingTechnicians(false);
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [isOpen]);
+
   // Reset form when order changes
   useEffect(() => {
     if (order) {
@@ -70,15 +119,24 @@ export const TechOrderDetailModal: React.FC<TechOrderDetailModalProps> = ({
       setFinalCheck(order.finalCheck || 'Đã chạy thử, hoạt động hoàn hảo');
       setConsentCheck(false);
       setFormError('');
+
+      const existingTechId = order.technician_id ?? order.technicianId;
+      if (existingTechId !== undefined && existingTechId !== null && String(existingTechId) !== '') {
+        setSelectedTechnicianId(String(existingTechId));
+      } else if (isTechUser && effectiveUser?.id !== undefined && effectiveUser?.id !== null) {
+        setSelectedTechnicianId(String(effectiveUser.id));
+      } else {
+        setSelectedTechnicianId('');
+      }
     }
-  }, [order, isOpen]);
+  }, [order, isOpen, isTechUser, effectiveUser?.id]);
 
   if (!order) return null;
 
   const code = normalizeStatusCode(order.status);
   const isAvailable = code === 'waiting_tech' && !order.technicianId && !order.technician_id;
   const isCompleted = ['ready_for_return', 'waiting_qc', 'waiting_pickup', 'completed'].includes(code);
-  const isActive = ['assigned', 'in_repair', 'waiting_parts', 'rework_needed'].includes(code);
+  const isActive = TECH_COMPLETABLE_STATUSES.includes(code);
 
   const additionalServicesList = (order.additional_services || order.additionalServices || []) as any[];
   const hasAdditionalServices = Array.isArray(additionalServicesList) && additionalServicesList.length > 0;
@@ -93,37 +151,35 @@ export const TechOrderDetailModal: React.FC<TechOrderDetailModalProps> = ({
   const handleGrab = async () => {
     if (isSubmitting) return;
     setIsSubmitting(true);
+    setFormError('');
     try {
+      const grabTechId = isTechUser ? effectiveUser?.id : (selectedTechnicianId ? Number(selectedTechnicianId) || selectedTechnicianId : undefined);
       await repairService.transition(order.id, {
         transition: 'in_repair',
         status: 'Đang sửa',
-        technician_id: currentUser?.id,
+        technician_id: grabTechId,
       });
       if (invalidateOrders) await invalidateOrders();
       toast(`Đã nhận máy ${order.id} vào bàn sửa chữa!`, 'success');
       const updated: RepairOrder = {
         ...order,
-        tech: currentUser?.name || 'Kỹ thuật viên',
-        technicianId: currentUser?.id ? Number(currentUser.id) : undefined,
-        technician_id: currentUser?.id ? Number(currentUser.id) : undefined,
-        status: 'Đang sửa',
-        statusType: 'progress',
-      };
-      if (onGrabSuccess) onGrabSuccess(updated);
-      onClose();
-    } catch (err: any) {
-      const updated: RepairOrder = {
-        ...order,
-        tech: currentUser?.name || 'Kỹ thuật viên',
-        technicianId: currentUser?.id ? Number(currentUser.id) : undefined,
-        technician_id: currentUser?.id ? Number(currentUser.id) : undefined,
+        tech: effectiveUser?.name || 'Kỹ thuật viên',
+        technicianId: grabTechId ? Number(grabTechId) : undefined,
+        technician_id: grabTechId ? Number(grabTechId) : undefined,
         status: 'Đang sửa',
         statusType: 'progress',
       };
       if (updateOrder) updateOrder(updated);
-      toast(`Đã nhận máy ${order.id} vào bàn sửa chữa!`, 'success');
       if (onGrabSuccess) onGrabSuccess(updated);
       onClose();
+    } catch (err: any) {
+      const errMsg =
+        err?.response?.data?.message ||
+        err?.data?.message ||
+        err?.message ||
+        'Không thể nhận máy vào bàn sửa chữa.';
+      setFormError(errMsg);
+      toast(errMsg, 'error');
     } finally {
       setIsSubmitting(false);
     }
@@ -204,6 +260,17 @@ export const TechOrderDetailModal: React.FC<TechOrderDetailModalProps> = ({
     if (e) e.preventDefault();
     if (isSubmitting) return;
 
+    const rawTechId = isTechUser
+      ? selectedTechnicianId || order.technician_id || order.technicianId || effectiveUser?.id
+      : selectedTechnicianId || order.technician_id || order.technicianId;
+
+    if (!rawTechId) {
+      const msg = 'Vui lòng chọn kỹ thuật viên thực hiện trước khi hoàn thành sửa chữa.';
+      setFormError(msg);
+      toast(msg, 'error');
+      return;
+    }
+
     if (!repairNote.trim()) {
       const msg = 'Vui lòng nhập nội dung đã kiểm tra và sửa chữa';
       setFormError(msg);
@@ -230,6 +297,7 @@ export const TechOrderDetailModal: React.FC<TechOrderDetailModalProps> = ({
 
     // Tự động điền linh kiện yêu cầu vào linh kiện đã dùng nếu ô trống
     const effectivePartsUsed = partsUsed.trim() || partsNeeded.trim();
+    const resolvedTechnicianId = !isNaN(Number(rawTechId)) ? Number(rawTechId) : rawTechId;
 
     try {
       const payload = {
@@ -238,38 +306,43 @@ export const TechOrderDetailModal: React.FC<TechOrderDetailModalProps> = ({
         repair_note: repairNote.trim(),
         parts_used: effectivePartsUsed || undefined,
         final_check_result: finalCheck,
-        technician_id: currentUser?.id,
+        technician_id: resolvedTechnicianId,
       };
 
       await repairService.transition(order.id, payload);
       if (invalidateOrders) await invalidateOrders();
       toast(`Đã hoàn tất sửa chữa ${order.id} · Sẵn sàng bàn giao quầy CSKH!`, 'success');
 
+      const matchedTech = technicians.find((t) => String(t.id) === String(resolvedTechnicianId));
+      const resolvedTechName =
+        matchedTech?.name ||
+        (order.tech && order.tech !== 'Chưa phân công' ? order.tech : undefined) ||
+        (isTechUser ? effectiveUser?.name : undefined) ||
+        'Kỹ thuật viên';
+
       const updated: RepairOrder = {
         ...order,
         status: 'Sẵn sàng trả',
         statusType: 'ready',
+        tech: resolvedTechName,
+        technician_id: typeof resolvedTechnicianId === 'number' ? resolvedTechnicianId : order.technician_id,
+        technicianId: typeof resolvedTechnicianId === 'number' ? resolvedTechnicianId : order.technicianId,
         repairNote: repairNote.trim(),
         partsUsed: effectivePartsUsed,
         finalCheck,
       };
 
+      if (updateOrder) updateOrder(updated);
       if (onCompleteSuccess) onCompleteSuccess(updated);
       onClose();
     } catch (err: any) {
-      // Fallback optimistic
-      const updated: RepairOrder = {
-        ...order,
-        status: 'Sẵn sàng trả',
-        statusType: 'ready',
-        repairNote: repairNote.trim(),
-        partsUsed: partsUsed.trim(),
-        finalCheck,
-      };
-      if (updateOrder) updateOrder(updated);
-      toast(`Đã hoàn tất sửa chữa ${order.id} · Sẵn sàng bàn giao quầy CSKH!`, 'success');
-      if (onCompleteSuccess) onCompleteSuccess(updated);
-      onClose();
+      const errMsg =
+        err?.response?.data?.message ||
+        err?.data?.message ||
+        err?.message ||
+        'Có lỗi xảy ra khi hoàn thành sửa chữa đơn hàng.';
+      setFormError(errMsg);
+      toast(errMsg, 'error');
     } finally {
       setIsSubmitting(false);
     }
@@ -359,7 +432,7 @@ export const TechOrderDetailModal: React.FC<TechOrderDetailModalProps> = ({
       }
     >
       <div className="space-y-6 max-h-[72vh] overflow-y-auto pr-1">
-        {/* Banner cảnh báo đơn bảo hành & QC Guardrail */}
+        {/* Banner cảnh báo đơn bảo hành & Tự động nghiệm thu QC Pass */}
         {(order.order_type === 'warranty' || order.orderType === 'warranty') && (
           <div
             data-testid="tech-modal-warranty-alert"
@@ -371,8 +444,8 @@ export const TechOrderDetailModal: React.FC<TechOrderDetailModalProps> = ({
               </span>
             </div>
             <div className="flex items-center gap-1.5 font-bold text-[#991b1b]">
-              <Icon name="alert" size={14} className="text-[#b91c1c]" />
-              <span>Chốt chặn QC: Bắt buộc kiểm định QC Đạt (Pass) trước khi hoàn tất</span>
+              <Icon name="check" size={14} className="text-[#b91c1c]" />
+              <span>Nghiệm thu bảo hành: Hệ thống tự động ghi nhận QC Đạt (Pass) khi hoàn thành sửa chữa</span>
             </div>
           </div>
         )}
@@ -808,6 +881,56 @@ export const TechOrderDetailModal: React.FC<TechOrderDetailModalProps> = ({
                 <div className="p-3 bg-[#fdf2f2] border border-[#f5c6cb] rounded-[8px] text-xs text-[#b83b3b] font-semibold flex items-center gap-1.5">
                   <Icon name="alert" size={14} />
                   <span>{formError}</span>
+                </div>
+              )}
+
+              {/* Chọn / xác nhận Kỹ thuật viên thực hiện (technician_id) */}
+              {isCskhOrAdmin || !isTechUser ? (
+                <div>
+                  <label className="block text-xs font-bold text-[#1c302b] mb-1.5">
+                    Kỹ thuật viên thực hiện (* Bắt buộc) <span className="text-[#b91c1c]">*</span>
+                  </label>
+                  <select
+                    data-testid="tech-modal-technician-select"
+                    value={selectedTechnicianId}
+                    onChange={(e) => {
+                      setSelectedTechnicianId(e.target.value);
+                      if (formError) setFormError('');
+                    }}
+                    disabled={isSubmitting}
+                    className="w-full h-10 px-3.5 pr-8 bg-white border border-[#b8d0c5] focus:border-[#176b58] focus:ring-1 focus:ring-[#176b58] rounded-[8px] text-xs font-medium text-[#1c302b] outline-hidden cursor-pointer"
+                  >
+                    <option value="">-- Chọn kỹ thuật viên thực hiện sửa chữa --</option>
+                    {Boolean(order.technician_id || order.technicianId) &&
+                      !technicians.some(
+                        (t) => String(t.id) === String(order.technician_id ?? order.technicianId)
+                      ) && (
+                        <option value={String(order.technician_id ?? order.technicianId)}>
+                          {order.tech && order.tech !== 'Chưa phân công'
+                            ? order.tech
+                            : `KTV #${order.technician_id ?? order.technicianId}`}
+                        </option>
+                      )}
+                    {technicians.map((tech) => (
+                      <option key={tech.id} value={String(tech.id)}>
+                        {tech.name} {tech.phone ? `(${tech.phone})` : ''}
+                      </option>
+                    ))}
+                  </select>
+                  {loadingTechnicians && (
+                    <span className="text-[11px] text-[#809088] mt-1 block">
+                      Đang tải danh sách kỹ thuật viên chi nhánh...
+                    </span>
+                  )}
+                </div>
+              ) : (
+                <div className="p-3 bg-[#f7faf8] rounded-[8px] border border-[#dce8e1] flex items-center justify-between text-xs">
+                  <span className="text-[#55665d] font-medium">Kỹ thuật viên thực hiện:</span>
+                  <b className="text-[#176b58]">
+                    {order.tech && order.tech !== 'Chưa phân công'
+                      ? order.tech
+                      : effectiveUser?.name || 'Kỹ thuật viên'}
+                  </b>
                 </div>
               )}
 
