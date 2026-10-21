@@ -154,7 +154,7 @@ export default function PlatformApprovalsPage() {
               DUYỆT ĐĂNG KÝ GIAN HÀNG MỚI
             </h1>
             <p className="text-xs text-[#6e7d75] mt-1 mb-0">
-              Xem xét thông tin đối tác mở tiệm, kích hoạt tài khoản chủ tiệm và cấp bản quyền dùng thử 14 ngày.
+              Xem xét thông tin đối tác mở tiệm, kích hoạt tài khoản chủ tiệm và cấp bản quyền dùng thử 3 tháng.
             </p>
           </div>
 
@@ -250,7 +250,7 @@ export default function PlatformApprovalsPage() {
                       <div className="flex items-center justify-between">
                         <span className="text-[#87968f]">Gói ban đầu:</span>
                         <span className="uppercase font-bold text-[11px] text-[#176b58]">
-                          {store.plan || 'Trial (14 ngày)'}
+                          {store.plan || 'Trial (3 tháng)'}
                         </span>
                       </div>
                       <div className="flex items-center justify-between">

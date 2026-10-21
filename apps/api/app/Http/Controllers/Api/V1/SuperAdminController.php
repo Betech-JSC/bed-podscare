@@ -35,7 +35,11 @@ class SuperAdminController extends Controller
      */
     public function stores(Request $request): JsonResponse
     {
-        $query = Tenant::withCount(['branches', 'users', 'repairOrders']);
+        $query = Tenant::withCount([
+            'branches'     => fn ($q) => $q->withoutGlobalScope(TenantScope::class),
+            'users'        => fn ($q) => $q->withoutGlobalScope(TenantScope::class),
+            'repairOrders' => fn ($q) => $q->withoutGlobalScope(TenantScope::class),
+        ]);
 
         if ($status = $request->input('status')) {
             $query->where('status', $status);
@@ -57,22 +61,48 @@ class SuperAdminController extends Controller
     }
 
     /**
-     * Phê duyệt gian hàng mới: kích hoạt tenant và user chủ tiệm, gia hạn 14 ngày.
+     * Phê duyệt gian hàng mới: kích hoạt tenant và user chủ tiệm, gia hạn 3 tháng.
      */
     public function approveStore(Request $request, int|string $id): JsonResponse
     {
         $tenant = Tenant::findOrFail($id);
 
+        $expiresAt = $tenant->expires_at ?? now()->addMonths(3);
         $tenant->update([
-            'status'     => 'active',
-            'expires_at' => now()->addDays(14),
+            'status'        => 'active',
+            'trial_ends_at' => $tenant->trial_ends_at ?? $expiresAt,
+            'expires_at'    => $expiresAt,
         ]);
+
+        $defaultBranch = Branch::withoutGlobalScope(TenantScope::class)
+            ->where('tenant_id', $tenant->id)
+            ->first();
+
+        if (! $defaultBranch) {
+            $baseBranchCode = strtoupper(preg_replace('/[^A-Za-z0-9]/', '', substr($tenant->code, 0, 10))) ?: 'CN';
+            $branchCode = $baseBranchCode . '-CN1';
+            while (Branch::withoutGlobalScope(TenantScope::class)->where('code', $branchCode)->exists()) {
+                $branchCode = $baseBranchCode . '-' . strtoupper(substr(uniqid(), -4));
+            }
+
+            $defaultBranch = Branch::withoutGlobalScope(TenantScope::class)->create([
+                'tenant_id' => $tenant->id,
+                'code'      => $branchCode,
+                'name'      => $tenant->name . ' - Chi nhánh chính',
+                'address'   => 'Trụ sở chính',
+                'phone'     => $tenant->phone ?? '',
+                'is_active' => true,
+            ]);
+        }
 
         // Kích hoạt tài khoản chủ tiệm
         User::withoutGlobalScope(TenantScope::class)
             ->where('tenant_id', $tenant->id)
             ->where('role', 'admin')
-            ->update(['is_active' => true]);
+            ->update([
+                'is_active' => true,
+                'branch_id' => $defaultBranch->id,
+            ]);
 
         return $this->success($tenant->fresh(), 'Phê duyệt gian hàng thành công.');
     }

@@ -10,6 +10,11 @@ class Tenant extends Model
 {
     use HasFactory;
 
+    protected $attributes = [
+        'status' => 'active',
+        'plan'   => 'trial',
+    ];
+
     protected $fillable = [
         'code',
         'name',

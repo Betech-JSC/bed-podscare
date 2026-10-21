@@ -37,8 +37,8 @@ class QuotaGuardTest extends TestCase
             'status'          => 'active',
             'plan'            => $plan,
             'current_plan_id' => $plan,
-            'expires_at'      => $expiresAt ?? now()->addDays(14),
-            'trial_ends_at'   => $plan === 'trial' ? now()->addDays(14) : null,
+            'expires_at'      => $expiresAt ?? now()->addMonths(3),
+            'trial_ends_at'   => $plan === 'trial' ? now()->addMonths(3) : null,
         ]);
 
         $owner = User::forceCreate([

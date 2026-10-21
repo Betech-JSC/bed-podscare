@@ -82,7 +82,7 @@ export default function SubscriptionPage() {
 
   const currentPlanId = data?.tenant?.plan || data?.usage?.subscription?.plan_id || 'trial';
   const planName = data?.current_plan?.name || data?.usage?.subscription?.plan_name || 'Gói Dùng thử';
-  const daysRemaining = data?.tenant?.days_remaining ?? data?.usage?.subscription?.days_remaining ?? 14;
+  const daysRemaining = data?.tenant?.days_remaining ?? data?.usage?.subscription?.days_remaining ?? 90;
   const expiresAt = data?.tenant?.expires_at || data?.usage?.subscription?.expires_at;
   const isExpired = data?.usage?.subscription?.is_expired || (typeof daysRemaining === 'number' && daysRemaining <= 0);
   const isExpiringSoon = !isExpired && typeof daysRemaining === 'number' && daysRemaining <= 3;
@@ -255,7 +255,7 @@ export default function SubscriptionPage() {
                       {formatDate(expiresAt)}
                     </strong>
                     <span className="text-[10px] text-[#718279]">
-                      {currentPlanId === 'trial' ? 'Chu kỳ 14 ngày dùng thử' : 'Tự động gia hạn theo hóa đơn'}
+                      {currentPlanId === 'trial' ? 'Chu kỳ 3 tháng dùng thử' : 'Tự động gia hạn theo hóa đơn'}
                     </span>
                   </div>
                 </div>

@@ -108,7 +108,7 @@ export const LandingFooter: React.FC = () => {
               </li>
               <li>
                 <Link href="/register?plan=trial" className="hover:text-white transition-colors">
-                  Dùng thử 14 ngày
+                  Dùng thử 3 tháng
                 </Link>
               </li>
             </ul>

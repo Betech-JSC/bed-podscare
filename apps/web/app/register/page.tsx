@@ -4,9 +4,12 @@ import React, { useState, Suspense } from 'react';
 import { useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { Button, Input, Icon } from '@podscare/ui';
+import { defaultHttpClient } from '@podscare/api-client';
+import { useOptionalPodsCare } from '../providers';
 
 function RegisterStoreForm() {
   const searchParams = useSearchParams();
+  const podsCare = useOptionalPodsCare();
 
   // Đọc query parameter `plan` ('trial' | 'standard' | 'pro', mặc định 'trial')
   const rawPlan = searchParams?.get('plan')?.toLowerCase();
@@ -107,18 +110,31 @@ function RegisterStoreForm() {
       const json = await res.json().catch(() => null);
 
       if (res.ok && json?.success) {
-        setSuccessData({
-          store_name: storeName.trim(),
-          store_code: storeCode.trim().toLowerCase(),
-          email: email.trim(),
-          plan: selectedPlan,
-        });
-        // Lưu tạm vào localStorage để khi về login sẽ tự điền mã gian hàng này
+        const normalizedCode = storeCode.trim().toLowerCase();
         try {
-          localStorage.setItem('fixo_store_code', storeCode.trim().toLowerCase());
+          localStorage.setItem('fixo_store_code', normalizedCode);
         } catch {
           // ignore
         }
+
+        if (json?.data?.token && json?.data?.user) {
+          const token = json.data.token;
+          defaultHttpClient.setToken(token);
+          if (typeof document !== 'undefined') {
+            document.cookie = `podscare_session_token=${encodeURIComponent(token)}; path=/; max-age=${30 * 86400}; SameSite=Lax`;
+          }
+          podsCare?.login({
+            token,
+            user: json.data.user,
+          });
+        }
+
+        setSuccessData({
+          store_name: storeName.trim(),
+          store_code: normalizedCode,
+          email: email.trim(),
+          plan: selectedPlan,
+        });
       } else {
         const errorText =
           json?.message ||
@@ -136,9 +152,9 @@ function RegisterStoreForm() {
   };
 
   const planTitles = {
-    trial: 'Gói Dùng thử Miễn phí 14 ngày (0đ)',
-    standard: 'Gói Tiêu chuẩn (299.000đ/tháng - Dùng thử 14 ngày)',
-    pro: 'Gói Chuyên nghiệp (599.000đ/tháng - Dùng thử 14 ngày)',
+    trial: 'Gói Dùng thử Miễn phí 3 tháng (0đ)',
+    standard: 'Gói Tiêu chuẩn (299.000đ/tháng - Dùng thử 3 tháng)',
+    pro: 'Gói Chuyên nghiệp (599.000đ/tháng - Dùng thử 3 tháng)',
   };
 
   return (
@@ -236,11 +252,11 @@ function RegisterStoreForm() {
               </div>
               <p className="text-xs text-[#2e4d41] font-medium mt-0.5 mb-0">
                 {selectedPlan === 'trial' &&
-                  'Dùng thử 14 ngày miễn phí (1 chi nhánh, 2 nhân viên, 50 đơn/tháng). Không cần thẻ tín dụng.'}
+                  'Dùng thử 3 tháng miễn phí (1 chi nhánh, 2 nhân viên, 50 đơn/tháng). Không cần thẻ tín dụng.'}
                 {selectedPlan === 'standard' &&
-                  '299.000đ/tháng · Dùng thử 14 ngày đầu miễn phí. Tối đa 2 chi nhánh, 5 nhân viên, 300 đơn/tháng.'}
+                  '299.000đ/tháng · Dùng thử 3 tháng đầu miễn phí. Tối đa 2 chi nhánh, 5 nhân viên, 300 đơn/tháng.'}
                 {selectedPlan === 'pro' &&
-                  '599.000đ/tháng · Dùng thử 14 ngày đầu miễn phí. Không giới hạn chi nhánh, nhân sự & đơn sửa chữa.'}
+                  '599.000đ/tháng · Dùng thử 3 tháng đầu miễn phí. Không giới hạn chi nhánh, nhân sự & đơn sửa chữa.'}
               </p>
             </div>
           </div>
@@ -256,7 +272,7 @@ function RegisterStoreForm() {
             </h3>
             <p className="text-xs text-[#52635a] leading-relaxed mb-4 max-w-[480px] mx-auto">
               Gian hàng <strong className="text-[#176b58]">{successData.store_name}</strong> (Mã:{' '}
-              <span className="font-mono font-bold text-[#1c302b]">{successData.store_code}</span>) đã được khởi tạo thành công với <strong>14 ngày dùng thử miễn phí</strong>.
+              <span className="font-mono font-bold text-[#1c302b]">{successData.store_code}</span>) đã được khởi tạo thành công với <strong>3 tháng dùng thử miễn phí</strong>.
             </p>
             <div className="p-3 bg-white border border-[#e2ece6] rounded-[8px] text-xs text-[#6e7d75] mb-6 text-left space-y-1.5">
               <div className="flex justify-between">
@@ -272,13 +288,23 @@ function RegisterStoreForm() {
                 <span className="font-bold text-[#176b58]">{planTitles[successData.plan as keyof typeof planTitles] || successData.plan}</span>
               </div>
               <div className="flex justify-between">
+                <span>Trạng thái phê duyệt:</span>
+                <span className="font-bold text-[#176b58]">Đã duyệt tự động (Active)</span>
+              </div>
+              <div className="flex justify-between">
                 <span>Hạn dùng thử:</span>
-                <span className="font-semibold text-[#176b58]">14 ngày kể từ hôm nay</span>
+                <span className="font-semibold text-[#176b58]">3 tháng kể từ hôm nay</span>
               </div>
             </div>
             <Link
+              href="/dashboard"
+              className="w-full inline-flex items-center justify-center py-3 px-4 rounded-[10px] bg-[#176b58] text-white font-bold text-sm hover:bg-[#10583f] transition-all text-center shadow-sm cursor-pointer mb-2.5"
+            >
+              Vào Bảng điều khiển Quản trị ngay →
+            </Link>
+            <Link
               href="/login"
-              className="w-full inline-flex items-center justify-center py-3 px-4 rounded-[10px] bg-[#176b58] text-white font-bold text-sm hover:bg-[#10583f] transition-all text-center shadow-sm cursor-pointer"
+              className="w-full inline-flex items-center justify-center py-2.5 px-4 rounded-[10px] border border-[#d6e8de] bg-white text-[#176b58] font-semibold text-xs hover:bg-[#f0f7f4] transition-all text-center cursor-pointer"
             >
               Đăng nhập vào gian hàng ngay →
             </Link>
@@ -389,8 +415,8 @@ function RegisterStoreForm() {
               <div className="p-3 rounded-[8px] bg-[#f8faf9] border border-[#e5ece8] text-xs text-[#6e7d75] flex items-center gap-2">
                 <span className="w-2 h-2 rounded-full bg-[#176b58] shrink-0" />
                 <span>
-                  Sau khi đăng ký, gian hàng được kích hoạt ngay với{' '}
-                  <strong>14 ngày dùng thử miễn phí</strong>. Bạn có thể gia hạn hoặc nâng cấp bất kỳ lúc nào.
+                  Sau khi đăng ký, gian hàng được <strong>phê duyệt & kích hoạt tự động ngay lập tức</strong> với{' '}
+                  <strong>3 tháng dùng thử miễn phí</strong>. Không cần chờ quản trị viên duyệt.
                 </span>
               </div>
 
@@ -401,7 +427,7 @@ function RegisterStoreForm() {
                 loading={loading}
                 className="w-full mt-2 font-bold text-sm"
               >
-                Gửi hồ sơ đăng ký mở gian hàng →
+                Đăng ký & Kích hoạt gian hàng ngay →
               </Button>
 
               <div className="text-center pt-2">

@@ -27,10 +27,20 @@ test('SaaS Subscription: Registration Page receives ?plan= and submits plan', ()
   assert.ok(content.includes('CHUYÊN NGHIỆP (PRO)'), 'Must mention Pro badge');
   assert.ok(content.includes('299.000đ/tháng'), 'Must mention Standard pricing');
   assert.ok(content.includes('599.000đ/tháng'), 'Must mention Pro pricing');
+  assert.ok(content.includes('3 tháng'), 'Must mention 3 months trial duration');
+  assert.strictEqual(content.includes('14 ngày'), false, 'Must not contain legacy 14-day trial text');
 
   // Verify plan sent in fetch body
   assert.ok(content.includes('plan: selectedPlan'), 'Must include plan in registration body');
   assert.ok(content.includes('/api/v1/tenants/register'), 'Must call register endpoint');
+
+  // Verify Auto-Approve session hydration & direct dashboard access
+  assert.ok(content.includes('defaultHttpClient.setToken(token)'), 'Must set token on defaultHttpClient upon registration');
+  assert.ok(content.includes('podscare_session_token='), 'Must set podscare_session_token cookie upon registration');
+  assert.ok(content.includes('podsCare?.login('), 'Must invoke podsCare.login with token and user');
+  assert.ok(content.includes("localStorage.setItem('fixo_store_code'"), 'Must persist fixo_store_code in localStorage');
+  assert.ok(content.includes('Đã duyệt tự động (Active)'), 'Must display auto-approved Active status');
+  assert.ok(content.includes('href="/dashboard"'), 'Must provide direct link to /dashboard');
 });
 
 test('SaaS Subscription: QuotaProgressBars component structure', () => {
@@ -126,3 +136,40 @@ test('SaaS Subscription: @podscare/api-client exports saasService', () => {
   const clientContent = fs.readFileSync(clientIndexPath, 'utf-8');
   assert.ok(clientContent.includes('saas.service'), 'api-client must export saas.service');
 });
+
+test('SaaS Subscription: 3-Month Trial Duration Consistency across Landing, Subscription & Platform UI', () => {
+  const trialFiles = [
+    'app/page.tsx',
+    'app/LandingPreview.tsx',
+    'app/register/page.tsx',
+    'app/subscription/page.tsx',
+    'app/platform/page.tsx',
+    'app/platform/approvals/page.tsx',
+    'app/components/landing/LandingHero.tsx',
+    'app/components/landing/LandingNavbar.tsx',
+    'app/components/landing/PricingSection.tsx',
+    'app/components/landing/LandingFooter.tsx',
+    'app/components/landing/CTASection.tsx',
+    'app/components/landing/VideoModal.tsx',
+    'public/preview.html',
+  ];
+
+  for (const relPath of trialFiles) {
+    const fullPath = path.join(webDir, relPath);
+    assert.ok(fs.existsSync(fullPath), `${relPath} must exist`);
+    const content = fs.readFileSync(fullPath, 'utf-8');
+    assert.ok(content.includes('3 tháng'), `${relPath} must mention 3 tháng trial duration`);
+    assert.strictEqual(
+      content.includes('14 ngày'),
+      false,
+      `${relPath} must not contain legacy 14 ngày trial duration`
+    );
+  }
+
+  // Verify AppShell & SubscriptionPage default daysRemaining fallback is 90 (not 14)
+  const appShellContent = fs.readFileSync(path.join(webDir, 'app/components/AppShell.tsx'), 'utf-8');
+  const subPageContent = fs.readFileSync(path.join(webDir, 'app/subscription/page.tsx'), 'utf-8');
+  assert.ok(appShellContent.includes('?? 90'), 'AppShell.tsx must fallback daysRemaining to 90');
+  assert.ok(subPageContent.includes('?? 90'), 'subscription/page.tsx must fallback daysRemaining to 90');
+});
+

@@ -201,7 +201,7 @@ export const AppShell: React.FC<AppShellProps> = ({ children, crumbName = 'Tổn
             const tenant = res.data.tenant;
             const usage = res.data.usage;
             const plan = tenant?.plan || usage?.subscription?.plan_id || 'trial';
-            const days = tenant?.days_remaining ?? usage?.subscription?.days_remaining ?? 14;
+            const days = tenant?.days_remaining ?? usage?.subscription?.days_remaining ?? 90;
             const expired =
               usage?.subscription?.is_expired || (typeof days === 'number' && days <= 0);
             setSubInfo({
@@ -398,7 +398,7 @@ export const AppShell: React.FC<AppShellProps> = ({ children, crumbName = 'Tổn
                   {subInfo?.isExpired
                     ? 'Hết hạn bản quyền'
                     : subInfo?.plan === 'trial'
-                    ? `Trial · Còn ${subInfo?.daysRemaining ?? 14} ngày`
+                    ? `Trial · Còn ${subInfo?.daysRemaining ?? 90} ngày`
                     : subInfo?.plan === 'pro'
                     ? 'Pro'
                     : typeof subInfo?.daysRemaining === 'number'

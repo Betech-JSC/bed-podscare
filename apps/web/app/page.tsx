@@ -54,7 +54,7 @@ const jsonLd = {
       price: '0',
       priceCurrency: 'VND',
       name: 'Gói Dùng thử',
-      description: 'Trải nghiệm miễn phí 14 ngày đầy đủ tính năng',
+      description: 'Trải nghiệm miễn phí 3 tháng đầy đủ tính năng',
     },
     {
       '@type': 'Offer',

@@ -19,6 +19,10 @@ trait BelongsToTenant
         static::addGlobalScope(new TenantScope());
 
         static::creating(function ($model) {
+            if ($model instanceof User && $model->role === 'super_admin') {
+                return;
+            }
+
             if (empty($model->tenant_id)) {
                 $user = Auth::user() ?? (app()->bound('request') ? request()?->user() : null);
                 if ($user && ! empty($user->tenant_id)) {

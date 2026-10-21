@@ -210,7 +210,7 @@ export default function PlatformDashboardPage() {
               <span className="text-xs text-[#718279]">hồ sơ cần xem xét</span>
             </div>
             <div className="mt-3 pt-2.5 border-t border-[#f0f3f1] flex items-center justify-between text-[11px] text-[#6e7d75]">
-              <span>Gói dùng thử 14 ngày</span>
+              <span>Gói dùng thử 3 tháng</span>
               <button
                 type="button"
                 onClick={() => router.push('/platform/approvals')}

@@ -664,7 +664,7 @@ export const VideoModal: React.FC<VideoModalProps> = ({ isOpen, onClose }) => {
               onClick={onClose}
               className="flex-1 sm:flex-none px-5 py-2.5 rounded-[9px] bg-[#176b58] hover:bg-[#10583f] text-white text-[13px] font-bold shadow-[0_8px_20px_rgba(23,107,88,0.2)] transition-all text-center whitespace-nowrap cursor-pointer"
             >
-              Dùng thử miễn phí 14 ngày →
+              Dùng thử miễn phí 3 tháng →
             </Link>
           </div>
         </div>

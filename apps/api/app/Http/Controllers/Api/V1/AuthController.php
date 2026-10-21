@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api\V1;
 
 use App\Http\Controllers\Controller;
+use App\Models\Branch;
 use App\Models\Scopes\TenantScope;
 use App\Models\Tenant;
 use App\Models\User;
@@ -87,27 +88,8 @@ class AuthController extends Controller
         $tenant = Tenant::where('code', $effectiveStoreCode)->first();
 
         // Nếu store_code được chỉ định rõ ràng mà không tìm thấy
-        if (! $tenant && ! empty($storeCode)) {
+        if (! $tenant && ! empty($storeCode) && $storeCode !== 'fixo-master') {
             return $this->failure('Gian hàng không tồn tại.', 404);
-        }
-
-        // Kiểm tra trạng thái của tenant
-        if ($tenant) {
-            if ($tenant->status === 'pending') {
-                return $this->failure('Gian hàng đang chờ Super Admin phê duyệt.', 403);
-            }
-            if ($tenant->status === 'suspended') {
-                return $this->failure('Gian hàng đã bị tạm khóa. Vui lòng liên hệ hỗ trợ.', 403);
-            }
-            if ($tenant->expires_at && $tenant->expires_at->isPast()) {
-                return response()->json([
-                    'success'    => false,
-                    'message'    => 'Gói dịch vụ của gian hàng đã hết hạn. Vui lòng gia hạn gói dịch vụ.',
-                    'error'      => 'SUBSCRIPTION_EXPIRED',
-                    'error_code' => 'SUBSCRIPTION_EXPIRED',
-                    'redirect'   => '/subscription',
-                ], 403);
-            }
         }
 
         // 3. Tìm user thuộc tenant
@@ -128,18 +110,105 @@ class AuthController extends Controller
                 ->orWhere('phone', $loginInput);
         })->first();
 
+        // Hỗ trợ tự động nhận diện gian hàng của khách nếu khách quên đổi store_code khỏi mặc định 'fixo-master'
+        if (! $user && (empty($storeCode) || $storeCode === 'fixo-master')) {
+            $fallbackUser = User::withoutGlobalScope(TenantScope::class)
+                ->whereNotNull('tenant_id')
+                ->where(function ($q) use ($loginInput, $alternateEmail) {
+                    $q->where('email', $loginInput)
+                        ->when($alternateEmail, fn ($sq) => $sq->orWhere('email', $alternateEmail))
+                        ->orWhere('phone', $loginInput);
+                })
+                ->orderByDesc('id')
+                ->first();
+
+            if ($fallbackUser && $fallbackUser->tenant) {
+                $user = $fallbackUser;
+                $tenant = $fallbackUser->tenant;
+            }
+        }
+
+        if (! $tenant && $user && $user->tenant) {
+            $tenant = $user->tenant;
+        }
+
+        // Kiểm tra trạng thái bị khóa hoặc hết hạn của tenant
+        if ($tenant) {
+            if ($tenant->status === 'suspended') {
+                return $this->failure('Gian hàng đã bị tạm khóa. Vui lòng liên hệ hỗ trợ.', 403);
+            }
+            if ($tenant->expires_at && $tenant->expires_at->isPast()) {
+                return response()->json([
+                    'success'    => false,
+                    'message'    => 'Gói dịch vụ của gian hàng đã hết hạn. Vui lòng gia hạn gói dịch vụ.',
+                    'error'      => 'SUBSCRIPTION_EXPIRED',
+                    'error_code' => 'SUBSCRIPTION_EXPIRED',
+                    'redirect'   => '/subscription',
+                ], 403);
+            }
+        }
+
         if (! $user || ! Hash::check($password, $user->password)) {
             return $this->failure('Email hoặc mật khẩu không chính xác.', 401);
+        }
+
+        // Tự động phê duyệt nếu tenant đang ở trạng thái pending (sau khi xác thực đúng mật khẩu)
+        if ($tenant && $tenant->status === 'pending') {
+            $expiresAt = $tenant->expires_at ?? now()->addMonths(3);
+            $tenant->update([
+                'status'        => 'active',
+                'trial_ends_at' => $tenant->trial_ends_at ?? $expiresAt,
+                'expires_at'    => $expiresAt,
+            ]);
+
+            User::withoutGlobalScope(TenantScope::class)
+                ->where('tenant_id', $tenant->id)
+                ->where('role', 'admin')
+                ->update(['is_active' => true]);
+
+            if ((int) $user->tenant_id === (int) $tenant->id) {
+                if ($user->role === 'admin') {
+                    $user->is_active = true;
+                }
+                $user->setRelation('tenant', $tenant);
+            }
         }
 
         if (! $user->is_active) {
             return $this->failure('Tài khoản đã bị tạm khóa.', 403);
         }
 
-        $tokenContext = $tenant ? "tenant:{$tenant->id}" : 'tenant:default';
+        // Đảm bảo gian hàng mới đăng ký luôn có ít nhất 1 chi nhánh hoạt động để sử dụng app ngay
+        $resolvedTenant = $tenant ?? $user->tenant;
+        if ($resolvedTenant && empty($user->branch_id)) {
+            $defaultBranch = Branch::withoutGlobalScope(TenantScope::class)
+                ->where('tenant_id', $resolvedTenant->id)
+                ->first();
+
+            if (! $defaultBranch) {
+                $baseBranchCode = strtoupper(preg_replace('/[^A-Za-z0-9]/', '', substr($resolvedTenant->code, 0, 10))) ?: 'CN';
+                $branchCode = $baseBranchCode . '-CN1';
+                while (Branch::withoutGlobalScope(TenantScope::class)->where('code', $branchCode)->exists()) {
+                    $branchCode = $baseBranchCode . '-' . strtoupper(substr(uniqid(), -4));
+                }
+
+                $defaultBranch = Branch::withoutGlobalScope(TenantScope::class)->create([
+                    'tenant_id' => $resolvedTenant->id,
+                    'code'      => $branchCode,
+                    'name'      => $resolvedTenant->name . ' - Chi nhánh chính',
+                    'address'   => 'Trụ sở chính',
+                    'phone'     => $resolvedTenant->phone ?? $user->phone ?? '',
+                    'is_active' => true,
+                ]);
+            }
+
+            $user->forceFill(['branch_id' => $defaultBranch->id])->save();
+            $user->setRelation('branch', $defaultBranch);
+        }
+
+        $tokenContext = $resolvedTenant ? "tenant:{$resolvedTenant->id}" : 'tenant:default';
         $token = $user->createToken('auth_token', [$tokenContext])->plainTextToken;
 
-        $resolvedTenant = $user->tenant ?? $tenant;
         $tenantData = null;
         if ($resolvedTenant) {
             $daysRemaining = $resolvedTenant->expires_at ? max(0, (int) now()->diffInDays($resolvedTenant->expires_at, false)) : null;
@@ -168,7 +237,8 @@ class AuthController extends Controller
                 'email'      => $user->email,
                 'phone'      => $user->phone,
                 'role'       => $user->role,
-                'tenant_id'  => $user->tenant_id ?? $tenant?->id,
+                'is_active'  => (bool) $user->is_active,
+                'tenant_id'  => $user->tenant_id ?? $resolvedTenant?->id,
                 'tenant'     => $tenantData,
                 'avatar_url' => $user->avatar_url,
                 'branch_id'  => $user->branch_id,
@@ -223,6 +293,7 @@ class AuthController extends Controller
             'email'      => $user->email,
             'phone'      => $user->phone,
             'role'       => $user->role,
+            'is_active'  => (bool) $user->is_active,
             'tenant_id'  => $user->tenant_id ?? $resolvedTenant?->id,
             'tenant'     => $tenantData,
             'avatar_url' => $user->avatar_url,

@@ -121,7 +121,7 @@ class TenantAuthenticationTest extends TestCase
             ->assertJsonPath('message', 'Gian hàng không tồn tại.');
     }
 
-    public function test_login_rejected_for_pending_tenant(): void
+    public function test_login_auto_approves_pending_tenant(): void
     {
         $response = $this->postJson('/api/v1/auth/login', [
             'store_code' => $this->pendingTenant->code,
@@ -129,9 +129,15 @@ class TenantAuthenticationTest extends TestCase
             'password'   => 'password123',
         ]);
 
-        $response->assertStatus(403)
-            ->assertJsonPath('success', false)
-            ->assertJsonPath('message', 'Gian hàng đang chờ Super Admin phê duyệt.');
+        $response->assertStatus(200)
+            ->assertJsonPath('success', true)
+            ->assertJsonPath('data.user.tenant.code', $this->pendingTenant->code)
+            ->assertJsonPath('data.user.tenant.status', 'active')
+            ->assertJsonPath('data.user.is_active', true);
+
+        $this->assertNotEmpty($response->json('data.token'));
+        $this->assertNotEmpty($response->json('data.user.branch_id'));
+        $this->assertGreaterThanOrEqual(88, $response->json('data.user.tenant.days_remaining'));
     }
 
     public function test_login_rejected_for_suspended_tenant(): void
@@ -183,7 +189,7 @@ class TenantAuthenticationTest extends TestCase
             ->assertJsonPath('data.tenant.status', 'active');
     }
 
-    public function test_public_tenant_registration_creates_pending_store_and_inactive_owner(): void
+    public function test_public_tenant_registration_auto_approves_and_provisions_branch_and_token(): void
     {
         $storeCode = 'tiem-moi-' . uniqid();
         $response = $this->postJson('/api/v1/tenants/register', [
@@ -201,6 +207,10 @@ class TenantAuthenticationTest extends TestCase
             ->assertJsonPath('data.tenant.status', 'active')
             ->assertJsonPath('data.tenant.plan', 'trial');
 
+        $this->assertNotEmpty($response->json('data.token'));
+        $this->assertNotEmpty($response->json('data.branch.id'));
+        $this->assertEquals($response->json('data.branch.id'), $response->json('data.user.branch_id'));
+
         $this->assertDatabaseHas('tenants', [
             'code'   => $storeCode,
             'status' => 'active',
@@ -211,6 +221,7 @@ class TenantAuthenticationTest extends TestCase
             'email'     => "chu_{$storeCode}@tiemmoi.vn",
             'role'      => 'admin',
             'is_active' => true,
+            'branch_id' => $response->json('data.branch.id'),
         ]);
     }
 
@@ -221,11 +232,92 @@ class TenantAuthenticationTest extends TestCase
             'store_name' => 'Trùng Mã',
             'owner_name' => 'Nguyễn Trùng',
             'phone'      => '0988000111',
-            'email'      => 'trung@tiem.vn',
+            'email'      => 'trung_' . uniqid() . '@tiem.vn',
             'password'   => 'password123',
         ]);
 
         $response->assertStatus(422)
             ->assertJsonValidationErrors(['store_code']);
     }
+
+    public function test_tenant_registration_fails_gracefully_on_duplicate_email(): void
+    {
+        $response = $this->postJson('/api/v1/tenants/register', [
+            'store_code' => 'tiem-moi-dup-email-' . uniqid(),
+            'store_name' => 'Tiệm Trùng Email',
+            'owner_name' => 'Nguyễn Văn Trùng Email',
+            'phone'      => '0988000222',
+            'email'      => $this->activeUser->email, // Email đã tồn tại
+            'password'   => 'password123',
+        ]);
+
+        $response->assertStatus(422)
+            ->assertJsonValidationErrors(['email']);
+    }
+
+    public function test_pending_tenant_is_not_auto_approved_when_password_is_wrong(): void
+    {
+        $response = $this->postJson('/api/v1/auth/login', [
+            'store_code' => $this->pendingTenant->code,
+            'login'      => $this->pendingUser->email,
+            'password'   => 'wrong_password_999',
+        ]);
+
+        $response->assertStatus(401)
+            ->assertJsonPath('success', false);
+
+        $this->pendingTenant->refresh();
+        $this->pendingUser->refresh();
+        $this->assertEquals('pending', $this->pendingTenant->status);
+        $this->assertFalse((bool) $this->pendingUser->is_active);
+    }
+
+    public function test_new_tenant_can_login_with_email_or_phone_using_default_fixo_master_store_code(): void
+    {
+        // Đảm bảo có fixo-master trong DB để mô phỏng đúng môi trường thực tế
+        Tenant::firstOrCreate(
+            ['code' => 'fixo-master'],
+            ['name' => 'FIXO Master Store', 'status' => 'active', 'plan' => 'pro']
+        );
+
+        $storeCode = 'tiem-auto-detect-' . uniqid();
+        $phone = '0977' . rand(100000, 999999);
+        $email = "owner_{$storeCode}@tiemmoi.vn";
+
+        $regResponse = $this->postJson('/api/v1/tenants/register', [
+            'store_code' => $storeCode,
+            'store_name' => 'Tiệm Tự Nhận Diện',
+            'owner_name' => 'Phạm Văn Tự Động',
+            'phone'      => $phone,
+            'email'      => $email,
+            'password'   => 'secret123',
+        ]);
+
+        $regResponse->assertStatus(201);
+
+        // 1. Khách đăng nhập bằng email nhưng để nguyên store_code mặc định là fixo-master
+        $loginByEmail = $this->postJson('/api/v1/auth/login', [
+            'store_code' => 'fixo-master',
+            'login'      => $email,
+            'password'   => 'secret123',
+        ]);
+
+        $loginByEmail->assertStatus(200)
+            ->assertJsonPath('success', true)
+            ->assertJsonPath('data.user.tenant.code', $storeCode)
+            ->assertJsonPath('data.user.tenant.status', 'active')
+            ->assertJsonPath('data.user.email', $email);
+
+        // 2. Khách đăng nhập bằng SĐT và không truyền store_code
+        $loginByPhone = $this->postJson('/api/v1/auth/login', [
+            'login'    => $phone,
+            'password' => 'secret123',
+        ]);
+
+        $loginByPhone->assertStatus(200)
+            ->assertJsonPath('success', true)
+            ->assertJsonPath('data.user.tenant.code', $storeCode)
+            ->assertJsonPath('data.user.phone', $phone);
+    }
 }
+
