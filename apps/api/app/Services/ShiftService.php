@@ -20,39 +20,48 @@ class ShiftService
         float $openingCash,
         ?string $notes = null
     ): WorkShift {
-        // Kiểm tra xem chi nhánh đã có ca đang mở hay chưa
-        $existingOpenShift = WorkShift::withoutGlobalScopes()
-            ->where('tenant_id', $tenantId)
-            ->where('branch_id', $branchId)
-            ->where('status', 'open')
-            ->first();
+        return DB::transaction(function () use ($tenantId, $branchId, $userId, $openingCash, $notes) {
+            // Khóa dòng chi nhánh để tuần tự hóa thao tác mở ca đồng thời tại cùng chi nhánh
+            \App\Models\Branch::withoutGlobalScopes()
+                ->whereKey($branchId)
+                ->lockForUpdate()
+                ->first();
 
-        if ($existingOpenShift) {
-            throw ValidationException::withMessages([
-                'branch_id' => 'Chi nhánh hiện đang có một ca làm việc đang mở (' . $existingOpenShift->shift_code . '). Vui lòng đóng ca trước khi mở ca mới.',
+            // Kiểm tra xem chi nhánh đã có ca đang mở hay chưa
+            $existingOpenShift = WorkShift::withoutGlobalScopes()
+                ->where('tenant_id', $tenantId)
+                ->where('branch_id', $branchId)
+                ->where('status', 'open')
+                ->lockForUpdate()
+                ->first();
+
+            if ($existingOpenShift) {
+                throw ValidationException::withMessages([
+                    'branch_id' => 'Chi nhánh hiện đang có một ca làm việc đang mở (' . $existingOpenShift->shift_code . '). Vui lòng đóng ca trước khi mở ca mới.',
+                ]);
+            }
+
+            // Tự động sinh mã ca dạng SH-yymmdd-XXXX
+            $shiftCode = $this->generateUniqueShiftCode($tenantId);
+
+            return WorkShift::create([
+                'tenant_id'            => $tenantId,
+                'branch_id'            => $branchId,
+                'shift_code'           => $shiftCode,
+                'cashier_id'           => $userId,
+                'opened_at'            => now(),
+                'status'               => 'open',
+                'opening_cash'         => $openingCash,
+                'system_cash_in'       => 0,
+                'system_cash_out'      => 0,
+                'expected_cash'        => $openingCash,
+                'actual_cash'          => null,
+                'difference_amount'    => 0,
+                'carried_over_cash'    => 0,
+                'deposited_cash'       => 0,
+                'reconciliation_notes' => $notes,
             ]);
-        }
-
-        // Tự động sinh mã ca dạng SH-yymmdd-XXXX
-        $shiftCode = $this->generateUniqueShiftCode($tenantId);
-
-        return WorkShift::create([
-            'tenant_id'            => $tenantId,
-            'branch_id'            => $branchId,
-            'shift_code'           => $shiftCode,
-            'cashier_id'           => $userId,
-            'opened_at'            => now(),
-            'status'               => 'open',
-            'opening_cash'         => $openingCash,
-            'system_cash_in'       => 0,
-            'system_cash_out'      => 0,
-            'expected_cash'        => $openingCash,
-            'actual_cash'          => null,
-            'difference_amount'    => 0,
-            'carried_over_cash'    => 0,
-            'deposited_cash'       => 0,
-            'reconciliation_notes' => $notes,
-        ]);
+        });
     }
 
     /**

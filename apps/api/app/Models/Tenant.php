@@ -43,6 +43,21 @@ class Tenant extends Model
         ];
     }
 
+    protected static function booted(): void
+    {
+        static::saved(function (Tenant $tenant) {
+            if ($tenant->code === 'fixo-master' || $tenant->wasChanged('code')) {
+                \App\Models\Scopes\TenantScope::clearCache();
+            }
+        });
+
+        static::deleted(function (Tenant $tenant) {
+            if ($tenant->code === 'fixo-master') {
+                \App\Models\Scopes\TenantScope::clearCache();
+            }
+        });
+    }
+
     public function branches(): HasMany
     {
         return $this->hasMany(Branch::class);

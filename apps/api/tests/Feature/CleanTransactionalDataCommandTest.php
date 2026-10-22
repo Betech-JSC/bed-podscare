@@ -37,7 +37,7 @@ class CleanTransactionalDataCommandTest extends TestCase
     use RefreshDatabase;
 
     /**
-     * Danh sách 16 bảng dữ liệu vận hành & giao dịch cần truncate.
+     * Danh sách 21 bảng dữ liệu vận hành & giao dịch cần truncate.
      */
     protected array $transactionalTables = [
         'repair_orders',
@@ -56,6 +56,11 @@ class CleanTransactionalDataCommandTest extends TestCase
         'inventory_transactions',
         'notifications',
         'audit_logs',
+        'work_shifts',
+        'cash_transactions',
+        'goods_receipts',
+        'goods_receipt_items',
+        'supplier_debt_transactions',
     ];
 
     /**
@@ -74,7 +79,7 @@ class CleanTransactionalDataCommandTest extends TestCase
     ];
 
     /**
-     * Chuẩn bị dữ liệu mẫu cho toàn bộ 16 bảng vận hành và 9 bảng nền tảng.
+     * Chuẩn bị dữ liệu mẫu cho toàn bộ 21 bảng vận hành và 9 bảng nền tảng.
      */
     protected function seedFullTestData(): void
     {
@@ -158,6 +163,97 @@ class CleanTransactionalDataCommandTest extends TestCase
                 'auditable_id'   => $order ? $order->id : 1,
                 'details'        => 'Khởi tạo đơn hàng kiểm thử',
             ]);
+        }
+
+        $tenantId = $user?->tenant_id ?? $branch?->tenant_id ?? \App\Models\Tenant::first()?->id;
+
+        if ($branch && $user && \App\Models\WorkShift::withoutGlobalScopes()->count() === 0) {
+            $shift = \App\Models\WorkShift::withoutGlobalScopes()->create([
+                'tenant_id'       => $tenantId,
+                'branch_id'       => $branch->id,
+                'shift_code'      => 'WS-CLEAN-0001',
+                'cashier_id'      => $user->id,
+                'opened_at'       => now(),
+                'opening_cash'    => 1000000,
+                'system_cash_in'  => 200000,
+                'system_cash_out' => 0,
+                'expected_cash'   => 1200000,
+                'status'          => 'open',
+            ]);
+        } else {
+            $shift = \App\Models\WorkShift::withoutGlobalScopes()->first();
+        }
+
+        if ($branch && $user && \App\Models\CashTransaction::withoutGlobalScopes()->count() === 0) {
+            \App\Models\CashTransaction::withoutGlobalScopes()->create([
+                'tenant_id'          => $tenantId,
+                'branch_id'          => $branch->id,
+                'work_shift_id'      => $shift?->id,
+                'transaction_code'   => 'CT-CLEAN-0001',
+                'type'               => 'income',
+                'category'           => 'repair_order',
+                'amount'             => 200000,
+                'payment_method'     => 'cash',
+                'recipient_payer'    => 'Khách Kiểm Thử',
+                'notes'              => 'Thu tiền đơn kiểm thử',
+                'created_by_user_id' => $user->id,
+            ]);
+        }
+
+        if ($branch && $user && $part) {
+            $supplier = \App\Models\Supplier::withoutGlobalScopes()->first()
+                ?? \App\Models\Supplier::withoutGlobalScopes()->create([
+                    'tenant_id'    => $tenantId,
+                    'code'         => 'NCC-CLEAN-01',
+                    'name'         => 'Nhà Cung Cấp Kiểm Thử',
+                    'phone'        => '0909999888',
+                    'debt_balance' => 500000,
+                    'is_active'    => true,
+                ]);
+
+            if (\App\Models\GoodsReceipt::withoutGlobalScopes()->count() === 0) {
+                $receipt = \App\Models\GoodsReceipt::withoutGlobalScopes()->create([
+                    'tenant_id'          => $tenantId,
+                    'branch_id'          => $branch->id,
+                    'supplier_id'        => $supplier->id,
+                    'receipt_code'       => 'GR-CLEAN-0001',
+                    'status'             => 'completed',
+                    'total_amount'       => 500000,
+                    'discount_amount'    => 0,
+                    'final_amount'       => 500000,
+                    'paid_amount'        => 0,
+                    'debt_amount'        => 500000,
+                    'payment_method'     => 'none',
+                    'created_by_user_id' => $user->id,
+                ]);
+            } else {
+                $receipt = \App\Models\GoodsReceipt::withoutGlobalScopes()->first();
+            }
+
+            if ($receipt && \App\Models\GoodsReceiptItem::count() === 0) {
+                \App\Models\GoodsReceiptItem::create([
+                    'goods_receipt_id' => $receipt->id,
+                    'part_id'          => $part->id,
+                    'quantity'         => 5,
+                    'unit_price'       => 100000,
+                    'total_price'      => 500000,
+                ]);
+            }
+
+            if ($receipt && \App\Models\SupplierDebtTransaction::withoutGlobalScopes()->count() === 0) {
+                \App\Models\SupplierDebtTransaction::withoutGlobalScopes()->create([
+                    'tenant_id'          => $tenantId,
+                    'branch_id'          => $branch->id,
+                    'supplier_id'        => $supplier->id,
+                    'goods_receipt_id'   => $receipt->id,
+                    'transaction_code'   => 'SDT-CLEAN-0001',
+                    'transaction_type'   => 'receipt_debt',
+                    'amount'             => 500000,
+                    'debt_before'        => 0,
+                    'debt_after'         => 500000,
+                    'created_by_user_id' => $user->id,
+                ]);
+            }
         }
     }
 

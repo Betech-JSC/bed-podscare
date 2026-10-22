@@ -25,7 +25,16 @@ class ShipmentController extends Controller
      */
     public function index(Request $request): JsonResponse
     {
+        $user = $request->user();
         $query = Shipment::with(['repairOrder.customer', 'partner', 'proofs', 'createdByUser:id,name']);
+
+        if ($user && ! in_array($user->role, ['admin', 'super_admin'], true) && $user->branch_id) {
+            $query->whereHas('repairOrder', function ($q) use ($user) {
+                $q->where('branch_id', $user->branch_id);
+            });
+        } else {
+            $query->whereHas('repairOrder');
+        }
 
         if ($status = $request->input('status')) {
             $query->where('status', $status);
@@ -74,6 +83,16 @@ class ShipmentController extends Controller
             'notes'            => 'nullable|string',
         ]);
 
+        $order = RepairOrder::find($validated['repair_order_id']);
+        if (! $order) {
+            return $this->empty('Không tìm thấy đơn sửa chữa.');
+        }
+
+        $user = $request->user();
+        if ($user && ! in_array($user->role, ['admin', 'super_admin'], true) && $user->branch_id && (int) $order->branch_id !== (int) $user->branch_id) {
+            return $this->failure('Bạn không có quyền tạo vận đơn cho đơn hàng thuộc chi nhánh khác.', 403);
+        }
+
         $date = date('Ymd');
         do {
             $rand = str_pad((string) random_int(1, 9999), 4, '0', STR_PAD_LEFT);
@@ -82,7 +101,7 @@ class ShipmentController extends Controller
 
         $shipment = Shipment::create([
             'shipment_code'      => $shipmentCode,
-            'repair_order_id'    => $validated['repair_order_id'],
+            'repair_order_id'    => $order->id,
             'partner_id'         => $validated['partner_id'] ?? null,
             'delivery_method'    => $validated['delivery_method'],
             'carrier_name'       => $validated['carrier_name'],
@@ -102,10 +121,15 @@ class ShipmentController extends Controller
      */
     public function uploadProof(Request $request, int $id): JsonResponse
     {
-        $shipment = Shipment::find($id);
+        $shipment = Shipment::with('repairOrder')->find($id);
 
-        if (! $shipment) {
+        if (! $shipment || ! $shipment->repairOrder) {
             return $this->empty('Không tìm thấy phiếu giao nhận.');
+        }
+
+        $user = $request->user();
+        if ($user && ! in_array($user->role, ['admin', 'super_admin'], true) && $user->branch_id && (int) $shipment->repairOrder->branch_id !== (int) $user->branch_id) {
+            return $this->failure('Bạn không có quyền cập nhật vận đơn thuộc chi nhánh khác.', 403);
         }
 
         $validated = $request->validate([
@@ -143,10 +167,15 @@ class ShipmentController extends Controller
      */
     public function updateStatus(Request $request, int $id): JsonResponse
     {
-        $shipment = Shipment::with('proofs')->find($id);
+        $shipment = Shipment::with(['proofs', 'repairOrder'])->find($id);
 
-        if (! $shipment) {
+        if (! $shipment || ! $shipment->repairOrder) {
             return $this->empty('Không tìm thấy phiếu giao nhận.');
+        }
+
+        $user = $request->user();
+        if ($user && ! in_array($user->role, ['admin', 'super_admin'], true) && $user->branch_id && (int) $shipment->repairOrder->branch_id !== (int) $user->branch_id) {
+            return $this->failure('Bạn không có quyền cập nhật vận đơn thuộc chi nhánh khác.', 403);
         }
 
         $validated = $request->validate([

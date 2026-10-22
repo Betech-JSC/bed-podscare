@@ -93,7 +93,7 @@ class AuthController extends Controller
         }
 
         // 3. Tìm user thuộc tenant
-        $userQuery = User::withoutGlobalScope(TenantScope::class);
+        $userQuery = User::withoutGlobalScope(TenantScope::class)->with(['tenant', 'branch']);
         if ($tenant) {
             $userQuery->where(function ($q) use ($tenant, $storeCode) {
                 $q->where('tenant_id', $tenant->id);
@@ -113,6 +113,7 @@ class AuthController extends Controller
         // Hỗ trợ tự động nhận diện gian hàng của khách nếu khách quên đổi store_code khỏi mặc định 'fixo-master'
         if (! $user && (empty($storeCode) || $storeCode === 'fixo-master')) {
             $fallbackUser = User::withoutGlobalScope(TenantScope::class)
+                ->with(['tenant', 'branch'])
                 ->whereNotNull('tenant_id')
                 ->where(function ($q) use ($loginInput, $alternateEmail) {
                     $q->where('email', $loginInput)

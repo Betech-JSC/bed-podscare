@@ -310,6 +310,14 @@ class BranchManagementTest extends TestCase
      */
     public function test_public_can_get_branches_list_without_auth(): void
     {
+        Branch::first() ?? Branch::create([
+            'code'      => 'PUB_' . strtoupper(substr(uniqid(), -4)),
+            'name'      => 'Chi Nhánh Công Khai',
+            'address'   => '123 Đường Công Khai',
+            'phone'     => '0901234567',
+            'is_active' => true,
+        ]);
+
         $response = $this->getJson('/api/v1/branches');
 
         $response->assertStatus(200)
@@ -323,11 +331,17 @@ class BranchManagementTest extends TestCase
     }
 
     /**
-     * Test 11: Người dùng vãng lai (unauthenticated) có thể xem chi tiết chi nhánh (GET /branches/{id}) công khai.
+     * Test 11: Người dùng vãng lai (unauthenticated) có thể xem chi tiết chi nhánh (GET /branches/{id}) công khai mà không lộ danh sách nhân viên.
      */
     public function test_public_can_get_branch_details_without_auth(): void
     {
-        $branch = Branch::first();
+        $branch = Branch::first() ?? Branch::create([
+            'code'      => 'PUBD_' . strtoupper(substr(uniqid(), -4)),
+            'name'      => 'Chi Nhánh Chi Tiết Công Khai',
+            'address'   => '456 Đường Công Khai',
+            'phone'     => '0901234568',
+            'is_active' => true,
+        ]);
         $this->assertNotNull($branch);
 
         $response = $this->getJson("/api/v1/branches/{$branch->id}");
@@ -336,6 +350,8 @@ class BranchManagementTest extends TestCase
             ->assertJsonPath('success', true)
             ->assertJsonPath('message', 'Lấy chi tiết chi nhánh thành công.')
             ->assertJsonPath('data.id', $branch->id);
+
+        $this->assertArrayNotHasKey('users', $response->json('data'));
     }
 }
 

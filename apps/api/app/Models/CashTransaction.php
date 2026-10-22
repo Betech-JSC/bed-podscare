@@ -19,6 +19,8 @@ class CashTransaction extends Model
         'transaction_code',
         'type',
         'category',
+        'reference_type',
+        'reference_id',
         'payment_method',
         'amount',
         'recipient_payer',
@@ -29,7 +31,8 @@ class CashTransaction extends Model
     protected function casts(): array
     {
         return [
-            'amount' => 'decimal:2',
+            'amount'       => 'decimal:2',
+            'reference_id' => 'integer',
         ];
     }
 

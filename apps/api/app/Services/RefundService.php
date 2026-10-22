@@ -31,7 +31,20 @@ class RefundService
     public function processRefund(Payment $payment, User $actor, array $params = []): Payment
     {
         return DB::transaction(function () use ($payment, $actor, $params) {
-            // 1. Kiểm tra trạng thái Payment
+            // 1. Khóa dòng Payment và RepairOrder ngay đầu transaction để chống hoàn tiền kép
+            $payment = Payment::with('repairOrder.customer')
+                ->whereKey($payment->id)
+                ->lockForUpdate()
+                ->firstOrFail();
+
+            $order = $payment->repair_order_id
+                ? RepairOrder::withoutGlobalScopes()->with('customer')->whereKey($payment->repair_order_id)->lockForUpdate()->first()
+                : $payment->repairOrder;
+
+            if ($order) {
+                $payment->setRelation('repairOrder', $order);
+            }
+
             if ($payment->status === 'refunded') {
                 throw new DomainException('Khoản thanh toán này đã được hoàn tiền trước đó.');
             }
@@ -40,7 +53,6 @@ class RefundService
                 throw new DomainException('Chỉ có thể hoàn tiền cho khoản thanh toán đã hoàn tất (paid).');
             }
 
-            $order = $payment->repairOrder;
             if (! $order) {
                 throw new DomainException('Không tìm thấy đơn hàng tương ứng với phiếu thanh toán.');
             }
@@ -63,52 +75,73 @@ class RefundService
             $tenantId = $order->tenant_id ?? $actor->tenant_id ?? 1;
             $branchId = $order->branch_id;
 
+            // Kiểm tra idempotency chống tạo trùng phiếu chi hoàn tiền
+            $existingRefundExpense = \App\Models\CashTransaction::withoutGlobalScopes()
+                ->where('tenant_id', $tenantId)
+                ->where('category', 'refund')
+                ->where(function ($q) use ($payment, $order) {
+                    $q->where(function ($sub) use ($payment) {
+                        $sub->where('reference_type', 'Payment')
+                            ->where('reference_id', $payment->id);
+                    })
+                    ->orWhere('notes', 'like', "%[Payment #{$payment->id}]%")
+                    ->orWhere('notes', 'like', "%đơn {$order->order_code}%");
+                })
+                ->lockForUpdate()
+                ->first();
+
             // 2. Bảo vệ két tiền mặt nếu hoàn tiền bằng tiền mặt
-            if ($refundMethod === 'cash') {
-                /** @var WorkShift|null $activeShift */
-                $activeShift = WorkShift::withoutGlobalScopes()
-                    ->where('tenant_id', $tenantId)
-                    ->where('branch_id', $branchId)
-                    ->where('status', 'open')
-                    ->lockForUpdate()
-                    ->first();
+            if (! $existingRefundExpense) {
+                if ($refundMethod === 'cash') {
+                    /** @var WorkShift|null $activeShift */
+                    $activeShift = WorkShift::withoutGlobalScopes()
+                        ->where('tenant_id', $tenantId)
+                        ->where('branch_id', $branchId)
+                        ->where('status', 'open')
+                        ->lockForUpdate()
+                        ->first();
 
-                if (! $activeShift) {
-                    throw new DomainException('Chi nhánh chưa mở ca trực. Không thể xuất tiền mặt từ két để hoàn tiền.');
+                    if (! $activeShift) {
+                        throw new DomainException('Chi nhánh chưa mở ca trực. Không thể xuất tiền mặt từ két để hoàn tiền.');
+                    }
+
+                    if ((float) $activeShift->expected_cash < $refundAmount) {
+                        throw new DomainException('Số dư két tiền mặt hiện tại không đủ để hoàn tiền.');
+                    }
+
+                    // Tạo phiếu chi tiền mặt loại expense danh mục refund
+                    $this->cashTransactionService->createExpense(
+                        $tenantId,
+                        $branchId,
+                        $actor->id,
+                        [
+                            'category'        => 'refund',
+                            'reference_type'  => 'Payment',
+                            'reference_id'    => $payment->id,
+                            'payment_method'  => 'cash',
+                            'amount'          => $refundAmount,
+                            'recipient_payer' => $order->customer?->name ?? 'Khách hàng',
+                            'notes'           => "Hoàn tiền mặt cho đơn {$order->order_code} [Payment #{$payment->id}]: {$refundReason}",
+                        ]
+                    );
+                } else {
+                    // Hoàn tiền qua chuyển khoản (bank_transfer)
+                    // Không làm biến động két tiền mặt chi nhánh
+                    $this->cashTransactionService->createExpense(
+                        $tenantId,
+                        $branchId,
+                        $actor->id,
+                        [
+                            'category'        => 'refund',
+                            'reference_type'  => 'Payment',
+                            'reference_id'    => $payment->id,
+                            'payment_method'  => 'bank_transfer',
+                            'amount'          => $refundAmount,
+                            'recipient_payer' => $order->customer?->name ?? 'Khách hàng',
+                            'notes'           => "Hoàn tiền ngân hàng cho đơn {$order->order_code} [Payment #{$payment->id}]" . ($transactionRef ? " (Ref: {$transactionRef})" : '') . ": {$refundReason}",
+                        ]
+                    );
                 }
-
-                if ((float) $activeShift->expected_cash < $refundAmount) {
-                    throw new DomainException('Số dư két tiền mặt hiện tại không đủ để hoàn tiền.');
-                }
-
-                // Tạo phiếu chi tiền mặt loại expense danh mục refund
-                $this->cashTransactionService->createExpense(
-                    $tenantId,
-                    $branchId,
-                    $actor->id,
-                    [
-                        'category' => 'refund',
-                        'payment_method' => 'cash',
-                        'amount' => $refundAmount,
-                        'recipient_payer' => $order->customer?->name ?? 'Khách hàng',
-                        'notes' => "Hoàn tiền mặt cho đơn {$order->order_code}: {$refundReason}",
-                    ]
-                );
-            } else {
-                // Hoàn tiền qua chuyển khoản (bank_transfer)
-                // Không làm biến động két tiền mặt chi nhánh
-                $this->cashTransactionService->createExpense(
-                    $tenantId,
-                    $branchId,
-                    $actor->id,
-                    [
-                        'category' => 'refund',
-                        'payment_method' => 'bank_transfer',
-                        'amount' => $refundAmount,
-                        'recipient_payer' => $order->customer?->name ?? 'Khách hàng',
-                        'notes' => "Hoàn tiền ngân hàng cho đơn {$order->order_code}" . ($transactionRef ? " (Ref: {$transactionRef})" : '') . ": {$refundReason}",
-                    ]
-                );
             }
 
             // 3. Tự động hoàn kho linh kiện (import_return) idempotent
@@ -124,9 +157,10 @@ class RefundService
                 ]);
 
             // 5. Khấu trừ doanh số tích lũy của khách hàng
-            $customer = $order->customer;
+            $customer = $order->customer_id
+                ? Customer::withoutGlobalScopes()->whereKey($order->customer_id)->lockForUpdate()->first()
+                : $order->customer;
             if ($customer) {
-                $customer->refresh();
                 $customer->total_spent = max(0, (float) $customer->total_spent - $refundAmount);
                 if ($refundAmount >= (float) $order->total_price || $refundAmount >= $maxRefundable) {
                     $customer->orders_count = max(0, (int) $customer->orders_count - 1);

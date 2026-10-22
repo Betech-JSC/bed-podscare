@@ -49,11 +49,11 @@ class CashTransactionController extends Controller
         }
 
         if ($fromDate = $request->input('from_date')) {
-            $query->whereDate('created_at', '>=', $fromDate);
+            $query->where('created_at', '>=', \Illuminate\Support\Carbon::parse($fromDate)->startOfDay());
         }
 
         if ($toDate = $request->input('to_date')) {
-            $query->whereDate('created_at', '<=', $toDate);
+            $query->where('created_at', '<=', \Illuminate\Support\Carbon::parse($toDate)->endOfDay());
         }
 
         $transactions = $query->latest('id')->paginate($request->input('per_page', 15));

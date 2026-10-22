@@ -21,7 +21,16 @@ class QcController extends Controller
      */
     public function index(Request $request): JsonResponse
     {
+        $user = $request->user();
         $query = QcInspection::with(['repairOrder.customer', 'inspector:id,name', 'checklistResults']);
+
+        if ($user && ! in_array($user->role, ['admin', 'super_admin'], true) && $user->branch_id) {
+            $query->whereHas('repairOrder', function ($q) use ($user) {
+                $q->where('branch_id', $user->branch_id);
+            });
+        } else {
+            $query->whereHas('repairOrder');
+        }
 
         if ($orderId = $request->input('repair_order_id')) {
             $query->where('repair_order_id', $orderId);
@@ -61,6 +70,10 @@ class QcController extends Controller
 
         return DB::transaction(function () use ($request, $validated) {
             $order = RepairOrder::findOrFail($validated['repair_order_id']);
+            $user = $request->user();
+            if ($user && ! in_array($user->role, ['admin', 'super_admin'], true) && $user->branch_id && (int) $order->branch_id !== (int) $user->branch_id) {
+                return $this->failure('Bạn không có quyền nộp biên bản QC cho đơn hàng thuộc chi nhánh khác.', 403);
+            }
 
             $inspection = QcInspection::create([
                 'repair_order_id' => $order->id,
@@ -70,12 +83,19 @@ class QcController extends Controller
                 'rework_reason'   => $validated['rework_reason'] ?? null,
             ]);
 
+            $now = now();
+            $resultRows = [];
             foreach ($validated['criteria'] as $item) {
-                QcChecklistResult::create([
+                $resultRows[] = [
                     'qc_inspection_id' => $inspection->id,
                     'criterion'        => $item['criterion'],
-                    'is_passed'        => $item['is_passed'],
-                ]);
+                    'is_passed'        => (bool) $item['is_passed'],
+                    'created_at'       => $now,
+                    'updated_at'       => $now,
+                ];
+            }
+            if (! empty($resultRows)) {
+                QcChecklistResult::insert($resultRows);
             }
 
             // Cập nhật trạng thái đơn sửa chữa
@@ -97,21 +117,24 @@ class QcController extends Controller
                     'action_url' => "/repairs?id={$order->id}",
                 ]);
 
-                OrderOperationalEvent::dispatch(
-                    $notif->id,
-                    $order->id,
-                    $order->order_code,
-                    $notif->title,
-                    $notif->message,
-                    'success',
-                    now()->toIso8601String(),
-                    "/repairs?id={$order->id}",
-                    $order->branch_id,
-                    'cskh',
-                    null,
-                    'qc_action',
-                    'qc.passed'
-                );
+                $eventTimestamp = now()->toIso8601String();
+                DB::afterCommit(function () use ($notif, $order, $eventTimestamp) {
+                    OrderOperationalEvent::dispatch(
+                        $notif->id,
+                        $order->id,
+                        $order->order_code,
+                        $notif->title,
+                        $notif->message,
+                        'success',
+                        $eventTimestamp,
+                        "/repairs?id={$order->id}",
+                        $order->branch_id,
+                        'cskh',
+                        null,
+                        'qc_action',
+                        'qc.passed'
+                    );
+                });
             } else {
                 $order->update([
                     'status'          => 'rework_needed',
@@ -129,21 +152,24 @@ class QcController extends Controller
                     'action_url' => "/repairs?id={$order->id}",
                 ]);
 
-                OrderOperationalEvent::dispatch(
-                    $notif->id,
-                    $order->id,
-                    $order->order_code,
-                    $notif->title,
-                    $notif->message,
-                    'danger',
-                    now()->toIso8601String(),
-                    "/repairs?id={$order->id}",
-                    $order->branch_id,
-                    'technician',
-                    $order->technician_id,
-                    'qc_action',
-                    'qc.rework_needed'
-                );
+                $eventTimestamp = now()->toIso8601String();
+                DB::afterCommit(function () use ($notif, $order, $eventTimestamp) {
+                    OrderOperationalEvent::dispatch(
+                        $notif->id,
+                        $order->id,
+                        $order->order_code,
+                        $notif->title,
+                        $notif->message,
+                        'danger',
+                        $eventTimestamp,
+                        "/repairs?id={$order->id}",
+                        $order->branch_id,
+                        'technician',
+                        $order->technician_id,
+                        'qc_action',
+                        'qc.rework_needed'
+                    );
+                });
             }
 
             AuditLog::create([

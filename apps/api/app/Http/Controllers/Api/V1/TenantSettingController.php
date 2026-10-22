@@ -21,7 +21,8 @@ class TenantSettingController extends Controller
             return $this->failure('Chưa xác thực danh tính.', 401);
         }
 
-        $tenant = $user->tenant?->fresh();
+        $user->loadMissing('tenant');
+        $tenant = $user->tenant;
         if (! $tenant && $user->role === 'super_admin') {
             $tenant = Tenant::where('code', 'fixo-master')->first() ?? Tenant::first();
         }
@@ -61,6 +62,7 @@ class TenantSettingController extends Controller
             return $this->failure('Chưa xác thực danh tính.', 401);
         }
 
+        $user->loadMissing('tenant');
         $tenant = $user->tenant;
         if (! $tenant) {
             return $this->failure('Không tìm thấy thông tin gian hàng.', 404);
@@ -127,6 +129,7 @@ class TenantSettingController extends Controller
             return $this->failure('Chưa xác thực danh tính.', 401);
         }
 
+        $user->loadMissing('tenant');
         $tenant = $user->tenant;
         if (! $tenant) {
             return $this->failure('Không tìm thấy thông tin gian hàng.', 404);
@@ -310,6 +313,7 @@ class TenantSettingController extends Controller
             return $this->failure('Chưa xác thực danh tính.', 401);
         }
 
+        $user->loadMissing('tenant');
         $tenant = $user->tenant;
         if (! $tenant) {
             return $this->failure('Không tìm thấy thông tin gian hàng.', 404);

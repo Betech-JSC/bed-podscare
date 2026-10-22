@@ -26,6 +26,7 @@ class TelegramAiAssistantService
     public static function resolveBranchDisplay(TelegramRecipient $recipient): string
     {
         if ($recipient->branch_id !== null) {
+            $recipient->loadMissing('branch');
             $branchName = trim((string) ($recipient->branch?->name ?? ''));
             if ($branchName === '') {
                 $branchName = trim((string) Branch::withoutGlobalScopes()

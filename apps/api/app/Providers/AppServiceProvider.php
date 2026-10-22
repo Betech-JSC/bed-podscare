@@ -34,6 +34,11 @@ class AppServiceProvider extends ServiceProvider
         config(['app.timezone' => 'Asia/Ho_Chi_Minh']);
         date_default_timezone_set('Asia/Ho_Chi_Minh');
 
+        \Illuminate\Database\Eloquent\Model::preventLazyLoading(! $this->app->isProduction());
+        \Laravel\Sanctum\Sanctum::usePersonalAccessTokenModel(\App\Models\PersonalAccessToken::class);
+        \App\Models\Scopes\TenantScope::clearCache();
+        \App\Models\SystemSetting::clearCache();
+
         if ($this->app->runningUnitTests() && ! self::$testingTelegramMemoryColumnsEnsured) {
             try {
                 if (\Illuminate\Support\Facades\Schema::hasTable('telegram_recipients')) {

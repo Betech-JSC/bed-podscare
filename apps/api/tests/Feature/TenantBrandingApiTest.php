@@ -328,6 +328,7 @@ class TenantBrandingApiTest extends TestCase
         \Illuminate\Support\Facades\DB::table('tenants')
             ->where('id', $this->tenantA->id)
             ->update(['logo_url' => "/storage/storage/tenants/{$this->tenantA->id}/branding/logo_dup.png"]);
+        $this->adminA->unsetRelation('tenant');
 
         $resDup = $this->actingAs($this->adminA)
             ->getJson('http://localhost:8000/api/v1/tenant/settings');

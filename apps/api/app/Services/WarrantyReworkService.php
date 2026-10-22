@@ -29,8 +29,11 @@ class WarrantyReworkService
     public function createReworkOrderFromClaim(WarrantyClaim $claim, User $actor, array $params = []): RepairOrder
     {
         return DB::transaction(function () use ($claim, $actor, $params) {
+            $claim->loadMissing('warranty.repairOrder');
+
             /** @var Warranty $warranty */
-            $warranty = $claim->warranty ?? Warranty::findOrFail($claim->warranty_id);
+            $warranty = $claim->warranty ?? Warranty::with('repairOrder')->findOrFail($claim->warranty_id);
+            $warranty->loadMissing('repairOrder');
 
             // 1. Kiểm tra tính hợp lệ của sổ bảo hành
             if ($warranty->status === 'revoked') {
@@ -95,7 +98,9 @@ class WarrantyReworkService
                 ]
             );
 
-            app(\App\Services\TelegramNotificationService::class)->notifyNewOrder($reworkOrder);
+            DB::afterCommit(function () use ($reworkOrder) {
+                app(\App\Services\TelegramNotificationService::class)->notifyNewOrder($reworkOrder);
+            });
 
             return $reworkOrder;
         });

@@ -27,20 +27,20 @@ trait BelongsToTenant
                 $user = Auth::user() ?? (app()->bound('request') ? request()?->user() : null);
                 if ($user && ! empty($user->tenant_id)) {
                     $model->tenant_id = $user->tenant_id;
-                } elseif (! empty($model->branch_id)) {
-                    $branch = Branch::withoutGlobalScope(TenantScope::class)->find($model->branch_id);
-                    if ($branch && ! empty($branch->tenant_id)) {
-                        $model->tenant_id = $branch->tenant_id;
-                    }
                 } elseif (! empty($model->created_by_user_id)) {
                     $creator = User::withoutGlobalScope(TenantScope::class)->find($model->created_by_user_id);
                     if ($creator && ! empty($creator->tenant_id)) {
                         $model->tenant_id = $creator->tenant_id;
                     }
+                } elseif (! empty($model->branch_id)) {
+                    $branch = Branch::withoutGlobalScope(TenantScope::class)->find($model->branch_id);
+                    if ($branch && ! empty($branch->tenant_id)) {
+                        $model->tenant_id = $branch->tenant_id;
+                    }
                 }
 
                 if (empty($model->tenant_id)) {
-                    $masterTenantId = Tenant::where('code', 'fixo-master')->value('id');
+                    $masterTenantId = TenantScope::resolveMasterTenantId();
                     if ($masterTenantId) {
                         $model->tenant_id = $masterTenantId;
                     }

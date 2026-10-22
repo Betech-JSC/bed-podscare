@@ -10,20 +10,50 @@ use App\Models\Scopes\TenantScope;
 use App\Models\SubscriptionPlan;
 use App\Models\Tenant;
 use App\Models\User;
+use Illuminate\Support\Facades\DB;
 
 class QuotaService
 {
+    /**
+     * Bộ nhớ đệm tĩnh cho gói cước trong vòng đời request.
+     *
+     * @var array<string, SubscriptionPlan>
+     */
+    protected static array $planCache = [];
+
+    /**
+     * Xóa bộ nhớ đệm gói cước.
+     */
+    public static function clearCache(): void
+    {
+        self::$planCache = [];
+    }
+
+    /**
+     * Khóa dòng Tenant nếu đang trong DB transaction để chống race condition vượt hạn mức (TOCTOU).
+     */
+    protected function lockTenantIfInTransaction(Tenant $tenant): void
+    {
+        if (DB::transactionLevel() > 0 && $tenant->id) {
+            Tenant::withoutGlobalScopes()->whereKey($tenant->id)->lockForUpdate()->first();
+        }
+    }
+
     /**
      * Tìm thông tin gói cước của Tenant.
      */
     public function resolvePlan(Tenant $tenant): SubscriptionPlan
     {
-        $planId = $tenant->current_plan_id ?? $tenant->plan ?? 'trial';
+        $planId = (string) ($tenant->current_plan_id ?? $tenant->plan ?? 'trial');
+
+        if (isset(self::$planCache[$planId])) {
+            return self::$planCache[$planId];
+        }
 
         $plan = SubscriptionPlan::find($planId);
 
-        if (! $plan) {
-            $plan = SubscriptionPlan::find('trial');
+        if (! $plan && $planId !== 'trial') {
+            $plan = self::$planCache['trial'] ?? SubscriptionPlan::find('trial');
         }
 
         // Fallback an toàn nếu chưa seed
@@ -37,6 +67,8 @@ class QuotaService
                 'max_orders_per_month' => 50,
             ]);
         }
+
+        self::$planCache[$planId] = $plan;
 
         return $plan;
     }
@@ -62,6 +94,7 @@ class QuotaService
      */
     public function canCreateBranch(Tenant $tenant): bool
     {
+        $this->lockTenantIfInTransaction($tenant);
         $plan = $this->resolvePlan($tenant);
 
         if ($plan->max_branches === null || $plan->max_branches === -1) {
@@ -78,6 +111,7 @@ class QuotaService
      */
     public function canCreateUser(Tenant $tenant): bool
     {
+        $this->lockTenantIfInTransaction($tenant);
         $plan = $this->resolvePlan($tenant);
 
         if ($plan->max_users === null || $plan->max_users === -1) {
@@ -96,6 +130,7 @@ class QuotaService
      */
     public function canCreateOrder(Tenant $tenant): bool
     {
+        $this->lockTenantIfInTransaction($tenant);
         $plan = $this->resolvePlan($tenant);
 
         if ($plan->max_orders_per_month === null || $plan->max_orders_per_month === -1) {

@@ -484,6 +484,11 @@ class TelegramNotificationService
                 ->get("https://api.telegram.org/bot{$token}/getUpdates", $queryParams);
 
             if ($response->status() === 409) {
+                if (app()->isProduction()) {
+                    Log::warning('Telegram syncUpdates skipped deleteWebhook in production (409 Conflict: webhook is active).');
+                    return 0;
+                }
+
                 Http::connectTimeout(5)
                     ->timeout(5)
                     ->withOptions(['force_ip_resolve' => 'v4'])
@@ -575,17 +580,19 @@ class TelegramNotificationService
                 return 0;
             }
 
-            $hasPending = TelegramRecipient::query()
-                ->where('tenant_id', $tenantId)
-                ->where('is_active', true)
-                ->where(function ($q) {
-                    $q->whereNull('telegram_chat_id')
-                        ->orWhere('telegram_chat_id', '');
-                })
-                ->exists();
+            if (! app()->isProduction()) {
+                $hasPending = TelegramRecipient::query()
+                    ->where('tenant_id', $tenantId)
+                    ->where('is_active', true)
+                    ->where(function ($q) {
+                        $q->whereNull('telegram_chat_id')
+                            ->orWhere('telegram_chat_id', '');
+                    })
+                    ->exists();
 
-            if ($hasPending) {
-                $this->syncUpdates((int) $tenantId);
+                if ($hasPending) {
+                    $this->syncUpdates((int) $tenantId);
+                }
             }
 
             $recipients = TelegramRecipient::query()

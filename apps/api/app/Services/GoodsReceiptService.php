@@ -176,14 +176,29 @@ class GoodsReceiptService
             ]);
 
             // 5. Tạo chi tiết GoodsReceiptItem & Cập nhật MAC & Kho
-            foreach ($preparedItems as $prep) {
-                GoodsReceiptItem::create([
+            $branchParts = BranchPart::withoutGlobalScopes()
+                ->where('branch_id', $branchId)
+                ->whereIn('part_id', $partIds)
+                ->orderBy('part_id', 'asc')
+                ->lockForUpdate()
+                ->get()
+                ->keyBy('part_id');
+
+            $inventoryCodes = $this->generateInventoryCodes(count($preparedItems));
+            $now = now();
+            $receiptItemRows = [];
+            $inventoryTxRows = [];
+
+            foreach ($preparedItems as $idx => $prep) {
+                $receiptItemRows[] = [
                     'goods_receipt_id' => $receipt->id,
                     'part_id'          => $prep['part_id'],
                     'quantity'         => $prep['quantity'],
                     'unit_price'       => $prep['unit_price'],
                     'total_price'      => $prep['total_price'],
-                ]);
+                    'created_at'       => $now,
+                    'updated_at'       => $now,
+                ];
 
                 /** @var Part $part */
                 $part = $parts->get($prep['part_id']);
@@ -205,11 +220,7 @@ class GoodsReceiptService
                 $part->save();
 
                 // Cập nhật tồn kho theo chi nhánh (branch_parts)
-                $branchPart = BranchPart::withoutGlobalScopes()
-                    ->where('branch_id', $branchId)
-                    ->where('part_id', $part->id)
-                    ->lockForUpdate()
-                    ->first();
+                $branchPart = $branchParts->get($part->id);
 
                 if (! $branchPart) {
                     $branchPart = BranchPart::create([
@@ -218,14 +229,15 @@ class GoodsReceiptService
                         'stock_quantity'  => $inQty,
                         'min_stock_alert' => $part->min_stock_alert ?? 5,
                     ]);
+                    $branchParts->put($part->id, $branchPart);
                 } else {
                     $branchPart->stock_quantity = (int) $branchPart->stock_quantity + $inQty;
                     $branchPart->save();
                 }
 
                 // Ghi nhận giao dịch kho inventory_transactions
-                InventoryTransaction::create([
-                    'transaction_code'   => $this->generateInventoryCode(),
+                $inventoryTxRows[] = [
+                    'transaction_code'   => $inventoryCodes[$idx],
                     'part_id'            => $part->id,
                     'branch_id'          => $branchId,
                     'repair_order_id'    => null,
@@ -235,7 +247,17 @@ class GoodsReceiptService
                     'supplier_name'      => $supplier->name,
                     'notes'              => "Nhập kho linh kiện theo phiếu {$receiptCode}",
                     'created_by_user_id' => $userId,
-                ]);
+                    'created_at'         => $now,
+                    'updated_at'         => $now,
+                ];
+            }
+
+            if (! empty($receiptItemRows)) {
+                GoodsReceiptItem::insert($receiptItemRows);
+            }
+
+            if (! empty($inventoryTxRows)) {
+                InventoryTransaction::insert($inventoryTxRows);
             }
 
             // 6. Ghi nhận công nợ NCC nếu còn thiếu tiền (debt_amount > 0)
@@ -281,16 +303,51 @@ class GoodsReceiptService
     }
 
     /**
+     * Sinh danh sách mã giao dịch kho duy nhất theo lô (giảm N câu query exists xuống 1 câu whereIn).
+     *
+     * @return list<string>
+     */
+    protected function generateInventoryCodes(int $count): array
+    {
+        if ($count <= 0) {
+            return [];
+        }
+
+        $prefix = 'INV-' . date('ymd') . '-';
+        $codes = [];
+
+        while (count($codes) < $count) {
+            $candidates = [];
+            $needed = $count - count($codes);
+            while (count($candidates) < $needed) {
+                $candidate = $prefix . strtoupper(Str::random(6));
+                if (! isset($codes[$candidate]) && ! isset($candidates[$candidate])) {
+                    $candidates[$candidate] = true;
+                }
+            }
+
+            $candidateList = array_keys($candidates);
+            $existing = InventoryTransaction::whereIn('transaction_code', $candidateList)
+                ->pluck('transaction_code')
+                ->all();
+            $existingMap = array_flip($existing);
+
+            foreach ($candidateList as $c) {
+                if (! isset($existingMap[$c])) {
+                    $codes[$c] = true;
+                }
+            }
+        }
+
+        return array_keys($codes);
+    }
+
+    /**
      * Sinh mã giao dịch kho: INV-yymmdd-XXXX.
      */
     protected function generateInventoryCode(): string
     {
-        $prefix = 'INV-' . date('ymd') . '-';
-        do {
-            $code = $prefix . strtoupper(Str::random(4));
-        } while (InventoryTransaction::where('transaction_code', $code)->exists());
-
-        return $code;
+        return $this->generateInventoryCodes(1)[0];
     }
 
     /**

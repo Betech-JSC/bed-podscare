@@ -56,9 +56,15 @@ class TrackingController extends Controller
         }
 
         // Nếu không có số điện thoại hoặc không khớp: Che mờ (mask) thông tin PII
-        if (! $isVerified && $order->customer) {
-            $order->customer->name = PiiHelper::maskName($order->customer->name);
-            $order->customer->phone = PiiHelper::maskPhone($order->customer->phone);
+        if (! $isVerified) {
+            if ($order->customer) {
+                $order->customer->name = PiiHelper::maskName($order->customer->name);
+                $order->customer->phone = PiiHelper::maskPhone($order->customer->phone);
+            }
+
+            if (! empty($order->shipping_address)) {
+                $order->shipping_address = PiiHelper::maskAddress($order->shipping_address);
+            }
 
             if ($order->shipments) {
                 foreach ($order->shipments as $shipment) {
@@ -68,6 +74,15 @@ class TrackingController extends Controller
                 }
             }
         }
+
+        // Ẩn các trường ghi chú kỹ thuật nội bộ trên cổng tra cứu công khai
+        $order->makeHidden([
+            'repair_note',
+            'test_note',
+            'parts_needed',
+            'special_parts_needed',
+            'qc_note',
+        ]);
 
         // Tính toán các bước tiến độ (6 bước quy chuẩn)
         $timeline = [

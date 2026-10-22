@@ -17,8 +17,11 @@ class OrderCodeService
      */
     public function generate(int $branchId, ?DateTimeInterface $date = null): string
     {
-        // 1. Xác định mã chi nhánh: ưu tiên $branch->code ?? $branch->id, nếu là số vd 1 thì là '1'
-        $branch = Branch::find($branchId);
+        // 1. Xác định mã chi nhánh: ưu tiên $branch->code ?? $branch->id, đồng thời khóa dòng chi nhánh để chống race condition
+        $branch = Branch::withoutGlobalScopes()
+            ->whereKey($branchId)
+            ->lockForUpdate()
+            ->first();
         $rawCode = !empty($branch?->code) ? (string) $branch->code : (string) ($branch?->id ?? $branchId);
         $branchCode = trim($rawCode);
 
@@ -28,10 +31,11 @@ class OrderCodeService
         // 3. Tiền tố: PC{branch_code}{DDMMYY}
         $prefix = "PC{$branchCode}{$dateFormatted}";
 
-        // 4. Tìm đơn hàng có mã lớn nhất trong ngày tại chi nhánh đó với lockForUpdate()
-        $lastOrder = RepairOrder::where('branch_id', $branchId)
+        // 4. Tìm đơn hàng có mã lớn nhất trong ngày tại chi nhánh đó với lockForUpdate() và sắp xếp theo độ dài trước để vượt mốc 99 đơn/ngày chính xác
+        $lastOrder = RepairOrder::withoutGlobalScopes()
+            ->where('branch_id', $branchId)
             ->where('order_code', 'like', "{$prefix}%")
-            ->orderByDesc('order_code')
+            ->orderByRaw('LENGTH(order_code) DESC, order_code DESC')
             ->lockForUpdate()
             ->first();
 
@@ -56,7 +60,7 @@ class OrderCodeService
         $orderCode = "{$prefix}{$stt}";
 
         // 7. Phòng vệ kép đảm bảo không bị duplicate key trong trường hợp hiếm gặp
-        while (RepairOrder::where('order_code', $orderCode)->exists()) {
+        while (RepairOrder::withoutGlobalScopes()->where('order_code', $orderCode)->exists()) {
             $nextSeq++;
             $stt = $nextSeq >= 100
                 ? (string) $nextSeq

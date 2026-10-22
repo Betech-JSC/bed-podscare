@@ -67,7 +67,16 @@ class PaymentController extends Controller
 
         if ($date = $request->input('date')) {
             if (is_string($date) && preg_match('/^\d{4}-\d{2}-\d{2}$/', $date)) {
-                $query->whereDate(DB::raw('COALESCE(paid_at, created_at)'), $date);
+                $startOfDay = Carbon::parse($date)->startOfDay();
+                $endOfDay = Carbon::parse($date)->endOfDay();
+
+                $query->where(function ($dq) use ($startOfDay, $endOfDay) {
+                    $dq->whereBetween('paid_at', [$startOfDay, $endOfDay])
+                        ->orWhere(function ($fallbackQ) use ($startOfDay, $endOfDay) {
+                            $fallbackQ->whereNull('paid_at')
+                                ->whereBetween('created_at', [$startOfDay, $endOfDay]);
+                        });
+                });
             }
         }
 
@@ -111,7 +120,7 @@ class PaymentController extends Controller
         $validated['amount'] = RepairOrder::normalizeVndAmount($validated['amount']);
 
         return DB::transaction(function () use ($request, $validated) {
-            $order = RepairOrder::findOrFail($validated['repair_order_id']);
+            $order = RepairOrder::with(['customer', 'warranties'])->lockForUpdate()->findOrFail($validated['repair_order_id']);
 
             $user = $request->user();
             if ($user && ! in_array($user->role, ['admin', 'super_admin'], true) && ! empty($user->branch_id) && (int) $order->branch_id !== (int) $user->branch_id) {
@@ -122,7 +131,7 @@ class PaymentController extends Controller
                 return $this->failure('Đơn hàng đã hoàn tất hoặc đã được thanh toán.', 422);
             }
 
-            if ($order->payments()->where('status', 'paid')->exists()) {
+            if ($order->payments()->where('status', 'paid')->lockForUpdate()->exists()) {
                 return $this->failure('Đơn hàng đã hoàn tất hoặc đã có phiếu thanh toán thành công.', 422);
             }
 
@@ -254,11 +263,7 @@ class PaymentController extends Controller
                     if (! empty($order->claim_id)) {
                         $claimQuery->orWhere('id', $order->claim_id);
                     }
-                    $claimUpdates = ['status' => 'resolved'];
-                    if (\Illuminate\Support\Facades\Schema::hasColumn('warranty_claims', 'resolved_at')) {
-                        $claimUpdates['resolved_at'] = $now;
-                    }
-                    $claimQuery->update($claimUpdates);
+                    $claimQuery->update(['status' => 'resolved']);
 
                     // Đơn bảo hành: không tạo chồng sổ bảo hành mới và không cộng trùng orders_count
                     $customer = $order->customer;
@@ -266,12 +271,13 @@ class PaymentController extends Controller
                         $customer->increment('total_spent', $validated['amount']);
                     }
                 } else {
-                    // Kích hoạt bảo hành điện tử tự động cho đơn thường
-                    if ($warrantyDays > 0 && ! $order->warranties()->exists()) {
+                    // Kích hoạt bảo hành điện tử tự động cho đơn thường (khử N+1 bằng collection đã eager-load)
+                    $existingWarranties = $order->warranties;
+                    if ($warrantyDays > 0 && $existingWarranties->isEmpty()) {
                         do {
                             $randomWr = str_pad((string) random_int(100, 999999), 6, '0', STR_PAD_LEFT);
                             $wrCode = "FX{$year}-WR-{$randomWr}";
-                        } while (\App\Models\Warranty::where('warranty_code', $wrCode)->exists());
+                        } while (\App\Models\Warranty::withoutGlobalScopes()->where('warranty_code', $wrCode)->exists());
 
                         \App\Models\Warranty::create([
                             'warranty_code'   => $wrCode,
@@ -284,8 +290,8 @@ class PaymentController extends Controller
                             'end_date'        => $now->copy()->addDays($warrantyDays)->toDateString(),
                             'status'          => 'active',
                         ]);
-                    } elseif ($order->warranties()->exists()) {
-                        foreach ($order->warranties as $warranty) {
+                    } elseif ($existingWarranties->isNotEmpty()) {
+                        foreach ($existingWarranties as $warranty) {
                             $warranty->update([
                                 'status'        => 'active',
                                 'start_date'    => $now->toDateString(),
@@ -295,11 +301,17 @@ class PaymentController extends Controller
                         }
                     }
 
-                    // Tích lũy doanh số khách hàng theo số tiền thực thu
+                    // Tích lũy doanh số khách hàng theo số tiền thực thu (1 câu lệnh UPDATE nguyên tử)
                     $customer = $order->customer;
                     if ($customer) {
-                        $customer->increment('orders_count');
-                        $customer->increment('total_spent', $validated['amount']);
+                        $amountDelta = (float) $validated['amount'];
+                        \App\Models\Customer::whereKey($customer->id)->update([
+                            'orders_count' => DB::raw('COALESCE(orders_count, 0) + 1'),
+                            'total_spent'  => DB::raw('COALESCE(total_spent, 0) + ' . $amountDelta),
+                            'updated_at'   => $now,
+                        ]);
+                        $customer->orders_count = (int) ($customer->orders_count ?? 0) + 1;
+                        $customer->total_spent = (float) ($customer->total_spent ?? 0) + $amountDelta;
                     }
                 }
             } else {
@@ -338,11 +350,13 @@ class PaymentController extends Controller
     public function vietqr(Request $request, int|string $id): JsonResponse
     {
         $payment = Payment::with('repairOrder.tenant')->findOrFail($id);
-        $this->authorizePaymentAccess($payment, $request->user());
+        $user = $request->user();
+        $user?->loadMissing('tenant');
+        $this->authorizePaymentAccess($payment, $user);
         $order = $payment->repairOrder;
 
         // Ưu tiên lấy thông tin tài khoản ngân hàng của Tenant thuộc đơn hàng
-        $tenant = $order?->tenant ?? $request->user()?->tenant;
+        $tenant = $order?->tenant ?? $user?->tenant;
 
         $hasTenantBank = $tenant && ! empty($tenant->bank_account_number) && ! empty($tenant->bank_code);
 
@@ -379,6 +393,14 @@ class PaymentController extends Controller
     }
 
     /**
+     * Alias duyệt thanh toán tiền mặt / chuyển khoản.
+     */
+    public function confirmCash(Request $request, int|string $id): JsonResponse
+    {
+        return $this->confirm($request, $id);
+    }
+
+    /**
      * Xác nhận duyệt phiếu thanh toán chuyển khoản (CSKH / Thu ngân / Admin).
      */
     public function confirm(Request $request, int|string $id): JsonResponse
@@ -393,23 +415,28 @@ class PaymentController extends Controller
             return $this->failure('Bạn không có quyền duyệt thanh toán này.', 403);
         }
 
-        $payment = Payment::with('repairOrder')->findOrFail($id);
-        $this->authorizePaymentAccess($payment, $user);
-
-        if ($payment->status === 'paid') {
-            return $this->failure('Phiếu thanh toán này đã được duyệt thanh toán trước đó.', 422);
-        }
-
-        if ($payment->status !== 'pending') {
-            return $this->failure('Chỉ có thể duyệt phiếu thanh toán đang ở trạng thái chờ xử lý (pending).', 422);
-        }
-
         $validated = $request->validate([
             'transaction_ref' => 'nullable|string|max:100',
             'notes'           => 'nullable|string|max:500',
         ]);
 
-        return DB::transaction(function () use ($request, $payment, $user, $validated) {
+        return DB::transaction(function () use ($request, $id, $user, $validated) {
+            $payment = Payment::with(['repairOrder.customer', 'repairOrder.warranties'])->lockForUpdate()->findOrFail($id);
+            $this->authorizePaymentAccess($payment, $user);
+
+            if ($payment->status === 'paid') {
+                return $this->failure('Phiếu thanh toán này đã được duyệt thanh toán trước đó.', 422);
+            }
+
+            if ($payment->status !== 'pending') {
+                return $this->failure('Chỉ có thể duyệt phiếu thanh toán đang ở trạng thái chờ xử lý (pending).', 422);
+            }
+
+            $order = $payment->repair_order_id
+                ? RepairOrder::with(['customer', 'warranties'])->lockForUpdate()->find($payment->repair_order_id)
+                : $payment->repairOrder;
+            $order?->loadMissing(['customer', 'warranties']);
+
             $now = Carbon::now();
             $payment->status = 'paid';
             $payment->paid_at = $now;
@@ -424,7 +451,6 @@ class PaymentController extends Controller
 
             $payment->save();
 
-            $order = $payment->repairOrder;
             if ($order) {
                 // Đồng bộ vào sổ quỹ và két ca trực khi duyệt thanh toán tiền mặt
                 if ($payment->payment_method === 'cash') {
@@ -486,11 +512,7 @@ class PaymentController extends Controller
                     if (! empty($order->claim_id)) {
                         $claimQuery->orWhere('id', $order->claim_id);
                     }
-                    $claimUpdates = ['status' => 'resolved'];
-                    if (\Illuminate\Support\Facades\Schema::hasColumn('warranty_claims', 'resolved_at')) {
-                        $claimUpdates['resolved_at'] = $now;
-                    }
-                    $claimQuery->update($claimUpdates);
+                    $claimQuery->update(['status' => 'resolved']);
 
                     // Đơn bảo hành: không tạo chồng sổ bảo hành mới và không cộng trùng orders_count
                     $customer = $order->customer;
@@ -498,14 +520,15 @@ class PaymentController extends Controller
                         $customer->increment('total_spent', $payment->amount);
                     }
                 } else {
-                    // Kích hoạt bảo hành điện tử tự động nếu chưa có
+                    // Kích hoạt bảo hành điện tử tự động nếu chưa có (khử N+1 bằng collection đã eager-load)
                     $warrantyDays = $order->warranty_terms_days ?: 90;
                     $year = date('y');
-                    if ($warrantyDays > 0 && ! $order->warranties()->exists()) {
+                    $existingWarranties = $order->warranties;
+                    if ($warrantyDays > 0 && $existingWarranties->isEmpty()) {
                         do {
                             $randomWr = str_pad((string) random_int(100, 999999), 6, '0', STR_PAD_LEFT);
                             $wrCode = "FX{$year}-WR-{$randomWr}";
-                        } while (\App\Models\Warranty::where('warranty_code', $wrCode)->exists());
+                        } while (\App\Models\Warranty::withoutGlobalScopes()->where('warranty_code', $wrCode)->exists());
 
                         \App\Models\Warranty::create([
                             'warranty_code'   => $wrCode,
@@ -518,8 +541,8 @@ class PaymentController extends Controller
                             'end_date'        => $now->copy()->addDays($warrantyDays)->toDateString(),
                             'status'          => 'active',
                         ]);
-                    } elseif ($order->warranties()->exists()) {
-                        foreach ($order->warranties as $warranty) {
+                    } elseif ($existingWarranties->isNotEmpty()) {
+                        foreach ($existingWarranties as $warranty) {
                             $warranty->update([
                                 'status'        => 'active',
                                 'start_date'    => $now->toDateString(),
@@ -529,11 +552,17 @@ class PaymentController extends Controller
                         }
                     }
 
-                    // Tích lũy doanh số khách hàng theo số tiền thực thu
+                    // Tích lũy doanh số khách hàng theo số tiền thực thu (1 câu lệnh UPDATE nguyên tử)
                     $customer = $order->customer;
                     if ($customer) {
-                        $customer->increment('orders_count');
-                        $customer->increment('total_spent', $payment->amount);
+                        $amountDelta = (float) $payment->amount;
+                        \App\Models\Customer::whereKey($customer->id)->update([
+                            'orders_count' => DB::raw('COALESCE(orders_count, 0) + 1'),
+                            'total_spent'  => DB::raw('COALESCE(total_spent, 0) + ' . $amountDelta),
+                            'updated_at'   => $now,
+                        ]);
+                        $customer->orders_count = (int) ($customer->orders_count ?? 0) + 1;
+                        $customer->total_spent = (float) ($customer->total_spent ?? 0) + $amountDelta;
                     }
                 }
             }
@@ -635,7 +664,9 @@ class PaymentController extends Controller
             return;
         }
 
-        $order = $payment->repairOrder()->withoutGlobalScopes()->first();
+        $order = ($payment->relationLoaded('repairOrder') && $payment->repairOrder !== null)
+            ? $payment->repairOrder
+            : $payment->repairOrder()->withoutGlobalScopes()->first();
         if (! $order) {
             abort(404, 'Không tìm thấy đơn hàng liên kết với phiếu thanh toán.');
         }

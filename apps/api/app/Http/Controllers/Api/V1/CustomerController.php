@@ -84,10 +84,20 @@ class CustomerController extends Controller
         $validated['phone'] = PhoneHelper::normalizeForStorage($validated['phone']);
         $validated['name'] = PhoneHelper::sanitizeText($validated['name']);
 
-        $customer = Customer::updateOrCreate(
-            ['phone' => $validated['phone']],
-            $validated
-        );
+        $user = $request->user();
+        $tenantId = $user?->tenant_id ?? \App\Models\Scopes\TenantScope::resolveMasterTenantId();
+
+        try {
+            $customer = Customer::withoutGlobalScopes()->updateOrCreate(
+                [
+                    'tenant_id' => $tenantId,
+                    'phone'     => $validated['phone'],
+                ],
+                array_merge($validated, ['tenant_id' => $tenantId])
+            );
+        } catch (\Illuminate\Database\UniqueConstraintViolationException $e) {
+            return $this->failure('Số điện thoại này đã được đăng ký trên hệ thống.', 422);
+        }
 
         return $this->success($customer, 'Lưu thông tin khách hàng thành công.', 201);
     }
@@ -111,12 +121,11 @@ class CustomerController extends Controller
         }
 
         $user = $request->user();
-        $tenantId = $user?->tenant_id ?? $customer->tenant_id;
+        $tenantId = $user?->tenant_id ?? $customer->tenant_id ?? \App\Models\Scopes\TenantScope::resolveMasterTenantId();
 
-        $phoneRule = Rule::unique('customers', 'phone')->ignore($customer->id);
-        if ($tenantId) {
-            $phoneRule->where('tenant_id', $tenantId);
-        }
+        $phoneRule = Rule::unique('customers', 'phone')
+            ->where(fn ($q) => $tenantId ? $q->where('tenant_id', $tenantId) : $q)
+            ->ignore($customer->id);
 
         $validated = $request->validate([
             'name'          => 'sometimes|required|string|max:255',

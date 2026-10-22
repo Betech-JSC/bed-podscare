@@ -68,47 +68,99 @@ class KpiController extends Controller
                 $userQuery->where('id', $techId);
             }
 
-            $technicians = $userQuery->with('branch')->get();
+            $technicians = $userQuery->with('branch:id,name,code')->get([
+                'id',
+                'tenant_id',
+                'branch_id',
+                'name',
+                'email',
+                'phone',
+                'role',
+                'avatar_url',
+                'is_active',
+            ]);
 
             // Nếu chỉ định technician_id cụ thể nhưng user mang vai trò khác (ví dụ admin test)
             if ($techId && $technicians->isEmpty()) {
-                $fallbackTechQuery = User::where('id', $techId)->with('branch');
+                $fallbackTechQuery = User::where('id', $techId)->with('branch:id,name,code');
                 if ($user && $user->tenant_id && $user->role !== 'super_admin') {
                     $fallbackTechQuery->where('tenant_id', $user->tenant_id);
                 }
-                $technicians = $fallbackTechQuery->get();
+                $technicians = $fallbackTechQuery->get([
+                    'id',
+                    'tenant_id',
+                    'branch_id',
+                    'name',
+                    'email',
+                    'phone',
+                    'role',
+                    'avatar_url',
+                    'is_active',
+                ]);
             }
 
             // Nếu không có KTV nào thỏa mãn và không có techId/branchId, fallback trong tenant
             if ($technicians->isEmpty() && ! $techId && ! $branchId) {
-                $fallbackAllQuery = User::whereIn('role', ['technician', 'tech'])->with('branch');
+                $fallbackAllQuery = User::whereIn('role', ['technician', 'tech'])->with('branch:id,name,code');
                 if ($user && $user->tenant_id && $user->role !== 'super_admin') {
                     $fallbackAllQuery->where('tenant_id', $user->tenant_id);
                 }
-                $technicians = $fallbackAllQuery->limit(10)->get();
+                $technicians = $fallbackAllQuery->limit(10)->get([
+                    'id',
+                    'tenant_id',
+                    'branch_id',
+                    'name',
+                    'email',
+                    'phone',
+                    'role',
+                    'avatar_url',
+                    'is_active',
+                ]);
             }
 
             $techIds = $technicians->pluck('id')->all();
+            $ordersGrouped = collect();
 
-            $ordersQuery = RepairOrder::whereIn('technician_id', $techIds);
+            if (! empty($techIds)) {
+                $ordersQuery = RepairOrder::whereIn('technician_id', $techIds)
+                    ->select([
+                        'id',
+                        'tenant_id',
+                        'branch_id',
+                        'technician_id',
+                        'status',
+                        'order_type',
+                        'claim_id',
+                        'parent_order_id',
+                        'total_price',
+                        'qc_passed_at',
+                        'repair_started_at',
+                        'repair_completed_at',
+                        'tech_accepted_at',
+                        'created_at',
+                    ]);
 
-            if ($user && $user->tenant_id && $user->role !== 'super_admin') {
-                $ordersQuery->where('tenant_id', $user->tenant_id);
+                if ($user && $user->tenant_id && $user->role !== 'super_admin') {
+                    $ordersQuery->where('tenant_id', $user->tenant_id);
+                }
+
+                if ($branchId && $branchId !== 'all') {
+                    $ordersQuery->where('branch_id', $branchId);
+                }
+
+                if ($fromDate) {
+                    $ordersQuery->where('created_at', '>=', Carbon::parse($fromDate)->startOfDay());
+                }
+
+                if ($toDate) {
+                    $ordersQuery->where('created_at', '<=', Carbon::parse($toDate)->endOfDay());
+                }
+
+                $ordersGrouped = $ordersQuery
+                    ->with(['qcInspections:id,repair_order_id,result'])
+                    ->get()
+                    ->groupBy('technician_id');
             }
-
-            if ($branchId && $branchId !== 'all') {
-                $ordersQuery->where('branch_id', $branchId);
-            }
-
-            if ($fromDate) {
-                $ordersQuery->whereDate('created_at', '>=', $fromDate);
-            }
-
-            if ($toDate) {
-                $ordersQuery->whereDate('created_at', '<=', $toDate);
-            }
-
-            $ordersGrouped = $ordersQuery->with('qcInspections')->get()->groupBy('technician_id');
 
             foreach ($technicians as $tech) {
                 /** @var \Illuminate\Support\Collection<int, RepairOrder> $techOrders */
@@ -268,13 +320,32 @@ class KpiController extends Controller
                 $cskhQuery->where('branch_id', $branchId);
             }
 
-            $cskhUsers = $cskhQuery->with('branch')->get();
+            $cskhUsers = $cskhQuery->with('branch:id,name,code')->get([
+                'id',
+                'tenant_id',
+                'branch_id',
+                'name',
+                'email',
+                'phone',
+                'role',
+                'avatar_url',
+                'is_active',
+            ]);
             $cskhIds = $cskhUsers->pluck('id')->all();
 
             $cskhOrdersGrouped = collect();
 
             if (! empty($cskhIds)) {
-                $cskhOrdersQuery = RepairOrder::whereIn('created_by_user_id', $cskhIds);
+                $cskhOrdersQuery = RepairOrder::whereIn('created_by_user_id', $cskhIds)
+                    ->select([
+                        'id',
+                        'tenant_id',
+                        'branch_id',
+                        'created_by_user_id',
+                        'status',
+                        'total_price',
+                        'created_at',
+                    ]);
 
                 if ($user && $user->tenant_id && $user->role !== 'super_admin') {
                     $cskhOrdersQuery->where('tenant_id', $user->tenant_id);
@@ -285,11 +356,11 @@ class KpiController extends Controller
                 }
 
                 if ($fromDate) {
-                    $cskhOrdersQuery->whereDate('created_at', '>=', $fromDate);
+                    $cskhOrdersQuery->where('created_at', '>=', Carbon::parse($fromDate)->startOfDay());
                 }
 
                 if ($toDate) {
-                    $cskhOrdersQuery->whereDate('created_at', '<=', $toDate);
+                    $cskhOrdersQuery->where('created_at', '<=', Carbon::parse($toDate)->endOfDay());
                 }
 
                 $cskhOrdersGrouped = $cskhOrdersQuery->get()->groupBy('created_by_user_id');
@@ -437,16 +508,29 @@ class KpiController extends Controller
             $baseQuery->where('branch_id', $branchId);
         }
 
-        // 1. Số đơn đang hoạt động (không thuộc trạng thái hoàn tất, hủy hoặc từ chối sửa)
-        $activeOrders = (clone $baseQuery)
-            ->whereNotIn('status', ['completed', 'cancelled', 'rejected'])
-            ->count();
+        // 1. Phân bổ trạng thái tổng hợp 1 lần (dùng chung cho activeOrders, reconciliation, completionRate, operationalSummary)
+        $statusRawCounts = (clone $baseQuery)
+            ->select('status', DB::raw('count(*) as count'))
+            ->groupBy('status')
+            ->pluck('count', 'status')
+            ->map(fn ($c) => (int) $c)
+            ->all();
+
+        $totalOrders = array_sum($statusRawCounts);
+        $completedOrders = (int) ($statusRawCounts['completed'] ?? 0);
+        $activeOrders = max(
+            0,
+            $totalOrders
+            - $completedOrders
+            - (int) ($statusRawCounts['cancelled'] ?? 0)
+            - (int) ($statusRawCounts['rejected'] ?? 0)
+        );
 
         // 2. Tiếp nhận hôm nay
         $tz = 'Asia/Ho_Chi_Minh';
         $today = Carbon::today($tz);
         $intakeToday = (clone $baseQuery)
-            ->whereDate('created_at', $today)
+            ->whereBetween('created_at', [$today->copy()->startOfDay(), $today->copy()->endOfDay()])
             ->count();
 
         // Xử lý tham số ngày tra cứu (date hoặc target_date)
@@ -492,7 +576,7 @@ class KpiController extends Controller
             $dailyRevenueFormatted = number_format($dailyRevenue, 0, ',', '.') . ' ₫';
         }
 
-        // 3b. Doanh thu ngày được chọn (selected_date)
+        // 3b. Doanh thu ngày được chọn (selected_date) — gộp COUNT(*) và SUM(total_price) trong 1 truy vấn
         $selectedDateOrdersQuery = (clone $baseQuery)
             ->where('status', 'completed')
             ->where(function ($q) use ($targetDateStart, $targetDateEnd) {
@@ -503,8 +587,11 @@ class KpiController extends Controller
                   });
             });
 
-        $selectedDateRevenue = (float) (clone $selectedDateOrdersQuery)->sum('total_price');
-        $selectedDateCompletedOrders = (int) (clone $selectedDateOrdersQuery)->count();
+        $selectedDateAgg = (clone $selectedDateOrdersQuery)
+            ->selectRaw('COUNT(*) as completed_count, COALESCE(SUM(total_price), 0) as revenue_sum')
+            ->first();
+        $selectedDateRevenue = (float) ($selectedDateAgg?->revenue_sum ?? 0);
+        $selectedDateCompletedOrders = (int) ($selectedDateAgg?->completed_count ?? 0);
 
         if ($selectedDateRevenue >= 1000000) {
             $selectedRevenueInMillions = round($selectedDateRevenue / 1000000, 1);
@@ -538,19 +625,7 @@ class KpiController extends Controller
             $monthlyRevenueFormatted = number_format($monthlyRevenue, 0, ',', '.') . ' ₫';
         }
 
-        // 5. Khối đối chiếu máy đã lấy vs máy chưa lấy (Reconciliation)
-        $handedOverOrdersList = (clone $baseQuery)
-            ->where('status', 'completed')
-            ->get(['total_price']);
-        $handedOverCount = (int) $handedOverOrdersList->count();
-        $handedOverRevenue = (float) $handedOverOrdersList->sum(fn ($o) => RepairOrder::normalizeVndAmount($o->total_price));
-
-        $readyForPickupOrdersList = (clone $baseQuery)
-            ->whereIn('status', ['ready_for_return', 'waiting_pickup'])
-            ->get(['total_price']);
-        $readyForPickupCount = (int) $readyForPickupOrdersList->count();
-        $readyForPickupAmount = (float) $readyForPickupOrdersList->sum(fn ($o) => RepairOrder::normalizeVndAmount($o->total_price));
-
+        // 5. Khối đối chiếu máy đã lấy vs máy chưa lấy (Reconciliation) qua SQL Aggregate trực tiếp
         $inWorkshopStatuses = [
             'inspecting',
             'waiting_approval',
@@ -565,14 +640,36 @@ class KpiController extends Controller
             'qc_inspecting',
         ];
 
-        $inWorkshopOrdersList = (clone $baseQuery)
-            ->whereIn('status', $inWorkshopStatuses)
-            ->get(['total_price', 'initial_price']);
-        $inWorkshopCount = (int) $inWorkshopOrdersList->count();
-        $inWorkshopAmount = (float) $inWorkshopOrdersList->sum(function ($o) {
-            $raw = (float) ($o->total_price ?? 0) > 1 ? $o->total_price : ($o->initial_price ?? 0);
-            return RepairOrder::normalizeVndAmount($raw);
-        });
+        $handedOverCount = $completedOrders;
+        $readyForPickupCount = (int) (($statusRawCounts['ready_for_return'] ?? 0) + ($statusRawCounts['waiting_pickup'] ?? 0));
+        $inWorkshopCount = 0;
+        foreach ($inWorkshopStatuses as $wsStatus) {
+            $inWorkshopCount += (int) ($statusRawCounts[$wsStatus] ?? 0);
+        }
+
+        $handedOverRevenue = 0.0;
+        $readyForPickupAmount = 0.0;
+        $inWorkshopAmount = 0.0;
+
+        if ($isAdmin) {
+            $normTotalExpr = 'CASE WHEN COALESCE(total_price, 0) <= 1 THEN 0 WHEN ROUND(COALESCE(total_price, 0)) >= 500 THEN ROUND(COALESCE(total_price, 0) / 1000.0) * 1000 ELSE ROUND(COALESCE(total_price, 0)) END';
+            $rawWorkshopExpr = 'CASE WHEN COALESCE(total_price, 0) > 1 THEN COALESCE(total_price, 0) ELSE COALESCE(initial_price, 0) END';
+            $normWorkshopExpr = "CASE WHEN ({$rawWorkshopExpr}) <= 1 THEN 0 WHEN ROUND({$rawWorkshopExpr}) >= 500 THEN ROUND(({$rawWorkshopExpr}) / 1000.0) * 1000 ELSE ROUND({$rawWorkshopExpr}) END";
+            $inWorkshopPlaceholders = implode(',', array_fill(0, count($inWorkshopStatuses), '?'));
+
+            $reconciliationAgg = (clone $baseQuery)
+                ->selectRaw(
+                    "COALESCE(SUM(CASE WHEN status = 'completed' THEN {$normTotalExpr} ELSE 0 END), 0) as handed_over_revenue, " .
+                    "COALESCE(SUM(CASE WHEN status IN ('ready_for_return', 'waiting_pickup') THEN {$normTotalExpr} ELSE 0 END), 0) as ready_for_pickup_amount, " .
+                    "COALESCE(SUM(CASE WHEN status IN ({$inWorkshopPlaceholders}) THEN {$normWorkshopExpr} ELSE 0 END), 0) as in_workshop_amount",
+                    $inWorkshopStatuses
+                )
+                ->first();
+
+            $handedOverRevenue = (float) ($reconciliationAgg?->handed_over_revenue ?? 0);
+            $readyForPickupAmount = (float) ($reconciliationAgg?->ready_for_pickup_amount ?? 0);
+            $inWorkshopAmount = (float) ($reconciliationAgg?->in_workshop_amount ?? 0);
+        }
 
         $formatCurrency = function (float $amount): string {
             return number_format($amount, 0, ',', '.') . ' ₫';
@@ -743,7 +840,37 @@ class KpiController extends Controller
 
             $isCurrentMonth = $targetDate->isSameMonth(Carbon::now($tz));
 
+            $finishedOrderColumns = [
+                'id',
+                'tenant_id',
+                'branch_id',
+                'order_code',
+                'customer_id',
+                'device_model_id',
+                'status',
+                'total_price',
+                'initial_price',
+                'handed_over_at',
+                'qc_passed_at',
+                'repair_completed_at',
+                'created_at',
+                'updated_at',
+            ];
+
+            $finishedOrderRelations = [
+                'payments' => function ($q) {
+                    $q->select(['id', 'repair_order_id', 'status', 'amount', 'payment_method'])
+                      ->whereIn('status', ['paid', 'completed']);
+                },
+                'customer' => function ($q) {
+                    $q->select(['id', 'name', 'phone', 'orders_count'])
+                      ->withCount('repairOrders');
+                },
+                'deviceModel:id,name',
+            ];
+
             $monthlyFinishedOrders = (clone $baseQuery)
+                ->select($finishedOrderColumns)
                 ->where(function ($query) use ($startOfMonth, $endOfMonth, $isCurrentMonth) {
                     $query->where(function ($cq) use ($startOfMonth, $endOfMonth) {
                         $cq->where('status', 'completed')
@@ -772,19 +899,12 @@ class KpiController extends Controller
                         }
                     });
                 })
-                ->with([
-                    'payments' => function ($q) {
-                        $q->whereIn('status', ['paid', 'completed']);
-                    },
-                    'customer' => function ($q) {
-                        $q->withCount('repairOrders');
-                    },
-                    'deviceModel',
-                ])
+                ->with($finishedOrderRelations)
                 ->orderByDesc(DB::raw('COALESCE(handed_over_at, qc_passed_at, repair_completed_at, updated_at)'))
                 ->get();
 
             $selectedDateFinishedOrders = (clone $baseQuery)
+                ->select($finishedOrderColumns)
                 ->where(function ($query) use ($targetDateStart, $targetDateEnd) {
                     $query->where(function ($cq) use ($targetDateStart, $targetDateEnd) {
                         $cq->where('status', 'completed')
@@ -811,15 +931,7 @@ class KpiController extends Controller
                            });
                     });
                 })
-                ->with([
-                    'payments' => function ($q) {
-                        $q->whereIn('status', ['paid', 'completed']);
-                    },
-                    'customer' => function ($q) {
-                        $q->withCount('repairOrders');
-                    },
-                    'deviceModel',
-                ])
+                ->with($finishedOrderRelations)
                 ->orderByDesc(DB::raw('COALESCE(handed_over_at, qc_passed_at, repair_completed_at, updated_at)'))
                 ->get();
 
@@ -885,8 +997,14 @@ class KpiController extends Controller
                 return (float) (array_sum($exportCogsByOrder) + $quoteCogs);
             };
 
-            $selectedDateOrderIds = (clone $selectedDateOrdersQuery)->pluck('id')->all();
-            $monthlyOrderIds = (clone $monthlyOrdersQuery)->pluck('id')->all();
+            $selectedDateOrderIds = $selectedDateFinishedOrders
+                ->where('status', 'completed')
+                ->pluck('id')
+                ->all();
+            $monthlyOrderIds = $monthlyFinishedOrders
+                ->where('status', 'completed')
+                ->pluck('id')
+                ->all();
 
             $selectedDateCogs = $calcCogsForOrderIds($selectedDateOrderIds);
             $monthlyCogs = $calcCogsForOrderIds($monthlyOrderIds);
@@ -902,24 +1020,28 @@ class KpiController extends Controller
                 : 0.0;
             $grossProfitMargin = $monthlyGrossProfitMargin;
 
-            // Chuẩn hóa Công nợ khách hàng (AR):
+            // Chuẩn hóa Công nợ khách hàng (AR) qua SQL Aggregate trực tiếp (leftJoinSub):
             // Chỉ tính trên các đơn đã bàn giao hoặc hoàn tất (ready_for_return, waiting_pickup, completed) mà chưa thanh toán đủ.
             // Loại bỏ hoàn toàn các đơn xưởng (inspecting, waiting_approval, in_repair, rejected, cancelled).
-            $arOrders = (clone $baseQuery)
-                ->whereIn('status', ['ready_for_return', 'waiting_pickup', 'completed'])
-                ->with(['payments' => function ($q) {
-                    $q->where('status', 'paid');
-                }])
-                ->get(['id', 'total_price', 'status']);
+            $paidPaymentsSub = DB::table('payments')
+                ->where('status', 'paid')
+                ->whereIn(
+                    'repair_order_id',
+                    (clone $baseQuery)
+                        ->whereIn('repair_orders.status', ['ready_for_return', 'waiting_pickup', 'completed'])
+                        ->select('repair_orders.id')
+                )
+                ->select('repair_order_id', DB::raw('SUM(amount) as paid_sum'))
+                ->groupBy('repair_order_id');
 
-            $accountsReceivable = 0.0;
-            foreach ($arOrders as $arOrder) {
-                $paid = (float) $arOrder->payments->sum('amount');
-                $unpaid = (float) $arOrder->total_price - $paid;
-                if ($unpaid > 0) {
-                    $accountsReceivable += $unpaid;
-                }
-            }
+            $accountsReceivable = (float) (clone $baseQuery)
+                ->whereIn('repair_orders.status', ['ready_for_return', 'waiting_pickup', 'completed'])
+                ->leftJoinSub($paidPaymentsSub, 'paid_payments', function ($join) {
+                    $join->on('repair_orders.id', '=', 'paid_payments.repair_order_id');
+                })
+                ->selectRaw('COALESCE(SUM(CASE WHEN (repair_orders.total_price - COALESCE(paid_payments.paid_sum, 0)) > 0 THEN (repair_orders.total_price - COALESCE(paid_payments.paid_sum, 0)) ELSE 0 END), 0) as total_ar')
+                ->value('total_ar');
+
             $accountsReceivableFormatted = $formatCurrencyShort($accountsReceivable);
 
             // Tính tổng nợ NCC (Accounts Payable)
@@ -936,9 +1058,7 @@ class KpiController extends Controller
             $monthlyGrossProfitFormatted = $formatCurrencyShort($monthlyGrossProfit);
         }
 
-        // 6. Tỷ lệ hoàn tất đơn hàng
-        $totalOrders = (clone $baseQuery)->count();
-        $completedOrders = (clone $baseQuery)->where('status', 'completed')->count();
+        // 6. Tỷ lệ hoàn tất đơn hàng (tái sử dụng $totalOrders và $completedOrders từ $statusRawCounts)
         $completionRate = $totalOrders > 0
             ? round(($completedOrders / $totalOrders) * 100, 1)
             : 0.0;
@@ -956,7 +1076,7 @@ class KpiController extends Controller
             ? round(($warrantyClaimsCount / $completedOrders) * 100, 1)
             : 0.0;
 
-        // 5. Phân bổ theo trạng thái (Bao phủ 13 trạng thái chuẩn + gộp alias)
+        // 5. Phân bổ theo trạng thái (Bao phủ 13 trạng thái chuẩn + gộp alias từ $statusRawCounts đã nạp)
         $allStatuses = [
             'inspecting',
             'waiting_approval',
@@ -972,12 +1092,6 @@ class KpiController extends Controller
             'cancelled',
             'rejected',
         ];
-
-        $statusRawCounts = (clone $baseQuery)
-            ->select('status', DB::raw('count(*) as count'))
-            ->groupBy('status')
-            ->pluck('count', 'status')
-            ->all();
 
         $aliasMap = [
             'quote_pending'  => 'waiting_approval',
@@ -1060,14 +1174,9 @@ class KpiController extends Controller
             }
         }
 
-        // 8. Thống kê chỉ số điều hành (Operational Summary)
-        $activeOrdersOp = (clone $baseQuery)
-            ->whereNotIn('status', ['completed', 'cancelled', 'rejected'])
-            ->count();
-
-        $waitingPickupOrders = (clone $baseQuery)
-            ->whereIn('status', ['waiting_pickup', 'ready_for_return'])
-            ->count();
+        // 8. Thống kê chỉ số điều hành (Operational Summary) — tái sử dụng kết quả từ $statusRawCounts
+        $activeOrdersOp = $activeOrders;
+        $waitingPickupOrders = $readyForPickupCount;
 
         $waitingPartsOrders = (clone $baseQuery)
             ->where(function ($q) {
@@ -1078,10 +1187,19 @@ class KpiController extends Controller
             ->count();
 
         $twentyFourHoursAgo = Carbon::now($tz)->subHours(24);
-        $overdueOrdersCount = (clone $baseQuery)
+        $overdueQuery = (clone $baseQuery)
             ->whereNotIn('status', ['completed', 'cancelled', 'rejected', 'ready_for_return', 'waiting_pickup'])
-            ->where('created_at', '<=', $twentyFourHoursAgo)
-            ->count();
+            ->where('created_at', '<=', $twentyFourHoursAgo);
+
+        $overdueOrdersCollection = (clone $overdueQuery)
+            ->with(['customer', 'technician', 'deviceModel'])
+            ->orderBy('created_at', 'asc')
+            ->limit(200)
+            ->get();
+
+        $overdueOrdersCount = $overdueOrdersCollection->count() < 200
+            ? $overdueOrdersCollection->count()
+            : (clone $overdueQuery)->count();
 
         $operationalSummary = [
             'active_orders'          => $activeOrdersOp,
@@ -1092,13 +1210,7 @@ class KpiController extends Controller
 
         // 9. Danh sách công việc cần xử lý trong ca (Actionable Tasks)
         $overdueCount = $overdueOrdersCount;
-        $overdueOrders = (clone $baseQuery)
-            ->whereNotIn('status', ['completed', 'cancelled', 'rejected', 'ready_for_return', 'waiting_pickup'])
-            ->where('created_at', '<=', $twentyFourHoursAgo)
-            ->with(['customer', 'technician', 'deviceModel'])
-            ->orderBy('created_at', 'asc')
-            ->limit(200)
-            ->get()
+        $overdueOrders = $overdueOrdersCollection
             ->map(function (RepairOrder $order) use ($tz) {
                 $hoursOverdue = max(0, (int) Carbon::parse($order->created_at, $tz)->diffInHours(Carbon::now($tz)));
                 return [
@@ -1118,94 +1230,101 @@ class KpiController extends Controller
             ->values()
             ->all();
 
-        $waitingApprovalQuery = (clone $baseQuery)
-            ->whereIn('status', ['waiting_approval', 'quote_pending']);
-        $waitingApprovalCount = (clone $waitingApprovalQuery)->count();
-        $waitingApprovalOrders = $waitingApprovalQuery
-            ->with(['customer', 'technician', 'deviceModel'])
-            ->orderBy('updated_at', 'desc')
-            ->limit(200)
-            ->get()
-            ->map(function (RepairOrder $order) use ($tz) {
-                $hoursPending = max(0, (int) Carbon::parse($order->updated_at ?? $order->created_at, $tz)->diffInHours(Carbon::now($tz)));
-                $rawPrice = (float) ($order->total_price ?? 0) > 1 ? $order->total_price : ($order->initial_price ?? 0);
-                return [
-                    'id'               => $order->id,
-                    'order_code'       => $order->order_code,
-                    'customer_name'    => $order->customer?->name ?? 'Khách vãng lai',
-                    'customer_phone'   => $order->customer?->phone ?? '',
-                    'device_model'     => $order->deviceModel?->name ?? 'Thiết bị',
-                    'technician_name'  => $order->technician?->name ?? 'Chưa phân công',
-                    'total_price'      => RepairOrder::normalizeVndAmount($rawPrice),
-                    'issue_description'=> $order->issue_description ?? '',
-                    'hours_pending'    => $hoursPending,
-                    'status'           => $order->status,
-                    'created_at'       => $order->created_at?->toIso8601String(),
-                ];
-            })
-            ->values()
-            ->all();
+        $waitingApprovalCount = (int) ($statusDistribution['waiting_approval'] ?? 0);
+        $waitingApprovalOrders = $waitingApprovalCount === 0
+            ? []
+            : (clone $baseQuery)
+                ->whereIn('status', ['waiting_approval', 'quote_pending'])
+                ->with(['customer', 'technician', 'deviceModel'])
+                ->orderBy('updated_at', 'desc')
+                ->limit(200)
+                ->get()
+                ->map(function (RepairOrder $order) use ($tz) {
+                    $hoursPending = max(0, (int) Carbon::parse($order->updated_at ?? $order->created_at, $tz)->diffInHours(Carbon::now($tz)));
+                    $rawPrice = (float) ($order->total_price ?? 0) > 1 ? $order->total_price : ($order->initial_price ?? 0);
+                    return [
+                        'id'               => $order->id,
+                        'order_code'       => $order->order_code,
+                        'customer_name'    => $order->customer?->name ?? 'Khách vãng lai',
+                        'customer_phone'   => $order->customer?->phone ?? '',
+                        'device_model'     => $order->deviceModel?->name ?? 'Thiết bị',
+                        'technician_name'  => $order->technician?->name ?? 'Chưa phân công',
+                        'total_price'      => RepairOrder::normalizeVndAmount($rawPrice),
+                        'issue_description'=> $order->issue_description ?? '',
+                        'hours_pending'    => $hoursPending,
+                        'status'           => $order->status,
+                        'created_at'       => $order->created_at?->toIso8601String(),
+                    ];
+                })
+                ->values()
+                ->all();
 
-        $waitingQcQuery = (clone $baseQuery)
-            ->whereIn('status', ['waiting_qc', 'qc_pending', 'qc_inspecting']);
-        $waitingQcCount = (clone $waitingQcQuery)->count();
-        $waitingQcOrders = $waitingQcQuery
-            ->with(['customer', 'technician', 'deviceModel'])
-            ->orderBy('repair_completed_at', 'asc')
-            ->limit(200)
-            ->get()
-            ->map(function (RepairOrder $order) use ($tz) {
-                $refTime = $order->repair_completed_at ?? $order->updated_at ?? $order->created_at;
-                $hoursWaiting = max(0, (int) Carbon::parse($refTime, $tz)->diffInHours(Carbon::now($tz)));
-                return [
-                    'id'                  => $order->id,
-                    'order_code'          => $order->order_code,
-                    'customer_name'       => $order->customer?->name ?? 'Khách vãng lai',
-                    'device_model'        => $order->deviceModel?->name ?? 'Thiết bị',
-                    'technician_name'     => $order->technician?->name ?? 'Chưa phân công',
-                    'repair_completed_at' => $order->repair_completed_at ? Carbon::parse($order->repair_completed_at)->toIso8601String() : null,
-                    'hours_waiting'       => $hoursWaiting,
-                    'status'              => $order->status,
-                    'issue_description'   => $order->issue_description ?? '',
-                    'total_price'         => RepairOrder::normalizeVndAmount($order->total_price ?? 0),
-                ];
-            })
-            ->values()
-            ->all();
+        $waitingQcCount = (int) ($statusDistribution['waiting_qc'] ?? 0);
+        $waitingQcOrders = $waitingQcCount === 0
+            ? []
+            : (clone $baseQuery)
+                ->whereIn('status', ['waiting_qc', 'qc_pending', 'qc_inspecting'])
+                ->with(['customer', 'technician', 'deviceModel'])
+                ->orderBy('repair_completed_at', 'asc')
+                ->limit(200)
+                ->get()
+                ->map(function (RepairOrder $order) use ($tz) {
+                    $refTime = $order->repair_completed_at ?? $order->updated_at ?? $order->created_at;
+                    $hoursWaiting = max(0, (int) Carbon::parse($refTime, $tz)->diffInHours(Carbon::now($tz)));
+                    return [
+                        'id'                  => $order->id,
+                        'order_code'          => $order->order_code,
+                        'customer_name'       => $order->customer?->name ?? 'Khách vãng lai',
+                        'device_model'        => $order->deviceModel?->name ?? 'Thiết bị',
+                        'technician_name'     => $order->technician?->name ?? 'Chưa phân công',
+                        'repair_completed_at' => $order->repair_completed_at ? Carbon::parse($order->repair_completed_at)->toIso8601String() : null,
+                        'hours_waiting'       => $hoursWaiting,
+                        'status'              => $order->status,
+                        'issue_description'   => $order->issue_description ?? '',
+                        'total_price'         => RepairOrder::normalizeVndAmount($order->total_price ?? 0),
+                    ];
+                })
+                ->values()
+                ->all();
 
         $waitingPickupCount = $waitingPickupOrders;
-        $waitingPickupList = (clone $baseQuery)
-            ->whereIn('status', ['waiting_pickup', 'ready_for_return'])
-            ->with(['customer', 'technician', 'deviceModel'])
-            ->orderBy('qc_passed_at', 'asc')
-            ->limit(200)
-            ->get()
-            ->map(function (RepairOrder $order) {
-                return [
-                    'id'               => $order->id,
-                    'order_code'       => $order->order_code,
-                    'customer_name'    => $order->customer?->name ?? 'Khách vãng lai',
-                    'customer_phone'   => $order->customer?->phone ?? '',
-                    'device_model'     => $order->deviceModel?->name ?? 'Thiết bị',
-                    'technician_name'  => $order->technician?->name ?? 'Chưa phân công',
-                    'total_price'      => RepairOrder::normalizeVndAmount($order->total_price ?? 0),
-                    'status'           => $order->status,
-                    'issue_description'=> $order->issue_description ?? '',
-                ];
-            })
-            ->values()
-            ->all();
+        $waitingPickupList = $waitingPickupCount === 0
+            ? []
+            : (clone $baseQuery)
+                ->whereIn('status', ['waiting_pickup', 'ready_for_return'])
+                ->with(['customer', 'technician', 'deviceModel'])
+                ->orderBy('qc_passed_at', 'asc')
+                ->limit(200)
+                ->get()
+                ->map(function (RepairOrder $order) {
+                    return [
+                        'id'               => $order->id,
+                        'order_code'       => $order->order_code,
+                        'customer_name'    => $order->customer?->name ?? 'Khách vãng lai',
+                        'customer_phone'   => $order->customer?->phone ?? '',
+                        'device_model'     => $order->deviceModel?->name ?? 'Thiết bị',
+                        'technician_name'  => $order->technician?->name ?? 'Chưa phân công',
+                        'total_price'      => RepairOrder::normalizeVndAmount($order->total_price ?? 0),
+                        'status'           => $order->status,
+                        'issue_description'=> $order->issue_description ?? '',
+                    ];
+                })
+                ->values()
+                ->all();
 
         $partsQuery = Part::query();
         if ($user && $user->tenant_id) {
             $partsQuery->where('tenant_id', $user->tenant_id);
         }
         $lowStockQuery = $partsQuery->whereColumn('stock_quantity', '<=', 'min_stock_alert');
-        $lowStockCount = (clone $lowStockQuery)->count();
-        $lowStockParts = $lowStockQuery
+        $lowStockPartsCollection = (clone $lowStockQuery)
             ->orderBy('stock_quantity', 'asc')
             ->limit(200)
-            ->get()
+            ->get();
+        $lowStockCount = $lowStockPartsCollection->count() < 200
+            ? $lowStockPartsCollection->count()
+            : (clone $lowStockQuery)->count();
+        $lowStockParts = $lowStockPartsCollection
             ->map(function (Part $part) {
                 return [
                     'id'               => $part->id,

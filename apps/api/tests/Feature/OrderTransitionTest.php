@@ -33,29 +33,38 @@ class OrderTransitionTest extends TestCase
 
     private function createTestOrder(string $status = 'inspecting'): RepairOrder
     {
-        $branch = Branch::first() ?? Branch::create([
-            'name'      => 'Chi nhánh Quận 1',
-            'code'      => 'BR_Q1_' . uniqid(),
-            'phone'     => '0901234567',
-            'address'   => '123 Lê Lợi, Q1, TP.HCM',
-            'is_active' => true,
-        ]);
-        $customer = Customer::first() ?? Customer::create([
-            'name'  => 'Nguyễn Minh Anh',
-            'phone' => '090' . random_int(1000000, 9999999),
-            'email' => 'minhanh_' . uniqid() . '@gmail.com',
-        ]);
+        $user = $this->getAuthenticatedUser();
+
+        $branch = ($user->branch_id ? Branch::find($user->branch_id) : null)
+            ?? ($user->tenant_id ? Branch::where('tenant_id', $user->tenant_id)->first() : null)
+            ?? Branch::first()
+            ?? Branch::create([
+                'tenant_id' => $user->tenant_id,
+                'name'      => 'Chi nhánh Quận 1',
+                'code'      => 'BR_Q1_' . uniqid(),
+                'phone'     => '0901234567',
+                'address'   => '123 Lê Lợi, Q1, TP.HCM',
+                'is_active' => true,
+            ]);
+        $customer = ($user->tenant_id ? Customer::where('tenant_id', $user->tenant_id)->first() : null)
+            ?? Customer::first()
+            ?? Customer::create([
+                'tenant_id' => $user->tenant_id,
+                'name'      => 'Nguyễn Minh Anh',
+                'phone'     => '090' . random_int(1000000, 9999999),
+                'email'     => 'minhanh_' . uniqid() . '@gmail.com',
+            ]);
         $device = DeviceModel::first() ?? DeviceModel::create([
             'name'       => 'AirPods Pro 2',
             'model_code' => 'A2698_' . uniqid(),
             'category'   => 'airpods',
         ]);
-        $user = $this->getAuthenticatedUser();
 
         $year = date('y');
         $randomNum = str_pad((string) random_int(1000, 99999), 5, '0', STR_PAD_LEFT);
 
         return RepairOrder::create([
+            'tenant_id'           => $user->tenant_id,
             'order_code'          => "FX{$year}-T{$randomNum}",
             'branch_id'           => $branch->id,
             'customer_id'         => $customer->id,
@@ -568,6 +577,9 @@ class OrderTransitionTest extends TestCase
         if ($branchId) {
             $query->where('branch_id', $branchId);
         }
+        if ($tenantId) {
+            $query->where('tenant_id', $tenantId);
+        }
         $tech = $query->first();
         if ($tech) {
             return $tech;
@@ -576,8 +588,8 @@ class OrderTransitionTest extends TestCase
         $admin = $this->getAuthenticatedUser();
 
         return User::forceCreate([
-            'tenant_id' => $tenantId ?? $admin->tenant_id ?? 1,
-            'branch_id' => $branchId ?? $admin->branch_id ?? (Branch::first()?->id ?? 1),
+            'tenant_id' => $tenantId ?: ($admin->tenant_id ?? 1),
+            'branch_id' => $branchId ?: ($admin->branch_id ?? (Branch::first()?->id ?? 1)),
             'name'      => 'KTV Test ' . uniqid(),
             'email'     => 'ktv_test_' . uniqid() . '@podscare.vn',
             'phone'     => '096' . random_int(1000000, 9999999),

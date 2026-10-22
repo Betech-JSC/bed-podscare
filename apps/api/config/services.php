@@ -36,8 +36,8 @@ return [
     ],
 
     'sepay' => [
-        'api_key'        => env('SEPAY_WEBHOOK_SECRET', 'fixo_secret_sepay_platform_2026'),
-        'webhook_secret' => env('SEPAY_WEBHOOK_SECRET', 'fixo_secret_sepay_platform_2026'),
+        'api_key'        => env('SEPAY_WEBHOOK_SECRET', ''),
+        'webhook_secret' => env('SEPAY_WEBHOOK_SECRET', ''),
         'account_number' => env('SEPAY_ACCOUNT_NUMBER', '0388960848'),
         'bank_name'      => env('SEPAY_BANK_CODE', 'MB'),
         'bank_code'      => env('SEPAY_BANK_CODE', 'MB'),
@@ -59,5 +59,9 @@ return [
         'model'           => env('GEMINI_MODEL', 'podscare-ai'),
         'fallback_models' => env('GEMINI_FALLBACK_MODELS', ''),
         'timeout'         => (int) env('GEMINI_TIMEOUT_SECONDS', env('GEMINI_TIMEOUT', 20)),
+    ],
+
+    'discord' => [
+        'webhook_url' => env('DISCORD_WEBHOOK_URL'),
     ],
 ];

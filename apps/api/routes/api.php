@@ -203,6 +203,9 @@ Route::prefix('v1')->group(function () {
         Route::get('/warranties/history', [WarrantyController::class, 'history'])->name('api.v1.warranties.history');
         Route::get('/warranties/claims', [WarrantyController::class, 'claims'])->name('api.v1.warranties.claims.index');
         Route::post('/warranties/claims', [WarrantyController::class, 'createClaim'])->name('api.v1.warranties.claims.store');
+        Route::put('/warranties/claims/{id}', [WarrantyController::class, 'updateClaim'])->name('api.v1.warranties.claims.update');
+        Route::patch('/warranties/claims/{id}', [WarrantyController::class, 'updateClaim'])->name('api.v1.warranties.claims.patch');
+        Route::post('/warranties/{id}/revoke', [WarrantyController::class, 'revoke'])->name('api.v1.warranties.revoke');
 
         // Payments
         Route::get('/payments', [PaymentController::class, 'index'])->name('api.v1.payments.index');
@@ -236,15 +239,19 @@ Route::prefix('v1')->group(function () {
         Route::patch('/notifications/{id}/read', [NotificationController::class, 'markAsRead'])->name('api.v1.notifications.mark_read');
         Route::post('/notifications/read-all', [NotificationController::class, 'markAllAsRead'])->name('api.v1.notifications.mark_all_read');
 
-        // Audit Logs
-        Route::get('/audit-logs', [AuditLogController::class, 'index'])->name('api.v1.audit_logs.index');
-        Route::get('/audit-logs/{id}', [AuditLogController::class, 'show'])->name('api.v1.audit_logs.show');
+        // Audit Logs (Admin & Super Admin exclusive)
+        Route::middleware('role:admin,super_admin')->group(function () {
+            Route::get('/audit-logs', [AuditLogController::class, 'index'])->name('api.v1.audit_logs.index');
+            Route::get('/audit-logs/{id}', [AuditLogController::class, 'show'])->name('api.v1.audit_logs.show');
+        });
 
         // Partners
         Route::get('/partners', [PartnerController::class, 'index'])->name('api.v1.partners.index');
-        Route::post('/partners', [PartnerController::class, 'store'])->name('api.v1.partners.store');
         Route::get('/partners/{id}', [PartnerController::class, 'show'])->name('api.v1.partners.show');
-        Route::put('/partners/{id}', [PartnerController::class, 'update'])->name('api.v1.partners.update');
+        Route::middleware('role:admin,super_admin')->group(function () {
+            Route::post('/partners', [PartnerController::class, 'store'])->name('api.v1.partners.store');
+            Route::put('/partners/{id}', [PartnerController::class, 'update'])->name('api.v1.partners.update');
+        });
 
         // Staff KPI & Performance
         Route::get('/kpi', [KpiController::class, 'dashboard'])->name('api.v1.kpi.index');

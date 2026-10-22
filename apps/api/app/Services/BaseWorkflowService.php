@@ -88,8 +88,32 @@ abstract class BaseWorkflowService
         // 2. Kiểm tra tính hợp lệ của bước chuyển theo ma trận
         $this->validateTransition($currentStatus, $newStatus);
 
-        // 3. Thực thi nghiệp vụ chuyển đổi bên trong DB Transaction
+        // 3. Thực thi nghiệp vụ chuyển đổi bên trong DB Transaction kèm Pessimistic Row Lock
         return DB::transaction(function () use ($model, $currentStatus, $newStatus, $options) {
+            $lockedModel = $model->newQuery()
+                ->withoutGlobalScopes()
+                ->whereKey($model->getKey())
+                ->lockForUpdate()
+                ->first();
+
+            if ($lockedModel) {
+                $actualStatus = $this->normalizeWorkflowStatus((string) $lockedModel->status);
+                if ($actualStatus === $newStatus) {
+                    throw new ConflictHttpException(
+                        'Trạng thái đơn hàng đã được cập nhật bởi một thao tác đồng thời khác.'
+                    );
+                }
+
+                $this->checkOptimisticLock($lockedModel, $options['expected_updated_at'] ?? null);
+
+                if ($actualStatus !== $currentStatus) {
+                    $this->validateTransition($actualStatus, $newStatus);
+                    $currentStatus = $actualStatus;
+                }
+
+                $model->setRawAttributes($lockedModel->getAttributes(), true);
+            }
+
             // Hook tiền xử lý
             $this->beforeTransition($model, $currentStatus, $newStatus, $options);
 
@@ -106,6 +130,14 @@ abstract class BaseWorkflowService
 
             return $model->fresh();
         });
+    }
+
+    /**
+     * Chuẩn hóa trạng thái workflow nếu lớp con có alias.
+     */
+    protected function normalizeWorkflowStatus(string $status): string
+    {
+        return $status;
     }
 
     /**

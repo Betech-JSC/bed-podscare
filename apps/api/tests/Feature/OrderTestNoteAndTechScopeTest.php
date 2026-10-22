@@ -40,7 +40,8 @@ class OrderTestNoteAndTechScopeTest extends TestCase
             'plan'   => 'pro',
         ]);
 
-        $this->branch = Branch::first() ?? Branch::create([
+        $this->branch = Branch::create([
+            'tenant_id' => $this->tenant->id,
             'name'      => 'Chi nhánh Q1 Test',
             'code'      => 'Q1_' . uniqid(),
             'phone'     => '0901234567',

@@ -57,6 +57,8 @@ class CashTransactionService
                 'transaction_code'   => $transactionCode,
                 'type'               => 'expense',
                 'category'           => $data['category'],
+                'reference_type'     => $data['reference_type'] ?? null,
+                'reference_id'       => isset($data['reference_id']) ? (int) $data['reference_id'] : null,
                 'payment_method'     => $paymentMethod,
                 'amount'             => $amount,
                 'recipient_payer'    => $data['recipient_payer'] ?? null,
@@ -103,6 +105,8 @@ class CashTransactionService
                 'transaction_code'   => $transactionCode,
                 'type'               => 'income',
                 'category'           => $data['category'],
+                'reference_type'     => $data['reference_type'] ?? null,
+                'reference_id'       => isset($data['reference_id']) ? (int) $data['reference_id'] : null,
                 'payment_method'     => $paymentMethod,
                 'amount'             => $amount,
                 'recipient_payer'    => $data['recipient_payer'] ?? null,
@@ -130,18 +134,28 @@ class CashTransactionService
         // Idempotency: Kiểm tra nếu phiếu thanh toán này đã từng được đồng bộ vào sổ quỹ
         $existing = CashTransaction::withoutGlobalScopes()
             ->where('tenant_id', $tenantId)
-            ->where('category', 'repair_order_cash')
-            ->where('notes', 'like', "%[Payment #{$payment->id}]%")
+            ->where('type', 'income')
+            ->whereIn('category', ['repair_order_cash', 'repair_payment'])
+            ->where(function ($q) use ($payment) {
+                $q->where(function ($sub) use ($payment) {
+                    $sub->where('reference_type', 'Payment')
+                        ->where('reference_id', $payment->id);
+                })->orWhere('notes', 'like', "%[Payment #{$payment->id}]%");
+            })
+            ->lockForUpdate()
             ->first();
 
         if ($existing) {
             return $existing;
         }
 
+        $order->loadMissing('customer');
         $notes = "Thu tiền mặt đơn {$order->order_code} [Payment #{$payment->id}]" . ($payment->notes ? " - {$payment->notes}" : '');
 
         return $this->createIncome($tenantId, $branchId, $userId, [
             'category'        => 'repair_order_cash',
+            'reference_type'  => 'Payment',
+            'reference_id'    => $payment->id,
             'payment_method'  => 'cash',
             'amount'          => (float) $payment->amount,
             'recipient_payer' => $order->customer?->name ?? "Khách hàng {$order->order_code}",

@@ -128,18 +128,25 @@ class DeviceController extends Controller
                 'is_active' => $validated['is_active'] ?? true,
             ]);
 
+            $now = now();
+            $templateRows = [];
             foreach ($validated['checks'] as $index => $item) {
                 $itemTrimmed = trim($item);
                 if ($itemTrimmed !== '') {
-                    ChecklistTemplate::create([
+                    $templateRows[] = [
                         'device_model_id' => $device->id,
-                        'category' => $device->category,
-                        'item_name' => $itemTrimmed,
-                        'type' => 'functional',
-                        'order_index' => $index + 1,
-                        'is_active' => true,
-                    ]);
+                        'category'        => $device->category,
+                        'item_name'       => $itemTrimmed,
+                        'type'            => 'functional',
+                        'order_index'     => $index + 1,
+                        'is_active'       => true,
+                        'created_at'      => $now,
+                        'updated_at'      => $now,
+                    ];
                 }
+            }
+            if (! empty($templateRows)) {
+                ChecklistTemplate::insert($templateRows);
             }
 
             return $device;
@@ -237,18 +244,25 @@ class DeviceController extends Controller
                 ChecklistTemplate::where('device_model_id', $device->id)->delete();
 
                 // Tạo lại checklist templates theo danh sách mới
+                $now = now();
+                $templateRows = [];
                 foreach ($validated['checks'] as $index => $item) {
                     $itemTrimmed = trim($item);
                     if ($itemTrimmed !== '') {
-                        ChecklistTemplate::create([
+                        $templateRows[] = [
                             'device_model_id' => $device->id,
-                            'category' => $device->category,
-                            'item_name' => $itemTrimmed,
-                            'type' => 'functional',
-                            'order_index' => $index + 1,
-                            'is_active' => true,
-                        ]);
+                            'category'        => $device->category,
+                            'item_name'       => $itemTrimmed,
+                            'type'            => 'functional',
+                            'order_index'     => $index + 1,
+                            'is_active'       => true,
+                            'created_at'      => $now,
+                            'updated_at'      => $now,
+                        ];
                     }
+                }
+                if (! empty($templateRows)) {
+                    ChecklistTemplate::insert($templateRows);
                 }
             }
         });

@@ -22,7 +22,10 @@ class SePayPlatformWebhookController extends Controller
     public function handle(Request $request): JsonResponse
     {
         // 1. Xác thực Secret API Key SePay
-        $secret = config('sepay.webhook_secret') ?? config('services.sepay.api_key');
+        $secret = config('sepay.webhook_secret')
+            ?: config('services.sepay.webhook_secret')
+            ?: config('services.sepay.api_key')
+            ?: '';
 
         $headerKey = $request->header('SePay-Api-Key') 
             ?? $request->header('X-SePay-Api-Key') 
@@ -44,8 +47,8 @@ class SePayPlatformWebhookController extends Controller
 
         if (empty($secret) || empty($headerKey) || ! hash_equals((string) $secret, (string) $headerKey)) {
             Log::warning('SePay Webhook unauthorized attempt', [
-                'ip'        => $request->ip(),
-                'headerKey' => $headerKey,
+                'ip'             => $request->ip(),
+                'has_header_key' => ! empty($headerKey),
             ]);
 
             return response()->json([
@@ -62,7 +65,7 @@ class SePayPlatformWebhookController extends Controller
 
         return DB::transaction(function () use ($request, $payload, $sepayTxId, $content, $transferAmount) {
             // 2. Idempotency Check chống trùng lặp giao dịch
-            if (! empty($sepayTxId) && SepayTransaction::where('sepay_transaction_id', $sepayTxId)->exists()) {
+            if (! empty($sepayTxId) && SepayTransaction::where('sepay_transaction_id', $sepayTxId)->lockForUpdate()->exists()) {
                 return response()->json([
                     'success' => true,
                     'message' => 'already_processed',
@@ -76,8 +79,10 @@ class SePayPlatformWebhookController extends Controller
                 $invoiceId = (int) $matches[1];
                 $refCode = 'FIXSUB' . $invoiceId;
 
-                $invoice = SaasInvoice::where('id', $invoiceId)
-                    ->orWhere('reference_code', $refCode)
+                $invoice = SaasInvoice::where(function ($q) use ($invoiceId, $refCode) {
+                        $q->where('id', $invoiceId)
+                          ->orWhere('reference_code', $refCode);
+                    })
                     ->lockForUpdate()
                     ->first();
 

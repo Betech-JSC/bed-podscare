@@ -24,7 +24,8 @@ class SaasBillingController extends Controller
     public function current(Request $request): JsonResponse
     {
         $user = $request->user();
-        $tenant = $user->tenant;
+        $user?->loadMissing('tenant');
+        $tenant = $user?->tenant;
 
         if (! $tenant) {
             return $this->failure('Không tìm thấy thông tin cửa hàng.', 404);
@@ -72,7 +73,8 @@ class SaasBillingController extends Controller
     public function subscribe(Request $request): JsonResponse
     {
         $user = $request->user();
-        $tenant = $user->tenant;
+        $user?->loadMissing('tenant');
+        $tenant = $user?->tenant;
 
         if (! $tenant) {
             return $this->failure('Không tìm thấy thông tin cửa hàng.', 404);
@@ -147,10 +149,20 @@ class SaasBillingController extends Controller
      */
     public function invoiceStatus(Request $request, string $refCode): JsonResponse
     {
-        $invoice = SaasInvoice::with(['tenant', 'plan'])
-            ->where('reference_code', $refCode)
-            ->orWhere('id', is_numeric($refCode) ? (int) $refCode : 0)
-            ->first();
+        $user = $request->user();
+        $query = SaasInvoice::with(['tenant', 'plan'])
+            ->where(function ($q) use ($refCode) {
+                $q->where('reference_code', $refCode);
+                if (is_numeric($refCode)) {
+                    $q->orWhere('id', (int) $refCode);
+                }
+            });
+
+        if ($user && $user->role !== 'super_admin') {
+            $query->where('tenant_id', $user->tenant_id);
+        }
+
+        $invoice = $query->first();
 
         if (! $invoice) {
             return $this->empty('Không tìm thấy hóa đơn.');

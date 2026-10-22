@@ -10,6 +10,45 @@ use Illuminate\Http\Request;
 class AuditLogController extends Controller
 {
     /**
+     * Áp dụng lọc cách ly theo Tenant cho truy vấn AuditLog.
+     */
+    protected function applyTenantScope($query, ?\App\Models\User $user): void
+    {
+        if (! $user || $user->role === 'super_admin') {
+            return;
+        }
+
+        $tenantId = $user->tenant_id;
+        if (empty($tenantId)) {
+            return;
+        }
+
+        $masterTenantId = \App\Models\Scopes\TenantScope::resolveMasterTenantId();
+        $isMasterTenant = $masterTenantId && (int) $tenantId === (int) $masterTenantId;
+
+        $query->where(function ($q) use ($tenantId, $isMasterTenant) {
+            $q->where('tenant_id', $tenantId)
+              ->orWhere(function ($sub) use ($tenantId, $isMasterTenant) {
+                  $sub->whereNull('tenant_id')
+                      ->whereHas('user', function ($uq) use ($tenantId, $isMasterTenant) {
+                          $uq->withoutGlobalScopes()->where(function ($utq) use ($tenantId, $isMasterTenant) {
+                              $utq->where('users.tenant_id', $tenantId);
+                              if ($isMasterTenant) {
+                                  $utq->orWhereNull('users.tenant_id');
+                              }
+                          });
+                      });
+              });
+
+            if ($isMasterTenant) {
+                $q->orWhere(function ($subNull) {
+                    $subNull->whereNull('tenant_id')->whereNull('user_id');
+                });
+            }
+        });
+    }
+
+    /**
      * Danh sách nhật ký hoạt động hệ thống (Audit Trail).
      *
      * Hỗ trợ sắp xếp mới nhất, eager load user/causer, phân trang mặc định 50 bản ghi,
@@ -17,6 +56,11 @@ class AuditLogController extends Controller
      */
     public function index(Request $request): JsonResponse
     {
+        $user = $request->user();
+        if (! $user || ! in_array($user->role, ['admin', 'super_admin'], true)) {
+            abort(403, 'Chỉ quản trị viên mới có quyền truy cập nhật ký hệ thống.');
+        }
+
         $query = AuditLog::with(['user:id,name,email,role,avatar_url', 'auditable'])->latest('id');
 
         // Lọc theo module / auditable_type (ví dụ: RepairOrder, Payment, Warranty...)
@@ -44,10 +88,10 @@ class AuditLogController extends Controller
 
         // Lọc theo ngày tạo (from_date, to_date)
         if ($fromDate = $request->input('from_date')) {
-            $query->whereDate('created_at', '>=', $fromDate);
+            $query->where('created_at', '>=', \Illuminate\Support\Carbon::parse($fromDate)->startOfDay());
         }
         if ($toDate = $request->input('to_date')) {
-            $query->whereDate('created_at', '<=', $toDate);
+            $query->where('created_at', '<=', \Illuminate\Support\Carbon::parse($toDate)->endOfDay());
         }
 
         // Lọc theo has_diff (có chứa old_values hoặc new_values)
@@ -75,13 +119,7 @@ class AuditLogController extends Controller
         }
 
         // Phân quyền tenant
-        $user = $request->user();
-        if ($user && $user->role !== 'super_admin' && ! empty($user->tenant_id)) {
-            $query->where(function ($q) use ($user) {
-                $q->where('tenant_id', $user->tenant_id)
-                  ->orWhereNull('tenant_id');
-            });
-        }
+        $this->applyTenantScope($query, $user);
 
         // Phân trang mặc định 50 bản ghi
         $perPage = (int) $request->input('per_page', $request->input('limit', 50));
@@ -95,9 +133,17 @@ class AuditLogController extends Controller
     /**
      * Chi tiết một bản ghi nhật ký hoạt động.
      */
-    public function show(int $id): JsonResponse
+    public function show(Request $request, int $id): JsonResponse
     {
-        $log = AuditLog::with(['user:id,name,email,role,avatar_url', 'auditable'])->find($id);
+        $user = $request->user();
+        if (! $user || ! in_array($user->role, ['admin', 'super_admin'], true)) {
+            abort(403, 'Chỉ quản trị viên mới có quyền truy cập nhật ký hệ thống.');
+        }
+
+        $query = AuditLog::with(['user:id,name,email,role,avatar_url', 'auditable']);
+        $this->applyTenantScope($query, $user);
+
+        $log = $query->find($id);
 
         if (! $log) {
             return $this->empty('Không tìm thấy bản ghi nhật ký hoạt động.');

@@ -60,7 +60,7 @@ class Part extends Model
     public function toArray(): array
     {
         $user = request()?->user();
-        if (! $user || $user->role !== 'admin') {
+        if (! $user || ! in_array($user->role, ['admin', 'super_admin'], true)) {
             $this->makeHidden('cost_price');
         }
 

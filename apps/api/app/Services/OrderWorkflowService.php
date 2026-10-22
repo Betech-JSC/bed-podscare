@@ -64,23 +64,19 @@ class OrderWorkflowService extends BaseWorkflowService
     /**
      * Chuẩn hóa trạng thái (map 2 chiều qc_pending/qc_inspecting -> waiting_qc, quote_pending -> waiting_approval) trước khi chuyển đổi.
      */
+    protected function normalizeWorkflowStatus(string $status): string
+    {
+        return match ($status) {
+            'qc_pending', 'qc_inspecting' => 'waiting_qc',
+            'quote_pending'               => 'waiting_approval',
+            default                       => $status,
+        };
+    }
+
     public function transition(Model $model, string $newStatus, array $options = []): Model
     {
-        if ($newStatus === 'qc_pending' || $newStatus === 'qc_inspecting') {
-            $newStatus = 'waiting_qc';
-        }
-
-        if ($newStatus === 'quote_pending') {
-            $newStatus = 'waiting_approval';
-        }
-
-        if ($model->status === 'qc_pending' || $model->status === 'qc_inspecting') {
-            $model->status = 'waiting_qc';
-        }
-
-        if ($model->status === 'quote_pending') {
-            $model->status = 'waiting_approval';
-        }
+        $newStatus = $this->normalizeWorkflowStatus($newStatus);
+        $model->status = $this->normalizeWorkflowStatus((string) $model->status);
 
         // Tái phân công trong trạng thái assigned (KTV bàn giao cho KTV khác)
         if ($model->status === 'assigned' && $newStatus === 'assigned' && ! empty($options['technician_id'])) {
@@ -380,24 +376,28 @@ class OrderWorkflowService extends BaseWorkflowService
                     if (! empty($model->claim_id)) {
                         $claimQuery->orWhere('id', $model->claim_id);
                     }
-                    $claimUpdates = ['status' => 'resolved'];
-                    if (\Illuminate\Support\Facades\Schema::hasColumn('warranty_claims', 'resolved_at')) {
-                        $claimUpdates['resolved_at'] = $now;
-                    }
-                    $claimQuery->update($claimUpdates);
+                    $claimQuery->update(['status' => 'resolved']);
 
                     // Đơn bảo hành: không tạo chồng sổ bảo hành mới và không cộng trùng orders_count
-                    $customer = $model->customer;
-                    if ($customer && (float) $model->total_price > 0) {
-                        $customer->increment('total_spent', $model->total_price);
+                    if ($model->customer_id && (float) $model->total_price > 0) {
+                        $priceDelta = (float) $model->total_price;
+                        \App\Models\Customer::whereKey($model->customer_id)->increment('total_spent', $priceDelta);
+                        if ($model->relationLoaded('customer') && $model->customer) {
+                            $model->customer->total_spent = (float) ($model->customer->total_spent ?? 0) + $priceDelta;
+                        }
                     }
                 } else {
-                    // Tự động kích hoạt sổ bảo hành điện tử cho đơn thường
-                    if ($model->warranty_terms_days > 0 && ! $model->warranties()->exists()) {
+                    // Tự động kích hoạt sổ bảo hành điện tử cho đơn thường (chỉ query warranties 1 lần)
+                    $existingWarranties = $model->warranties()->get();
+                    if ($model->warranty_terms_days > 0 && $existingWarranties->isEmpty()) {
                         $year = date('y');
-                        $randomCode = str_pad((string) random_int(100, 9999), 4, '0', STR_PAD_LEFT);
+                        do {
+                            $randomCode = str_pad((string) random_int(100, 999999), 6, '0', STR_PAD_LEFT);
+                            $warrantyCode = "FX{$year}-WR-{$randomCode}";
+                        } while (Warranty::withoutGlobalScopes()->where('warranty_code', $warrantyCode)->exists());
+
                         Warranty::create([
-                            'warranty_code'   => "FX{$year}-WR-{$randomCode}",
+                            'warranty_code'   => $warrantyCode,
                             'repair_order_id' => $model->id,
                             'customer_id'     => $model->customer_id,
                             'device_model_id' => $model->device_model_id,
@@ -407,8 +407,8 @@ class OrderWorkflowService extends BaseWorkflowService
                             'end_date'        => $now->copy()->addDays($model->warranty_terms_days)->toDateString(),
                             'status'          => 'active',
                         ]);
-                    } elseif ($model->warranties()->exists()) {
-                        foreach ($model->warranties as $warranty) {
+                    } elseif ($existingWarranties->isNotEmpty()) {
+                        foreach ($existingWarranties as $warranty) {
                             $duration = $warranty->duration_days ?: ($model->warranty_terms_days ?: 90);
                             $warranty->update([
                                 'status'     => 'active',
@@ -418,11 +418,19 @@ class OrderWorkflowService extends BaseWorkflowService
                         }
                     }
 
-                    // Tích lũy doanh số khách hàng cho đơn thường
-                    $customer = $model->customer;
-                    if ($customer) {
-                        $customer->increment('orders_count');
-                        $customer->increment('total_spent', $model->total_price);
+                    // Tích lũy doanh số khách hàng cho đơn thường (gộp 1 câu lệnh UPDATE duy nhất)
+                    if ($model->customer_id) {
+                        $priceDelta = (float) ($model->total_price ?? 0);
+                        \App\Models\Customer::whereKey($model->customer_id)->update([
+                            'orders_count' => DB::raw('COALESCE(orders_count, 0) + 1'),
+                            'total_spent'  => DB::raw('COALESCE(total_spent, 0) + ' . $priceDelta),
+                            'updated_at'   => $now,
+                        ]);
+
+                        if ($model->relationLoaded('customer') && $model->customer) {
+                            $model->customer->orders_count = (int) ($model->customer->orders_count ?? 0) + 1;
+                            $model->customer->total_spent = (float) ($model->customer->total_spent ?? 0) + $priceDelta;
+                        }
                     }
                 }
 
@@ -473,19 +481,36 @@ class OrderWorkflowService extends BaseWorkflowService
                 return;
             }
 
+            $partIds = $quoteItems->pluck('part_id')->filter()->unique()->values()->all();
+            if (empty($partIds)) {
+                return;
+            }
+
+            $partsById = \App\Models\Part::whereIn('id', $partIds)
+                ->lockForUpdate()
+                ->get()
+                ->keyBy('id');
+
+            $branchPartsByPartId = \App\Models\BranchPart::where('branch_id', $order->branch_id)
+                ->whereIn('part_id', $partIds)
+                ->lockForUpdate()
+                ->get()
+                ->keyBy('part_id');
+
             $date = date('Ymd');
             $actorId = $userId ?? $order->handed_over_by_user_id ?? $order->technician_id ?? 1;
 
+            $existingTxCodes = \App\Models\InventoryTransaction::where('transaction_code', 'like', "TX-{$date}-%")
+                ->pluck('transaction_code')
+                ->flip();
+
             foreach ($quoteItems as $item) {
-                $part = \App\Models\Part::find($item->part_id);
+                $part = $partsById->get($item->part_id);
                 if (! $part) {
                     continue;
                 }
 
-                $branchPart = \App\Models\BranchPart::where('branch_id', $order->branch_id)
-                    ->where('part_id', $item->part_id)
-                    ->lockForUpdate()
-                    ->first();
+                $branchPart = $branchPartsByPartId->get($item->part_id);
 
                 if (! $branchPart) {
                     $branchPart = \App\Models\BranchPart::create([
@@ -494,6 +519,7 @@ class OrderWorkflowService extends BaseWorkflowService
                         'stock_quantity'  => 0,
                         'min_stock_alert' => $part->min_stock_alert ?? 5,
                     ]);
+                    $branchPartsByPartId->put($item->part_id, $branchPart);
                 }
 
                 $qty = (int) $item->quantity;
@@ -501,7 +527,8 @@ class OrderWorkflowService extends BaseWorkflowService
                 do {
                     $rand = str_pad((string) random_int(1, 9999), 4, '0', STR_PAD_LEFT);
                     $txCode = "TX-{$date}-{$rand}";
-                } while (\App\Models\InventoryTransaction::where('transaction_code', $txCode)->exists());
+                } while ($existingTxCodes->has($txCode));
+                $existingTxCodes->put($txCode, true);
 
                 \App\Models\InventoryTransaction::create([
                     'transaction_code'   => $txCode,
@@ -545,22 +572,37 @@ class OrderWorkflowService extends BaseWorkflowService
                 return;
             }
 
+            $partIds = $exportTxs->pluck('part_id')->filter()->unique()->values()->all();
+            $branchIds = $exportTxs->pluck('branch_id')->filter()->unique()->values()->all();
+
+            $partsById = ! empty($partIds)
+                ? \App\Models\Part::whereIn('id', $partIds)->lockForUpdate()->get()->keyBy('id')
+                : collect();
+
+            $branchPartsByKey = (! empty($branchIds) && ! empty($partIds))
+                ? \App\Models\BranchPart::whereIn('branch_id', $branchIds)
+                    ->whereIn('part_id', $partIds)
+                    ->lockForUpdate()
+                    ->get()
+                    ->keyBy(fn ($bp) => $bp->branch_id . ':' . $bp->part_id)
+                : collect();
+
             $date = date('Ymd');
             $actorId = $userId ?? 1;
+
+            $existingTxCodes = \App\Models\InventoryTransaction::where('transaction_code', 'like', "TX-{$date}-%")
+                ->pluck('transaction_code')
+                ->flip();
 
             foreach ($exportTxs as $tx) {
                 $reverseQty = abs($tx->quantity);
 
-                $branchPart = \App\Models\BranchPart::where('branch_id', $tx->branch_id)
-                    ->where('part_id', $tx->part_id)
-                    ->lockForUpdate()
-                    ->first();
-
+                $branchPart = $branchPartsByKey->get($tx->branch_id . ':' . $tx->part_id);
                 if ($branchPart) {
                     $branchPart->increment('stock_quantity', $reverseQty);
                 }
 
-                $part = \App\Models\Part::find($tx->part_id);
+                $part = $partsById->get($tx->part_id);
                 if ($part) {
                     $part->increment('stock_quantity', $reverseQty);
                 }
@@ -568,7 +610,8 @@ class OrderWorkflowService extends BaseWorkflowService
                 do {
                     $rand = str_pad((string) random_int(1, 9999), 4, '0', STR_PAD_LEFT);
                     $txCode = "TX-{$date}-{$rand}";
-                } while (\App\Models\InventoryTransaction::where('transaction_code', $txCode)->exists());
+                } while ($existingTxCodes->has($txCode));
+                $existingTxCodes->put($txCode, true);
 
                 $note = $reason === 'deleted'
                     ? "Hoàn kho tự động do xóa đơn sửa chữa {$order->order_code}"
@@ -613,22 +656,37 @@ class OrderWorkflowService extends BaseWorkflowService
                 return;
             }
 
+            $partIds = $exportTxs->pluck('part_id')->filter()->unique()->values()->all();
+            $branchIds = $exportTxs->pluck('branch_id')->filter()->unique()->values()->all();
+
+            $partsById = ! empty($partIds)
+                ? \App\Models\Part::withoutGlobalScopes()->whereIn('id', $partIds)->lockForUpdate()->get()->keyBy('id')
+                : collect();
+
+            $branchPartsByKey = (! empty($branchIds) && ! empty($partIds))
+                ? \App\Models\BranchPart::whereIn('branch_id', $branchIds)
+                    ->whereIn('part_id', $partIds)
+                    ->lockForUpdate()
+                    ->get()
+                    ->keyBy(fn ($bp) => $bp->branch_id . ':' . $bp->part_id)
+                : collect();
+
             $date = date('Ymd');
             $actorId = $userId ?? 1;
+
+            $existingTxCodes = \App\Models\InventoryTransaction::where('transaction_code', 'like', "TX-{$date}-%")
+                ->pluck('transaction_code')
+                ->flip();
 
             foreach ($exportTxs as $tx) {
                 $returnQty = abs($tx->quantity);
 
-                $branchPart = \App\Models\BranchPart::where('branch_id', $tx->branch_id)
-                    ->where('part_id', $tx->part_id)
-                    ->lockForUpdate()
-                    ->first();
-
+                $branchPart = $branchPartsByKey->get($tx->branch_id . ':' . $tx->part_id);
                 if ($branchPart) {
                     $branchPart->increment('stock_quantity', $returnQty);
                 }
 
-                $part = \App\Models\Part::withoutGlobalScopes()->find($tx->part_id);
+                $part = $partsById->get($tx->part_id);
                 if ($part) {
                     $part->increment('stock_quantity', $returnQty);
                 }
@@ -636,7 +694,8 @@ class OrderWorkflowService extends BaseWorkflowService
                 do {
                     $rand = str_pad((string) random_int(1, 9999), 4, '0', STR_PAD_LEFT);
                     $txCode = "TX-{$date}-{$rand}";
-                } while (\App\Models\InventoryTransaction::where('transaction_code', $txCode)->exists());
+                } while ($existingTxCodes->has($txCode));
+                $existingTxCodes->put($txCode, true);
 
                 $note = "Hoàn kho tự động (import_return) do hoàn tiền đơn sửa chữa {$order->order_code}: {$reason}";
 
@@ -811,20 +870,23 @@ class OrderWorkflowService extends BaseWorkflowService
             'action_url' => "/repairs?id={$model->id}",
         ]);
 
-        OrderOperationalEvent::dispatch(
-            $notif->id,
-            $model->id,
-            $model->order_code,
-            $notificationData['title'],
-            $notificationData['message'],
-            $notificationData['severity'],
-            now()->toIso8601String(),
-            "/repairs?id={$model->id}",
-            $model->branch_id,
-            $notificationData['role'],
-            $notif->user_id,
-            $notificationData['type'],
-            $notificationData['event']
-        );
+        $eventTimestamp = now()->toIso8601String();
+        DB::afterCommit(function () use ($notif, $model, $notificationData, $eventTimestamp) {
+            OrderOperationalEvent::dispatch(
+                $notif->id,
+                $model->id,
+                $model->order_code,
+                $notificationData['title'],
+                $notificationData['message'],
+                $notificationData['severity'],
+                $eventTimestamp,
+                "/repairs?id={$model->id}",
+                $model->branch_id,
+                $notificationData['role'],
+                $notif->user_id,
+                $notificationData['type'],
+                $notificationData['event']
+            );
+        });
     }
 }

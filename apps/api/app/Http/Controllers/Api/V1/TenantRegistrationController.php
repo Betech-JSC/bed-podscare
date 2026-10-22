@@ -46,7 +46,10 @@ class TenantRegistrationController extends Controller
         $expiresAt = now()->addMonths(3);
         $trialPeriodDays = max(0, (int) now()->diffInDays($expiresAt, false));
 
-        $result = DB::transaction(function () use ($validated, $selectedPlan, $trialPeriodDays, $expiresAt) {
+        $createdTenant = null;
+        $createdOwner = null;
+
+        $result = DB::transaction(function () use ($validated, $selectedPlan, $trialPeriodDays, $expiresAt, &$createdTenant, &$createdOwner) {
             // 1. Tạo Tenant tự động phê duyệt (status = active) & kích hoạt gói dùng thử
             $tenant = Tenant::create([
                 'code'            => strtolower($validated['store_code']),
@@ -89,6 +92,9 @@ class TenantRegistrationController extends Controller
                 'role'      => 'admin',
                 'is_active' => true,
             ]);
+
+            $createdTenant = $tenant;
+            $createdOwner = $owner;
 
             // 4. Cấp ngay Sanctum API token để khách dùng app tức thì không cần chờ duyệt hay đăng nhập lại
             $token = $owner->createToken('auth_token', ["tenant:{$tenant->id}"])->plainTextToken;
@@ -151,6 +157,11 @@ class TenantRegistrationController extends Controller
                 ],
             ];
         });
+
+        app(\App\Services\DiscordNotificationService::class)->sendTenantRegistrationNotification(
+            $createdTenant ?? $result['tenant'],
+            $createdOwner ?? $result['user']
+        );
 
         return $this->success(
             $result,

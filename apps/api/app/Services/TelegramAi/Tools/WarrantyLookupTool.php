@@ -310,7 +310,7 @@ class WarrantyLookupTool implements TelegramAiToolInterface
         if ($onlyActive === true) {
             $query->where('status', 'active')
                 ->whereNull('revoked_at')
-                ->whereDate('end_date', '>=', now()->toDateString());
+                ->where('end_date', '>=', now()->toDateString());
         }
 
         $totalMatched = (clone $query)->count();

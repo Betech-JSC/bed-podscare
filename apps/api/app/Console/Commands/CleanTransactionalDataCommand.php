@@ -23,7 +23,7 @@ class CleanTransactionalDataCommand extends Command
     protected $description = 'Xóa sạch toàn bộ dữ liệu đơn hàng và giao dịch phát sinh để chuẩn bị môi trường test sạch, bảo lưu 100% Chi nhánh, Nhân sự và Danh mục sản phẩm/dịch vụ.';
 
     /**
-     * Danh sách 16 bảng dữ liệu đơn hàng và giao dịch phát sinh cần truncate.
+     * Danh sách 21 bảng dữ liệu đơn hàng và giao dịch phát sinh cần truncate.
      *
      * @var array<int, string>
      */
@@ -44,6 +44,11 @@ class CleanTransactionalDataCommand extends Command
         'inventory_transactions',
         'notifications',
         'audit_logs',
+        'work_shifts',
+        'cash_transactions',
+        'goods_receipts',
+        'goods_receipt_items',
+        'supplier_debt_transactions',
     ];
 
     /**

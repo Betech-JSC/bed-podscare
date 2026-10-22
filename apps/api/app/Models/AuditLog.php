@@ -42,8 +42,12 @@ class AuditLog extends Model
     {
         static::creating(function (AuditLog $log) {
             if (empty($log->user_name) && $log->user_id) {
-                $user = User::find($log->user_id);
-                $log->user_name = $user?->name ?? 'System';
+                if (auth()->check() && (int) auth()->id() === (int) $log->user_id) {
+                    $log->user_name = auth()->user()?->name ?? 'System';
+                } else {
+                    $user = User::withoutGlobalScopes()->find($log->user_id);
+                    $log->user_name = $user?->name ?? 'System';
+                }
             } elseif (empty($log->user_name)) {
                 $log->user_name = 'System';
             }

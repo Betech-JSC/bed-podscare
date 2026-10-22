@@ -16,9 +16,27 @@ class BranchController extends Controller
      */
     public function index(Request $request): JsonResponse
     {
-        $branches = Branch::where('is_active', true)
-            ->withCount(['users', 'repairOrders'])
-            ->get();
+        $user = $request->user('sanctum') ?? $request->user();
+
+        if ($user) {
+            $query = Branch::where('is_active', true);
+            if ($user->role !== 'super_admin' && ! empty($user->tenant_id)) {
+                $masterTenantId = \App\Models\Scopes\TenantScope::resolveMasterTenantId();
+                $isMaster = $masterTenantId && (int) $user->tenant_id === (int) $masterTenantId;
+                $query->where(function ($tq) use ($user, $isMaster) {
+                    $tq->where('tenant_id', $user->tenant_id);
+                    if ($isMaster) {
+                        $tq->orWhereNull('tenant_id');
+                    }
+                });
+            }
+            $branches = $query->withCount(['users', 'repairOrders'])->get();
+        } else {
+            $branches = Branch::withoutGlobalScopes()
+                ->where('is_active', true)
+                ->get(['id', 'tenant_id', 'code', 'name', 'address', 'phone', 'is_active', 'created_at', 'updated_at']);
+            $branches->each->makeHidden(['users', 'users_count', 'repair_orders_count']);
+        }
 
         return $this->success($branches, 'Lấy danh sách chi nhánh thành công.');
     }
@@ -26,10 +44,27 @@ class BranchController extends Controller
     /**
      * Chi tiết chi nhánh.
      */
-    public function show(int $id): JsonResponse
+    public function show(Request $request, int $id): JsonResponse
     {
-        $branch = Branch::with(['users:id,branch_id,name,role,phone,avatar_url'])
-            ->find($id);
+        $user = $request->user('sanctum') ?? $request->user();
+
+        if ($user) {
+            $query = Branch::with(['users:id,branch_id,name,role,phone,avatar_url']);
+            if ($user->role !== 'super_admin' && ! empty($user->tenant_id)) {
+                $masterTenantId = \App\Models\Scopes\TenantScope::resolveMasterTenantId();
+                $isMaster = $masterTenantId && (int) $user->tenant_id === (int) $masterTenantId;
+                $query->where(function ($tq) use ($user, $isMaster) {
+                    $tq->where('tenant_id', $user->tenant_id);
+                    if ($isMaster) {
+                        $tq->orWhereNull('tenant_id');
+                    }
+                });
+            }
+            $branch = $query->find($id);
+        } else {
+            $branch = Branch::withoutGlobalScopes()->find($id);
+            $branch?->makeHidden(['users', 'users_count', 'repair_orders_count']);
+        }
 
         if (! $branch) {
             return $this->empty('Không tìm thấy chi nhánh.');
@@ -43,11 +78,13 @@ class BranchController extends Controller
      */
     public function store(Request $request): JsonResponse
     {
-        if ($request->user()->role !== 'admin') {
+        $user = $request->user();
+        if (! $user || ! in_array($user->role, ['admin', 'super_admin'], true)) {
             return $this->forbidden('Chỉ quản trị viên (Admin) mới có quyền tạo chi nhánh mới.');
         }
 
-        $tenant = $request->user()->tenant;
+        $user->loadMissing('tenant');
+        $tenant = $user->tenant;
         if ($tenant) {
             $quotaService = app(\App\Services\QuotaService::class);
             $quotaService->checkSubscriptionActive($tenant);
@@ -92,7 +129,7 @@ class BranchController extends Controller
      */
     public function update(Request $request, int $id): JsonResponse
     {
-        if ($request->user()->role !== 'admin') {
+        if (! in_array($request->user()->role, ['admin', 'super_admin'], true)) {
             return $this->forbidden('Chỉ quản trị viên (Admin) mới có quyền cập nhật chi nhánh.');
         }
 
@@ -141,7 +178,7 @@ class BranchController extends Controller
      */
     public function toggleStatus(Request $request, int $id): JsonResponse
     {
-        if ($request->user()->role !== 'admin') {
+        if (! in_array($request->user()->role, ['admin', 'super_admin'], true)) {
             return $this->forbidden('Chỉ quản trị viên (Admin) mới có quyền thay đổi trạng thái chi nhánh.');
         }
 

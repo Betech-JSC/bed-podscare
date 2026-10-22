@@ -48,11 +48,37 @@ class UserController extends Controller
     }
 
     /**
+     * Tạo rule kiểm tra branch_id thuộc cùng Tenant với người dùng đang đăng nhập.
+     */
+    protected function branchExistsRuleForUser(?\App\Models\User $authUser)
+    {
+        $rule = Rule::exists('branches', 'id');
+        if ($authUser && $authUser->role !== 'super_admin' && ! empty($authUser->tenant_id)) {
+            $tenantId = $authUser->tenant_id;
+            $masterTenantId = \App\Models\Scopes\TenantScope::resolveMasterTenantId();
+            $isMaster = $masterTenantId && (int) $tenantId === (int) $masterTenantId;
+            $rule->where(function ($q) use ($tenantId, $isMaster, $authUser) {
+                $q->where('tenant_id', $tenantId);
+                if ($authUser->branch_id) {
+                    $q->orWhere('id', $authUser->branch_id);
+                }
+                if ($isMaster) {
+                    $q->orWhereNull('tenant_id');
+                }
+            });
+        }
+
+        return $rule;
+    }
+
+    /**
      * Cấp tài khoản mới cho nhân viên.
      */
     public function store(Request $request): JsonResponse
     {
-        $tenant = $request->user()?->tenant;
+        $authUser = $request->user();
+        $authUser?->loadMissing('tenant');
+        $tenant = $authUser?->tenant;
         if ($tenant) {
             $quotaService = app(\App\Services\QuotaService::class);
             $quotaService->checkSubscriptionActive($tenant);
@@ -64,7 +90,11 @@ class UserController extends Controller
             'email'     => 'required|email|max:255|unique:users,email',
             'password'  => 'required|string|min:6',
             'phone'     => 'nullable|string|max:20',
-            'branch_id' => 'required_if:role,cskh,technician,tech,qc,inventory,warehouse|nullable|exists:branches,id',
+            'branch_id' => [
+                'required_if:role,cskh,technician,tech,qc,inventory,warehouse',
+                'nullable',
+                $this->branchExistsRuleForUser($authUser),
+            ],
             'role'      => ['required', 'string', Rule::in(['admin', 'cskh', 'technician', 'tech', 'qc', 'inventory', 'warehouse'])],
         ], [
             'branch_id.required_if' => 'Chi nhánh công tác là bắt buộc đối với nhân sự chi nhánh.',
@@ -73,7 +103,7 @@ class UserController extends Controller
         $role = $validated['role'] === 'tech' ? 'technician' : $validated['role'];
 
         $user = new User([
-            'tenant_id'  => $tenant?->id,
+            'tenant_id'  => $tenant?->id ?? $authUser?->tenant_id,
             'name'       => $validated['name'],
             'email'      => $validated['email'],
             'phone'      => $validated['phone'] ?? null,
@@ -83,7 +113,7 @@ class UserController extends Controller
             'avatar_url' => 'https://ui-avatars.com/api/?name=' . urlencode($validated['name']) . '&background=176B58&color=fff',
         ]);
 
-        if ($request->user() && $request->user()->role === 'admin') {
+        if ($authUser && in_array($authUser->role, ['admin', 'super_admin'], true)) {
             $user->role = $role;
         }
 
@@ -108,12 +138,18 @@ class UserController extends Controller
             $request->merge(['role' => $user->role]);
         }
 
+        $authUser = $request->user();
         $validated = $request->validate([
             'name'      => 'sometimes|required|string|max:255',
             'email'     => ['sometimes', 'required', 'email', 'max:255', Rule::unique('users', 'email')->ignore($user->id)],
             'password'  => 'nullable|string|min:6',
             'phone'     => 'nullable|string|max:20',
-            'branch_id' => 'sometimes|required_if:role,cskh,technician,tech,qc,inventory,warehouse|nullable|exists:branches,id',
+            'branch_id' => [
+                'sometimes',
+                'required_if:role,cskh,technician,tech,qc,inventory,warehouse',
+                'nullable',
+                $this->branchExistsRuleForUser($authUser),
+            ],
             'role'      => ['sometimes', 'required', 'string', Rule::in(['admin', 'cskh', 'technician', 'tech', 'qc', 'inventory', 'warehouse'])],
             'is_active' => 'sometimes|boolean',
         ], [

@@ -44,6 +44,11 @@ class PartnerController extends Controller
      */
     public function store(Request $request): JsonResponse
     {
+        $user = $request->user();
+        if (! $user || ! in_array($user->role, ['admin', 'super_admin'], true)) {
+            abort(403, 'Chỉ quản trị viên mới có quyền thêm đối tác.');
+        }
+
         $validated = $request->validate([
             'code'           => 'required|string|max:50|unique:partners,code',
             'name'           => 'required|string|max:255',
@@ -86,6 +91,11 @@ class PartnerController extends Controller
      */
     public function update(Request $request, int $id): JsonResponse
     {
+        $user = $request->user();
+        if (! $user || ! in_array($user->role, ['admin', 'super_admin'], true)) {
+            abort(403, 'Chỉ quản trị viên mới có quyền cập nhật đối tác.');
+        }
+
         $partner = Partner::find($id);
 
         if (! $partner) {

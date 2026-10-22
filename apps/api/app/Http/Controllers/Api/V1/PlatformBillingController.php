@@ -26,10 +26,23 @@ class PlatformBillingController extends Controller
                 $q->whereNull('expires_at')->orWhere('expires_at', '>', now());
             })->get();
 
+        $planIds = $activeTenants
+            ->filter(fn ($t) => $t->plan && $t->plan !== 'trial')
+            ->map(fn ($t) => (string) ($t->current_plan_id ?? $t->plan))
+            ->filter()
+            ->unique()
+            ->values()
+            ->all();
+
+        $plansById = ! empty($planIds)
+            ? SubscriptionPlan::whereIn('id', $planIds)->get()->keyBy('id')
+            : collect();
+
         $mrr = 0.0;
         foreach ($activeTenants as $t) {
             if ($t->plan && $t->plan !== 'trial') {
-                $plan = SubscriptionPlan::find($t->current_plan_id ?? $t->plan);
+                $lookupKey = (string) ($t->current_plan_id ?? $t->plan);
+                $plan = $plansById->get($lookupKey);
                 if ($plan) {
                     $mrr += (float) ($plan->price_monthly > 0 ? $plan->price_monthly : $plan->price);
                 }
@@ -176,22 +189,25 @@ class PlatformBillingController extends Controller
      */
     public function plans(Request $request): JsonResponse
     {
-        $plans = SubscriptionPlan::orderBy('sort_order', 'asc')->get()->map(function ($plan) {
-            return [
-                'id'                   => $plan->id,
-                'name'                 => $plan->name,
-                'tagline'              => $plan->code,
-                'price'                => (float) ($plan->price_monthly > 0 ? $plan->price_monthly : $plan->price),
-                'period'               => '/tháng',
-                'popular'              => $plan->id === 'standard',
-                'active_stores_count'  => Tenant::where('current_plan_id', $plan->id)->count(),
-                'max_branches'         => $plan->max_branches ?? 1,
-                'max_users'            => $plan->max_users ?? 3,
-                'max_orders_per_month' => $plan->max_orders_per_month ?? 100,
-                'features'             => $plan->features ?? [],
-                'is_active'            => (bool) $plan->is_active,
-            ];
-        });
+        $plans = SubscriptionPlan::withCount('tenants')
+            ->orderBy('sort_order', 'asc')
+            ->get()
+            ->map(function ($plan) {
+                return [
+                    'id'                   => $plan->id,
+                    'name'                 => $plan->name,
+                    'tagline'              => $plan->code,
+                    'price'                => (float) ($plan->price_monthly > 0 ? $plan->price_monthly : $plan->price),
+                    'period'               => '/tháng',
+                    'popular'              => $plan->id === 'standard',
+                    'active_stores_count'  => (int) ($plan->tenants_count ?? 0),
+                    'max_branches'         => $plan->max_branches ?? 1,
+                    'max_users'            => $plan->max_users ?? 3,
+                    'max_orders_per_month' => $plan->max_orders_per_month ?? 100,
+                    'features'             => $plan->features ?? [],
+                    'is_active'            => (bool) $plan->is_active,
+                ];
+            });
 
         return $this->success($plans, 'Lấy danh sách gói cước thành công.');
     }
@@ -217,6 +233,8 @@ class PlatformBillingController extends Controller
 
         $plan->update($validated);
 
+        \App\Services\QuotaService::clearCache();
+
         return $this->success($plan->fresh(), 'Cập nhật cấu hình gói cước thành công.');
     }
 
@@ -232,8 +250,8 @@ class PlatformBillingController extends Controller
                 'bank_name'      => 'MBBank - Ngân hàng Quân Đội',
                 'account_number' => config('sepay.account_number', '0388960848'),
                 'account_name'   => config('sepay.account_holder', 'CONG TY FIXO VIET NAM'),
-                'api_token'      => config('services.sepay.api_key', 'fixo_secret_sepay_platform_2026'),
-                'webhook_secret' => config('sepay.webhook_secret', 'fixo_secret_sepay_platform_2026'),
+                'api_token'      => (string) (config('services.sepay.api_key') ?? ''),
+                'webhook_secret' => (string) (config('sepay.webhook_secret') ?? ''),
                 'webhook_url'    => url('/api/v1/webhooks/sepay'),
                 'is_connected'   => true,
             ];
@@ -254,8 +272,8 @@ class PlatformBillingController extends Controller
                 'bank_name'      => 'MBBank - Ngân hàng Quân Đội',
                 'account_number' => config('sepay.account_number', '0388960848'),
                 'account_name'   => config('sepay.account_holder', 'CONG TY FIXO VIET NAM'),
-                'api_token'      => config('services.sepay.api_key', 'fixo_secret_sepay_platform_2026'),
-                'webhook_secret' => config('sepay.webhook_secret', 'fixo_secret_sepay_platform_2026'),
+                'api_token'      => (string) (config('services.sepay.api_key') ?? ''),
+                'webhook_secret' => (string) (config('sepay.webhook_secret') ?? ''),
             ];
         }
 

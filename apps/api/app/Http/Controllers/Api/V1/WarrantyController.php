@@ -19,17 +19,45 @@ use Illuminate\Support\Facades\DB;
 class WarrantyController extends Controller
 {
     /**
+     * Áp dụng lọc cách ly theo Tenant và Chi nhánh trên truy vấn RepairOrder.
+     */
+    protected function applyOrderTenantAndBranchScope($rq, ?\App\Models\User $user): void
+    {
+        if (! $user) {
+            return;
+        }
+
+        if ($user->role !== 'super_admin' && ! empty($user->tenant_id)) {
+            $masterTenantId = \App\Models\Scopes\TenantScope::resolveMasterTenantId();
+            $isMaster = $masterTenantId && (int) $user->tenant_id === (int) $masterTenantId;
+            $rq->where(function ($tq) use ($user, $isMaster) {
+                $tq->where('repair_orders.tenant_id', $user->tenant_id);
+                if ($isMaster) {
+                    $tq->orWhereNull('repair_orders.tenant_id');
+                }
+            });
+        }
+
+        if (! in_array($user->role, ['admin', 'super_admin'], true) && ! empty($user->branch_id)) {
+            $rq->where('repair_orders.branch_id', $user->branch_id);
+        }
+    }
+
+    /**
      * Danh sách sổ bảo hành điện tử.
      */
     public function index(Request $request): JsonResponse
     {
+        $user = $request->user();
         $query = Warranty::with([
             'repairOrder.technician',
             'repairOrder.qcInspections',
             'repairOrder.branch',
             'customer',
             'deviceModel',
-        ]);
+        ])->whereHas('repairOrder', function ($rq) use ($user) {
+            $this->applyOrderTenantAndBranchScope($rq, $user);
+        });
 
         if ($status = $request->input('status')) {
             $query->where('status', $status);
@@ -84,16 +112,19 @@ class WarrantyController extends Controller
             return $this->failure('Vui lòng cung cấp Số điện thoại (phone), Số Serial (serial_number) hoặc mã đơn (order_code) để tra cứu hồ sơ bệnh án.', 422);
         }
 
+        $user = $request->user();
         $ordersQuery = RepairOrder::with([
-            'customer',
-            'deviceModel',
+            'customer:id,name,phone,email',
+            'deviceModel:id,name',
             'technician:id,name,phone,email',
             'qcInspector:id,name',
             'handedOverByUser:id,name',
-            'qcInspections',
+            'qcInspections:id,repair_order_id,result,notes,created_at',
             'branch:id,name,address',
-            'warranties',
+            'warranties:id,repair_order_id,warranty_code,status,end_date,duration_days',
         ]);
+
+        $this->applyOrderTenantAndBranchScope($ordersQuery, $user);
 
         $ordersQuery->where(function ($q) use ($phone, $serial, $customerId, $orderCode) {
             $applied = false;
@@ -128,12 +159,13 @@ class WarrantyController extends Controller
             }
         });
 
-        $orders = $ordersQuery->latest('id')->get();
+        $limit = min(max((int) $request->input('limit', 200), 1), 500);
+        $orders = $ordersQuery->latest('id')->limit($limit)->get();
 
         $customer = null;
         if ($orders->isNotEmpty()) {
             $customer = $orders->first()->customer;
-        } elseif ($phone !== '') {
+        } elseif ($phone !== '' && (! $user || in_array($user->role, ['admin', 'super_admin'], true))) {
             $customer = Customer::where(function ($cq) use ($phone) {
                 PhoneHelper::applyPhoneColumnSearch($cq, 'phone', $phone, 'and');
             })->first();
@@ -216,7 +248,14 @@ class WarrantyController extends Controller
             return $this->failure('Vui lòng cung cấp mã bảo hành (code) hoặc số điện thoại (phone).', 422);
         }
 
+        $user = $request->user('sanctum') ?? $request->user();
         $query = Warranty::with(['repairOrder', 'customer', 'deviceModel', 'claims']);
+
+        if ($user) {
+            $query->whereHas('repairOrder', function ($rq) use ($user) {
+                $this->applyOrderTenantAndBranchScope($rq, $user);
+            });
+        }
 
         $codeTokens = $code !== '' ? PhoneHelper::extractSearchTokens($code) : null;
 
@@ -224,19 +263,21 @@ class WarrantyController extends Controller
             $query->where(function ($q) use ($code) {
                 $q->where('warranty_code', $code)
                   ->orWhere('warranty_code', 'like', "%{$code}%")
-                  ->orWhereHas('repairOrder', fn ($rq) => $rq->where('order_code', 'like', "%{$code}%"));
+                  ->orWhereHas('repairOrder', fn ($rq) => $rq->withoutGlobalScopes()->where('order_code', 'like', "%{$code}%"));
             });
             $query->whereHas('customer', function ($q) use ($phone) {
+                $q->withoutGlobalScopes();
                 PhoneHelper::applyPhoneColumnSearch($q, 'phone', $phone, 'and');
             });
         } elseif ($code !== '') {
             $query->where(function ($q) use ($code, $codeTokens) {
                 $q->where('warranty_code', $code)
                   ->orWhere('warranty_code', 'like', "%{$code}%")
-                  ->orWhereHas('repairOrder', fn ($rq) => $rq->where('order_code', 'like', "%{$code}%"));
+                  ->orWhereHas('repairOrder', fn ($rq) => $rq->withoutGlobalScopes()->where('order_code', 'like', "%{$code}%"));
 
                 if ($codeTokens && $codeTokens['isPhoneLike']) {
                     $q->orWhereHas('customer', function ($cq) use ($code) {
+                        $cq->withoutGlobalScopes();
                         PhoneHelper::applyPhoneColumnSearch($cq, 'phone', $code, 'and');
                     });
                 }
@@ -245,36 +286,61 @@ class WarrantyController extends Controller
             $phoneTokens = PhoneHelper::extractSearchTokens($phone);
             $query->where(function ($q) use ($phone, $phoneTokens) {
                 $q->whereHas('customer', function ($cq) use ($phone) {
+                    $cq->withoutGlobalScopes();
                     PhoneHelper::applyPhoneColumnSearch($cq, 'phone', $phone, 'and');
                 });
                 if (! $phoneTokens['isPhoneLike']) {
                     $q->orWhere('warranty_code', 'like', "%{$phone}%")
-                      ->orWhereHas('repairOrder', fn ($rq) => $rq->where('order_code', 'like', "%{$phone}%"));
+                      ->orWhereHas('repairOrder', fn ($rq) => $rq->withoutGlobalScopes()->where('order_code', 'like', "%{$phone}%"));
                 }
             });
         }
 
-        $results = $query->latest('id')->get();
+        $limit = min(max((int) $request->input('limit', 200), 1), 500);
+        $results = $query->latest('id')->limit($limit)->get();
 
         if ($results->isEmpty()) {
             return $this->empty('Không tìm thấy thông tin bảo hành phù hợp.');
         }
 
-        $phoneForVerification = $phone !== ''
-            ? $phone
-            : (($codeTokens && $codeTokens['isPhoneLike']) ? $code : '');
-
-        // Áp dụng Data Masking nếu tra cứu công khai bằng mã bảo hành mà chưa xác thực số điện thoại
+        // Chỉ mở khóa PII khi cung cấp đồng thời cả code và phone khớp nhau, hoặc khi nhân sự đăng nhập đúng Tenant
         foreach ($results as $warranty) {
             $isVerified = false;
-            if ($phoneForVerification !== '' && $warranty->customer && ! empty($warranty->customer->phone)) {
-                $isVerified = PiiHelper::isPhoneMatching($phoneForVerification, $warranty->customer->phone);
+
+            if ($user) {
+                $isVerified = true;
+            } elseif ($code !== '' && $phone !== '' && $warranty->customer && ! empty($warranty->customer->phone)) {
+                $isVerified = PiiHelper::isPhoneMatching($phone, $warranty->customer->phone);
             }
 
-            if (! $isVerified && $warranty->customer) {
-                $warranty->customer->name = PiiHelper::maskName($warranty->customer->name);
-                $warranty->customer->phone = PiiHelper::maskPhone($warranty->customer->phone);
-                $warranty->customer->makeHidden(['email', 'notes']);
+            if (! $isVerified) {
+                if ($warranty->customer) {
+                    $warranty->customer->name = PiiHelper::maskName($warranty->customer->name);
+                    $warranty->customer->phone = PiiHelper::maskPhone($warranty->customer->phone);
+                    $warranty->customer->makeHidden(['email', 'notes', 'address']);
+                }
+                if ($warranty->repairOrder) {
+                    $warranty->repairOrder->makeHidden([
+                        'shipping_address',
+                        'repair_note',
+                        'test_note',
+                        'parts_needed',
+                        'special_parts_needed',
+                        'qc_note',
+                        'price_note',
+                        'initial_price',
+                        'total_price',
+                        'estimated_price',
+                    ]);
+                }
+            } elseif (! $user && $warranty->repairOrder) {
+                // Ngay cả khi đã xác thực SĐT công khai, vẫn ẩn các ghi chú kỹ thuật nội bộ của xưởng
+                $warranty->repairOrder->makeHidden([
+                    'test_note',
+                    'parts_needed',
+                    'special_parts_needed',
+                    'qc_note',
+                ]);
             }
         }
 
@@ -286,7 +352,11 @@ class WarrantyController extends Controller
      */
     public function claims(Request $request): JsonResponse
     {
-        $query = WarrantyClaim::with(['warranty.customer', 'warranty.deviceModel', 'reworkOrder', 'receivedByUser:id,name']);
+        $user = $request->user();
+        $query = WarrantyClaim::with(['warranty.customer', 'warranty.deviceModel', 'reworkOrder', 'receivedByUser:id,name'])
+            ->whereHas('warranty.repairOrder', function ($rq) use ($user) {
+                $this->applyOrderTenantAndBranchScope($rq, $user);
+            });
 
         if ($status = $request->input('status')) {
             $query->where('status', $status);
@@ -295,6 +365,31 @@ class WarrantyController extends Controller
         $claims = $query->latest('id')->paginate($request->input('per_page', 15));
 
         return $this->success($claims, 'Lấy danh sách yêu cầu bảo hành thành công.');
+    }
+
+    /**
+     * Kiểm tra quyền truy cập sổ bảo hành / khiếu nại theo phạm vi Tenant và Chi nhánh của đơn sửa chữa.
+     */
+    protected function authorizeWarrantyOrderScope(?RepairOrder $repairOrder, ?\App\Models\User $user, string $actionMessage = 'thao tác bảo hành'): void
+    {
+        if (! $user) {
+            return;
+        }
+
+        if ($user->role !== 'super_admin' && ! empty($user->tenant_id)) {
+            $masterTenantId = \App\Models\Scopes\TenantScope::resolveMasterTenantId();
+            $isMaster = $masterTenantId && (int) $user->tenant_id === (int) $masterTenantId;
+            $orderTenantId = $repairOrder?->tenant_id;
+            if (! $repairOrder || ($orderTenantId !== null && (int) $orderTenantId !== (int) $user->tenant_id) || ($orderTenantId === null && ! $isMaster)) {
+                abort(403, "Bạn không có quyền {$actionMessage} cho đơn hàng của cửa hàng khác.");
+            }
+        }
+
+        if (! in_array($user->role, ['admin', 'super_admin'], true) && ! empty($user->branch_id)) {
+            if (! $repairOrder || (int) $repairOrder->branch_id !== (int) $user->branch_id) {
+                abort(403, "Bạn không có quyền {$actionMessage} cho đơn hàng của chi nhánh khác.");
+            }
+        }
     }
 
     /**
@@ -309,8 +404,13 @@ class WarrantyController extends Controller
             'notes'             => 'nullable|string',
         ]);
 
-        return DB::transaction(function () use ($request, $validated, $reworkService) {
-            $warranty = Warranty::findOrFail($validated['warranty_id']);
+        $user = $request->user();
+
+        return DB::transaction(function () use ($request, $validated, $reworkService, $user) {
+            $warranty = Warranty::with('repairOrder')->lockForUpdate()->findOrFail($validated['warranty_id']);
+            $repairOrder = $warranty->repairOrder ?? RepairOrder::withoutGlobalScopes()->find($warranty->repair_order_id);
+
+            $this->authorizeWarrantyOrderScope($repairOrder, $user, 'tiếp nhận bảo hành');
 
             if ($warranty->status === 'revoked') {
                 return $this->failure('Sổ bảo hành đã bị thu hồi do đơn hàng đã được hoàn tiền, không thể tiếp nhận khiếu nại.', 422);
@@ -352,6 +452,96 @@ class WarrantyController extends Controller
             ]);
 
             return $this->success($claim->fresh(['warranty', 'reworkOrder']), 'Tiếp nhận yêu cầu bảo hành thành công.', 201);
+        });
+    }
+
+    /**
+     * Cập nhật trạng thái / hướng xử lý yêu cầu khiếu nại bảo hành.
+     */
+    public function updateClaim(Request $request, int|string $id): JsonResponse
+    {
+        $validated = $request->validate([
+            'status'          => 'sometimes|required|in:received,in_progress,resolved,completed,rejected',
+            'resolution_mode' => 'sometimes|required|in:store_check,send_tech,replace_part,rejected,rework',
+            'notes'           => 'nullable|string',
+        ]);
+
+        $user = $request->user();
+
+        return DB::transaction(function () use ($request, $validated, $id, $user) {
+            $claim = WarrantyClaim::with(['warranty.repairOrder', 'reworkOrder'])->lockForUpdate()->find($id);
+            if (! $claim || ! $claim->warranty) {
+                return $this->failure('Không tìm thấy yêu cầu bảo hành.', 404);
+            }
+
+            $repairOrder = $claim->warranty->repairOrder
+                ?? RepairOrder::withoutGlobalScopes()->find($claim->warranty->repair_order_id);
+
+            $this->authorizeWarrantyOrderScope($repairOrder, $user, 'cập nhật khiếu nại bảo hành');
+
+            $claim->fill($validated);
+            $claim->save();
+
+            if ($user) {
+                AuditLog::create([
+                    'user_id'        => $user->id,
+                    'user_name'      => $user->name,
+                    'action'         => 'Cập nhật khiếu nại bảo hành',
+                    'auditable_type' => 'WarrantyClaim',
+                    'auditable_id'   => $claim->id,
+                    'details'        => "Cập nhật khiếu nại {$claim->claim_code}",
+                    'ip_address'     => $request->ip(),
+                ]);
+            }
+
+            return $this->success($claim->fresh(['warranty', 'reworkOrder']), 'Cập nhật yêu cầu bảo hành thành công.');
+        });
+    }
+
+    /**
+     * Thu hồi sổ bảo hành điện tử.
+     */
+    public function revoke(Request $request, int|string $id): JsonResponse
+    {
+        $validated = $request->validate([
+            'reason'         => 'nullable|string|max:255',
+            'revoked_reason' => 'nullable|string|max:255',
+        ]);
+
+        $user = $request->user();
+
+        return DB::transaction(function () use ($request, $validated, $id, $user) {
+            $warranty = Warranty::with('repairOrder')->lockForUpdate()->find($id);
+            if (! $warranty) {
+                return $this->failure('Không tìm thấy thông tin bảo hành.', 404);
+            }
+
+            $repairOrder = $warranty->repairOrder
+                ?? RepairOrder::withoutGlobalScopes()->find($warranty->repair_order_id);
+
+            $this->authorizeWarrantyOrderScope($repairOrder, $user, 'thu hồi sổ bảo hành');
+
+            $reason = $validated['revoked_reason'] ?? $validated['reason'] ?? 'Thu hồi sổ bảo hành theo yêu cầu quản trị';
+
+            $warranty->update([
+                'status'         => 'revoked',
+                'revoked_at'     => now(),
+                'revoked_reason' => $reason,
+            ]);
+
+            if ($user) {
+                AuditLog::create([
+                    'user_id'        => $user->id,
+                    'user_name'      => $user->name,
+                    'action'         => 'Thu hồi sổ bảo hành',
+                    'auditable_type' => 'Warranty',
+                    'auditable_id'   => $warranty->id,
+                    'details'        => "Thu hồi sổ bảo hành {$warranty->warranty_code}: {$reason}",
+                    'ip_address'     => $request->ip(),
+                ]);
+            }
+
+            return $this->success($warranty->fresh(['repairOrder', 'customer', 'deviceModel']), 'Thu hồi sổ bảo hành thành công.');
         });
     }
 }

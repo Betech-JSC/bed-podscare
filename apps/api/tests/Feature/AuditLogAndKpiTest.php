@@ -13,9 +13,11 @@ use Tests\TestCase;
 
 class AuditLogAndKpiTest extends TestCase
 {
+    use \Illuminate\Foundation\Testing\DatabaseTransactions;
+
     private function getBranch(): Branch
     {
-        return Branch::first() ?? Branch::create([
+        return Branch::where('code', 'Q1')->first() ?? Branch::first() ?? Branch::create([
             'name'      => 'Chi nhánh Quận 1',
             'code'      => 'Q1',
             'address'   => '123 Lê Lợi, P. Bến Nghé, Q.1',

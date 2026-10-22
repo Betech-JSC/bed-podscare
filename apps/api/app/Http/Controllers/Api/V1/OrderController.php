@@ -22,6 +22,7 @@ use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
+use Illuminate\Validation\Rule;
 use Symfony\Component\HttpKernel\Exception\ConflictHttpException;
 
 class OrderController extends Controller
@@ -109,7 +110,7 @@ class OrderController extends Controller
         }
 
         $user = $request->user();
-        if ($user && $user->role !== 'admin') {
+        if ($user && ! in_array($user->role, ['admin', 'super_admin'], true)) {
             $query->where('branch_id', $user->branch_id);
         } elseif ($branchId = $request->input('branch_id')) {
             if ($branchId !== 'all') {
@@ -263,12 +264,32 @@ class OrderController extends Controller
     }
 
     /**
+     * Tạo rule kiểm tra tồn tại theo tenant_id (trừ super_admin).
+     */
+    protected function tenantExistsRule(string $table, ?User $user): \Illuminate\Validation\Rules\Exists
+    {
+        $rule = Rule::exists($table, 'id');
+        if ($user && $user->role !== 'super_admin') {
+            $tenantId = (int) ($user->tenant_id ?? 1);
+            $rule->where(function ($q) use ($tenantId) {
+                $q->where('tenant_id', $tenantId);
+                if ($tenantId === 1) {
+                    $q->orWhereNull('tenant_id');
+                }
+            });
+        }
+
+        return $rule;
+    }
+
+    /**
      * Tạo mới đơn sửa chữa tiếp nhận tại quầy.
      */
     public function store(Request $request): JsonResponse
     {
         $user = $request->user();
-        $isStaff = $user && $user->role !== 'admin';
+        $user?->loadMissing('tenant');
+        $isStaff = $user && ! in_array($user->role, ['admin', 'super_admin'], true);
 
         $tenant = $user?->tenant;
         if ($tenant) {
@@ -288,9 +309,9 @@ class OrderController extends Controller
         }
 
         $rules = [
-            'branch_id'             => ($isStaff && $user->branch_id) ? 'nullable|exists:branches,id' : 'required|exists:branches,id',
-            'created_by_user_id'    => 'nullable|exists:users,id',
-            'customer_id'           => 'required_without:customer_phone|nullable|exists:customers,id',
+            'branch_id'             => [($isStaff && $user->branch_id) ? 'nullable' : 'required', $this->tenantExistsRule('branches', $user)],
+            'created_by_user_id'    => ['nullable', 'integer'],
+            'customer_id'           => ['required_without:customer_phone', 'nullable', $this->tenantExistsRule('customers', $user)],
             'customer_name'         => 'required_with:customer_phone|string|max:255',
             'customer_phone'        => 'nullable|string|max:20',
             'device_model_id'       => 'required|exists:device_models,id',
@@ -325,7 +346,9 @@ class OrderController extends Controller
                 ->where('tenant_id', $user->tenant_id)
                 ->first();
             if (! $validUser) {
-                return $this->failure('Nhân viên tiếp nhận không hợp lệ hoặc không thuộc cửa hàng.', 422);
+                return $this->failure('Nhân viên tiếp nhận không hợp lệ hoặc không thuộc cửa hàng.', 422, [
+                    'created_by_user_id' => ['Nhân viên tiếp nhận không hợp lệ hoặc không thuộc cửa hàng.'],
+                ]);
             }
             $creatorId = $validUser->id;
         } else {
@@ -392,13 +415,20 @@ class OrderController extends Controller
 
             // 4. Lưu checklists nếu có
             if (! empty($validated['checklists'])) {
+                $now = now();
+                $intakeRows = [];
                 foreach ($validated['checklists'] as $item) {
-                    IntakeChecklist::create([
+                    $intakeRows[] = [
                         'repair_order_id' => $order->id,
                         'item_name'       => $item['item_name'],
                         'status'          => $item['status'] ?? 'not_tested',
                         'note'            => $item['note'] ?? null,
-                    ]);
+                        'created_at'      => $now,
+                        'updated_at'      => $now,
+                    ];
+                }
+                if (! empty($intakeRows)) {
+                    IntakeChecklist::insert($intakeRows);
                 }
             }
 
@@ -427,23 +457,26 @@ class OrderController extends Controller
                 'action_url' => "/repairs?id={$order->id}",
             ]);
 
-            OrderOperationalEvent::dispatch(
-                $notification->id,
-                $order->id,
-                $order->order_code,
-                'Tiếp nhận đơn mới',
-                "Đơn {$order->order_code} đã được tiếp nhận tại {$branchName}.",
-                'info',
-                now()->toIso8601String(),
-                "/repairs?id={$order->id}",
-                $order->branch_id,
-                'technician',
-                null,
-                'order_created',
-                'order.created'
-            );
+            $eventTimestamp = now()->toIso8601String();
+            DB::afterCommit(function () use ($notification, $order, $branchName, $eventTimestamp) {
+                OrderOperationalEvent::dispatch(
+                    $notification->id,
+                    $order->id,
+                    $order->order_code,
+                    'Tiếp nhận đơn mới',
+                    "Đơn {$order->order_code} đã được tiếp nhận tại {$branchName}.",
+                    'info',
+                    $eventTimestamp,
+                    "/repairs?id={$order->id}",
+                    $order->branch_id,
+                    'technician',
+                    null,
+                    'order_created',
+                    'order.created'
+                );
 
-            app(\App\Services\TelegramNotificationService::class)->notifyNewOrder($order);
+                app(\App\Services\TelegramNotificationService::class)->notifyNewOrder($order);
+            });
 
             return $this->success(
                 $order->load([
@@ -491,7 +524,7 @@ class OrderController extends Controller
      */
     protected function authorizeOrderBranch(RepairOrder $order, $user): void
     {
-        if ($user && $user->role !== 'admin' && (int) $order->branch_id !== (int) $user->branch_id) {
+        if ($user && ! in_array($user->role, ['admin', 'super_admin'], true) && (int) $order->branch_id !== (int) $user->branch_id) {
             abort(403, 'Bạn không có quyền truy cập đơn hàng thuộc chi nhánh khác.');
         }
     }
@@ -537,7 +570,7 @@ class OrderController extends Controller
      */
     public function update(Request $request, int|string $id): JsonResponse
     {
-        $order = $this->resolveOrder($id);
+        $order = $this->resolveOrder($id, ['customer']);
 
         if (! $order) {
             return $this->empty('Không tìm thấy đơn sửa chữa.');
@@ -586,6 +619,7 @@ class OrderController extends Controller
 
         if ($isAdmin) {
             $validated = $request->validate([
+                'customer_id'           => ['nullable', $this->tenantExistsRule('customers', $user)],
                 'customer_name'         => 'nullable|string|max:255',
                 'customer_phone'        => 'nullable|string|max:20',
                 'device_model_id'       => 'nullable|exists:device_models,id',
@@ -603,8 +637,8 @@ class OrderController extends Controller
                 'order_type'            => 'nullable|string|in:in_store,cod,warranty',
                 'shipping_address'      => 'nullable|string|max:500',
                 'status'                => 'nullable|string',
-                'branch_id'             => 'nullable|exists:branches,id',
-                'technician_id'         => 'nullable|exists:users,id',
+                'branch_id'             => ['nullable', $this->tenantExistsRule('branches', $user)],
+                'technician_id'         => ['nullable', $this->tenantExistsRule('users', $user)],
                 'warranty_terms_days'   => 'nullable|integer|min:0',
             ]);
 
@@ -618,6 +652,7 @@ class OrderController extends Controller
                         ? PhoneHelper::normalizeForStorage($validated['customer_phone'])
                         : null;
 
+                    $order->loadMissing('customer');
                     if ($order->customer) {
                         $customerUpdates = [];
                         if ($cleanName !== null && $cleanName !== '') {
@@ -728,7 +763,7 @@ class OrderController extends Controller
         }
 
         $rules = [
-            'technician_id'         => 'nullable|exists:users,id',
+            'technician_id'         => ['nullable', $this->tenantExistsRule('users', $user)],
             'serial_number'         => 'nullable|string|max:100',
             'accessories'           => 'nullable|string|max:255',
             'appearance_notes'      => 'nullable|string',
@@ -785,36 +820,43 @@ class OrderController extends Controller
             $tenantId = $order->tenant_id;
 
             // 1. Quotes and quote items
-            foreach ($order->quotes as $quote) {
-                $quote->items()->delete();
-                $quote->delete();
+            $quoteIds = $order->quotes()->pluck('id');
+            if ($quoteIds->isNotEmpty()) {
+                \App\Models\QuoteItem::whereIn('quote_id', $quoteIds)->delete();
+                $order->quotes()->delete();
             }
 
             // 2. QC inspections and checklist results
-            foreach ($order->qcInspections as $qc) {
-                $qc->checklistResults()->delete();
-                $qc->delete();
+            $qcIds = $order->qcInspections()->pluck('id');
+            if ($qcIds->isNotEmpty()) {
+                \App\Models\QcChecklistResult::whereIn('qc_inspection_id', $qcIds)->delete();
+                $order->qcInspections()->delete();
             }
 
             // 3. Shipments and proofs
-            foreach ($order->shipments as $shipment) {
-                $shipment->proofs()->delete();
-                $shipment->delete();
+            $shipmentIds = $order->shipments()->pluck('id');
+            if ($shipmentIds->isNotEmpty()) {
+                \App\Models\ShipmentProof::whereIn('shipment_id', $shipmentIds)->delete();
+                $order->shipments()->delete();
             }
 
             // 4. Warranties and claims
-            foreach ($order->warranties as $warranty) {
-                $warranty->claims()->delete();
-                $warranty->delete();
+            $warrantyIds = $order->warranties()->pluck('id');
+            if ($warrantyIds->isNotEmpty()) {
+                \App\Models\WarrantyClaim::whereIn('warranty_id', $warrantyIds)->delete();
+                $order->warranties()->delete();
             }
 
             // 5. Intake photos
-            foreach ($order->intakePhotos as $photo) {
-                if ($photo->photo_url) {
-                    $path = str_replace(url('/storage') . '/', '', $photo->photo_url);
-                    Storage::disk('public')->delete($path);
+            $photos = $order->intakePhotos()->get(['id', 'photo_url']);
+            if ($photos->isNotEmpty()) {
+                foreach ($photos as $photo) {
+                    if ($photo->photo_url) {
+                        $path = str_replace(url('/storage') . '/', '', $photo->photo_url);
+                        Storage::disk('public')->delete($path);
+                    }
                 }
-                $photo->delete();
+                $order->intakePhotos()->delete();
             }
 
             // 6. Checklists
@@ -872,7 +914,7 @@ class OrderController extends Controller
             'parts_used'          => 'nullable|string',
             'final_check_result'  => 'nullable|string|max:500',
             'rework_reason'       => 'nullable|string',
-            'technician_id'       => 'nullable|exists:users,id',
+            'technician_id'       => ['nullable', $this->tenantExistsRule('users', $request->user())],
         ]);
 
         $rawStatus = (string) ($validated['transition'] ?? $validated['status']);
@@ -1027,37 +1069,40 @@ class OrderController extends Controller
             'action_url' => "/repairs?id={$order->id}",
         ]);
 
-        OrderOperationalEvent::dispatch(
-            $notification->id,
-            $order->id,
-            $order->order_code ?? (string) $order->id,
-            $notificationTitle,
-            $notificationMsg,
-            'warning',
-            $now->toIso8601String(),
-            "/repairs?id={$order->id}",
-            $order->branch_id,
-            'cskh',
-            null,
-            'special_part_requested',
-            'order.special_part_requested'
-        );
+        $eventTimestamp = $now->toIso8601String();
+        DB::afterCommit(function () use ($notification, $order, $notificationTitle, $notificationMsg, $eventTimestamp) {
+            OrderOperationalEvent::dispatch(
+                $notification->id,
+                $order->id,
+                $order->order_code ?? (string) $order->id,
+                $notificationTitle,
+                $notificationMsg,
+                'warning',
+                $eventTimestamp,
+                "/repairs?id={$order->id}",
+                $order->branch_id,
+                'cskh',
+                null,
+                'special_part_requested',
+                'order.special_part_requested'
+            );
 
-        OrderOperationalEvent::dispatch(
-            $notification->id,
-            $order->id,
-            $order->order_code ?? (string) $order->id,
-            $notificationTitle,
-            $notificationMsg,
-            'warning',
-            $now->toIso8601String(),
-            "/repairs?id={$order->id}",
-            $order->branch_id,
-            'admin',
-            null,
-            'special_part_requested',
-            'order.special_part_requested'
-        );
+            OrderOperationalEvent::dispatch(
+                $notification->id,
+                $order->id,
+                $order->order_code ?? (string) $order->id,
+                $notificationTitle,
+                $notificationMsg,
+                'warning',
+                $eventTimestamp,
+                "/repairs?id={$order->id}",
+                $order->branch_id,
+                'admin',
+                null,
+                'special_part_requested',
+                'order.special_part_requested'
+            );
+        });
 
         return $this->success(
             $order->fresh(['customer', 'technician', 'branch', 'deviceModel', 'createdByUser:id,name,role']),
@@ -1128,21 +1173,24 @@ class OrderController extends Controller
             'action_url' => "/repairs?id={$order->id}",
         ]);
 
-        OrderOperationalEvent::dispatch(
-            $notification->id,
-            $order->id,
-            $order->order_code ?? (string) $order->id,
-            $notificationTitle,
-            $notificationMsg,
-            'success',
-            $now->toIso8601String(),
-            "/repairs?id={$order->id}",
-            $order->branch_id,
-            'technician',
-            $order->technician_id,
-            'special_part_fulfilled',
-            'order.special_part_fulfilled'
-        );
+        $eventTimestamp = $now->toIso8601String();
+        DB::afterCommit(function () use ($notification, $order, $notificationTitle, $notificationMsg, $eventTimestamp) {
+            OrderOperationalEvent::dispatch(
+                $notification->id,
+                $order->id,
+                $order->order_code ?? (string) $order->id,
+                $notificationTitle,
+                $notificationMsg,
+                'success',
+                $eventTimestamp,
+                "/repairs?id={$order->id}",
+                $order->branch_id,
+                'technician',
+                $order->technician_id,
+                'special_part_fulfilled',
+                'order.special_part_fulfilled'
+            );
+        });
 
         return $this->success(
             $order->fresh(['customer', 'technician', 'branch', 'deviceModel', 'createdByUser:id,name,role']),
@@ -1164,7 +1212,7 @@ class OrderController extends Controller
         $this->authorizeOrderBranch($order, $request->user());
 
         $validated = $request->validate([
-            'technician_id' => 'required|exists:users,id',
+            'technician_id' => ['required', $this->tenantExistsRule('users', $request->user())],
         ]);
 
         $order->update(['technician_id' => $validated['technician_id']]);
@@ -1284,21 +1332,24 @@ class OrderController extends Controller
                 'severity'   => 'info',
             ]);
 
-            OrderOperationalEvent::dispatch(
-                $notification->id,
-                $lockedOrder->id,
-                $lockedOrder->order_code ?? (string) $lockedOrder->id,
-                $notificationTitle,
-                $notificationMsg,
-                'info',
-                $now->toIso8601String(),
-                "/repairs?id={$lockedOrder->id}",
-                $lockedOrder->branch_id,
-                'technician',
-                $newTechId,
-                'order_handover',
-                'order.handover'
-            );
+            $eventTimestamp = $now->toIso8601String();
+            DB::afterCommit(function () use ($notification, $lockedOrder, $notificationTitle, $notificationMsg, $eventTimestamp, $newTechId) {
+                OrderOperationalEvent::dispatch(
+                    $notification->id,
+                    $lockedOrder->id,
+                    $lockedOrder->order_code ?? (string) $lockedOrder->id,
+                    $notificationTitle,
+                    $notificationMsg,
+                    'info',
+                    $eventTimestamp,
+                    "/repairs?id={$lockedOrder->id}",
+                    $lockedOrder->branch_id,
+                    'technician',
+                    $newTechId,
+                    'order_handover',
+                    'order.handover'
+                );
+            });
 
             return $this->success(
                 $lockedOrder->fresh(['customer', 'technician', 'branch', 'deviceModel', 'createdByUser:id,name,role']),
@@ -1366,11 +1417,26 @@ class OrderController extends Controller
             'items.*.note'      => 'nullable|string',
         ]);
 
+        $existingItems = IntakeChecklist::where('repair_order_id', $order->id)
+            ->get()
+            ->keyBy('item_name');
+
         foreach ($validated['items'] as $item) {
-            IntakeChecklist::updateOrCreate(
-                ['repair_order_id' => $order->id, 'item_name' => $item['item_name']],
-                ['status' => $item['status'], 'note' => $item['note'] ?? null]
-            );
+            $existing = $existingItems->get($item['item_name']);
+            if ($existing) {
+                $existing->update([
+                    'status' => $item['status'],
+                    'note'   => $item['note'] ?? null,
+                ]);
+            } else {
+                $created = IntakeChecklist::create([
+                    'repair_order_id' => $order->id,
+                    'item_name'       => $item['item_name'],
+                    'status'          => $item['status'],
+                    'note'            => $item['note'] ?? null,
+                ]);
+                $existingItems->put($item['item_name'], $created);
+            }
         }
 
         return $this->success(
@@ -1482,21 +1548,24 @@ class OrderController extends Controller
                 'action_url' => "/repairs?id={$lockedOrder->id}",
             ]);
 
-            OrderOperationalEvent::dispatch(
-                $notification->id,
-                $lockedOrder->id,
-                $lockedOrder->order_code ?? (string) $lockedOrder->id,
-                "Yêu cầu làm thêm dịch vụ: {$validated['name']}",
-                "Khách hàng vừa bổ sung dịch vụ: {$validated['name']} (+" . number_format($validated['price']) . " đ) cho đơn {$lockedOrder->order_code}",
-                'warning',
-                now()->toIso8601String(),
-                "/repairs?id={$lockedOrder->id}",
-                $lockedOrder->branch_id,
-                'technician',
-                null,
-                'additional_service_added',
-                'order.additional_service_added'
-            );
+            $eventTimestamp = now()->toIso8601String();
+            DB::afterCommit(function () use ($notification, $lockedOrder, $validated, $eventTimestamp) {
+                OrderOperationalEvent::dispatch(
+                    $notification->id,
+                    $lockedOrder->id,
+                    $lockedOrder->order_code ?? (string) $lockedOrder->id,
+                    "Yêu cầu làm thêm dịch vụ: {$validated['name']}",
+                    "Khách hàng vừa bổ sung dịch vụ: {$validated['name']} (+" . number_format($validated['price']) . " đ) cho đơn {$lockedOrder->order_code}",
+                    'warning',
+                    $eventTimestamp,
+                    "/repairs?id={$lockedOrder->id}",
+                    $lockedOrder->branch_id,
+                    'technician',
+                    null,
+                    'additional_service_added',
+                    'order.additional_service_added'
+                );
+            });
 
             return $lockedOrder;
         });
@@ -1573,21 +1642,25 @@ class OrderController extends Controller
                     'action_url' => "/repairs?id={$lockedOrder->id}",
                 ]);
 
-                OrderOperationalEvent::dispatch(
-                    $notification->id,
-                    $lockedOrder->id,
-                    $lockedOrder->order_code ?? (string) $lockedOrder->id,
-                    "Đã hủy dịch vụ bổ sung: {$removedItem['name']}",
-                    "Dịch vụ {$removedItem['name']} đã được hủy cho đơn {$lockedOrder->order_code}",
-                    'info',
-                    now()->toIso8601String(),
-                    "/repairs?id={$lockedOrder->id}",
-                    $lockedOrder->branch_id,
-                    'technician',
-                    null,
-                    'additional_service_deleted',
-                    'order.additional_service_deleted'
-                );
+                $eventTimestamp = now()->toIso8601String();
+                $removedName = $removedItem['name'];
+                DB::afterCommit(function () use ($notification, $lockedOrder, $removedName, $eventTimestamp) {
+                    OrderOperationalEvent::dispatch(
+                        $notification->id,
+                        $lockedOrder->id,
+                        $lockedOrder->order_code ?? (string) $lockedOrder->id,
+                        "Đã hủy dịch vụ bổ sung: {$removedName}",
+                        "Dịch vụ {$removedName} đã được hủy cho đơn {$lockedOrder->order_code}",
+                        'info',
+                        $eventTimestamp,
+                        "/repairs?id={$lockedOrder->id}",
+                        $lockedOrder->branch_id,
+                        'technician',
+                        null,
+                        'additional_service_deleted',
+                        'order.additional_service_deleted'
+                    );
+                });
             }
 
             return $lockedOrder;

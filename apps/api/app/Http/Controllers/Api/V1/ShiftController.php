@@ -42,11 +42,11 @@ class ShiftController extends Controller
         }
 
         if ($fromDate = $request->input('from_date')) {
-            $query->whereDate('opened_at', '>=', $fromDate);
+            $query->where('opened_at', '>=', \Illuminate\Support\Carbon::parse($fromDate)->startOfDay());
         }
 
         if ($toDate = $request->input('to_date')) {
-            $query->whereDate('opened_at', '<=', $toDate);
+            $query->where('opened_at', '<=', \Illuminate\Support\Carbon::parse($toDate)->endOfDay());
         }
 
         $shifts = $query->latest('id')->paginate($request->input('per_page', 15));

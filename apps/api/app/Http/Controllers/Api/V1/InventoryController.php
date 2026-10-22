@@ -89,7 +89,8 @@ class InventoryController extends Controller
         }
 
         $user = request()->user();
-        if (! $user || $user->role !== 'admin') {
+        $isAdmin = $user && in_array($user->role, ['admin', 'super_admin'], true);
+        if (! $isAdmin) {
             $part->makeHidden('cost_price');
             if ($part->relationLoaded('inventoryTransactions')) {
                 $part->inventoryTransactions->each(function (InventoryTransaction $tx) {
@@ -106,7 +107,34 @@ class InventoryController extends Controller
      */
     public function transactions(Request $request): JsonResponse
     {
+        $user = $request->user();
+        $isAdmin = $user && in_array($user->role, ['admin', 'super_admin'], true);
+
         $query = InventoryTransaction::with(['part', 'branch', 'repairOrder', 'createdByUser:id,name']);
+
+        if ($user && $user->role !== 'super_admin' && ! empty($user->tenant_id)) {
+            $masterTenantId = \App\Models\Scopes\TenantScope::resolveMasterTenantId();
+            $isMaster = $masterTenantId && (int) $user->tenant_id === (int) $masterTenantId;
+
+            $query->whereHas('part', function ($pq) use ($user, $isMaster) {
+                $pq->withoutGlobalScopes()->where(function ($sub) use ($user, $isMaster) {
+                    $sub->where('parts.tenant_id', $user->tenant_id);
+                    if ($isMaster) {
+                        $sub->orWhereNull('parts.tenant_id');
+                    }
+                });
+            })->whereHas('branch', function ($bq) use ($user, $isMaster) {
+                $bq->withoutGlobalScopes()->where(function ($sub) use ($user, $isMaster) {
+                    $sub->where('branches.tenant_id', $user->tenant_id);
+                    if ($user->branch_id) {
+                        $sub->orWhere('branches.id', $user->branch_id);
+                    }
+                    if ($isMaster) {
+                        $sub->orWhereNull('branches.tenant_id');
+                    }
+                });
+            });
+        }
 
         if ($partId = $request->input('part_id')) {
             $query->where('part_id', $partId);
@@ -116,8 +144,7 @@ class InventoryController extends Controller
             $query->where('transaction_type', $type);
         }
 
-        $user = $request->user();
-        if ($user && $user->role !== 'admin') {
+        if ($user && ! $isAdmin) {
             $query->where('branch_id', $user->branch_id);
         } elseif ($branchId = $request->input('branch_id')) {
             if ($branchId !== 'all') {
@@ -127,7 +154,7 @@ class InventoryController extends Controller
 
         $transactions = $query->latest('id')->paginate($request->input('per_page', 20));
 
-        if (! $user || $user->role !== 'admin') {
+        if (! $isAdmin) {
             $transactions->getCollection()->each(function (InventoryTransaction $tx) {
                 $tx->makeHidden('unit_cost');
                 if ($tx->relationLoaded('part') && $tx->part) {
@@ -145,7 +172,9 @@ class InventoryController extends Controller
     public function createTransaction(Request $request): JsonResponse
     {
         $user = $request->user();
-        if ($user && $user->role !== 'admin') {
+        $isAdmin = $user && in_array($user->role, ['admin', 'super_admin'], true);
+
+        if ($user && ! $isAdmin) {
             if ($request->has('branch_id') && (int) $request->input('branch_id') !== (int) $user->branch_id) {
                 abort(403, 'Bạn không có quyền tạo giao dịch kho cho chi nhánh khác.');
             }
@@ -153,7 +182,7 @@ class InventoryController extends Controller
 
         $validated = $request->validate([
             'part_id'          => 'required|exists:parts,id',
-            'branch_id'        => ($user && $user->role !== 'admin' && $user->branch_id) ? 'nullable|exists:branches,id' : 'required|exists:branches,id',
+            'branch_id'        => ($user && ! $isAdmin && $user->branch_id) ? 'nullable|exists:branches,id' : 'required|exists:branches,id',
             'repair_order_id'  => 'nullable|exists:repair_orders,id',
             'transaction_type' => 'required|in:import,export_repair,export_damage,adjust_inventory,import_return',
             'quantity'         => 'required|integer',
@@ -162,12 +191,12 @@ class InventoryController extends Controller
             'notes'            => 'nullable|string',
         ]);
 
-        if ($user && $user->role !== 'admin') {
+        if ($user && ! $isAdmin) {
             $validated['branch_id'] = $user->branch_id;
             unset($validated['unit_cost']); // Non-admin không được tự ý set unit_cost
         }
 
-        return DB::transaction(function () use ($request, $validated, $user) {
+        return DB::transaction(function () use ($request, $validated, $user, $isAdmin) {
             $part = Part::where('id', $validated['part_id'])->lockForUpdate()->firstOrFail();
 
             // Lấy hoặc khởi tạo tồn kho chi nhánh với pessimistic lock
@@ -216,7 +245,7 @@ class InventoryController extends Controller
                 );
             }
 
-            $unitCost = ($user && $user->role === 'admin' && array_key_exists('unit_cost', $validated) && $validated['unit_cost'] !== null)
+            $unitCost = ($isAdmin && array_key_exists('unit_cost', $validated) && $validated['unit_cost'] !== null)
                 ? (float) $validated['unit_cost']
                 : (float) $part->cost_price;
 
@@ -248,7 +277,7 @@ class InventoryController extends Controller
             ]);
 
             $loadedTx = $tx->load(['part', 'branch']);
-            if (! $user || $user->role !== 'admin') {
+            if (! $isAdmin) {
                 $loadedTx->makeHidden('unit_cost');
                 if ($loadedTx->part) {
                     $loadedTx->part->makeHidden('cost_price');

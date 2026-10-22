@@ -38,6 +38,19 @@ export default function RootLayout({
   return (
     <html lang="vi" className={inter.variable}>
       <head>
+        {/* Google tag (gtag.js) */}
+        <script async src="https://www.googletagmanager.com/gtag/js?id=G-MD8TXSM4S8" />
+        <script
+          dangerouslySetInnerHTML={{
+            __html: `
+              window.dataLayer = window.dataLayer || [];
+              function gtag(){dataLayer.push(arguments);}
+              gtag('js', new Date());
+
+              gtag('config', 'G-MD8TXSM4S8');
+            `,
+          }}
+        />
         <meta httpEquiv="Cache-Control" content="no-store, no-cache, must-revalidate" />
         <meta httpEquiv="Pragma" content="no-cache" />
         <meta httpEquiv="Expires" content="0" />

@@ -152,13 +152,23 @@ class PhoneHelper
                     $tokens['normalizedWithZero'],
                 ], fn ($val) => $val !== '')));
 
-                $normalizedColumnSql = "REPLACE(REPLACE(REPLACE(REPLACE(REPLACE({$column}, ' ', ''), '.', ''), '-', ''), '(', ''), ')', '')";
+                if (strlen($tokens['normalizedWithZero']) === 10) {
+                    $norm = $tokens['normalizedWithZero'];
+                    $variants[] = substr($norm, 0, 4) . ' ' . substr($norm, 4, 3) . ' ' . substr($norm, 7);
+                    $variants[] = substr($norm, 0, 3) . ' ' . substr($norm, 3, 3) . ' ' . substr($norm, 6);
+                }
+
+                $variants = array_values(array_unique($variants));
 
                 foreach ($variants as $variant) {
                     if ($variant !== $cleanText) {
                         $sub->orWhere($column, 'like', "%{$variant}%");
                     }
-                    $sub->orWhereRaw("{$normalizedColumnSql} LIKE ?", ["%{$variant}%"]);
+                }
+
+                if (strlen($tokens['coreDigits']) >= 6) {
+                    $interleavedPattern = '%' . implode('%', str_split($tokens['coreDigits'])) . '%';
+                    $sub->orWhere($column, 'like', $interleavedPattern);
                 }
             }
         });

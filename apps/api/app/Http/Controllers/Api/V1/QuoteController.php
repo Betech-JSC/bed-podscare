@@ -21,7 +21,16 @@ class QuoteController extends Controller
      */
     public function index(Request $request): JsonResponse
     {
+        $user = $request->user();
         $query = RepairQuote::with(['repairOrder.customer', 'items', 'sentByUser:id,name']);
+
+        if ($user && ! in_array($user->role, ['admin', 'super_admin'], true) && $user->branch_id) {
+            $query->whereHas('repairOrder', function ($q) use ($user) {
+                $q->where('branch_id', $user->branch_id);
+            });
+        } else {
+            $query->whereHas('repairOrder');
+        }
 
         if ($orderId = $request->input('repair_order_id')) {
             $query->where('repair_order_id', $orderId);
@@ -63,6 +72,10 @@ class QuoteController extends Controller
 
         return DB::transaction(function () use ($request, $validated) {
             $order = RepairOrder::findOrFail($validated['repair_order_id']);
+            $user = $request->user();
+            if ($user && ! in_array($user->role, ['admin', 'super_admin'], true) && $user->branch_id && (int) $order->branch_id !== (int) $user->branch_id) {
+                return $this->failure('Bạn không có quyền tạo báo giá cho đơn hàng thuộc chi nhánh khác.', 403);
+            }
 
             $date = date('Ym');
             do {
@@ -88,9 +101,11 @@ class QuoteController extends Controller
                 'sent_at'             => Carbon::now(),
             ]);
 
+            $now = now();
+            $quoteItemRows = [];
             foreach ($validated['items'] as $item) {
                 $unitPrice = RepairOrder::normalizeVndAmount($item['unit_price']);
-                QuoteItem::create([
+                $quoteItemRows[] = [
                     'quote_id'    => $quote->id,
                     'service_id'  => $item['service_id'] ?? null,
                     'part_id'     => $item['part_id'] ?? null,
@@ -98,7 +113,12 @@ class QuoteController extends Controller
                     'quantity'    => $item['quantity'],
                     'unit_price'  => $unitPrice,
                     'amount'      => RepairOrder::normalizeVndAmount($item['quantity'] * $unitPrice),
-                ]);
+                    'created_at'  => $now,
+                    'updated_at'  => $now,
+                ];
+            }
+            if (! empty($quoteItemRows)) {
+                QuoteItem::insert($quoteItemRows);
             }
 
             // Cập nhật giá trên đơn hàng
@@ -122,21 +142,24 @@ class QuoteController extends Controller
                 'action_url' => "/repairs?id={$order->id}",
             ]);
 
-            OrderOperationalEvent::dispatch(
-                $notif->id,
-                $order->id,
-                $order->order_code,
-                $notif->title,
-                $notif->message,
-                'info',
-                now()->toIso8601String(),
-                "/repairs?id={$order->id}",
-                $order->branch_id,
-                'cskh',
-                null,
-                'quote_action',
-                'quote.created'
-            );
+            $eventTimestamp = now()->toIso8601String();
+            DB::afterCommit(function () use ($notif, $order, $eventTimestamp) {
+                OrderOperationalEvent::dispatch(
+                    $notif->id,
+                    $order->id,
+                    $order->order_code,
+                    $notif->title,
+                    $notif->message,
+                    'info',
+                    $eventTimestamp,
+                    "/repairs?id={$order->id}",
+                    $order->branch_id,
+                    'cskh',
+                    null,
+                    'quote_action',
+                    'quote.created'
+                );
+            });
 
             return $this->success($quote->load('items'), 'Tạo báo giá thành công.', 201);
         });
@@ -149,8 +172,13 @@ class QuoteController extends Controller
     {
         $quote = RepairQuote::with('repairOrder')->find($id);
 
-        if (! $quote) {
+        if (! $quote || ! $quote->repairOrder) {
             return $this->empty('Không tìm thấy báo giá.');
+        }
+
+        $user = $request->user();
+        if ($user && ! in_array($user->role, ['admin', 'super_admin'], true) && $user->branch_id && (int) $quote->repairOrder->branch_id !== (int) $user->branch_id) {
+            return $this->failure('Bạn không có quyền duyệt báo giá của chi nhánh khác.', 403);
         }
 
         return DB::transaction(function () use ($quote, $request) {
@@ -192,21 +220,24 @@ class QuoteController extends Controller
                     'action_url' => "/repairs?id={$order->id}",
                 ]);
 
-                OrderOperationalEvent::dispatch(
-                    $notif->id,
-                    $order->id,
-                    $order->order_code,
-                    $notif->title,
-                    $notif->message,
-                    'success',
-                    now()->toIso8601String(),
-                    "/repairs?id={$order->id}",
-                    $order->branch_id,
-                    'technician',
-                    null,
-                    'quote_action',
-                    'quote.approved'
-                );
+                $eventTimestamp = now()->toIso8601String();
+                DB::afterCommit(function () use ($notif, $order, $eventTimestamp) {
+                    OrderOperationalEvent::dispatch(
+                        $notif->id,
+                        $order->id,
+                        $order->order_code,
+                        $notif->title,
+                        $notif->message,
+                        'success',
+                        $eventTimestamp,
+                        "/repairs?id={$order->id}",
+                        $order->branch_id,
+                        'technician',
+                        null,
+                        'quote_action',
+                        'quote.approved'
+                    );
+                });
             }
 
             return $this->success($quote, 'Đã phê duyệt báo giá.');
@@ -220,8 +251,13 @@ class QuoteController extends Controller
     {
         $quote = RepairQuote::with('repairOrder')->find($id);
 
-        if (! $quote) {
+        if (! $quote || ! $quote->repairOrder) {
             return $this->empty('Không tìm thấy báo giá.');
+        }
+
+        $user = $request->user();
+        if ($user && ! in_array($user->role, ['admin', 'super_admin'], true) && $user->branch_id && (int) $quote->repairOrder->branch_id !== (int) $user->branch_id) {
+            return $this->failure('Bạn không có quyền từ chối báo giá của chi nhánh khác.', 403);
         }
 
         $validated = $request->validate([
@@ -263,21 +299,24 @@ class QuoteController extends Controller
                     'action_url' => "/repairs?id={$order->id}",
                 ]);
 
-                OrderOperationalEvent::dispatch(
-                    $notif->id,
-                    $order->id,
-                    $order->order_code,
-                    $notif->title,
-                    $notif->message,
-                    'danger',
-                    now()->toIso8601String(),
-                    "/repairs?id={$order->id}",
-                    $order->branch_id,
-                    'cskh',
-                    null,
-                    'quote_action',
-                    'quote.rejected'
-                );
+                $eventTimestamp = now()->toIso8601String();
+                DB::afterCommit(function () use ($notif, $order, $eventTimestamp) {
+                    OrderOperationalEvent::dispatch(
+                        $notif->id,
+                        $order->id,
+                        $order->order_code,
+                        $notif->title,
+                        $notif->message,
+                        'danger',
+                        $eventTimestamp,
+                        "/repairs?id={$order->id}",
+                        $order->branch_id,
+                        'cskh',
+                        null,
+                        'quote_action',
+                        'quote.rejected'
+                    );
+                });
             }
 
             return $this->success($quote, 'Đã ghi nhận từ chối báo giá.');

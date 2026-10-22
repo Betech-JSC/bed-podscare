@@ -35,5 +35,6 @@
         <env name="SEPAY_ACCOUNT_HOLDER" value="CONG TY FIXO VIET NAM"/>
         <env name="SEPAY_WEBHOOK_SECRET" value="fixo_secret_sepay_platform_2026"/>
         <env name="SEPAY_QR_TEMPLATE" value="compact2"/>
+        <env name="DISCORD_WEBHOOK_URL" value=""/>
     </php>
 </phpunit>

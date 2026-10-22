@@ -378,24 +378,39 @@ class RevenueSummaryTool implements TelegramAiToolInterface
         $paymentQuery,
         array $completedStatuses
     ): array {
+        $orderRelations = match ($groupBy) {
+            'device_category' => ['deviceModel' => fn ($q) => $q->withoutGlobalScopes()->select(['id', 'name', 'category'])],
+            'technician'      => ['technician' => fn ($q) => $q->withoutGlobalScopes()->select(['id', 'name'])],
+            'branch'          => ['branch' => fn ($q) => $q->withoutGlobalScopes()->select(['id', 'name'])],
+            'service'         => ['quotes' => fn ($q) => $q->withoutGlobalScopes()->with(['items.service'])],
+            default           => [],
+        };
+
+        $orderColumns = [
+            'id',
+            'tenant_id',
+            'branch_id',
+            'technician_id',
+            'device_model_id',
+            'status',
+            'order_type',
+            'total_price',
+            'issue_description',
+            'created_at',
+        ];
+
         $orders = (clone $orderQuery)
+            ->select($orderColumns)
             ->whereNotIn('status', ['cancelled', 'rejected'])
-            ->with([
-                'deviceModel'   => fn ($q) => $q->withoutGlobalScopes(),
-                'technician'    => fn ($q) => $q->withoutGlobalScopes(),
-                'branch'        => fn ($q) => $q->withoutGlobalScopes(),
-                'quotes'        => fn ($q) => $q->withoutGlobalScopes()->with(['items.service']),
-            ])
+            ->with($orderRelations)
             ->get();
 
         $payments = $paymentQuery
+            ->select(['id', 'repair_order_id', 'amount', 'refund_amount', 'status', 'paid_at'])
             ->with([
-                'repairOrder' => fn ($q) => $q->withoutGlobalScopes()->with([
-                    'deviceModel' => fn ($dq) => $dq->withoutGlobalScopes(),
-                    'technician'  => fn ($tq) => $tq->withoutGlobalScopes(),
-                    'branch'      => fn ($bq) => $bq->withoutGlobalScopes(),
-                    'quotes'      => fn ($qq) => $qq->withoutGlobalScopes()->with(['items.service']),
-                ]),
+                'repairOrder' => fn ($q) => $q->withoutGlobalScopes()
+                    ->select($orderColumns)
+                    ->with($orderRelations),
             ])
             ->get();
 
