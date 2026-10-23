@@ -46,23 +46,73 @@ export interface CreateInventoryTransactionDTO {
   repair_order_id?: number | string | null;
 }
 
+export interface InventorySummary {
+  total_sku?: number;
+  total_parts?: number;
+  total_quantity?: number;
+  total_stock_quantity?: number;
+  low_stock_count?: number;
+  out_of_stock_count?: number;
+  total_stock_value?: number;
+  total_cost_value?: number;
+  total_retail_value?: number;
+}
+
+export interface InventoryPartQueryParams {
+  branch_id?: number | string;
+  category?: string;
+  low_stock?: boolean;
+  q?: string;
+  search?: string;
+  page?: number;
+  per_page?: number | 'all';
+  all?: boolean;
+}
+
+export interface InventoryTransactionQueryParams {
+  part_id?: string | number;
+  transaction_type?: string;
+  branch_id?: string | number;
+  q?: string;
+  search?: string;
+  page?: number;
+  per_page?: number | 'all';
+  all?: boolean;
+}
+
+function normalizePaginationParams(
+  params?: Record<string, string | number | boolean | undefined>
+): Record<string, string | number | boolean> | undefined {
+  if (!params || typeof params !== 'object') {
+    return undefined;
+  }
+
+  const cleanParams: Record<string, string | number | boolean> = {};
+  for (const [key, value] of Object.entries(params)) {
+    if (value !== undefined && value !== '') {
+      cleanParams[key] = value;
+    }
+  }
+
+  const queryText = params.q ?? params.search;
+  if (queryText !== undefined && String(queryText).trim() !== '') {
+    cleanParams.q = String(queryText).trim();
+  }
+
+  if (params.per_page === 'all' || params.all === true) {
+    cleanParams.per_page = 'all';
+    cleanParams.all = true;
+  }
+
+  return Object.keys(cleanParams).length > 0 ? cleanParams : undefined;
+}
+
 export class InventoryService {
   constructor(private http: HttpClient = defaultHttpClient) {}
 
-  async getParts(params?: {
-    branch_id?: number | string;
-    category?: string;
-    low_stock?: boolean;
-    q?: string;
-    search?: string;
-    page?: number;
-    per_page?: number;
-  }): Promise<any> {
+  async getParts(params?: InventoryPartQueryParams): Promise<any> {
     return this.http.get('/api/v1/inventory/parts', {
-      params: {
-        ...params,
-        q: params?.q || params?.search,
-      },
+      params: normalizePaginationParams(params as Record<string, string | number | boolean | undefined>),
     });
   }
 
@@ -70,14 +120,10 @@ export class InventoryService {
     return this.http.get(`/api/v1/inventory/parts/${id}`);
   }
 
-  async getTransactions(params?: {
-    part_id?: string | number;
-    transaction_type?: string;
-    branch_id?: string | number;
-    page?: number;
-    per_page?: number;
-  }): Promise<any> {
-    return this.http.get('/api/v1/inventory/transactions', { params });
+  async getTransactions(params?: InventoryTransactionQueryParams): Promise<any> {
+    return this.http.get('/api/v1/inventory/transactions', {
+      params: normalizePaginationParams(params as Record<string, string | number | boolean | undefined>),
+    });
   }
 
   async createTransaction(dto: CreateInventoryTransactionDTO): Promise<any> {

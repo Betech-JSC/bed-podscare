@@ -9,6 +9,7 @@ use App\Models\Notification;
 use App\Models\QuoteItem;
 use App\Models\RepairOrder;
 use App\Models\RepairQuote;
+use App\Support\PhoneHelper;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
@@ -22,25 +23,122 @@ class QuoteController extends Controller
     public function index(Request $request): JsonResponse
     {
         $user = $request->user();
-        $query = RepairQuote::with(['repairOrder.customer', 'items', 'sentByUser:id,name']);
+        $query = RepairQuote::with([
+            'repairOrder.customer',
+            'repairOrder.deviceModel',
+            'repairOrder.branch',
+            'items',
+            'sentByUser:id,name',
+        ]);
 
         if ($user && ! in_array($user->role, ['admin', 'super_admin'], true) && $user->branch_id) {
             $query->whereHas('repairOrder', function ($q) use ($user) {
                 $q->where('branch_id', $user->branch_id);
             });
+        } elseif ($branchId = $request->input('branch_id')) {
+            if ($branchId !== 'all') {
+                $query->whereHas('repairOrder', function ($q) use ($branchId) {
+                    $q->where('branch_id', $branchId);
+                });
+            } else {
+                $query->whereHas('repairOrder');
+            }
         } else {
             $query->whereHas('repairOrder');
         }
 
         if ($orderId = $request->input('repair_order_id')) {
-            $query->where('repair_order_id', $orderId);
+            if (is_numeric($orderId)) {
+                $query->where('repair_order_id', (int) $orderId);
+            } else {
+                $cleanOrderCode = PhoneHelper::sanitizeText((string) $orderId);
+                $query->whereHas('repairOrder', fn ($rq) => $rq->where('order_code', $cleanOrderCode));
+            }
+        }
+
+        if ($rawOrderIds = $request->input('repair_order_ids')) {
+            $idList = is_array($rawOrderIds)
+                ? $rawOrderIds
+                : array_map('trim', explode(',', (string) $rawOrderIds));
+            $idList = array_values(array_filter($idList, fn ($v) => $v !== null && $v !== ''));
+
+            if (! empty($idList)) {
+                $numericIds = array_values(array_map('intval', array_filter($idList, 'is_numeric')));
+                $stringCodes = array_values(array_map(
+                    fn ($v) => PhoneHelper::sanitizeText((string) $v),
+                    array_filter($idList, fn ($v) => ! is_numeric($v))
+                ));
+
+                $query->where(function ($oq) use ($numericIds, $stringCodes) {
+                    if (! empty($numericIds)) {
+                        $oq->whereIn('repair_order_id', $numericIds);
+                    }
+                    if (! empty($stringCodes)) {
+                        $method = ! empty($numericIds) ? 'orWhereHas' : 'whereHas';
+                        $oq->{$method}('repairOrder', function ($rq) use ($stringCodes) {
+                            $rq->whereIn('order_code', $stringCodes);
+                        });
+                    }
+                });
+            }
         }
 
         if ($status = $request->input('status')) {
-            $query->where('status', $status);
+            if (is_array($status) || (is_string($status) && str_contains($status, ','))) {
+                $statusList = is_array($status)
+                    ? $status
+                    : array_map('trim', explode(',', $status));
+                $query->whereIn('status', array_values(array_filter($statusList)));
+            } elseif ($status !== 'all') {
+                $query->where('status', $status);
+            }
         }
 
-        $quotes = $query->latest('id')->paginate($request->input('per_page', 15));
+        $rawSearch = $request->input('q') ?? $request->input('search');
+        $search = PhoneHelper::sanitizeText($rawSearch);
+        if ($search !== '') {
+            $query->where(function ($q) use ($search) {
+                $q->where('quote_number', 'like', "%{$search}%")
+                  ->orWhere('note', 'like', "%{$search}%")
+                  ->orWhereHas('repairOrder', function ($rq) use ($search) {
+                      $rq->where('order_code', 'like', "%{$search}%")
+                         ->orWhere('serial_number', 'like', "%{$search}%")
+                         ->orWhere('issue_description', 'like', "%{$search}%")
+                         ->orWhereHas('customer', function ($cq) use ($search) {
+                             $cq->where(function ($inner) use ($search) {
+                                 $inner->where('name', 'like', "%{$search}%");
+                                 PhoneHelper::applyPhoneColumnSearch($inner, 'phone', $search, 'or');
+                             });
+                         })
+                         ->orWhereHas('deviceModel', function ($dq) use ($search) {
+                             $dq->where('name', 'like', "%{$search}%");
+                         });
+                  });
+            });
+        }
+
+        if ($request->boolean('all') || $request->input('per_page') === 'all') {
+            $items = $query->latest('id')->limit(1000)->get();
+            $total = $items->count();
+
+            return $this->success([
+                'current_page'   => 1,
+                'data'           => $items,
+                'first_page_url' => $request->fullUrlWithQuery(['page' => 1]),
+                'from'           => $total > 0 ? 1 : null,
+                'last_page'      => 1,
+                'last_page_url'  => $request->fullUrlWithQuery(['page' => 1]),
+                'next_page_url'  => null,
+                'path'           => $request->url(),
+                'per_page'       => max($total, 1),
+                'prev_page_url'  => null,
+                'to'             => $total > 0 ? $total : null,
+                'total'          => $total,
+            ], 'Lấy danh sách báo giá thành công.');
+        }
+
+        $perPage = max(1, min(500, (int) $request->input('per_page', 15)));
+        $quotes = $query->latest('id')->paginate($perPage);
 
         return $this->success($quotes, 'Lấy danh sách báo giá thành công.');
     }

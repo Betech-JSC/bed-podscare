@@ -94,25 +94,29 @@ class PlatformBillingController extends Controller
     {
         $query = SaasInvoice::with(['tenant', 'plan', 'sepayTransactions']);
 
-        if ($search = $request->input('search')) {
+        $rawSearch = $request->input('q') ?? $request->input('search');
+        if ($rawSearch !== null && trim((string) $rawSearch) !== '') {
+            $search = trim((string) $rawSearch);
             $query->where(function ($q) use ($search) {
                 $q->where('reference_code', 'like', "%{$search}%")
-                    ->orWhereHas('tenant', fn ($tq) => $tq->where('name', 'like', "%{$search}%")->orWhere('code', 'like', "%{$search}%"));
+                    ->orWhere('payment_method', 'like', "%{$search}%")
+                    ->orWhereHas('tenant', fn ($tq) => $tq->where('name', 'like', "%{$search}%")->orWhere('code', 'like', "%{$search}%"))
+                    ->orWhereHas('plan', fn ($pq) => $pq->where('name', 'like', "%{$search}%"))
+                    ->orWhereHas('sepayTransactions', fn ($sq) => $sq->where('sepay_transaction_id', 'like', "%{$search}%")->orWhere('bank_brand', 'like', "%{$search}%"));
             });
         }
 
         if ($status = $request->input('status')) {
-            if ($status === 'completed') {
-                $query->where('status', 'paid');
-            } else {
-                $query->where('status', $status);
+            if ($status !== 'all') {
+                if ($status === 'completed') {
+                    $query->where('status', 'paid');
+                } else {
+                    $query->where('status', $status);
+                }
             }
         }
 
-        $perPage = (int) $request->input('per_page', 15);
-        $paginator = $query->latest('id')->paginate($perPage);
-
-        $mappedData = $paginator->getCollection()->map(function ($inv) {
+        $mapInvoice = static function ($inv) {
             $sepayTx = $inv->sepayTransactions->first();
 
             return [
@@ -128,8 +132,32 @@ class PlatformBillingController extends Controller
                 'timestamp'      => $inv->paid_at?->toISOString() ?? $inv->created_at?->toISOString(),
                 'status'         => $inv->status === 'paid' ? 'completed' : $inv->status,
             ];
-        });
+        };
 
+        if ($request->boolean('all') || $request->input('per_page') === 'all') {
+            $items = $query->latest('id')->limit(1000)->get()->map($mapInvoice)->values();
+            $total = $items->count();
+
+            return $this->success([
+                'current_page'   => 1,
+                'data'           => $items,
+                'first_page_url' => $request->fullUrlWithQuery(['page' => 1]),
+                'from'           => $total > 0 ? 1 : null,
+                'last_page'      => 1,
+                'last_page_url'  => $request->fullUrlWithQuery(['page' => 1]),
+                'next_page_url'  => null,
+                'path'           => $request->url(),
+                'per_page'       => max($total, 1),
+                'prev_page_url'  => null,
+                'to'             => $total > 0 ? $total : null,
+                'total'          => $total,
+            ], 'Lấy danh sách giao dịch thành công.');
+        }
+
+        $perPage = max(1, min(500, (int) $request->input('per_page', 15)));
+        $paginator = $query->latest('id')->paginate($perPage);
+
+        $mappedData = $paginator->getCollection()->map($mapInvoice);
         $paginator->setCollection($mappedData);
 
         return $this->success($paginator, 'Lấy danh sách giao dịch thành công.');

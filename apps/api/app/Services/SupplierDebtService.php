@@ -24,12 +24,53 @@ class SupplierDebtService
             ->with(['goodsReceipt', 'cashTransaction', 'createdByUser', 'branch'])
             ->orderBy('id', 'desc');
 
-        if (! empty($filters['transaction_type'])) {
-            $query->where('transaction_type', $filters['transaction_type']);
+        $type = $filters['transaction_type'] ?? $filters['type'] ?? null;
+        if (! empty($type) && $type !== 'all') {
+            $query->where('transaction_type', $type);
         }
 
-        $perPage = (int) ($filters['per_page'] ?? 15);
-        return $query->paginate($perPage);
+        $rawSearch = $filters['q'] ?? $filters['search'] ?? null;
+        if ($rawSearch !== null && trim((string) $rawSearch) !== '') {
+            $search = trim((string) $rawSearch);
+            $query->where(function ($q) use ($search) {
+                $q->where('transaction_code', 'like', "%{$search}%")
+                  ->orWhere('notes', 'like', "%{$search}%")
+                  ->orWhere('payment_method', 'like', "%{$search}%")
+                  ->orWhereHas('goodsReceipt', function ($gq) use ($search) {
+                      $gq->withoutGlobalScopes()->where('receipt_code', 'like', "%{$search}%");
+                  })
+                  ->orWhereHas('cashTransaction', function ($cq) use ($search) {
+                      $cq->withoutGlobalScopes()->where('transaction_code', 'like', "%{$search}%");
+                  })
+                  ->orWhereHas('createdByUser', function ($uq) use ($search) {
+                      $uq->withoutGlobalScopes()->where('name', 'like', "%{$search}%");
+                  });
+            });
+        }
+
+        $isAll = filter_var($filters['all'] ?? false, FILTER_VALIDATE_BOOLEAN)
+            || ($filters['per_page'] ?? null) === 'all';
+
+        if ($isAll) {
+            $items = $query->limit(1000)->get();
+            $total = $items->count();
+
+            return new LengthAwarePaginator(
+                $items,
+                $total,
+                max($total, 1),
+                1,
+                [
+                    'path'  => request()->url(),
+                    'query' => request()->query(),
+                ]
+            );
+        }
+
+        $perPage = max(1, min(500, (int) ($filters['per_page'] ?? 15)));
+        $page = max(1, (int) ($filters['page'] ?? 1));
+
+        return $query->paginate($perPage, ['*'], 'page', $page);
     }
 
     /**

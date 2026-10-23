@@ -56,18 +56,101 @@ class InventoryController extends Controller
         }
 
         if ($cat = $request->input('category')) {
-            $query->where('parts.category', $cat);
+            if ($cat !== 'all') {
+                $query->where('parts.category', $cat);
+            }
         }
 
-        if ($search = $request->input('q')) {
+        if ($shelf = $request->input('shelf')) {
+            if ($shelf !== 'all') {
+                $query->where('parts.storage_location', 'like', "{$shelf}%");
+            }
+        }
+
+        $rawSearch = $request->input('q') ?? $request->input('search');
+        $search = trim((string) $rawSearch);
+        if ($search !== '') {
             $query->where(function ($q) use ($search) {
                 $q->where('parts.name', 'like', "%{$search}%")
                   ->orWhere('parts.sku', 'like', "%{$search}%")
-                  ->orWhere('parts.compatible_models', 'like', "%{$search}%");
+                  ->orWhere('parts.compatible_models', 'like', "%{$search}%")
+                  ->orWhere('parts.storage_location', 'like', "%{$search}%");
             });
         }
 
-        $parts = $query->orderBy('parts.name')->paginate($request->input('per_page', 20));
+        $stockExpr = $targetBranchId
+            ? 'COALESCE(branch_parts.stock_quantity, 0)'
+            : 'COALESCE(parts.stock_quantity, 0)';
+        $minExpr = $targetBranchId
+            ? 'COALESCE(branch_parts.min_stock_alert, parts.min_stock_alert, 5)'
+            : 'COALESCE(parts.min_stock_alert, 5)';
+
+        $summaryQuery = (clone $query)->reorder();
+        $summaryQuery->getQuery()->columns = [];
+        $statsRow = $summaryQuery->selectRaw("
+            COUNT(*) as total_sku,
+            COALESCE(SUM({$stockExpr}), 0) as total_stock_qty,
+            COALESCE(SUM(({$stockExpr}) * COALESCE(parts.cost_price, 0)), 0) as total_stock_value,
+            COALESCE(SUM(({$stockExpr}) * COALESCE(parts.retail_price, 0)), 0) as total_retail_value,
+            COALESCE(SUM(CASE WHEN {$stockExpr} <= {$minExpr} THEN 1 ELSE 0 END), 0) as low_stock_count,
+            COALESCE(SUM(CASE WHEN {$stockExpr} <= 0 THEN 1 ELSE 0 END), 0) as out_of_stock_count
+        ")->first();
+
+        $toNum = static fn ($val): int|float => ((float) $val == (int) round((float) $val))
+            ? (int) round((float) $val)
+            : (float) $val;
+
+        $totalSku = (int) ($statsRow->total_sku ?? 0);
+        $totalStockQty = (int) ($statsRow->total_stock_qty ?? 0);
+        $totalStockValue = $isAdmin ? $toNum($statsRow->total_stock_value ?? 0) : 0;
+        $totalRetailValue = $toNum($statsRow->total_retail_value ?? 0);
+        $lowStockCount = (int) ($statsRow->low_stock_count ?? 0);
+        $outOfStockCount = (int) ($statsRow->out_of_stock_count ?? 0);
+
+        $summary = [
+            'total_sku'            => $totalSku,
+            'total_parts'          => $totalSku,
+            'sku_count'            => $totalSku,
+            'total_stock_qty'      => $totalStockQty,
+            'total_stock_quantity' => $totalStockQty,
+            'total_quantity'       => $totalStockQty,
+            'total_items'          => $totalStockQty,
+            'total_stock_value'    => $totalStockValue,
+            'total_value'          => $totalStockValue,
+            'total_cost_value'     => $totalStockValue,
+            'total_retail_value'   => $totalRetailValue,
+            'low_stock_count'      => $lowStockCount,
+            'out_of_stock_count'   => $outOfStockCount,
+        ];
+
+        if ($request->boolean('all') || $request->input('per_page') === 'all') {
+            $items = $query->orderBy('parts.name')->limit(1000)->get();
+            if (! $isAdmin) {
+                $items->each(function (Part $part) {
+                    $part->makeHidden('cost_price');
+                });
+            }
+            $total = $items->count();
+
+            return $this->success([
+                'current_page'   => 1,
+                'data'           => $items,
+                'first_page_url' => $request->fullUrlWithQuery(['page' => 1]),
+                'from'           => $total > 0 ? 1 : null,
+                'last_page'      => 1,
+                'last_page_url'  => $request->fullUrlWithQuery(['page' => 1]),
+                'next_page_url'  => null,
+                'path'           => $request->url(),
+                'per_page'       => max($total, 1),
+                'prev_page_url'  => null,
+                'to'             => $total > 0 ? $total : null,
+                'total'          => $total,
+                'summary'        => $summary,
+            ], 'Lấy danh sách linh kiện kho thành công.');
+        }
+
+        $perPage = max(1, min(500, (int) $request->input('per_page', 15)));
+        $parts = $query->orderBy('parts.name')->paginate($perPage);
 
         if (! $isAdmin) {
             $parts->getCollection()->each(function (Part $part) {
@@ -75,7 +158,10 @@ class InventoryController extends Controller
             });
         }
 
-        return $this->success($parts, 'Lấy danh sách linh kiện kho thành công.');
+        $paginated = $parts->toArray();
+        $paginated['summary'] = $summary;
+
+        return $this->success($paginated, 'Lấy danh sách linh kiện kho thành công.');
     }
 
     /**
@@ -143,8 +229,10 @@ class InventoryController extends Controller
             $query->where('part_id', $partId);
         }
 
-        if ($type = $request->input('transaction_type')) {
-            $query->where('transaction_type', $type);
+        if ($type = $request->input('transaction_type', $request->input('type'))) {
+            if ($type !== 'all') {
+                $query->where('transaction_type', $type);
+            }
         }
 
         if ($user && ! $isAdmin) {
@@ -155,7 +243,66 @@ class InventoryController extends Controller
             }
         }
 
-        $transactions = $query->latest('id')->paginate($request->input('per_page', 20));
+        if ($fromDate = $request->input('from_date')) {
+            $query->where('created_at', '>=', \Illuminate\Support\Carbon::parse($fromDate)->startOfDay());
+        }
+
+        if ($toDate = $request->input('to_date')) {
+            $query->where('created_at', '<=', \Illuminate\Support\Carbon::parse($toDate)->endOfDay());
+        }
+
+        $rawSearch = $request->input('q') ?? $request->input('search');
+        $search = trim((string) $rawSearch);
+        if ($search !== '') {
+            $query->where(function ($q) use ($search) {
+                $q->where('transaction_code', 'like', "%{$search}%")
+                  ->orWhere('notes', 'like', "%{$search}%")
+                  ->orWhere('supplier_name', 'like', "%{$search}%")
+                  ->orWhereHas('part', function ($pq) use ($search) {
+                      $pq->withoutGlobalScopes()->where(function ($sub) use ($search) {
+                          $sub->where('name', 'like', "%{$search}%")
+                              ->orWhere('sku', 'like', "%{$search}%");
+                      });
+                  })
+                  ->orWhereHas('repairOrder', function ($rq) use ($search) {
+                      $rq->withoutGlobalScopes()->where('order_code', 'like', "%{$search}%");
+                  })
+                  ->orWhereHas('createdByUser', function ($uq) use ($search) {
+                      $uq->withoutGlobalScopes()->where('name', 'like', "%{$search}%");
+                  });
+            });
+        }
+
+        if ($request->boolean('all') || $request->input('per_page') === 'all') {
+            $items = $query->latest('id')->limit(1000)->get();
+            if (! $isAdmin) {
+                $items->each(function (InventoryTransaction $tx) {
+                    $tx->makeHidden('unit_cost');
+                    if ($tx->relationLoaded('part') && $tx->part) {
+                        $tx->part->makeHidden('cost_price');
+                    }
+                });
+            }
+            $total = $items->count();
+
+            return $this->success([
+                'current_page'   => 1,
+                'data'           => $items,
+                'first_page_url' => $request->fullUrlWithQuery(['page' => 1]),
+                'from'           => $total > 0 ? 1 : null,
+                'last_page'      => 1,
+                'last_page_url'  => $request->fullUrlWithQuery(['page' => 1]),
+                'next_page_url'  => null,
+                'path'           => $request->url(),
+                'per_page'       => max($total, 1),
+                'prev_page_url'  => null,
+                'to'             => $total > 0 ? $total : null,
+                'total'          => $total,
+            ], 'Lấy lịch sử giao dịch kho thành công.');
+        }
+
+        $perPage = max(1, min(500, (int) $request->input('per_page', 15)));
+        $transactions = $query->latest('id')->paginate($perPage);
 
         if (! $isAdmin) {
             $transactions->getCollection()->each(function (InventoryTransaction $tx) {

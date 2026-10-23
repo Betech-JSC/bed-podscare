@@ -7,10 +7,15 @@ import {
   Button,
   StatusTag,
   StatCard,
+  FilterBar,
+  PaginationBar,
   useToast,
   EmptyState,
   Icon,
   resolveOrderStatus,
+  sanitizeInputLive,
+  sanitizeSearchQuery,
+  matchesPhoneFlexible,
 } from '@podscare/ui';
 import { AppShell } from '../components/AppShell';
 import { TechOrderDetailModal } from '../components/TechOrderDetailModal';
@@ -37,6 +42,9 @@ export default function TechnicianQueuePage() {
 
   const [dateFilter, setDateFilter] = useState<'today' | '3_days' | '7_days'>('today');
   const [activeTab, setActiveTab] = useState<'my_orders' | 'available' | 'completed' | 'special_parts'>('my_orders');
+  const [search, setSearch] = useState('');
+  const [page, setPage] = useState<number>(1);
+  const [perPage, setPerPage] = useState<number | 'all'>(15);
   const [selectedOrder, setSelectedOrder] = useState<RepairOrder | null>(null);
   const [detailModalOpen, setDetailModalOpen] = useState(false);
   const [handoverModalOpen, setHandoverModalOpen] = useState(false);
@@ -49,11 +57,16 @@ export default function TechnicianQueuePage() {
   // Nạp đơn hàng theo phạm vi thời gian (ca làm việc) của kỹ thuật viên
   const {
     data: apiOrdersData,
+    isLoading: isTechOrdersLoading,
     refetch,
   } = useQuery({
     queryKey: ['tech-orders', branchId, dateFilter],
     queryFn: async () => {
-      const params: Record<string, any> = { per_page: 50, date_filter: dateFilter };
+      const params: Record<string, any> = {
+        per_page: 'all',
+        all: true,
+        date_filter: dateFilter,
+      };
       if (branchId && branchId !== 'all') {
         params.branch_id = branchId;
       }
@@ -142,18 +155,35 @@ export default function TechnicianQueuePage() {
     });
   }, [apiOrdersData, orders]);
 
-  // Lọc danh sách đơn theo chi nhánh được phân công hoặc chi nhánh đang chọn
+  // Lọc danh sách đơn theo chi nhánh được phân công hoặc chi nhánh đang chọn và từ khóa tìm kiếm
   const branchFilteredOrders = useMemo(() => {
-    if (branchId === 'all' || branchId === undefined || branchId === null) {
-      return mappedApiOrders;
+    let base = mappedApiOrders;
+    if (branchId !== 'all' && branchId !== undefined && branchId !== null) {
+      const branchString = typeof branch === 'string' ? branch : ((branch as any)?.name || '');
+      base = base.filter((o) => {
+        const matchId = o.branchId !== undefined && String(o.branchId) === String(branchId);
+        const matchName = o.branch && branchString ? o.branch.includes(branchString) || branchString.includes(o.branch) : false;
+        return matchId || matchName;
+      });
     }
-    const branchString = typeof branch === 'string' ? branch : ((branch as any)?.name || '');
-    return mappedApiOrders.filter((o) => {
-      const matchId = o.branchId !== undefined && String(o.branchId) === String(branchId);
-      const matchName = o.branch && branchString ? o.branch.includes(branchString) || branchString.includes(o.branch) : false;
-      return matchId || matchName;
+    const cleanQ = sanitizeSearchQuery(search).toLowerCase();
+    if (!cleanQ) return base;
+    return base.filter((o) => {
+      return (
+        o.id.toLowerCase().includes(cleanQ) ||
+        o.name.toLowerCase().includes(cleanQ) ||
+        o.phone.toLowerCase().includes(cleanQ) ||
+        matchesPhoneFlexible(o.phone, cleanQ) ||
+        (o.serial || '').toLowerCase().includes(cleanQ) ||
+        o.device.toLowerCase().includes(cleanQ) ||
+        o.issue.toLowerCase().includes(cleanQ)
+      );
     });
-  }, [mappedApiOrders, branch, branchId]);
+  }, [mappedApiOrders, branch, branchId, search]);
+
+  React.useEffect(() => {
+    setPage(1);
+  }, [dateFilter, branchId, search, activeTab]);
 
   // 1. Hàng đợi máy mới (Live Dispatch): Các đơn waiting_tech chưa có Kỹ Thuật nhận
   const availableOrders = useMemo(() => {
@@ -223,6 +253,51 @@ export default function TechnicianQueuePage() {
       (o) => normalizeStatusCode(o.status) === 'in_repair' || o.status === 'Đang sửa'
     ).length;
   }, [myActiveOrders]);
+
+  const activeTabOrders = useMemo(() => {
+    if (activeTab === 'available') return availableOrders;
+    if (activeTab === 'completed') return myCompletedTodayOrders;
+    if (activeTab === 'special_parts') return mySpecialPartsOrders;
+    return myActiveOrders;
+  }, [activeTab, myActiveOrders, availableOrders, myCompletedTodayOrders, mySpecialPartsOrders]);
+
+  const total = activeTabOrders.length;
+  const lastPage = useMemo(() => {
+    if (perPage === 'all') return 1;
+    const size = Math.max(1, Number(perPage) || 15);
+    return Math.max(1, Math.ceil(total / size));
+  }, [perPage, total]);
+
+  const currentPage = useMemo(() => {
+    if (perPage === 'all') return 1;
+    return Math.min(Math.max(1, page), lastPage);
+  }, [perPage, page, lastPage]);
+
+  const from = useMemo(() => {
+    if (total === 0) return 0;
+    if (perPage === 'all') return 1;
+    const size = Math.max(1, Number(perPage) || 15);
+    return (currentPage - 1) * size + 1;
+  }, [total, perPage, currentPage]);
+
+  const to = useMemo(() => {
+    if (total === 0) return 0;
+    if (perPage === 'all') return total;
+    const size = Math.max(1, Number(perPage) || 15);
+    return Math.min(total, currentPage * size);
+  }, [total, perPage, currentPage]);
+
+  const paginateList = (list: RepairOrder[]) => {
+    if (perPage === 'all') return list;
+    const size = Math.max(1, Number(perPage) || 15);
+    const start = Math.max(0, (currentPage - 1) * size);
+    return list.slice(start, start + size);
+  };
+
+  const paginatedMyActiveOrders = useMemo(() => paginateList(myActiveOrders), [myActiveOrders, perPage, currentPage]);
+  const paginatedAvailableOrders = useMemo(() => paginateList(availableOrders), [availableOrders, perPage, currentPage]);
+  const paginatedCompletedOrders = useMemo(() => paginateList(myCompletedTodayOrders), [myCompletedTodayOrders, perPage, currentPage]);
+  const paginatedSpecialPartsOrders = useMemo(() => paginateList(mySpecialPartsOrders), [mySpecialPartsOrders, perPage, currentPage]);
 
   // Hành động Tiếp nhận máy (Grab-style live dispatch: waiting_tech -> in_repair)
   const handleGrabOrder = async (order: RepairOrder) => {
@@ -594,7 +669,10 @@ export default function TechnicianQueuePage() {
           <button
             type="button"
             data-testid="tech-tab-special-parts"
-            onClick={() => setActiveTab('special_parts')}
+            onClick={() => {
+              setActiveTab('special_parts');
+              setPage(1);
+            }}
             className={`px-4 py-2.5 rounded-[8px] font-semibold text-sm transition-all flex items-center gap-2 cursor-pointer ${
               activeTab === 'special_parts'
                 ? 'bg-[#176b51] text-white shadow-xs'
@@ -615,6 +693,18 @@ export default function TechnicianQueuePage() {
           </button>
         </div>
 
+        {/* Search FilterBar for Technician Workspace */}
+        <div className="bg-white rounded-[10px] border border-[#e5ece8] p-3.5 shadow-2xs">
+          <FilterBar
+            searchValue={search}
+            onSearchChange={(val) => {
+              setSearch(sanitizeInputLive(val));
+              setPage(1);
+            }}
+            searchPlaceholder="Tìm theo mã đơn, tên/SĐT khách hàng, dòng máy, Serial hoặc mô tả lỗi..."
+          />
+        </div>
+
         {/* Tab Content 1: ĐƠN CỦA TÔI */}
         {activeTab === 'my_orders' && (
           <div className="bg-white rounded-[12px] border border-[#e5ece8] p-5 sm:p-6 shadow-xs">
@@ -633,8 +723,9 @@ export default function TechnicianQueuePage() {
             </div>
 
             {myActiveOrders.length > 0 ? (
+              <>
               <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
-                {myActiveOrders.map((order) => {
+                {paginatedMyActiveOrders.map((order) => {
                   const code = normalizeStatusCode(order.status);
                   const isWaitingParts = code === 'waiting_parts';
                   const isAssignedOrRework = code === 'assigned' || code === 'rework_needed';
@@ -835,6 +926,23 @@ export default function TechnicianQueuePage() {
                   );
                 })}
               </div>
+              <PaginationBar
+                testIdPrefix="tech-orders"
+                currentPage={currentPage}
+                lastPage={lastPage}
+                total={total}
+                from={from}
+                to={to}
+                perPage={perPage}
+                onPageChange={(nextPage) => setPage(nextPage)}
+                onPerPageChange={(nextPerPage) => {
+                  setPerPage(nextPerPage);
+                  setPage(1);
+                }}
+                itemLabel="đơn kỹ thuật"
+                isLoading={isTechOrdersLoading}
+              />
+              </>
             ) : (
               <div className="py-8">
                 <EmptyState
@@ -873,8 +981,9 @@ export default function TechnicianQueuePage() {
             </div>
 
             {availableOrders.length > 0 ? (
+              <>
               <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
-                {availableOrders.map((order) => (
+                {paginatedAvailableOrders.map((order) => (
                   <article
                     key={order.id}
                     className="bg-white border-2 border-[#176b51]/20 hover:border-[#176b51] rounded-[12px] p-5 flex flex-col justify-between shadow-2xs hover:shadow-xs transition-all"
@@ -964,6 +1073,23 @@ export default function TechnicianQueuePage() {
                   </article>
                 ))}
               </div>
+              <PaginationBar
+                testIdPrefix="tech-orders"
+                currentPage={currentPage}
+                lastPage={lastPage}
+                total={total}
+                from={from}
+                to={to}
+                perPage={perPage}
+                onPageChange={(nextPage) => setPage(nextPage)}
+                onPerPageChange={(nextPerPage) => {
+                  setPerPage(nextPerPage);
+                  setPage(1);
+                }}
+                itemLabel="đơn kỹ thuật"
+                isLoading={isTechOrdersLoading}
+              />
+              </>
             ) : (
               <div className="py-8">
                 <EmptyState
@@ -994,8 +1120,9 @@ export default function TechnicianQueuePage() {
             </div>
 
             {myCompletedTodayOrders.length > 0 ? (
+              <>
               <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
-                {myCompletedTodayOrders.map((order) => (
+                {paginatedCompletedOrders.map((order) => (
                   <article
                     key={order.id}
                     className="bg-white border border-[#e5ece8] rounded-[12px] p-5 flex flex-col justify-between shadow-2xs hover:shadow-xs transition-all"
@@ -1065,6 +1192,23 @@ export default function TechnicianQueuePage() {
                   </article>
                 ))}
               </div>
+              <PaginationBar
+                testIdPrefix="tech-orders"
+                currentPage={currentPage}
+                lastPage={lastPage}
+                total={total}
+                from={from}
+                to={to}
+                perPage={perPage}
+                onPageChange={(nextPage) => setPage(nextPage)}
+                onPerPageChange={(nextPerPage) => {
+                  setPerPage(nextPerPage);
+                  setPage(1);
+                }}
+                itemLabel="đơn kỹ thuật"
+                isLoading={isTechOrdersLoading}
+              />
+              </>
             ) : (
               <div className="py-8">
                 <EmptyState
@@ -1108,8 +1252,9 @@ export default function TechnicianQueuePage() {
             </div>
 
             {mySpecialPartsOrders.length > 0 ? (
+              <>
               <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
-                {mySpecialPartsOrders.map((order) => {
+                {paginatedSpecialPartsOrders.map((order) => {
                   const code = normalizeStatusCode(order.status);
                   const isWaitingParts = code === 'waiting_parts';
                   const isPurchased = order.special_parts_status === 'purchased' || order.specialPartsStatus === 'purchased';
@@ -1249,6 +1394,23 @@ export default function TechnicianQueuePage() {
                   );
                 })}
               </div>
+              <PaginationBar
+                testIdPrefix="tech-orders"
+                currentPage={currentPage}
+                lastPage={lastPage}
+                total={total}
+                from={from}
+                to={to}
+                perPage={perPage}
+                onPageChange={(nextPage) => setPage(nextPage)}
+                onPerPageChange={(nextPerPage) => {
+                  setPerPage(nextPerPage);
+                  setPage(1);
+                }}
+                itemLabel="đơn kỹ thuật"
+                isLoading={isTechOrdersLoading}
+              />
+              </>
             ) : (
               <div className="py-8">
                 <EmptyState

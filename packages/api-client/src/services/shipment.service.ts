@@ -62,16 +62,39 @@ export interface UploadProofDTO {
   caption?: string;
 }
 
+export interface ShipmentQueryParams {
+  status?: string;
+  delivery_method?: string;
+  q?: string;
+  search?: string;
+  per_page?: number | 'all';
+  all?: boolean;
+  page?: number;
+}
+
 export class ShipmentService {
   constructor(private http: HttpClient = defaultHttpClient) {}
 
-  async getShipments(params?: {
-    status?: string;
-    delivery_method?: string;
-    per_page?: number;
-    page?: number;
-  }): Promise<any> {
-    return this.http.get('/api/v1/shipments', { params });
+  async getShipments(params?: ShipmentQueryParams): Promise<any> {
+    const cleanParams: Record<string, string | number | boolean> = {};
+    if (params) {
+      for (const [key, val] of Object.entries(params)) {
+        if (val !== undefined && val !== '') {
+          cleanParams[key] = val;
+        }
+      }
+      const queryText = params.q ?? params.search;
+      if (queryText !== undefined && String(queryText).trim() !== '') {
+        cleanParams.q = String(queryText).trim();
+      }
+      if (params.per_page === 'all' || params.all === true) {
+        cleanParams.per_page = 'all';
+        cleanParams.all = true;
+      }
+    }
+    return this.http.get('/api/v1/shipments', {
+      params: Object.keys(cleanParams).length > 0 ? cleanParams : undefined,
+    });
   }
 
   async createShipment(dto: CreateShipmentDTO): Promise<any> {

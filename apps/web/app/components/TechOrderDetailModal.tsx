@@ -83,8 +83,9 @@ export const TechOrderDetailModal: React.FC<TechOrderDetailModalProps> = ({
     if (!isOpen) return;
 
     setLoadingTechnicians(true);
+    // Legacy signature ref: .getUsers({ role: 'technician', is_active: true, per_page: 50 })
     userService
-      .getUsers({ role: 'technician', is_active: true, per_page: 50 })
+      .getUsers({ role: 'technician', is_active: true, per_page: 'all', all: true })
       .then((res: any) => {
         if (!active) return;
         const list = Array.isArray(res?.data?.data)

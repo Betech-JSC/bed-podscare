@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect, useCallback } from 'react';
 import { auditService } from '@podscare/api-client';
-import { Button, EmptyState, FilterBar, Icon } from '@podscare/ui';
+import { Button, EmptyState, FilterBar, Icon, PaginationBar } from '@podscare/ui';
 import { AppShell } from '../components/AppShell';
 import { AuditDiffModal } from '../components/AuditDiffModal';
 
@@ -27,17 +27,30 @@ export default function AuditPage() {
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [search, setSearch] = useState('');
   const [onlyWithDiff, setOnlyWithDiff] = useState(false);
+  const [page, setPage] = useState<number>(1);
+  const [perPage, setPerPage] = useState<number | 'all'>(15);
+  const [meta, setMeta] = useState({
+    current_page: 1,
+    last_page: 1,
+    total: 0,
+    from: 0 as number | null,
+    to: 0 as number | null,
+  });
   const [selectedLogForDiff, setSelectedLogForDiff] = useState<AuditItem | null>(null);
 
   const fetchLogs = useCallback(async () => {
     setIsLoading(true);
     try {
-      const params: any = { per_page: 50 };
+      const params: any = {
+        page: perPage === 'all' ? 1 : page,
+        per_page: perPage,
+        all: perPage === 'all' ? true : undefined,
+      };
       if (search.trim()) params.q = search.trim();
       if (onlyWithDiff) params.has_diff = true;
 
       const res = await auditService.getAuditLogs(params);
-      const rawData = res?.data;
+      const rawData: any = res?.data;
       const items = Array.isArray(rawData) ? rawData : rawData?.data;
 
       if (Array.isArray(items) && items.length > 0) {
@@ -71,16 +84,25 @@ export default function AuditPage() {
           };
         });
         setLogs(mapped);
+        setMeta({
+          current_page: Number(rawData?.current_page ?? (perPage === 'all' ? 1 : page)),
+          last_page: Number(rawData?.last_page ?? 1),
+          total: Number(rawData?.total ?? mapped.length),
+          from: rawData?.from ?? (mapped.length > 0 ? 1 : 0),
+          to: rawData?.to ?? mapped.length,
+        });
       } else {
         setLogs([]);
+        setMeta({ current_page: 1, last_page: 1, total: 0, from: 0, to: 0 });
       }
     } catch (err) {
       console.warn('Could not fetch audit logs from backend:', err);
       setLogs([]);
+      setMeta({ current_page: 1, last_page: 1, total: 0, from: 0, to: 0 });
     } finally {
       setIsLoading(false);
     }
-  }, [search, onlyWithDiff]);
+  }, [search, onlyWithDiff, page, perPage]);
 
   useEffect(() => {
     const timer = setTimeout(() => {
@@ -123,7 +145,10 @@ export default function AuditPage() {
             <div className="flex-1 min-w-[260px]">
               <FilterBar
                 searchValue={search}
-                onSearchChange={setSearch}
+                onSearchChange={(val) => {
+                  setSearch(val);
+                  setPage(1);
+                }}
                 searchPlaceholder="Tìm theo người thực hiện, hành động, nội dung chi tiết..."
               />
             </div>
@@ -131,7 +156,10 @@ export default function AuditPage() {
               <button
                 type="button"
                 data-testid="filter-all-logs"
-                onClick={() => setOnlyWithDiff(false)}
+                onClick={() => {
+                  setOnlyWithDiff(false);
+                  setPage(1);
+                }}
                 className={`px-3 py-1.5 rounded-[8px] text-xs font-bold transition-all cursor-pointer ${
                   !onlyWithDiff
                     ? 'bg-[#176b58] text-white shadow-xs'
@@ -143,7 +171,10 @@ export default function AuditPage() {
               <button
                 type="button"
                 data-testid="filter-diff-logs"
-                onClick={() => setOnlyWithDiff(true)}
+                onClick={() => {
+                  setOnlyWithDiff(true);
+                  setPage(1);
+                }}
                 className={`px-3 py-1.5 rounded-[8px] text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
                   onlyWithDiff
                     ? 'bg-[#176b58] text-white shadow-xs'
@@ -170,85 +201,103 @@ export default function AuditPage() {
               onAction={fetchLogs}
             />
           ) : (
-            <div className="overflow-x-auto -mx-4 sm:mx-0">
-              <table className="w-full text-left border-collapse min-w-[850px]">
-                <thead>
-                  <tr className="border-y border-[#f0f3f1] bg-[#fafbfa] text-xs font-bold text-[#9aa59f] uppercase tracking-wider h-10">
-                    <th className="px-3">Thời gian</th>
-                    <th className="px-3">Người thực hiện</th>
-                    <th className="px-3">Hoạt động</th>
-                    <th className="px-3">Đối tượng</th>
-                    <th className="px-3">Chi tiết</th>
-                    <th className="px-3 text-center">Diff JSON</th>
-                    <th className="px-3 text-right">Thao tác</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-[#f1f3f2] text-sm">
-                  {logs.map((log) => (
-                    <tr
-                      key={log.id}
-                      onClick={() => {
-                        if (log.has_diff) {
-                          setSelectedLogForDiff(log);
-                        }
-                      }}
-                      className={`h-12 transition-colors ${
-                        log.has_diff ? 'hover:bg-[#f6faf8] cursor-pointer' : 'hover:bg-[#fafcfa]'
-                      }`}
-                    >
-                      <td className="px-3 text-[#8a9690] font-mono text-xs whitespace-nowrap">
-                        {log.time}
-                      </td>
-                      <td className="px-3 font-semibold text-[#1c302b] whitespace-nowrap">
-                        {log.user}
-                      </td>
-                      <td className="px-3 text-[#176b58] font-bold whitespace-nowrap">
-                        {log.action}
-                      </td>
-                      <td className="px-3 text-xs font-mono text-[#556960] whitespace-nowrap">
-                        {log.auditable_type ? `${log.auditable_type} #${log.auditable_id}` : '—'}
-                      </td>
-                      <td className="px-3 text-[#44554d] text-xs max-w-[280px]">
-                        <p className="line-clamp-2 m-0" title={log.detail}>
-                          {log.detail}
-                        </p>
-                      </td>
-                      <td className="px-3 text-center">
-                        {log.has_diff ? (
-                          <span
-                            data-testid={`diff-badge-${log.id}`}
-                            className="inline-flex items-center gap-1 px-2 py-0.5 rounded-[6px] text-[10px] font-black uppercase tracking-wider bg-[#eaf4ef] text-[#176b58] border border-[#c2ded0]"
-                          >
-                            <Icon name="refresh" size={10} />
-                            <span>CÓ DIFF</span>
-                          </span>
-                        ) : (
-                          <span className="text-[#a5b3ab] text-xs">—</span>
-                        )}
-                      </td>
-                      <td className="px-3 text-right whitespace-nowrap">
-                        {log.has_diff ? (
-                          <button
-                            type="button"
-                            data-testid={`view-diff-btn-${log.id}`}
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              setSelectedLogForDiff(log);
-                            }}
-                            className="inline-flex items-center gap-1 px-2.5 py-1 rounded-[6px] text-xs font-bold bg-[#176b58] text-white hover:bg-[#125848] transition-colors cursor-pointer shadow-2xs"
-                          >
-                            <span>So sánh Diff</span>
-                            <span className="text-[10px]">↗</span>
-                          </button>
-                        ) : (
-                          <span className="text-[#a5b3ab] text-xs font-mono">{log.source}</span>
-                        )}
-                      </td>
+            <>
+              <div className="overflow-x-auto -mx-4 sm:mx-0">
+                <table className="w-full text-left border-collapse min-w-[850px]">
+                  <thead>
+                    <tr className="border-y border-[#f0f3f1] bg-[#fafbfa] text-xs font-bold text-[#9aa59f] uppercase tracking-wider h-10">
+                      <th className="px-3">Thời gian</th>
+                      <th className="px-3">Người thực hiện</th>
+                      <th className="px-3">Hoạt động</th>
+                      <th className="px-3">Đối tượng</th>
+                      <th className="px-3">Chi tiết</th>
+                      <th className="px-3 text-center">Diff JSON</th>
+                      <th className="px-3 text-right">Thao tác</th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+                  </thead>
+                  <tbody className="divide-y divide-[#f1f3f2] text-sm">
+                    {logs.map((log) => (
+                      <tr
+                        key={log.id}
+                        onClick={() => {
+                          if (log.has_diff) {
+                            setSelectedLogForDiff(log);
+                          }
+                        }}
+                        className={`h-12 transition-colors ${
+                          log.has_diff ? 'hover:bg-[#f6faf8] cursor-pointer' : 'hover:bg-[#fafcfa]'
+                        }`}
+                      >
+                        <td className="px-3 text-[#8a9690] font-mono text-xs whitespace-nowrap">
+                          {log.time}
+                        </td>
+                        <td className="px-3 font-semibold text-[#1c302b] whitespace-nowrap">
+                          {log.user}
+                        </td>
+                        <td className="px-3 text-[#176b58] font-bold whitespace-nowrap">
+                          {log.action}
+                        </td>
+                        <td className="px-3 text-xs font-mono text-[#556960] whitespace-nowrap">
+                          {log.auditable_type ? `${log.auditable_type} #${log.auditable_id}` : '—'}
+                        </td>
+                        <td className="px-3 text-[#44554d] text-xs max-w-[280px]">
+                          <p className="line-clamp-2 m-0" title={log.detail}>
+                            {log.detail}
+                          </p>
+                        </td>
+                        <td className="px-3 text-center">
+                          {log.has_diff ? (
+                            <span
+                              data-testid={`diff-badge-${log.id}`}
+                              className="inline-flex items-center gap-1 px-2 py-0.5 rounded-[6px] text-[10px] font-black uppercase tracking-wider bg-[#eaf4ef] text-[#176b58] border border-[#c2ded0]"
+                            >
+                              <Icon name="refresh" size={10} />
+                              <span>CÓ DIFF</span>
+                            </span>
+                          ) : (
+                            <span className="text-[#a5b3ab] text-xs">—</span>
+                          )}
+                        </td>
+                        <td className="px-3 text-right whitespace-nowrap">
+                          {log.has_diff ? (
+                            <button
+                              type="button"
+                              data-testid={`view-diff-btn-${log.id}`}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setSelectedLogForDiff(log);
+                              }}
+                              className="inline-flex items-center gap-1 px-2.5 py-1 rounded-[6px] text-xs font-bold bg-[#176b58] text-white hover:bg-[#125848] transition-colors cursor-pointer shadow-2xs"
+                            >
+                              <span>So sánh Diff</span>
+                              <span className="text-[10px]">↗</span>
+                            </button>
+                          ) : (
+                            <span className="text-[#a5b3ab] text-xs font-mono">{log.source}</span>
+                          )}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              <PaginationBar
+                testIdPrefix="audit-logs"
+                itemLabel="bản ghi nhật ký"
+                currentPage={meta.current_page}
+                lastPage={meta.last_page}
+                total={meta.total || logs.length}
+                from={meta.from}
+                to={meta.to}
+                perPage={perPage}
+                onPageChange={setPage}
+                onPerPageChange={(val) => {
+                  setPerPage(val);
+                  setPage(1);
+                }}
+                isLoading={isLoading}
+              />
+            </>
           )}
         </div>
 

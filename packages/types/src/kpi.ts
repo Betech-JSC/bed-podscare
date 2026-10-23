@@ -65,6 +65,24 @@ export interface DashboardSummary {
   selected_date_completed_orders_count?: number;
   selected_date_finished_orders_count?: number;
   selected_date_uncollected_orders_count?: number;
+  selected_date_ready_for_pickup_orders_count?: number;
+  selected_date_in_workshop_orders_count?: number;
+  selected_date_ready_for_pickup_amount?: number;
+  selected_date_in_workshop_amount?: number;
+  monthly_ready_for_pickup_orders_count?: number;
+  monthly_in_workshop_orders_count?: number;
+  monthly_ready_for_pickup_amount?: number;
+  monthly_in_workshop_amount?: number;
+  ready_for_pickup_orders_count?: number;
+  in_workshop_orders_count?: number;
+  ready_for_pickup_amount?: number;
+  in_workshop_amount?: number;
+  handed_over_revenue?: number;
+  unpaid_completed_orders_count?: number;
+  unpaid_completed_amount?: number;
+  period_operational_summary?: OperationalSummary;
+  period_reconciliation?: OperationalReconciliation;
+  period_workload_by_status?: Record<string, number>;
   selected_date_orders_breakdown?: RevenueOrderBreakdownItem[];
   monthly_revenue?: number;
   monthly_revenue_formatted?: string;
@@ -129,6 +147,24 @@ export interface DashboardKpiResponse {
   selected_date_completed_orders_count?: number;
   selected_date_finished_orders_count?: number;
   selected_date_uncollected_orders_count?: number;
+  selected_date_ready_for_pickup_orders_count?: number;
+  selected_date_in_workshop_orders_count?: number;
+  selected_date_ready_for_pickup_amount?: number;
+  selected_date_in_workshop_amount?: number;
+  monthly_ready_for_pickup_orders_count?: number;
+  monthly_in_workshop_orders_count?: number;
+  monthly_ready_for_pickup_amount?: number;
+  monthly_in_workshop_amount?: number;
+  ready_for_pickup_orders_count?: number;
+  in_workshop_orders_count?: number;
+  ready_for_pickup_amount?: number;
+  in_workshop_amount?: number;
+  handed_over_revenue?: number;
+  unpaid_completed_orders_count?: number;
+  unpaid_completed_amount?: number;
+  period_operational_summary?: OperationalSummary;
+  period_reconciliation?: OperationalReconciliation;
+  period_workload_by_status?: Record<string, number>;
   selected_date_orders_breakdown?: RevenueOrderBreakdownItem[];
   monthly_revenue?: number;
   monthly_revenue_formatted?: string;
@@ -207,6 +243,20 @@ export interface ActionableTaskWaitingApproval {
   created_at?: string;
 }
 
+export interface ActionableTaskWaitingParts {
+  id: number;
+  order_code: string;
+  customer_name: string;
+  customer_phone?: string;
+  device_model: string;
+  technician_name: string;
+  total_price: number;
+  issue_description?: string;
+  hours_waiting: number;
+  status: string;
+  created_at?: string;
+}
+
 export interface ActionableTaskWaitingQc {
   id: number;
   order_code: string;
@@ -247,6 +297,7 @@ export interface ActionableTasks {
   overdue: ActionableTaskOverdue[];
   waiting_approval: ActionableTaskWaitingApproval[];
   pending_quotes?: ActionableTaskWaitingApproval[];
+  waiting_parts?: ActionableTaskWaitingParts[];
   waiting_qc: ActionableTaskWaitingQc[];
   pending_qc?: ActionableTaskWaitingQc[];
   waiting_pickup: ActionableTaskWaitingPickup[];
@@ -255,6 +306,7 @@ export interface ActionableTasks {
   counts?: {
     overdue: number;
     waiting_approval: number;
+    waiting_parts?: number;
     waiting_qc: number;
     waiting_pickup: number;
     low_stock: number;

@@ -1240,5 +1240,35 @@ class AdminDashboardFourRevenueCardsTest extends TestCase
         $this->assertEquals(2, $rangeData['selected_date_completed_orders_count']);
         $this->assertEquals(6, $rangeData['selected_date_uncollected_orders_count']);
         $this->assertEquals(8, $rangeData['selected_date_finished_orders_count']);
+
+        // =====================================================================
+        // E: KIỂM TRA ĐỒNG BỘ 100% GIỮA CARD 1-2 (THÁNG NÀY) VÀ CARD 3-4 KHI CHỌN PRESET "THÁNG NÀY",
+        // ĐẦY ĐỦ 6 BƯỚC PIPELINE (CÓ waiting_parts) & SỐ LƯỢNG TRUY VẤN SQL <= 12 QUERIES
+        // =====================================================================
+        \Illuminate\Support\Facades\DB::enableQueryLog();
+        \Illuminate\Support\Facades\DB::flushQueryLog();
+
+        $resThisMonth = $this->actingAs($this->adminUser, 'sanctum')
+            ->getJson("/api/v1/kpi/dashboard?branch_id={$this->branch->id}&from_date=2026-10-01&to_date=2026-10-31");
+
+        $queries = \Illuminate\Support\Facades\DB::getQueryLog();
+        \Illuminate\Support\Facades\DB::disableQueryLog();
+
+        $resThisMonth->assertOk();
+        $monthData = $resThisMonth->json('data');
+
+        $this->assertEquals((float) $monthData['monthly_total_revenue'], (float) $monthData['selected_date_total_revenue']);
+        $this->assertEquals((float) $monthData['monthly_collected_amount'], (float) $monthData['selected_date_collected_amount']);
+        $this->assertEquals((float) $monthData['monthly_uncollected_amount'], (float) $monthData['selected_date_uncollected_amount']);
+        $this->assertEquals($monthData['monthly_completed_orders_count'], $monthData['selected_date_completed_orders_count']);
+        $this->assertEquals($monthData['monthly_uncollected_orders_count'], $monthData['selected_date_uncollected_orders_count']);
+
+        $this->assertArrayHasKey('waiting_parts', $monthData['workload_by_status']);
+        $this->assertArrayHasKey('waiting_parts', $monthData['actionable_tasks']);
+        $this->assertArrayHasKey('waiting_parts', $monthData['actionable_tasks']['counts']);
+        $this->assertGreaterThanOrEqual(1, $monthData['workload_by_status']['waiting_parts']);
+        $this->assertNotEmpty($monthData['actionable_tasks']['waiting_parts']);
+
+        $this->assertLessThanOrEqual(12, count($queries), 'KpiController::dashboard must execute <= 12 SQL queries.');
     }
 }

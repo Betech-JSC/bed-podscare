@@ -129,6 +129,143 @@ class ShiftService
     }
 
     /**
+     * Tổng hợp tất cả các ca đang mở trên toàn bộ chi nhánh active của Tenant (dành cho Admin xem "Tất cả chi nhánh").
+     */
+    public function getAggregatedActiveShifts(int $tenantId): ?array
+    {
+        $openShifts = WorkShift::where('tenant_id', $tenantId)
+            ->where('status', 'open')
+            ->whereHas('branch', function ($q) {
+                $q->where('is_active', true);
+            })
+            ->with(['cashier:id,name,role', 'branch:id,name,code'])
+            ->orderBy('opened_at', 'asc')
+            ->get();
+
+        if ($openShifts->isEmpty()) {
+            return null;
+        }
+
+        $totalOpeningCash = 0.0;
+        $totalSystemCashIn = 0.0;
+        $totalSystemCashOut = 0.0;
+        $totalExpectedCash = 0.0;
+        $totalVietqr = 0.0;
+        $totalOrdersCompleted = 0;
+        $branchesSummary = [];
+
+        foreach ($openShifts as $shift) {
+            $branchId = (int) $shift->branch_id;
+            $opening = (float) $shift->opening_cash;
+            $cashIn = (float) $shift->system_cash_in;
+            $cashOut = (float) $shift->system_cash_out;
+            $expected = round($opening + $cashIn - $cashOut, 2);
+
+            $vietqrTotal = (float) DB::table('payments')
+                ->join('repair_orders', 'payments.repair_order_id', '=', 'repair_orders.id')
+                ->where('repair_orders.tenant_id', $tenantId)
+                ->where('repair_orders.branch_id', $branchId)
+                ->where('payments.status', 'paid')
+                ->where(function ($q) {
+                    $q->where('payments.payment_method', 'vietqr')
+                      ->orWhere('payments.payment_method', 'bank_transfer')
+                      ->orWhere('payments.payment_method', 'like', '%vietqr%')
+                      ->orWhere('payments.payment_method', 'transfer')
+                      ->orWhere('payments.payment_method', 'banking');
+                })
+                ->where(function ($q) use ($shift) {
+                    $q->where('payments.paid_at', '>=', $shift->opened_at)
+                      ->orWhere(function ($sq) use ($shift) {
+                          $sq->whereNull('payments.paid_at')
+                             ->where('payments.created_at', '>=', $shift->opened_at);
+                      });
+                })
+                ->sum('payments.amount');
+
+            $ordersCompletedCount = (int) DB::table('repair_orders')
+                ->where('tenant_id', $tenantId)
+                ->where('branch_id', $branchId)
+                ->where('status', 'completed')
+                ->where(function ($q) use ($shift) {
+                    $q->where('handed_over_at', '>=', $shift->opened_at)
+                      ->orWhere(function ($sq) use ($shift) {
+                          $sq->whereNull('handed_over_at')
+                             ->where('updated_at', '>=', $shift->opened_at);
+                      });
+                })
+                ->count();
+
+            $totalOpeningCash += $opening;
+            $totalSystemCashIn += $cashIn;
+            $totalSystemCashOut += $cashOut;
+            $totalExpectedCash += $expected;
+            $totalVietqr += $vietqrTotal;
+            $totalOrdersCompleted += $ordersCompletedCount;
+
+            $branchesSummary[] = [
+                'id'                     => $shift->id,
+                'shift_code'             => $shift->shift_code,
+                'branch_id'              => $branchId,
+                'branch_name'            => $shift->branch?->name ?? "Chi nhánh #{$branchId}",
+                'branch_code'            => $shift->branch?->code ?? '',
+                'cashier_name'           => $shift->cashier?->name ?? 'N/A',
+                'opened_at'              => $shift->opened_at?->toISOString(),
+                'opening_cash'           => number_format($opening, 2, '.', ''),
+                'system_cash_in'         => number_format($cashIn, 2, '.', ''),
+                'system_cash_out'        => number_format($cashOut, 2, '.', ''),
+                'expected_cash'          => number_format($expected, 2, '.', ''),
+                'vietqr_total'           => $vietqrTotal,
+                'orders_completed_count' => $ordersCompletedCount,
+            ];
+        }
+
+        $count = $openShifts->count();
+        $firstShift = $openShifts->first();
+        $cashierNames = $openShifts->map(fn ($s) => $s->cashier?->name)->filter()->unique()->values()->implode(', ');
+
+        return [
+            'id'                     => $count === 1 ? $firstShift->id : 0,
+            'tenant_id'              => $tenantId,
+            'branch_id'              => $count === 1 ? $firstShift->branch_id : null,
+            'shift_code'             => $count === 1 ? $firstShift->shift_code : 'TỔNG HỢP (' . $count . ' CA)',
+            'status'                 => 'open',
+            'is_aggregated'          => true,
+            'active_shifts_count'    => $count,
+            'opened_at'              => $firstShift->opened_at?->toISOString(),
+            'opening_cash'           => number_format($totalOpeningCash, 2, '.', ''),
+            'system_cash_in'         => number_format($totalSystemCashIn, 2, '.', ''),
+            'system_cash_out'        => number_format($totalSystemCashOut, 2, '.', ''),
+            'expected_cash'          => number_format($totalExpectedCash, 2, '.', ''),
+            'vietqr_total'           => round($totalVietqr, 2),
+            'orders_completed_count' => $totalOrdersCompleted,
+            'has_active_shift'       => true,
+            'cashier'                => $count === 1 && $firstShift->cashier
+                ? [
+                    'id'   => $firstShift->cashier->id,
+                    'name' => $firstShift->cashier->name,
+                    'role' => $firstShift->cashier->role,
+                ]
+                : [
+                    'id'   => 0,
+                    'name' => $cashierNames ?: 'Nhiều thu ngân',
+                    'role' => 'admin',
+                ],
+            'branch'                 => $count === 1 && $firstShift->branch
+                ? [
+                    'id'   => $firstShift->branch->id,
+                    'name' => $firstShift->branch->name,
+                    'code' => $firstShift->branch->code,
+                ]
+                : [
+                    'id'   => 0,
+                    'name' => "Tất cả chi nhánh ({$count} ca đang mở)",
+                    'code' => 'ALL',
+                ],
+            'branches_summary'       => $branchesSummary,
+        ];
+    }
+
+    /**
      * Đóng ca và đối soát két tiền mặt.
      */
     public function closeShift(

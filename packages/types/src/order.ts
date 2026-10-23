@@ -9,13 +9,14 @@ export interface OrderFilterDTO {
   status?: string;
   role?: string;
   branch_id?: string | number;
-  order_type?: 'in_store' | 'cod' | 'all' | string;
+  order_type?: 'in_store' | 'cod' | 'warranty' | 'all' | string;
   date_filter?: OrderDateFilter;
   date?: string;
   date_type?: 'created_at' | 'completed_at' | 'handed_over_at';
   q?: string;
   page?: number;
-  per_page?: number;
+  per_page?: number | 'all';
+  all?: boolean;
   technician_id?: string | number;
   intake_batch_code?: string;
   special_parts?: boolean | string;

@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
-import { Button, Icon, Input, useToast } from '@podscare/ui';
+import { Button, Icon, Input, PaginationBar, useToast } from '@podscare/ui';
 import { AppShell } from '../../components/AppShell';
 import { platformService } from '@podscare/api-client';
 
@@ -32,6 +32,15 @@ export default function PlatformBillingPage() {
   const [searchQuery, setSearchQuery] = useState('');
   const [expiringList, setExpiringList] = useState<ExpiringStore[]>([]);
   const [transactions, setTransactions] = useState<SepayTransactionItem[]>([]);
+  const [page, setPage] = useState<number>(1);
+  const [perPage, setPerPage] = useState<number | 'all'>(15);
+  const [txMeta, setTxMeta] = useState({
+    current_page: 1,
+    last_page: 1,
+    total: 0,
+    from: 0 as number | null,
+    to: 0 as number | null,
+  });
   const [loading, setLoading] = useState(true);
   const [actionLoadingId, setActionLoadingId] = useState<number | null>(null);
 
@@ -55,7 +64,13 @@ export default function PlatformBillingPage() {
       setLoading(true);
       const [statsRes, txRes] = await Promise.allSettled([
         platformService.getBillingStats(),
-        platformService.getTransactions(),
+        platformService.getTransactions({
+          page: perPage === 'all' ? 1 : page,
+          per_page: perPage,
+          all: perPage === 'all' ? true : undefined,
+          search: searchQuery.trim() || undefined,
+          q: searchQuery.trim() || undefined,
+        }),
       ]);
 
       if (statsRes.status === 'fulfilled') {
@@ -88,7 +103,7 @@ export default function PlatformBillingPage() {
       }
 
       if (txRes.status === 'fulfilled') {
-        const rawTx = txRes.value?.data || txRes.value;
+        const rawTx: any = txRes.value?.data || txRes.value;
         const list = Array.isArray(rawTx) ? rawTx : (rawTx?.data || []);
         if (Array.isArray(list)) {
           const mappedTx: SepayTransactionItem[] = list.map((tx: any) => ({
@@ -103,8 +118,16 @@ export default function PlatformBillingPage() {
             status: tx.status === 'paid' ? 'completed' : (tx.status || 'completed'),
           }));
           setTransactions(mappedTx);
+          setTxMeta({
+            current_page: Number(rawTx?.current_page ?? (perPage === 'all' ? 1 : page)),
+            last_page: Number(rawTx?.last_page ?? 1),
+            total: Number(rawTx?.total ?? mappedTx.length),
+            from: rawTx?.from ?? (mappedTx.length > 0 ? 1 : 0),
+            to: rawTx?.to ?? mappedTx.length,
+          });
         } else {
           setTransactions([]);
+          setTxMeta({ current_page: 1, last_page: 1, total: 0, from: 0, to: 0 });
         }
       }
     } catch (err) {
@@ -112,7 +135,7 @@ export default function PlatformBillingPage() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [page, perPage, searchQuery]);
 
   useEffect(() => {
     loadData();
@@ -365,7 +388,10 @@ export default function PlatformBillingPage() {
                 type="text"
                 placeholder="Tìm theo mã GD, tên gian hàng..."
                 value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
+                onChange={(e) => {
+                  setSearchQuery(e.target.value);
+                  setPage(1);
+                }}
               />
             </div>
           </div>
@@ -427,6 +453,26 @@ export default function PlatformBillingPage() {
               </tbody>
             </table>
           </div>
+          {!loading && filteredTransactions.length > 0 && (
+            <div className="px-5 pb-4">
+              <PaginationBar
+                testIdPrefix="platform-billing"
+                itemLabel="giao dịch"
+                currentPage={txMeta.current_page}
+                lastPage={txMeta.last_page}
+                total={txMeta.total || filteredTransactions.length}
+                from={txMeta.from}
+                to={txMeta.to}
+                perPage={perPage}
+                onPageChange={setPage}
+                onPerPageChange={(val) => {
+                  setPerPage(val);
+                  setPage(1);
+                }}
+                isLoading={loading}
+              />
+            </div>
+          )}
         </div>
       </div>
     </AppShell>

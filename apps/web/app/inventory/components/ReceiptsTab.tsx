@@ -8,6 +8,7 @@ import {
   EmptyState,
   TableSkeleton,
   ErrorFallback,
+  PaginationBar,
 } from '@podscare/ui';
 import {
   supplierService,
@@ -39,6 +40,8 @@ export const ReceiptsTab: React.FC<ReceiptsTabProps> = ({
   onRefreshAll,
 }) => {
   const [receiptSearch, setReceiptSearch] = useState('');
+  const [page, setPage] = useState<number>(1);
+  const [perPage, setPerPage] = useState<number | 'all'>(15);
   const [selectedReceipt, setSelectedReceipt] = useState<GoodsReceipt | null>(null);
   const [viewDetailModalOpen, setViewDetailModalOpen] = useState(false);
   const [createReceiptModalOpen, setCreateReceiptModalOpen] = useState(false);
@@ -49,18 +52,30 @@ export const ReceiptsTab: React.FC<ReceiptsTabProps> = ({
     isError,
     refetch,
   } = useQuery({
-    queryKey: ['goods-receipts', receiptSearch],
+    queryKey: ['goods-receipts', receiptSearch, page, perPage],
     queryFn: async () => {
       const res = await supplierService.getGoodsReceipts({
+        q: receiptSearch.trim() || undefined,
         search: receiptSearch.trim() || undefined,
-        per_page: 50,
+        page: perPage === 'all' ? 1 : page,
+        per_page: perPage,
+        all: perPage === 'all' ? true : undefined,
       });
-      const data = res?.data;
-      return Array.isArray(data) ? data : (data as any)?.data || [];
+      return res?.data || res;
     },
   });
 
-  const receipts: GoodsReceipt[] = Array.isArray(apiReceiptsData) ? apiReceiptsData : [];
+  const receipts: GoodsReceipt[] = Array.isArray(apiReceiptsData)
+    ? apiReceiptsData
+    : Array.isArray((apiReceiptsData as any)?.data)
+    ? (apiReceiptsData as any).data
+    : [];
+
+  const total = (apiReceiptsData as any)?.total ?? receipts.length;
+  const currentPage = (apiReceiptsData as any)?.current_page ?? page;
+  const lastPage = (apiReceiptsData as any)?.last_page ?? 1;
+  const from = (apiReceiptsData as any)?.from ?? (receipts.length > 0 ? 1 : 0);
+  const to = (apiReceiptsData as any)?.to ?? receipts.length;
 
   const handleOpenDetail = (gr: GoodsReceipt) => {
     setSelectedReceipt(gr);
@@ -74,7 +89,7 @@ export const ReceiptsTab: React.FC<ReceiptsTabProps> = ({
         <div className="flex items-center gap-2 text-xs font-bold text-[#87958e] uppercase tracking-wider">
           <span>PHIẾU NHẬP KHO CHÍNH QUY (MAC)</span>
           <span className="inline-block w-1.5 h-1.5 rounded-full bg-[#176b58]" />
-          <span className="text-[#176b58] font-bold">{receipts.length} Phiếu</span>
+          <span className="text-[#176b58] font-bold">{total} Phiếu</span>
         </div>
 
         <div className="flex items-center gap-2">
@@ -83,6 +98,7 @@ export const ReceiptsTab: React.FC<ReceiptsTabProps> = ({
             size="sm"
             onClick={() => {
               setReceiptSearch('');
+              setPage(1);
               refetch();
             }}
           >
@@ -100,7 +116,10 @@ export const ReceiptsTab: React.FC<ReceiptsTabProps> = ({
 
       <FilterBar
         searchValue={receiptSearch}
-        onSearchChange={setReceiptSearch}
+        onSearchChange={(val) => {
+          setReceiptSearch(val);
+          setPage(1);
+        }}
         searchPlaceholder="Tìm kiếm mã phiếu nhập hoặc tên nhà cung cấp..."
       />
 
@@ -186,6 +205,21 @@ export const ReceiptsTab: React.FC<ReceiptsTabProps> = ({
                 ))}
               </tbody>
             </table>
+          </div>
+          <div className="px-4 pb-4">
+            <PaginationBar
+              testIdPrefix="inventory-receipts"
+              itemLabel="phiếu nhập hàng"
+              currentPage={currentPage}
+              lastPage={lastPage}
+              total={total}
+              from={from}
+              to={to}
+              perPage={perPage}
+              onPageChange={setPage}
+              onPerPageChange={setPerPage}
+              isLoading={isLoading}
+            />
           </div>
         </div>
       )}

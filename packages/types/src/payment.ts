@@ -34,12 +34,30 @@ export interface PaymentItem {
   };
 }
 
+export interface PaymentSummary {
+  total_amount: number;
+  cash_amount: number;
+  transfer_amount: number;
+  refunded_amount?: number;
+  total_collected?: number;
+  cash_collected?: number;
+  transfer_collected?: number;
+  total_count?: number;
+  cash_count?: number;
+  transfer_count?: number;
+  refunded_count?: number;
+}
+
 export interface PaymentFilterDTO {
   repair_order_id?: number | string;
   order_code?: string;
   payment_method?: string;
+  status?: string;
+  q?: string;
+  search?: string;
   date?: string;
-  per_page?: number;
+  per_page?: number | 'all';
+  all?: boolean;
   page?: number;
   [key: string]: any;
 }

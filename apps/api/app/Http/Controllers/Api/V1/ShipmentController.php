@@ -37,11 +37,15 @@ class ShipmentController extends Controller
         }
 
         if ($status = $request->input('status')) {
-            $query->where('status', $status);
+            if ($status !== 'all') {
+                $query->where('status', $status);
+            }
         }
 
         if ($method = $request->input('delivery_method')) {
-            $query->where('delivery_method', $method);
+            if ($method !== 'all') {
+                $query->where('delivery_method', $method);
+            }
         }
 
         $rawSearch = $request->input('q') ?? $request->input('search');
@@ -51,18 +55,50 @@ class ShipmentController extends Controller
                 $q->where('shipment_code', 'like', "%{$search}%")
                   ->orWhere('tracking_code', 'like', "%{$search}%")
                   ->orWhere('carrier_name', 'like', "%{$search}%")
+                  ->orWhere('delivery_address', 'like', "%{$search}%")
+                  ->orWhere('notes', 'like', "%{$search}%")
+                  ->orWhereHas('partner', function ($pq) use ($search) {
+                      $pq->where('name', 'like', "%{$search}%")
+                         ->orWhere('code', 'like', "%{$search}%");
+                      PhoneHelper::applyPhoneColumnSearch($pq, 'phone', $search, 'or');
+                  })
                   ->orWhereHas('repairOrder', function ($rq) use ($search) {
                       $rq->where('order_code', 'like', "%{$search}%")
                          ->orWhere('serial_number', 'like', "%{$search}%")
+                         ->orWhere('shipping_address', 'like', "%{$search}%")
                          ->orWhereHas('customer', function ($cq) use ($search) {
                              $cq->where('name', 'like', "%{$search}%");
                              PhoneHelper::applyPhoneColumnSearch($cq, 'phone', $search, 'or');
+                         })
+                         ->orWhereHas('deviceModel', function ($dq) use ($search) {
+                             $dq->where('name', 'like', "%{$search}%");
                          });
                   });
             });
         }
 
-        $shipments = $query->latest('id')->paginate($request->input('per_page', 15));
+        if ($request->boolean('all') || $request->input('per_page') === 'all') {
+            $items = $query->latest('id')->limit(1000)->get();
+            $total = $items->count();
+
+            return $this->success([
+                'current_page'   => 1,
+                'data'           => $items,
+                'first_page_url' => $request->fullUrlWithQuery(['page' => 1]),
+                'from'           => $total > 0 ? 1 : null,
+                'last_page'      => 1,
+                'last_page_url'  => $request->fullUrlWithQuery(['page' => 1]),
+                'next_page_url'  => null,
+                'path'           => $request->url(),
+                'per_page'       => max($total, 1),
+                'prev_page_url'  => null,
+                'to'             => $total > 0 ? $total : null,
+                'total'          => $total,
+            ], 'Lấy danh sách giao nhận thành công.');
+        }
+
+        $perPage = max(1, min(500, (int) $request->input('per_page', 15)));
+        $shipments = $query->latest('id')->paginate($perPage);
 
         return $this->success($shipments, 'Lấy danh sách giao nhận thành công.');
     }

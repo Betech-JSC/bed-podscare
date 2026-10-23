@@ -97,6 +97,8 @@ function RepairsPageContent() {
       ? initialOrderTypeParam
       : 'all'
   );
+  const [page, setPage] = useState<number>(1);
+  const [perPage, setPerPage] = useState<number | 'all'>(15);
   const [selectedOrder, setSelectedOrder] = useState<RepairOrder | null>(null);
   const [techCompleteOrder, setTechCompleteOrder] = useState<RepairOrder | null>(null);
   const [intakeModalOpen, setIntakeModalOpen] = useState(false);
@@ -169,7 +171,8 @@ function RepairsPageContent() {
     queryKey: ['repairs', branchId, search, dateFilter, selectedDate, dateType],
     queryFn: async () => {
       const params: Record<string, any> = {
-        per_page: 500,
+        per_page: 'all',
+        all: true,
       };
       const cleanSearch = sanitizeSearchQuery(search);
       if (selectedDate) {
@@ -427,6 +430,36 @@ function RepairsPageContent() {
       );
     });
   }, [statusFilteredOrders, orderTypeFilter, search]);
+
+  React.useEffect(() => {
+    setPage(1);
+  }, [orderTypeFilter, statusFilter, search, dateFilter, selectedDate, dateType, branchId]);
+
+  const total = filteredOrders.length;
+  const lastPage = useMemo(() => {
+    if (perPage === 'all') return 1;
+    const size = Math.max(1, Number(perPage) || 15);
+    return Math.max(1, Math.ceil(total / size));
+  }, [perPage, total]);
+
+  const currentPage = useMemo(() => {
+    if (perPage === 'all') return 1;
+    return Math.min(Math.max(1, page), lastPage);
+  }, [page, lastPage, perPage]);
+
+  const from = useMemo(() => {
+    if (total === 0) return 0;
+    if (perPage === 'all') return 1;
+    const size = Math.max(1, Number(perPage) || 15);
+    return (currentPage - 1) * size + 1;
+  }, [total, perPage, currentPage]);
+
+  const to = useMemo(() => {
+    if (total === 0) return 0;
+    if (perPage === 'all') return total;
+    const size = Math.max(1, Number(perPage) || 15);
+    return Math.min(total, currentPage * size);
+  }, [total, perPage, currentPage]);
 
   React.useEffect(() => {
     const handleOperationalEvent = (e: any) => {
@@ -878,30 +911,60 @@ function RepairsPageContent() {
         {/* Master Queue & Table Pane */}
         <RepairQueuePane
           orderTypeFilter={orderTypeFilter}
-          setOrderTypeFilter={setOrderTypeFilter}
+          setOrderTypeFilter={(val) => {
+            setOrderTypeFilter(val);
+            setPage(1);
+          }}
           orderCounts={orderCounts}
           dateType={dateType}
-          setDateType={setDateType}
+          setDateType={(val) => {
+            setDateType(val);
+            setPage(1);
+          }}
           selectedDate={selectedDate}
-          setSelectedDate={setSelectedDate}
+          setSelectedDate={(val) => {
+            setSelectedDate(val);
+            setPage(1);
+          }}
           dateFilter={dateFilter}
-          setDateFilter={setDateFilter}
+          setDateFilter={(val) => {
+            setDateFilter(val);
+            setPage(1);
+          }}
           role={role}
           currentUserRole={currentUser?.role}
           statusFilter={statusFilter}
-          setStatusFilter={setStatusFilter}
+          setStatusFilter={(val) => {
+            setStatusFilter(val);
+            setPage(1);
+          }}
           statusOptions={statusOptions}
           statusReconciliationCounts={statusReconciliationCounts}
           search={search}
-          setSearch={setSearch}
+          setSearch={(val) => {
+            setSearch(val);
+            setPage(1);
+          }}
           branch={branch}
           branchId={branchId}
           branches={branches}
-          setBranch={setBranch}
+          setBranch={(name, id) => {
+            setBranch(name, id);
+            setPage(1);
+          }}
           isRepairsLoading={isRepairsLoading}
           isError={isError}
           refetch={refetch}
           filteredOrders={filteredOrders}
+          page={currentPage}
+          setPage={setPage}
+          perPage={perPage}
+          setPerPage={setPerPage}
+          total={total}
+          currentPage={currentPage}
+          lastPage={lastPage}
+          from={from}
+          to={to}
           isTechRole={isTechRole}
           isFulfillingSpecialPart={isFulfillingSpecialPart}
           onSelectOrder={(order) => setSelectedOrder(order)}

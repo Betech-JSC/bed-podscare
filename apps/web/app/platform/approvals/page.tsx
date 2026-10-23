@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
-import { Button, Icon, useToast, useConfirm } from '@podscare/ui';
+import { Button, Icon, PaginationBar, useToast, useConfirm } from '@podscare/ui';
 import { AppShell } from '../../components/AppShell';
 
 interface PendingStore {
@@ -23,6 +23,15 @@ export default function PlatformApprovalsPage() {
 
   const [stores, setStores] = useState<PendingStore[]>([]);
   const [loading, setLoading] = useState(true);
+  const [page, setPage] = useState<number>(1);
+  const [perPage, setPerPage] = useState<number | 'all'>(15);
+  const [meta, setMeta] = useState({
+    current_page: 1,
+    last_page: 1,
+    total: 0,
+    from: 0 as number | null,
+    to: 0 as number | null,
+  });
   const [actionLoadingId, setActionLoadingId] = useState<number | null>(null);
 
   const fetchPendingStores = useCallback(async () => {
@@ -34,16 +43,32 @@ export default function PlatformApprovalsPage() {
         ...(token ? { Authorization: `Bearer ${token}` } : {}),
       };
 
-      const res = await fetch('/api/v1/platform/stores?status=pending', { headers });
+      const params = new URLSearchParams();
+      params.append('status', 'pending');
+      params.append('page', String(perPage === 'all' ? 1 : page));
+      params.append('per_page', String(perPage));
+      if (perPage === 'all') {
+        params.append('all', 'true');
+      }
+
+      const res = await fetch(`/api/v1/platform/stores?${params.toString()}`, { headers });
       if (res.ok) {
         const json = await res.json();
         if (json?.success && json?.data) {
-          const list = Array.isArray(json.data.data)
-            ? json.data.data
-            : Array.isArray(json.data)
-            ? json.data
+          const rawData = json.data;
+          const list = Array.isArray(rawData.data)
+            ? rawData.data
+            : Array.isArray(rawData)
+            ? rawData
             : [];
           setStores(list);
+          setMeta({
+            current_page: Number(rawData.current_page ?? (perPage === 'all' ? 1 : page)),
+            last_page: Number(rawData.last_page ?? 1),
+            total: Number(rawData.total ?? list.length),
+            from: rawData.from ?? (list.length > 0 ? 1 : 0),
+            to: rawData.to ?? list.length,
+          });
         }
       }
     } catch (e) {
@@ -51,7 +76,7 @@ export default function PlatformApprovalsPage() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [page, perPage]);
 
   useEffect(() => {
     fetchPendingStores();
@@ -288,6 +313,26 @@ export default function PlatformApprovalsPage() {
                 </div>
               );
             })}
+          </div>
+        )}
+        {!loading && stores.length > 0 && (
+          <div className="bg-white rounded-[12px] border border-[#e5ece8] px-4 pb-3.5 shadow-xs">
+            <PaginationBar
+              testIdPrefix="platform-approvals"
+              itemLabel="hồ sơ chờ duyệt"
+              currentPage={meta.current_page}
+              lastPage={meta.last_page}
+              total={meta.total || stores.length}
+              from={meta.from}
+              to={meta.to}
+              perPage={perPage}
+              onPageChange={setPage}
+              onPerPageChange={(val) => {
+                setPerPage(val);
+                setPage(1);
+              }}
+              isLoading={loading}
+            />
           </div>
         )}
       </div>

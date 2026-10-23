@@ -33,12 +33,14 @@ class ShiftController extends Controller
         }
 
         $branchId = $request->input('branch_id') ?? ($user && ! in_array($user->role, ['admin', 'super_admin'], true) ? $user->branch_id : null);
-        if ($branchId) {
+        if ($branchId && $branchId !== 'all') {
             $query->where('branch_id', $branchId);
         }
 
         if ($status = $request->input('status')) {
-            $query->where('status', $status);
+            if ($status !== 'all') {
+                $query->where('status', $status);
+            }
         }
 
         if ($fromDate = $request->input('from_date')) {
@@ -49,18 +51,84 @@ class ShiftController extends Controller
             $query->where('opened_at', '<=', \Illuminate\Support\Carbon::parse($toDate)->endOfDay());
         }
 
-        $shifts = $query->latest('id')->paginate($request->input('per_page', 15));
+        $rawSearch = $request->input('q') ?? $request->input('search');
+        if ($rawSearch !== null && trim((string) $rawSearch) !== '') {
+            $search = trim((string) $rawSearch);
+            $query->where(function ($q) use ($search) {
+                $q->where('shift_code', 'like', "%{$search}%")
+                  ->orWhere('reconciliation_notes', 'like', "%{$search}%")
+                  ->orWhereHas('cashier', function ($cq) use ($search) {
+                      $cq->withoutGlobalScopes()->where('name', 'like', "%{$search}%");
+                  })
+                  ->orWhereHas('closedBy', function ($cbq) use ($search) {
+                      $cbq->withoutGlobalScopes()->where('name', 'like', "%{$search}%");
+                  })
+                  ->orWhereHas('branch', function ($bq) use ($search) {
+                      $bq->withoutGlobalScopes()->where(function ($sub) use ($search) {
+                          $sub->where('name', 'like', "%{$search}%")
+                              ->orWhere('code', 'like', "%{$search}%");
+                      });
+                  });
+            });
+        }
+
+        if ($request->boolean('all') || $request->input('per_page') === 'all') {
+            $items = $query->latest('id')->limit(1000)->get();
+            $total = $items->count();
+
+            return $this->success([
+                'current_page'   => 1,
+                'data'           => $items,
+                'first_page_url' => $request->fullUrlWithQuery(['page' => 1]),
+                'from'           => $total > 0 ? 1 : null,
+                'last_page'      => 1,
+                'last_page_url'  => $request->fullUrlWithQuery(['page' => 1]),
+                'next_page_url'  => null,
+                'path'           => $request->url(),
+                'per_page'       => max($total, 1),
+                'prev_page_url'  => null,
+                'to'             => $total > 0 ? $total : null,
+                'total'          => $total,
+            ], 'Lấy danh sách ca làm việc thành công.');
+        }
+
+        $perPage = max(1, min(500, (int) $request->input('per_page', 15)));
+        $shifts = $query->latest('id')->paginate($perPage);
 
         return $this->success($shifts, 'Lấy danh sách ca làm việc thành công.');
     }
 
     /**
      * Ca đang mở của chi nhánh hiện tại kèm snapshot tài chính & vận hành.
+     * Hỗ trợ tổng hợp toàn bộ chi nhánh khi Admin chọn "Tất cả chi nhánh" (branch_id=all hoặc không truyền branch_id).
      */
     public function current(Request $request): JsonResponse
     {
         $user = $request->user();
-        $branchId = $request->input('branch_id') ?? $user->branch_id;
+        $rawBranchId = $request->input('branch_id');
+        $isAdmin = $user && in_array($user->role, ['admin', 'super_admin'], true);
+
+        if ($rawBranchId === 'all' || (! $rawBranchId && $isAdmin)) {
+            $aggregated = $this->shiftService->getAggregatedActiveShifts((int) $user->tenant_id);
+
+            if (! $aggregated) {
+                return response()->json([
+                    'success'          => true,
+                    'message'          => 'Hiện chưa có chi nhánh nào đang mở ca làm việc.',
+                    'data'             => null,
+                    'has_active_shift' => false,
+                ], 200);
+            }
+
+            return response()->json([
+                'success'          => true,
+                'message'          => 'Lấy thông tin tổng hợp ca hiện tại thành công.',
+                'data'             => $aggregated,
+                'has_active_shift' => true,
+            ], 200);
+        }
+
+        $branchId = $rawBranchId ?? $user->branch_id;
 
         if (! $branchId) {
             return $this->failure('Không xác định được chi nhánh làm việc.', 422);

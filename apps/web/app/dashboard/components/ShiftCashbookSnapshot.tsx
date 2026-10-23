@@ -6,6 +6,7 @@ import { useQuery } from '@tanstack/react-query';
 import { Avatar, Button, Icon } from '@podscare/ui';
 import { shiftService } from '@podscare/api-client';
 import type { CurrentShiftSnapshot } from '@podscare/types';
+import { useShift } from '../../providers/ShiftProvider';
 
 export interface ShiftCashbookSnapshotProps {
   branchId?: string | number;
@@ -17,26 +18,37 @@ export const ShiftCashbookSnapshot: React.FC<ShiftCashbookSnapshotProps> = ({
   className = '',
 }) => {
   const router = useRouter();
+  const { currentShift } = useShift();
 
-  const numericBranchId = React.useMemo(() => {
-    if (!branchId || branchId === 'all') return undefined;
+  const queryBranchParam: string | number = React.useMemo(() => {
+    if (!branchId || branchId === 'all') return 'all';
     return Number(branchId);
   }, [branchId]);
 
+  const isSameBranchAsShiftContext = Boolean(
+    queryBranchParam !== 'all' &&
+    currentShift &&
+    Number(currentShift.branch_id) === Number(queryBranchParam)
+  );
+
   const { data: response, isLoading, isError, refetch, isFetching } = useQuery({
-    queryKey: ['current-shift-snapshot', numericBranchId],
+    queryKey: ['current-shift-snapshot', queryBranchParam],
     queryFn: async () => {
-      if (numericBranchId === undefined) {
-        return null;
-      }
-      const res = await shiftService.getCurrentShift(numericBranchId);
+      const res = await shiftService.getCurrentShift(queryBranchParam);
       return res;
     },
-    enabled: numericBranchId !== undefined,
+    initialData: isSameBranchAsShiftContext && currentShift ? {
+      success: true,
+      message: '',
+      data: currentShift,
+      has_active_shift: true,
+    } : undefined,
+    staleTime: 15_000,
   });
 
-  const shift: CurrentShiftSnapshot | null = response?.data || null;
+  const shift: CurrentShiftSnapshot | null = response?.data || (isSameBranchAsShiftContext ? currentShift : null);
   const hasActiveShift = Boolean(response?.has_active_shift && shift);
+  const isAggregated = Boolean(shift?.is_aggregated);
 
   const formatMoney = (n?: number | string | null) => {
     if (n === null || n === undefined || n === '') return '0 ₫';
@@ -105,7 +117,9 @@ export const ShiftCashbookSnapshot: React.FC<ShiftCashbookSnapshotProps> = ({
           ) : hasActiveShift ? (
             <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-bold bg-[#eaf5ef] text-[#28805e] border border-[#c5e1d4]">
               <span className="w-1.5 h-1.5 rounded-full bg-current" />
-              Đang trong ca
+              {isAggregated
+                ? `Đang trong ca (${shift?.active_shifts_count || 1} chi nhánh)`
+                : 'Đang trong ca'}
             </span>
           ) : (
             <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-bold bg-[#fbf3e5] text-[#915e1b] border border-[#ebd9bd]">
@@ -131,10 +145,12 @@ export const ShiftCashbookSnapshot: React.FC<ShiftCashbookSnapshotProps> = ({
             {/* Thu ngân và thời gian mở ca */}
             <div className="flex items-center justify-between p-3 rounded-[10px] bg-[#f7faf8] border border-[#e8f1ec]">
               <div className="flex items-center gap-2.5">
-                <Avatar initials={shift.cashier?.name || 'TN'} variant={1} size="sm" />
+                <Avatar initials={isAggregated ? 'HT' : (shift.cashier?.name || 'TN')} variant={1} size="sm" />
                 <div>
                   <div className="text-xs font-bold text-[#1c302b]">
-                    {shift.cashier?.name || 'Thu ngân trực ca'}
+                    {isAggregated
+                      ? `Tổng hợp ${shift.active_shifts_count || 1} ca trực chi nhánh`
+                      : (shift.cashier?.name || 'Thu ngân trực ca')}
                   </div>
                   <div className="text-[11px] text-[#71857c]">
                     Mã ca: <b className="font-mono text-[#176b58]">{shift.shift_code}</b>
@@ -142,7 +158,7 @@ export const ShiftCashbookSnapshot: React.FC<ShiftCashbookSnapshotProps> = ({
                 </div>
               </div>
               <div className="text-right text-[11px] text-[#6d8278]">
-                <span>Mở lúc:</span>
+                <span>{isAggregated ? 'Ca sớm nhất:' : 'Mở lúc:'}</span>
                 <div className="font-medium text-[#2d3d35]">
                   {formatDateTime(shift.opened_at)}
                 </div>
@@ -187,6 +203,30 @@ export const ShiftCashbookSnapshot: React.FC<ShiftCashbookSnapshotProps> = ({
                 </div>
               </div>
             </div>
+
+            {/* Chi tiết từng chi nhánh khi xem liên chi nhánh */}
+            {isAggregated && shift.branches_summary && shift.branches_summary.length > 0 && (
+              <div className="p-2.5 bg-[#f9fbfa] rounded-[8px] border border-[#e3ede7] space-y-1.5">
+                <div className="text-[11px] font-bold text-[#176b58]">
+                  Chi tiết {shift.branches_summary.length} chi nhánh đang trực:
+                </div>
+                <div className="space-y-1 max-h-[110px] overflow-y-auto pr-1">
+                  {shift.branches_summary.map((b) => (
+                    <div
+                      key={b.id}
+                      className="flex items-center justify-between text-[11px] py-0.5 border-b border-[#edf3ef] last:border-0"
+                    >
+                      <span className="text-[#3c5047] font-medium truncate max-w-[140px]">
+                        {b.branch_name} ({b.cashier_name})
+                      </span>
+                      <span className="font-mono font-bold text-[#176b58]">
+                        {formatMoney(b.expected_cash)}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
 
             {/* Chỉ số phụ: Số đơn hoàn thành trong ca */}
             <div className="flex items-center justify-between px-3 py-2 bg-[#fafbfa] rounded-[8px] border border-[#edf1ee] text-xs">

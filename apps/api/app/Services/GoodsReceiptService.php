@@ -36,21 +36,47 @@ class GoodsReceiptService
             $query->where('supplier_id', $filters['supplier_id']);
         }
 
-        if (! empty($filters['search'])) {
-            $search = trim($filters['search']);
+        $rawSearch = $filters['q'] ?? $filters['search'] ?? null;
+        if ($rawSearch !== null && trim((string) $rawSearch) !== '') {
+            $search = trim((string) $rawSearch);
             $query->where(function ($q) use ($search) {
                 $q->where('receipt_code', 'like', "%{$search}%")
+                  ->orWhere('notes', 'like', "%{$search}%")
                   ->orWhereHas('supplier', function ($sq) use ($search) {
-                      $sq->where('name', 'like', "%{$search}%")
-                        ->orWhere('code', 'like', "%{$search}%");
+                      $sq->withoutGlobalScopes()->where(function ($sub) use ($search) {
+                          $sub->where('name', 'like', "%{$search}%")
+                              ->orWhere('code', 'like', "%{$search}%")
+                              ->orWhere('phone', 'like', "%{$search}%");
+                      });
                   });
             });
         }
 
         $query->orderBy('id', 'desc');
 
-        $perPage = (int) ($filters['per_page'] ?? 15);
-        return $query->paginate($perPage);
+        $isAll = filter_var($filters['all'] ?? false, FILTER_VALIDATE_BOOLEAN)
+            || ($filters['per_page'] ?? null) === 'all';
+
+        if ($isAll) {
+            $items = $query->limit(1000)->get();
+            $total = $items->count();
+
+            return new LengthAwarePaginator(
+                $items,
+                $total,
+                max($total, 1),
+                1,
+                [
+                    'path'  => request()->url(),
+                    'query' => request()->query(),
+                ]
+            );
+        }
+
+        $perPage = max(1, min(500, (int) ($filters['per_page'] ?? 15)));
+        $page = max(1, (int) ($filters['page'] ?? 1));
+
+        return $query->paginate($perPage, ['*'], 'page', $page);
     }
 
     /**

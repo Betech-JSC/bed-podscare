@@ -167,7 +167,7 @@ class CustomerController extends Controller
     public function show(int $id): JsonResponse
     {
         $customer = Customer::with(['repairOrders' => function ($q) {
-            $q->latest()->limit(50)->with(['deviceModel', 'warranties', 'branch', 'technician']);
+            $q->latest()->limit(1000)->with(['deviceModel', 'warranties', 'branch', 'technician']);
         }, 'warranties.deviceModel'])->find($id);
 
         if (! $customer) {
@@ -188,10 +188,45 @@ class CustomerController extends Controller
             return $this->empty('Không tìm thấy khách hàng.');
         }
 
-        $history = $customer->repairOrders()
+        $query = $customer->repairOrders()
             ->with(['deviceModel', 'branch', 'technician', 'payments', 'warranties'])
-            ->latest()
-            ->paginate($request->input('per_page', 20));
+            ->latest();
+
+        $rawSearch = $request->input('q') ?? $request->input('search');
+        $search = PhoneHelper::sanitizeText($rawSearch);
+        if ($search !== '') {
+            $query->where(function ($q) use ($search) {
+                $q->where('order_code', 'like', "%{$search}%")
+                  ->orWhere('serial_number', 'like', "%{$search}%")
+                  ->orWhere('issue_description', 'like', "%{$search}%")
+                  ->orWhereHas('deviceModel', function ($dq) use ($search) {
+                      $dq->where('name', 'like', "%{$search}%");
+                  });
+            });
+        }
+
+        if ($request->boolean('all') || $request->input('per_page') === 'all') {
+            $items = $query->limit(1000)->get();
+            $total = $items->count();
+
+            return $this->success([
+                'current_page'   => 1,
+                'data'           => $items,
+                'first_page_url' => $request->fullUrlWithQuery(['page' => 1]),
+                'from'           => $total > 0 ? 1 : null,
+                'last_page'      => 1,
+                'last_page_url'  => $request->fullUrlWithQuery(['page' => 1]),
+                'next_page_url'  => null,
+                'path'           => $request->url(),
+                'per_page'       => max($total, 1),
+                'prev_page_url'  => null,
+                'to'             => $total > 0 ? $total : null,
+                'total'          => $total,
+            ], 'Lấy lịch sử sửa chữa của khách hàng thành công.');
+        }
+
+        $perPage = max(1, min(500, (int) $request->input('per_page', 15)));
+        $history = $query->paginate($perPage);
 
         return $this->success($history, 'Lấy lịch sử sửa chữa của khách hàng thành công.');
     }

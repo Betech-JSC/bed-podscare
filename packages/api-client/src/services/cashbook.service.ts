@@ -13,13 +13,30 @@ export class CashbookService {
   constructor(private http: HttpClient = defaultHttpClient) {}
 
   /**
-   * Lấy danh sách giao dịch sổ quỹ tiền mặt (phân trang, bộ lọc chi nhánh, ca, loại thu/chi).
+   * Lấy danh sách giao dịch sổ quỹ tiền mặt (phân trang, bộ lọc chi nhánh, ca, loại thu/chi, tìm kiếm q).
    */
   async getTransactions(
     params?: CashTransactionFilterParams
   ): Promise<ApiResponse<PaginatedResponse<CashTransaction>>> {
+    const cleanParams: Record<string, string | number | boolean> = {};
+    if (params) {
+      for (const [key, val] of Object.entries(params)) {
+        if (val !== undefined && val !== '') {
+          cleanParams[key] = val as string | number | boolean;
+        }
+      }
+      const queryText = params.q ?? params.search;
+      if (queryText !== undefined && String(queryText).trim() !== '') {
+        cleanParams.q = String(queryText).trim();
+        cleanParams.search = String(queryText).trim();
+      }
+      if (params.per_page === 'all' || params.all === true) {
+        cleanParams.per_page = 'all';
+        cleanParams.all = true;
+      }
+    }
     return this.http.get('/api/v1/cashbook/transactions', {
-      params: params as Record<string, string | number | boolean | undefined>,
+      params: Object.keys(cleanParams).length > 0 ? cleanParams : undefined,
     });
   }
 

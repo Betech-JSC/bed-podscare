@@ -8,10 +8,14 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 const dashboardPagePath = path.join(__dirname, '../app/dashboard/page.tsx');
+const adminDashboardPath = path.join(__dirname, '../app/dashboard/components/AdminDashboardView.tsx');
 const actionCenterPath = path.join(__dirname, '../app/dashboard/components/ActionableTasksCenter.tsx');
 
 describe('OpenSpec: admin-operational-dashboard-and-action-center Verification', () => {
-  const dashboardCode = fs.readFileSync(dashboardPagePath, 'utf-8');
+  const dashboardCode = [
+    fs.readFileSync(dashboardPagePath, 'utf-8'),
+    fs.existsSync(adminDashboardPath) ? fs.readFileSync(adminDashboardPath, 'utf-8') : '',
+  ].join('\n');
   const actionCenterCode = fs.readFileSync(actionCenterPath, 'utf-8');
 
   test('1. Date Range Presets (Hôm nay, Hôm qua, 7 ngày qua, Tháng này) implemented with Calm Jade tokens', () => {

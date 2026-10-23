@@ -12,6 +12,7 @@ import {
   StatCard,
   TableSkeleton,
   EmptyState,
+  PaginationBar,
   useToast,
   useConfirm,
 } from '@podscare/ui';
@@ -53,6 +54,15 @@ export default function UsersPage() {
   const [searchQuery, setSearchQuery] = useState('');
   const [roleFilter, setRoleFilter] = useState('');
   const [statusFilter, setStatusFilter] = useState('');
+  const [page, setPage] = useState<number>(1);
+  const [perPage, setPerPage] = useState<number | 'all'>(15);
+  const [meta, setMeta] = useState({
+    current_page: 1,
+    last_page: 1,
+    total: 0,
+    from: 0 as number | null,
+    to: 0 as number | null,
+  });
 
   // Modals
   const [createModalOpen, setCreateModalOpen] = useState(false);
@@ -88,8 +98,20 @@ export default function UsersPage() {
   const fetchUsers = React.useCallback(async () => {
     try {
       setLoading(true);
-      const res = await userService.getUsers({ per_page: 50 });
-      const raw = res?.data;
+      const res = await userService.getUsers({
+        q: searchQuery.trim() || undefined,
+        role: roleFilter || undefined,
+        is_active:
+          statusFilter === 'active'
+            ? true
+            : statusFilter === 'locked'
+            ? false
+            : undefined,
+        page: perPage === 'all' ? 1 : page,
+        per_page: perPage,
+        all: perPage === 'all' ? true : undefined,
+      });
+      const raw: any = res?.data;
       const list = Array.isArray(raw) ? raw : (raw?.data || []);
       if (Array.isArray(list)) {
         const apiUsers: UserItem[] = list.map((u: any) => {
@@ -113,16 +135,25 @@ export default function UsersPage() {
           };
         });
         setUsers(apiUsers);
+        setMeta({
+          current_page: Number(raw?.current_page ?? (perPage === 'all' ? 1 : page)),
+          last_page: Number(raw?.last_page ?? 1),
+          total: Number(raw?.total ?? apiUsers.length),
+          from: raw?.from ?? (apiUsers.length > 0 ? 1 : 0),
+          to: raw?.to ?? apiUsers.length,
+        });
       } else {
         setUsers([]);
+        setMeta({ current_page: 1, last_page: 1, total: 0, from: 0, to: 0 });
       }
     } catch (e) {
       console.warn('Could not fetch users from API:', e);
       setUsers([]);
+      setMeta({ current_page: 1, last_page: 1, total: 0, from: 0, to: 0 });
     } finally {
       setLoading(false);
     }
-  }, [effectiveBranches]);
+  }, [effectiveBranches, searchQuery, roleFilter, statusFilter, page, perPage]);
 
   useEffect(() => {
     fetchUsers();
@@ -402,7 +433,10 @@ export default function UsersPage() {
                 <input
                   type="text"
                   value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
+                  onChange={(e) => {
+                    setSearchQuery(e.target.value);
+                    setPage(1);
+                  }}
                   placeholder="Tìm theo tên, email, SĐT..."
                   className="w-full h-10 pl-9 pr-3 border border-[#e4eae6] rounded-[8px] text-sm text-[#2b3a32] bg-white outline-none focus:border-[#75a994] focus:ring-2 focus:ring-[#176b58]/10 transition-all placeholder:text-[#9aa59f]"
                 />
@@ -410,7 +444,10 @@ export default function UsersPage() {
 
               <select
                 value={roleFilter}
-                onChange={(e) => setRoleFilter(e.target.value)}
+                onChange={(e) => {
+                  setRoleFilter(e.target.value);
+                  setPage(1);
+                }}
                 className="h-10 border border-[#e4eae6] rounded-[8px] px-3 text-sm text-[#54645c] bg-white outline-none focus:border-[#75a994] cursor-pointer"
               >
                 <option value="">Tất cả vai trò</option>
@@ -423,7 +460,10 @@ export default function UsersPage() {
 
               <select
                 value={statusFilter}
-                onChange={(e) => setStatusFilter(e.target.value)}
+                onChange={(e) => {
+                  setStatusFilter(e.target.value);
+                  setPage(1);
+                }}
                 className="h-10 border border-[#e4eae6] rounded-[8px] px-3 text-sm text-[#54645c] bg-white outline-none focus:border-[#75a994] cursor-pointer"
               >
                 <option value="">Tất cả trạng thái</option>
@@ -563,6 +603,24 @@ export default function UsersPage() {
                   })}
                 </tbody>
               </table>
+            </div>
+            <div className="px-4 pb-4">
+              <PaginationBar
+                testIdPrefix="users"
+                itemLabel="tài khoản"
+                currentPage={meta.current_page}
+                lastPage={meta.last_page}
+                total={meta.total || filteredUsers.length}
+                from={meta.from}
+                to={meta.to}
+                perPage={perPage}
+                onPageChange={setPage}
+                onPerPageChange={(val) => {
+                  setPerPage(val);
+                  setPage(1);
+                }}
+                isLoading={loading}
+              />
             </div>
           </div>
         )}

@@ -108,23 +108,43 @@ class AuditLogController extends Controller
             }
         }
 
-        // Tìm kiếm tổng hợp theo q
-        if ($search = $request->input('q')) {
+        // Tìm kiếm tổng hợp theo q / search
+        $rawSearch = $request->input('q') ?? $request->input('search');
+        if ($rawSearch !== null && trim((string) $rawSearch) !== '') {
+            $search = trim((string) $rawSearch);
             $query->where(function ($q) use ($search) {
                 $q->where('details', 'like', "%{$search}%")
                   ->orWhere('action', 'like', "%{$search}%")
                   ->orWhere('user_name', 'like', "%{$search}%")
-                  ->orWhere('auditable_type', 'like', "%{$search}%");
+                  ->orWhere('auditable_type', 'like', "%{$search}%")
+                  ->orWhere('ip_address', 'like', "%{$search}%");
             });
         }
 
         // Phân quyền tenant
         $this->applyTenantScope($query, $user);
 
-        // Phân trang mặc định 50 bản ghi
-        $perPage = (int) $request->input('per_page', $request->input('limit', 50));
-        $perPage = max(1, min($perPage, 100));
+        if ($request->boolean('all') || $request->input('per_page') === 'all') {
+            $items = $query->limit(1000)->get();
+            $total = $items->count();
 
+            return $this->success([
+                'current_page'   => 1,
+                'data'           => $items,
+                'first_page_url' => $request->fullUrlWithQuery(['page' => 1]),
+                'from'           => $total > 0 ? 1 : null,
+                'last_page'      => 1,
+                'last_page_url'  => $request->fullUrlWithQuery(['page' => 1]),
+                'next_page_url'  => null,
+                'path'           => $request->url(),
+                'per_page'       => max($total, 1),
+                'prev_page_url'  => null,
+                'to'             => $total > 0 ? $total : null,
+                'total'          => $total,
+            ], 'Lấy danh sách nhật ký hoạt động thành công.');
+        }
+
+        $perPage = max(1, min(500, (int) $request->input('per_page', $request->input('limit', 15))));
         $logs = $query->paginate($perPage);
 
         return $this->success($logs, 'Lấy danh sách nhật ký hoạt động thành công.');

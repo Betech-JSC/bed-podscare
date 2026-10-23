@@ -1,6 +1,7 @@
 import { HttpClient, defaultHttpClient } from '../http-client';
 import type {
   OperationalSummary,
+  OperationalReconciliation,
   ActionableTasks,
   DashboardKpiResponse,
   TechnicianKpiItem,
@@ -15,6 +16,7 @@ import type {
 
 export type {
   OperationalSummary,
+  OperationalReconciliation,
   ActionableTasks,
   DashboardKpiResponse,
   TechnicianKpiItem,
@@ -68,6 +70,21 @@ export interface DashboardStats {
   completed_orders?: number;
   total_uncollected_amount?: number;
   total_uncollected_amount_formatted?: string;
+  ready_for_pickup_orders_count?: number;
+  in_workshop_orders_count?: number;
+  ready_for_pickup_amount?: number;
+  in_workshop_amount?: number;
+  selected_date_ready_for_pickup_orders_count?: number;
+  selected_date_in_workshop_orders_count?: number;
+  selected_date_ready_for_pickup_amount?: number;
+  selected_date_in_workshop_amount?: number;
+  monthly_ready_for_pickup_orders_count?: number;
+  monthly_in_workshop_orders_count?: number;
+  monthly_ready_for_pickup_amount?: number;
+  monthly_in_workshop_amount?: number;
+  period_operational_summary?: OperationalSummary;
+  period_reconciliation?: OperationalReconciliation;
+  period_workload_by_status?: Record<string, number>;
   reconciliation?: {
     handed_over_count: number;
     handed_over_revenue: number;

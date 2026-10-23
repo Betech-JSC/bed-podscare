@@ -343,7 +343,7 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
   const { data: cachedCskhUsers } = useQuery({
     queryKey: ['intake-cskh-users'],
     queryFn: async () => {
-      const res: any = await userService.getUsers({ role: 'cskh', is_active: true, per_page: 100 });
+      const res: any = await userService.getUsers({ role: 'cskh', is_active: true, per_page: 'all', all: true });
       const raw = res?.data;
       const list: UserRecord[] = Array.isArray(raw) ? raw : (raw?.data || []);
       return Array.isArray(list) ? list : [];

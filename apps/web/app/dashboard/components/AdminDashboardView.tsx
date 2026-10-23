@@ -318,8 +318,8 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
                 }}
                 className={`text-xs px-3 py-1.5 rounded-[8px] transition-all cursor-pointer ${
                   activePreset === 'today' && (fromDate || selectedDate) === todayStr && (toDate || selectedDate) === todayStr
-                    ? 'bg-[#176b51] text-white font-bold shadow-xs'
-                    : 'bg-white text-[#4a5c54] border border-[#d8e2dc] hover:bg-[#f6f8f6]'
+                    ? 'bg-[#176b58] text-white font-bold shadow-xs'
+                    : 'bg-white text-[#4a5c54] border border-[#d8e2dc] hover:bg-[#f0f4f2]'
                 }`}
               >
                 Hôm nay
@@ -336,8 +336,8 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
                 }}
                 className={`text-xs px-3 py-1.5 rounded-[8px] transition-all cursor-pointer ${
                   activePreset === 'yesterday' && (fromDate || selectedDate) === yesterdayStr && (toDate || selectedDate) === yesterdayStr
-                    ? 'bg-[#176b51] text-white font-bold shadow-xs'
-                    : 'bg-white text-[#4a5c54] border border-[#d8e2dc] hover:bg-[#f6f8f6]'
+                    ? 'bg-[#176b58] text-white font-bold shadow-xs'
+                    : 'bg-white text-[#4a5c54] border border-[#d8e2dc] hover:bg-[#f0f4f2]'
                 }`}
               >
                 Hôm qua
@@ -353,8 +353,8 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
                 }}
                 className={`text-xs px-3 py-1.5 rounded-[8px] transition-all cursor-pointer ${
                   activePreset === '7_days' && period === '7_days'
-                    ? 'bg-[#176b51] text-white font-bold shadow-xs'
-                    : 'bg-white text-[#4a5c54] border border-[#d8e2dc] hover:bg-[#f6f8f6]'
+                    ? 'bg-[#176b58] text-white font-bold shadow-xs'
+                    : 'bg-white text-[#4a5c54] border border-[#d8e2dc] hover:bg-[#f0f4f2]'
                 }`}
               >
                 7 ngày qua
@@ -370,8 +370,8 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
                 }}
                 className={`text-xs px-3 py-1.5 rounded-[8px] transition-all cursor-pointer ${
                   activePreset === '30_days' && period === '30_days'
-                    ? 'bg-[#176b51] text-white font-bold shadow-xs'
-                    : 'bg-white text-[#4a5c54] border border-[#d8e2dc] hover:bg-[#f6f8f6]'
+                    ? 'bg-[#176b58] text-white font-bold shadow-xs'
+                    : 'bg-white text-[#4a5c54] border border-[#d8e2dc] hover:bg-[#f0f4f2]'
                 }`}
               >
                 Tháng này
@@ -436,9 +436,16 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
               {isKpiLoading ? (
                 <span className="h-4 w-full rounded-[4px] bg-[#f6f8f6] animate-pulse" />
               ) : (
-                <span>
-                  Thực thu: {formatVND(monthlyCollectedAmount)} · {monthlyCompletedCount} đơn hoàn tất · Chờ thu: {formatVND(monthlyUncollectedAmount)} ({monthlyUncollectedCount} đơn chờ lấy) ({selectedMonthLabel})
-                </span>
+                <div className="min-w-0">
+                  <div>
+                    Thực thu: {formatVND(monthlyCollectedAmount)} · {monthlyCompletedCount} đơn hoàn tất · Chờ thu: {formatVND(monthlyUncollectedAmount)} ({monthlyUncollectedCount} đơn chờ lấy) ({selectedMonthLabel})
+                  </div>
+                  {(kpiData?.monthly_in_workshop_orders_count !== undefined && kpiData.monthly_in_workshop_orders_count > 0) && (
+                    <div className="text-[11px] text-[#176b51]/80 font-normal mt-0.5">
+                      ({kpiData?.monthly_ready_for_pickup_orders_count ?? monthlyUncollectedCount} chờ lấy · {kpiData.monthly_in_workshop_orders_count} đang sửa)
+                    </div>
+                  )}
+                </div>
               )}
               <Icon name="arrow" size={12} className="text-[#176b51] flex-none" />
             </div>
@@ -541,9 +548,16 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
               {isKpiLoading ? (
                 <span className="h-4 w-full rounded-[4px] bg-[#f6f8f6] animate-pulse" />
               ) : (
-                <span>
-                  Thực thu: {formatVND(selectedDateCollectedAmount)} · {selectedDateCompletedCount} đơn hoàn tất · Chờ thu: {formatVND(selectedDateUncollectedAmount)} ({selectedDateUncollectedCount} đơn chờ lấy)
-                </span>
+                <div className="min-w-0">
+                  <div>
+                    Thực thu: {formatVND(selectedDateCollectedAmount)} · {selectedDateCompletedCount} đơn hoàn tất · Chờ thu: {formatVND(selectedDateUncollectedAmount)} ({selectedDateUncollectedCount} đơn chờ lấy)
+                  </div>
+                  {(kpiData?.selected_date_in_workshop_orders_count !== undefined && kpiData.selected_date_in_workshop_orders_count > 0) && (
+                    <div className="text-[11px] text-[#176b51]/80 font-normal mt-0.5">
+                      ({kpiData?.selected_date_ready_for_pickup_orders_count ?? selectedDateUncollectedCount} chờ lấy · {kpiData.selected_date_in_workshop_orders_count} đang sửa)
+                    </div>
+                  )}
+                </div>
               )}
               <Icon name="arrow" size={12} className="text-[#176b51] flex-none" />
             </div>
@@ -732,7 +746,7 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
               </div>
             ) : (
               <div className="font-heading font-extrabold text-2xl md:text-3xl text-[#17231f] my-2 tabular-nums">
-                {activeOrdersTotal}
+                {kpiData?.period_operational_summary?.active_orders ?? kpiData?.operational_summary?.active_orders ?? activeOrdersTotal}
               </div>
             )}
             <div className="flex items-center justify-between text-xs text-[#81908a]">
@@ -768,7 +782,7 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
               </div>
             ) : (
               <div className="font-heading font-extrabold text-2xl md:text-3xl text-[#176b51] my-2 tabular-nums">
-                {waitingPickupCount}
+                {kpiData?.period_operational_summary?.waiting_pickup_orders ?? kpiData?.operational_summary?.waiting_pickup_orders ?? waitingPickupCount}
               </div>
             )}
             <div className="flex items-center justify-between text-xs text-[#81908a]">
@@ -802,7 +816,7 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
               </div>
             ) : (
               <div className="font-heading font-extrabold text-2xl md:text-3xl text-[#b77a21] my-2 tabular-nums">
-                {kpiData?.operational_summary?.waiting_parts_orders ?? 0}
+                {kpiData?.period_operational_summary?.waiting_parts_orders ?? kpiData?.operational_summary?.waiting_parts_orders ?? 0}
               </div>
             )}
             <div className="flex items-center justify-between text-xs text-[#81908a]">
@@ -823,7 +837,7 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
                 : onNavigate('/repairs?filter=overdue')
             }
             className={`border rounded-[12px] p-4 shadow-xs transition-all cursor-pointer flex flex-col justify-between ${
-              !isKpiLoading && (kpiData?.operational_summary?.overdue_orders ?? 0) > 0
+              !isKpiLoading && (kpiData?.period_operational_summary?.overdue_orders ?? kpiData?.operational_summary?.overdue_orders ?? 0) > 0
                 ? 'bg-[#fbeaea] border-[#f5c2c2] hover:border-[#bc5b52]'
                 : 'bg-white border-[#e9eeeb] hover:border-[#cde4d8]'
             }`}
@@ -831,7 +845,7 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
             <div className="flex items-center justify-between text-sm font-medium">
               <span
                 className={
-                  !isKpiLoading && (kpiData?.operational_summary?.overdue_orders ?? 0) > 0
+                  !isKpiLoading && (kpiData?.period_operational_summary?.overdue_orders ?? kpiData?.operational_summary?.overdue_orders ?? 0) > 0
                     ? 'text-[#bc5b52] font-semibold'
                     : 'text-[#81908a]'
                 }
@@ -840,7 +854,7 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
               </span>
               <span
                 className={`w-8 h-8 rounded-[8px] grid place-items-center ${
-                  !isKpiLoading && (kpiData?.operational_summary?.overdue_orders ?? 0) > 0
+                  !isKpiLoading && (kpiData?.period_operational_summary?.overdue_orders ?? kpiData?.operational_summary?.overdue_orders ?? 0) > 0
                     ? 'bg-white text-[#bc5b52]'
                     : 'bg-[#e9f4ef] text-[#176b51]'
                 }`}
@@ -855,12 +869,12 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
             ) : (
               <div
                 className={`font-heading font-extrabold text-2xl md:text-3xl my-2 tabular-nums ${
-                  (kpiData?.operational_summary?.overdue_orders ?? 0) > 0
+                  (kpiData?.period_operational_summary?.overdue_orders ?? kpiData?.operational_summary?.overdue_orders ?? 0) > 0
                     ? 'text-[#bc5b52]'
                     : 'text-[#17231f]'
                 }`}
               >
-                {kpiData?.operational_summary?.overdue_orders ?? 0}
+                {kpiData?.period_operational_summary?.overdue_orders ?? kpiData?.operational_summary?.overdue_orders ?? 0}
               </div>
             )}
             <div className="flex items-center justify-between text-xs">
@@ -869,7 +883,7 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
               ) : (
                 <span
                   className={
-                    (kpiData?.operational_summary?.overdue_orders ?? 0) > 0
+                    (kpiData?.period_operational_summary?.overdue_orders ?? kpiData?.operational_summary?.overdue_orders ?? 0) > 0
                       ? 'text-[#bc5b52] font-medium'
                       : 'text-[#81908a]'
                   }
@@ -966,7 +980,8 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
                 ))}
               </div>
             ) : (
-              <div className="space-y-4">
+              <div className="space-y-3.5">
+                {/* 1. Đang kiểm tra */}
                 <div className="grid grid-cols-[30px_1fr_30px] gap-3 items-center">
                   <div className="w-[30px] h-[30px] rounded-[8px] bg-[#e9f4ef] text-[#176b51] grid place-items-center">
                     <Icon name="search" size={15} />
@@ -974,20 +989,25 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
                   <div>
                     <div className="flex justify-between text-xs mb-1">
                       <span className="font-medium text-[#17231f]">Đang kiểm tra</span>
-                      <span className="text-[#81908a] font-mono">{String(inspectingCount).padStart(2, '0')} đơn</span>
+                      <span className="text-[#81908a] font-mono">
+                        {String(Number(kpiData?.period_workload_by_status?.inspecting ?? inspectingCount)).padStart(2, '0')} đơn
+                      </span>
                     </div>
                     <div className="h-2 bg-[#f6f8f6] rounded-full overflow-hidden">
                       <div
                         className="h-full bg-[#176b51] rounded-full"
                         style={{
-                          width: `${activeOrdersTotal > 0 ? Math.min(100, (inspectingCount / activeOrdersTotal) * 100) : 0}%`,
+                          width: `${activeOrdersTotal > 0 ? Math.min(100, (Number(kpiData?.period_workload_by_status?.inspecting ?? inspectingCount) / activeOrdersTotal) * 100) : 0}%`,
                         }}
                       />
                     </div>
                   </div>
-                  <b className="text-xs text-right text-[#17231f] font-mono">{inspectingCount}</b>
+                  <b className="text-xs text-right text-[#17231f] font-mono">
+                    {Number(kpiData?.period_workload_by_status?.inspecting ?? inspectingCount)}
+                  </b>
                 </div>
 
+                {/* 2. Chờ kỹ thuật nhận */}
                 <div className="grid grid-cols-[30px_1fr_30px] gap-3 items-center">
                   <div className="w-[30px] h-[30px] rounded-[8px] bg-[#faf1df] text-[#b77a21] grid place-items-center">
                     <Icon name="clock" size={15} />
@@ -995,20 +1015,25 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
                   <div>
                     <div className="flex justify-between text-xs mb-1">
                       <span className="font-medium text-[#17231f]">Chờ kỹ thuật nhận</span>
-                      <span className="text-[#81908a] font-mono">{String(waitingApprovalCount).padStart(2, '0')} đơn</span>
+                      <span className="text-[#81908a] font-mono">
+                        {String(Number(kpiData?.period_workload_by_status?.waiting_approval ?? waitingApprovalCount)).padStart(2, '0')} đơn
+                      </span>
                     </div>
                     <div className="h-2 bg-[#f6f8f6] rounded-full overflow-hidden">
                       <div
                         className="h-full bg-[#b77a21] rounded-full"
                         style={{
-                          width: `${activeOrdersTotal > 0 ? Math.min(100, (waitingApprovalCount / activeOrdersTotal) * 100) : 0}%`,
+                          width: `${activeOrdersTotal > 0 ? Math.min(100, (Number(kpiData?.period_workload_by_status?.waiting_approval ?? waitingApprovalCount) / activeOrdersTotal) * 100) : 0}%`,
                         }}
                       />
                     </div>
                   </div>
-                  <b className="text-xs text-right text-[#17231f] font-mono">{waitingApprovalCount}</b>
+                  <b className="text-xs text-right text-[#17231f] font-mono">
+                    {Number(kpiData?.period_workload_by_status?.waiting_approval ?? waitingApprovalCount)}
+                  </b>
                 </div>
 
+                {/* 3. Đang sửa chữa */}
                 <div className="grid grid-cols-[30px_1fr_30px] gap-3 items-center">
                   <div className="w-[30px] h-[30px] rounded-[8px] bg-[#e9f1f9] text-[#4778a4] grid place-items-center">
                     <Icon name="wrench" size={15} />
@@ -1016,20 +1041,77 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
                   <div>
                     <div className="flex justify-between text-xs mb-1">
                       <span className="font-medium text-[#17231f]">Đang sửa chữa</span>
-                      <span className="text-[#81908a] font-mono">{String(repairingCount).padStart(2, '0')} đơn</span>
+                      <span className="text-[#81908a] font-mono">
+                        {String(Number(kpiData?.period_workload_by_status?.in_repair ?? repairingCount)).padStart(2, '0')} đơn
+                      </span>
                     </div>
                     <div className="h-2 bg-[#f6f8f6] rounded-full overflow-hidden">
                       <div
                         className="h-full bg-[#4778a4] rounded-full"
                         style={{
-                          width: `${activeOrdersTotal > 0 ? Math.min(100, (repairingCount / activeOrdersTotal) * 100) : 0}%`,
+                          width: `${activeOrdersTotal > 0 ? Math.min(100, (Number(kpiData?.period_workload_by_status?.in_repair ?? repairingCount) / activeOrdersTotal) * 100) : 0}%`,
                         }}
                       />
                     </div>
                   </div>
-                  <b className="text-xs text-right text-[#17231f] font-mono">{repairingCount}</b>
+                  <b className="text-xs text-right text-[#17231f] font-mono">
+                    {Number(kpiData?.period_workload_by_status?.in_repair ?? repairingCount)}
+                  </b>
                 </div>
 
+                {/* 4. Chờ linh kiện */}
+                <div className="grid grid-cols-[30px_1fr_30px] gap-3 items-center">
+                  <div className="w-[30px] h-[30px] rounded-[8px] bg-[#faf1df] text-[#b77a21] grid place-items-center">
+                    <Icon name="inventory" size={15} />
+                  </div>
+                  <div>
+                    <div className="flex justify-between text-xs mb-1">
+                      <span className="font-medium text-[#17231f]">Chờ linh kiện</span>
+                      <span className="text-[#81908a] font-mono">
+                        {String(Number(kpiData?.period_workload_by_status?.waiting_parts ?? kpiData?.operational_summary?.waiting_parts_orders ?? 0)).padStart(2, '0')} đơn
+                      </span>
+                    </div>
+                    <div className="h-2 bg-[#f6f8f6] rounded-full overflow-hidden">
+                      <div
+                        className="h-full bg-[#d97706] rounded-full"
+                        style={{
+                          width: `${activeOrdersTotal > 0 ? Math.min(100, (Number(kpiData?.period_workload_by_status?.waiting_parts ?? kpiData?.operational_summary?.waiting_parts_orders ?? 0) / activeOrdersTotal) * 100) : 0}%`,
+                        }}
+                      />
+                    </div>
+                  </div>
+                  <b className="text-xs text-right text-[#17231f] font-mono">
+                    {Number(kpiData?.period_workload_by_status?.waiting_parts ?? kpiData?.operational_summary?.waiting_parts_orders ?? 0)}
+                  </b>
+                </div>
+
+                {/* 5. Chờ QC */}
+                <div className="grid grid-cols-[30px_1fr_30px] gap-3 items-center">
+                  <div className="w-[30px] h-[30px] rounded-[8px] bg-[#edf4f8] text-[#356d8a] grid place-items-center">
+                    <Icon name="qc" size={15} />
+                  </div>
+                  <div>
+                    <div className="flex justify-between text-xs mb-1">
+                      <span className="font-medium text-[#17231f]">Chờ QC</span>
+                      <span className="text-[#81908a] font-mono">
+                        {String(Number(kpiData?.period_workload_by_status?.waiting_qc ?? kpiData?.operational_summary?.waiting_qc_count ?? 0)).padStart(2, '0')} đơn
+                      </span>
+                    </div>
+                    <div className="h-2 bg-[#f6f8f6] rounded-full overflow-hidden">
+                      <div
+                        className="h-full bg-[#356d8a] rounded-full"
+                        style={{
+                          width: `${activeOrdersTotal > 0 ? Math.min(100, (Number(kpiData?.period_workload_by_status?.waiting_qc ?? kpiData?.operational_summary?.waiting_qc_count ?? 0) / activeOrdersTotal) * 100) : 0}%`,
+                        }}
+                      />
+                    </div>
+                  </div>
+                  <b className="text-xs text-right text-[#17231f] font-mono">
+                    {Number(kpiData?.period_workload_by_status?.waiting_qc ?? kpiData?.operational_summary?.waiting_qc_count ?? 0)}
+                  </b>
+                </div>
+
+                {/* 6. Chờ QC / trả máy */}
                 <div className="grid grid-cols-[30px_1fr_30px] gap-3 items-center">
                   <div className="w-[30px] h-[30px] rounded-[8px] bg-[#e9f4ef] text-[#176b51] grid place-items-center">
                     <Icon name="check" size={15} />
@@ -1037,18 +1119,22 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
                   <div>
                     <div className="flex justify-between text-xs mb-1">
                       <span className="font-medium text-[#17231f]">Chờ QC / trả máy</span>
-                      <span className="text-[#81908a] font-mono">{String(readyCount).padStart(2, '0')} đơn</span>
+                      <span className="text-[#81908a] font-mono">
+                        {String(Number(kpiData?.period_workload_by_status?.ready_for_return ?? readyCount)).padStart(2, '0')} đơn
+                      </span>
                     </div>
                     <div className="h-2 bg-[#f6f8f6] rounded-full overflow-hidden">
                       <div
                         className="h-full bg-[#176b51] rounded-full"
                         style={{
-                          width: `${activeOrdersTotal > 0 ? Math.min(100, (readyCount / activeOrdersTotal) * 100) : 0}%`,
+                          width: `${activeOrdersTotal > 0 ? Math.min(100, (Number(kpiData?.period_workload_by_status?.ready_for_return ?? readyCount) / activeOrdersTotal) * 100) : 0}%`,
                         }}
                       />
                     </div>
                   </div>
-                  <b className="text-xs text-right text-[#17231f] font-mono">{readyCount}</b>
+                  <b className="text-xs text-right text-[#17231f] font-mono">
+                    {Number(kpiData?.period_workload_by_status?.ready_for_return ?? readyCount)}
+                  </b>
                 </div>
               </div>
             )}
@@ -1366,6 +1452,8 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
           <StaffPerformanceWidget
             branchId={branchId}
             selectedDate={selectedDate}
+            fromDate={fromDate}
+            toDate={toDate}
             period={period}
             userRole={role}
           />

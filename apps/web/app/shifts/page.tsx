@@ -8,6 +8,7 @@ import {
   FilterBar,
   EmptyState,
   StatCard,
+  PaginationBar,
   useToast,
 } from '@podscare/ui';
 import { shiftService, cashbookService } from '@podscare/api-client';
@@ -49,14 +50,30 @@ export default function ShiftsPage() {
   const [txSearch, setTxSearch] = useState<string>('');
   const [txTypeFilter, setTxTypeFilter] = useState<'all' | 'income' | 'expense'>('all');
   const [txPage, setTxPage] = useState<number>(1);
+  const [txPerPage, setTxPerPage] = useState<number | 'all'>(15);
   const [txTotalPages, setTxTotalPages] = useState<number>(1);
+  const [txMeta, setTxMeta] = useState({
+    current_page: 1,
+    last_page: 1,
+    total: 0,
+    from: 0 as number | null,
+    to: 0 as number | null,
+  });
 
   // Shifts state
   const [shifts, setShifts] = useState<WorkShift[]>([]);
   const [isLoadingShifts, setIsLoadingShifts] = useState<boolean>(true);
   const [shiftStatusFilter, setShiftStatusFilter] = useState<'all' | 'open' | 'closed'>('all');
   const [shiftPage, setShiftPage] = useState<number>(1);
+  const [shiftPerPage, setShiftPerPage] = useState<number | 'all'>(15);
   const [shiftTotalPages, setShiftTotalPages] = useState<number>(1);
+  const [shiftMeta, setShiftMeta] = useState({
+    current_page: 1,
+    last_page: 1,
+    total: 0,
+    from: 0 as number | null,
+    to: 0 as number | null,
+  });
 
   const effectiveBranchId =
     (branchId && branchId !== 'all' ? branchId : currentUser?.branch_id) || undefined;
@@ -70,26 +87,41 @@ export default function ShiftsPage() {
   const loadTransactions = useCallback(async () => {
     setIsLoadingTx(true);
     try {
+      const cleanQuery = txSearch.trim() || undefined;
       const res = await cashbookService.getTransactions({
         branch_id: effectiveBranchId,
         type: txTypeFilter !== 'all' ? txTypeFilter : undefined,
-        page: txPage,
-        per_page: 15,
+        q: cleanQuery,
+        search: cleanQuery,
+        page: txPerPage === 'all' ? 1 : txPage,
+        per_page: txPerPage,
+        all: txPerPage === 'all' ? true : undefined,
       });
 
       if (res.success && res.data) {
-        const paginated = res.data;
-        setTransactions(paginated.data || []);
-        setTxTotalPages(paginated.last_page || 1);
+        const paginated: any = res.data;
+        const list = Array.isArray(paginated) ? paginated : (paginated.data || []);
+        setTransactions(list);
+        const lastP = Number(paginated.last_page || 1);
+        setTxTotalPages(lastP);
+        setTxMeta({
+          current_page: Number(paginated.current_page ?? (txPerPage === 'all' ? 1 : txPage)),
+          last_page: lastP,
+          total: Number(paginated.total ?? list.length),
+          from: paginated.from ?? (list.length > 0 ? 1 : 0),
+          to: paginated.to ?? list.length,
+        });
       } else {
         setTransactions([]);
+        setTxMeta({ current_page: 1, last_page: 1, total: 0, from: 0, to: 0 });
       }
     } catch {
       setTransactions([]);
+      setTxMeta({ current_page: 1, last_page: 1, total: 0, from: 0, to: 0 });
     } finally {
       setIsLoadingTx(false);
     }
-  }, [effectiveBranchId, txTypeFilter, txPage]);
+  }, [effectiveBranchId, txTypeFilter, txSearch, txPage, txPerPage]);
 
   const loadShifts = useCallback(async () => {
     setIsLoadingShifts(true);
@@ -97,23 +129,35 @@ export default function ShiftsPage() {
       const res = await shiftService.getShifts({
         branch_id: effectiveBranchId,
         status: shiftStatusFilter !== 'all' ? shiftStatusFilter : undefined,
-        page: shiftPage,
-        per_page: 15,
+        page: shiftPerPage === 'all' ? 1 : shiftPage,
+        per_page: shiftPerPage,
+        all: shiftPerPage === 'all' ? true : undefined,
       });
 
       if (res.success && res.data) {
-        const paginated = res.data;
-        setShifts(paginated.data || []);
-        setShiftTotalPages(paginated.last_page || 1);
+        const paginated: any = res.data;
+        const list = Array.isArray(paginated) ? paginated : (paginated.data || []);
+        setShifts(list);
+        const lastP = Number(paginated.last_page || 1);
+        setShiftTotalPages(lastP);
+        setShiftMeta({
+          current_page: Number(paginated.current_page ?? (shiftPerPage === 'all' ? 1 : shiftPage)),
+          last_page: lastP,
+          total: Number(paginated.total ?? list.length),
+          from: paginated.from ?? (list.length > 0 ? 1 : 0),
+          to: paginated.to ?? list.length,
+        });
       } else {
         setShifts([]);
+        setShiftMeta({ current_page: 1, last_page: 1, total: 0, from: 0, to: 0 });
       }
     } catch {
       setShifts([]);
+      setShiftMeta({ current_page: 1, last_page: 1, total: 0, from: 0, to: 0 });
     } finally {
       setIsLoadingShifts(false);
     }
-  }, [effectiveBranchId, shiftStatusFilter, shiftPage]);
+  }, [effectiveBranchId, shiftStatusFilter, shiftPage, shiftPerPage]);
 
   useEffect(() => {
     loadTransactions();
@@ -278,7 +322,10 @@ export default function ShiftsPage() {
               <div className="flex-1 min-w-[260px]">
                 <FilterBar
                   searchValue={txSearch}
-                  onSearchChange={setTxSearch}
+                  onSearchChange={(val) => {
+                    setTxSearch(val);
+                    setTxPage(1);
+                  }}
                   searchPlaceholder="Tìm theo mã phiếu, nội dung, người nhận hoặc danh mục..."
                 />
               </div>
@@ -422,30 +469,23 @@ export default function ShiftsPage() {
             )}
 
             {/* Pagination */}
-            {txTotalPages > 1 && (
-              <div className="flex items-center justify-between pt-3 border-t border-[#e9eeeb] text-xs">
-                <span className="text-[#81908a]">
-                  Trang {txPage} / {txTotalPages}
-                </span>
-                <div className="flex items-center gap-2">
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    disabled={txPage <= 1}
-                    onClick={() => setTxPage((p) => Math.max(1, p - 1))}
-                  >
-                    Trước
-                  </Button>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    disabled={txPage >= txTotalPages}
-                    onClick={() => setTxPage((p) => p + 1)}
-                  >
-                    Sau
-                  </Button>
-                </div>
-              </div>
+            {filteredTransactions.length > 0 && (
+              <PaginationBar
+                testIdPrefix="cashbook-tx"
+                itemLabel="bút toán"
+                currentPage={txMeta.current_page}
+                lastPage={txMeta.last_page || txTotalPages}
+                total={txMeta.total || filteredTransactions.length}
+                from={txMeta.from}
+                to={txMeta.to}
+                perPage={txPerPage}
+                onPageChange={setTxPage}
+                onPerPageChange={(val) => {
+                  setTxPerPage(val);
+                  setTxPage(1);
+                }}
+                isLoading={isLoadingTx}
+              />
             )}
           </div>
         )}
@@ -635,30 +675,23 @@ export default function ShiftsPage() {
             )}
 
             {/* Pagination */}
-            {shiftTotalPages > 1 && (
-              <div className="flex items-center justify-between pt-3 border-t border-[#e9eeeb] text-xs">
-                <span className="text-[#81908a]">
-                  Trang {shiftPage} / {shiftTotalPages}
-                </span>
-                <div className="flex items-center gap-2">
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    disabled={shiftPage <= 1}
-                    onClick={() => setShiftPage((p) => Math.max(1, p - 1))}
-                  >
-                    Trước
-                  </Button>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    disabled={shiftPage >= shiftTotalPages}
-                    onClick={() => setShiftPage((p) => p + 1)}
-                  >
-                    Sau
-                  </Button>
-                </div>
-              </div>
+            {shifts.length > 0 && (
+              <PaginationBar
+                testIdPrefix="shifts-history"
+                itemLabel="ca làm việc"
+                currentPage={shiftMeta.current_page}
+                lastPage={shiftMeta.last_page || shiftTotalPages}
+                total={shiftMeta.total || shifts.length}
+                from={shiftMeta.from}
+                to={shiftMeta.to}
+                perPage={shiftPerPage}
+                onPageChange={setShiftPage}
+                onPerPageChange={(val) => {
+                  setShiftPerPage(val);
+                  setShiftPage(1);
+                }}
+                isLoading={isLoadingShifts}
+              />
             )}
           </div>
         )}

@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
-import { Button, Input, Icon, useToast, useConfirm } from '@podscare/ui';
+import { Button, Input, Icon, PaginationBar, useToast, useConfirm } from '@podscare/ui';
 import { AppShell } from '../../components/AppShell';
 
 interface StoreItem {
@@ -29,6 +29,15 @@ export default function PlatformStoresPage() {
   const [loading, setLoading] = useState(true);
   const [statusFilter, setStatusFilter] = useState<string>('all');
   const [searchQuery, setSearchQuery] = useState('');
+  const [page, setPage] = useState<number>(1);
+  const [perPage, setPerPage] = useState<number | 'all'>(15);
+  const [meta, setMeta] = useState({
+    current_page: 1,
+    last_page: 1,
+    total: 0,
+    from: 0 as number | null,
+    to: 0 as number | null,
+  });
   const [actionLoadingId, setActionLoadingId] = useState<number | null>(null);
 
   const fetchStores = useCallback(async () => {
@@ -46,19 +55,32 @@ export default function PlatformStoresPage() {
       }
       if (searchQuery.trim()) {
         params.append('search', searchQuery.trim());
+        params.append('q', searchQuery.trim());
       }
-      params.append('per_page', '50');
+      params.append('page', String(perPage === 'all' ? 1 : page));
+      params.append('per_page', String(perPage));
+      if (perPage === 'all') {
+        params.append('all', 'true');
+      }
 
       const res = await fetch(`/api/v1/platform/stores?${params.toString()}`, { headers });
       if (res.ok) {
         const json = await res.json();
         if (json?.success && json?.data) {
-          const list = Array.isArray(json.data.data)
-            ? json.data.data
-            : Array.isArray(json.data)
-            ? json.data
+          const rawData = json.data;
+          const list = Array.isArray(rawData.data)
+            ? rawData.data
+            : Array.isArray(rawData)
+            ? rawData
             : [];
           setStores(list);
+          setMeta({
+            current_page: Number(rawData.current_page ?? (perPage === 'all' ? 1 : page)),
+            last_page: Number(rawData.last_page ?? 1),
+            total: Number(rawData.total ?? list.length),
+            from: rawData.from ?? (list.length > 0 ? 1 : 0),
+            to: rawData.to ?? list.length,
+          });
         }
       }
     } catch (e) {
@@ -66,7 +88,7 @@ export default function PlatformStoresPage() {
     } finally {
       setLoading(false);
     }
-  }, [statusFilter, searchQuery]);
+  }, [statusFilter, searchQuery, page, perPage]);
 
   useEffect(() => {
     const handler = setTimeout(() => {
@@ -207,7 +229,10 @@ export default function PlatformStoresPage() {
             <Input
               type="text"
               value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
+              onChange={(e) => {
+                setSearchQuery(e.target.value);
+                setPage(1);
+              }}
               placeholder="Tìm kiếm theo mã, tên tiệm, SĐT..."
               icon={<Icon name="search" size={16} />}
             />
@@ -225,7 +250,10 @@ export default function PlatformStoresPage() {
                 <button
                   key={tab.id}
                   type="button"
-                  onClick={() => setStatusFilter(tab.id)}
+                  onClick={() => {
+                    setStatusFilter(tab.id);
+                    setPage(1);
+                  }}
                   className={`px-3 py-1.5 rounded-[8px] text-xs font-semibold whitespace-nowrap transition-colors cursor-pointer ${
                     isSelected
                       ? 'bg-[#176b58] text-white'
@@ -359,6 +387,26 @@ export default function PlatformStoresPage() {
               </tbody>
             </table>
           </div>
+          {!loading && stores.length > 0 && (
+            <div className="px-4 pb-4">
+              <PaginationBar
+                testIdPrefix="platform-stores"
+                itemLabel="gian hàng"
+                currentPage={meta.current_page}
+                lastPage={meta.last_page}
+                total={meta.total || stores.length}
+                from={meta.from}
+                to={meta.to}
+                perPage={perPage}
+                onPageChange={setPage}
+                onPerPageChange={(val) => {
+                  setPerPage(val);
+                  setPage(1);
+                }}
+                isLoading={loading}
+              />
+            </div>
+          )}
         </div>
       </div>
     </AppShell>

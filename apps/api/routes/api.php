@@ -117,6 +117,7 @@ Route::prefix('v1')->group(function () {
         Route::put('/customers/{id}', [CustomerController::class, 'update'])->name('api.v1.customers.update');
         Route::patch('/customers/{id}', [CustomerController::class, 'update'])->name('api.v1.customers.patch');
         Route::get('/customers/{id}/history', [CustomerController::class, 'history'])->name('api.v1.customers.history');
+        Route::get('/customers/{id}/orders', [CustomerController::class, 'history'])->name('api.v1.customers.orders');
 
         // Repair Orders & FSM Workflow
         Route::get('/orders', [OrderController::class, 'index'])->name('api.v1.orders.index');
@@ -185,6 +186,7 @@ Route::prefix('v1')->group(function () {
         Route::post('/suppliers/{id}/payments', [SupplierController::class, 'recordPayment'])->name('api.v1.suppliers.payments.store');
         Route::post('/suppliers/{id}/debt/pay', [SupplierController::class, 'recordPayment'])->name('api.v1.suppliers.debt.pay');
         Route::get('/suppliers/{id}/debt-transactions', [SupplierController::class, 'debtTransactions'])->name('api.v1.suppliers.debt_transactions.index');
+        Route::get('/suppliers/{id}/debt-history', [SupplierController::class, 'debtTransactions'])->name('api.v1.suppliers.debt_history.index');
 
         // Goods Receipts (Phiếu nhập kho linh kiện)
         Route::get('/goods-receipts', [GoodsReceiptController::class, 'index'])->name('api.v1.goods_receipts.index');
@@ -227,6 +229,7 @@ Route::prefix('v1')->group(function () {
 
         // Cashbook & Transactions
         Route::get('/cashbook/transactions', [CashTransactionController::class, 'index'])->name('api.v1.cashbook.transactions.index');
+        Route::get('/cash-transactions', [CashTransactionController::class, 'index'])->name('api.v1.cash_transactions.index');
         Route::post('/cashbook/expenses', [CashTransactionController::class, 'storeExpense'])->name('api.v1.cashbook.expenses.store');
         Route::post('/cashbook/transactions', [CashTransactionController::class, 'storeExpense'])->name('api.v1.cashbook.transactions.store');
         Route::post('/cash-transactions/expense', [CashTransactionController::class, 'storeExpense'])->name('api.v1.cash_transactions.expense');
@@ -297,6 +300,7 @@ Route::prefix('v1')->group(function () {
             // Platform Billing & SaaS Operations
             Route::get('/billing-stats', [PlatformBillingController::class, 'billingStats'])->name('api.v1.platform.billing_stats');
             Route::get('/transactions', [PlatformBillingController::class, 'transactions'])->name('api.v1.platform.transactions');
+            Route::get('/billing/transactions', [PlatformBillingController::class, 'transactions'])->name('api.v1.platform.billing.transactions');
             Route::post('/stores/{id}/remind-fee', [PlatformBillingController::class, 'remindFee'])->name('api.v1.platform.stores.remind_fee');
             Route::post('/stores/{id}/renew', [PlatformBillingController::class, 'renewStore'])->name('api.v1.platform.stores.renew');
 

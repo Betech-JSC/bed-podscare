@@ -3,6 +3,7 @@
 namespace App\Services;
 
 use App\Models\Supplier;
+use App\Support\PhoneHelper;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Pagination\LengthAwarePaginator;
 use Illuminate\Support\Str;
@@ -16,31 +17,55 @@ class SupplierService
     {
         $query = Supplier::where('tenant_id', $tenantId);
 
-        if (! empty($filters['search'])) {
-            $search = trim($filters['search']);
-            $query->where(function ($q) use ($search) {
-                $q->where('name', 'like', "%{$search}%")
-                  ->orWhere('code', 'like', "%{$search}%")
-                  ->orWhere('phone', 'like', "%{$search}%");
-            });
+        $rawSearch = $filters['q'] ?? $filters['search'] ?? null;
+        if ($rawSearch !== null && trim((string) $rawSearch) !== '') {
+            $search = PhoneHelper::sanitizeText($rawSearch);
+            if ($search !== '') {
+                $query->where(function ($q) use ($search) {
+                    $q->where('name', 'like', "%{$search}%")
+                      ->orWhere('code', 'like', "%{$search}%")
+                      ->orWhere('email', 'like', "%{$search}%")
+                      ->orWhere('tax_code', 'like', "%{$search}%")
+                      ->orWhere('address', 'like', "%{$search}%")
+                      ->orWhere('notes', 'like', "%{$search}%");
+                    PhoneHelper::applyPhoneColumnSearch($q, 'phone', $search, 'or');
+                });
+            }
         }
 
-        if (isset($filters['is_active'])) {
+        if (isset($filters['is_active']) && $filters['is_active'] !== '' && $filters['is_active'] !== 'all') {
             $query->where('is_active', filter_var($filters['is_active'], FILTER_VALIDATE_BOOLEAN));
         }
 
-        if (! empty($filters['has_debt'])) {
+        if (! empty($filters['has_debt']) && filter_var($filters['has_debt'], FILTER_VALIDATE_BOOLEAN)) {
             $query->where('debt_balance', '>', 0);
         }
 
         $query->orderBy('name', 'asc');
 
-        if (! empty($filters['all'])) {
-            return $query->get();
+        $isAll = filter_var($filters['all'] ?? false, FILTER_VALIDATE_BOOLEAN)
+            || ($filters['per_page'] ?? null) === 'all';
+
+        if ($isAll) {
+            $items = $query->limit(1000)->get();
+            $total = $items->count();
+
+            return new LengthAwarePaginator(
+                $items,
+                $total,
+                max($total, 1),
+                1,
+                [
+                    'path'  => request()->url(),
+                    'query' => request()->query(),
+                ]
+            );
         }
 
-        $perPage = (int) ($filters['per_page'] ?? 15);
-        return $query->paginate($perPage);
+        $perPage = max(1, min(500, (int) ($filters['per_page'] ?? 15)));
+        $page = max(1, (int) ($filters['page'] ?? 1));
+
+        return $query->paginate($perPage, ['*'], 'page', $page);
     }
 
     /**

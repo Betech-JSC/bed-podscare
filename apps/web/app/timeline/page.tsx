@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect, useCallback } from 'react';
 import { auditService, type AuditLogItem } from '@podscare/api-client';
-import { Button, FilterBar, EmptyState, useToast, Icon } from '@podscare/ui';
+import { Button, FilterBar, EmptyState, useToast, Icon, PaginationBar } from '@podscare/ui';
 import { AppShell } from '../components/AppShell';
 
 interface FormattedEvent {
@@ -20,6 +20,15 @@ export default function TimelinePage() {
   const [events, setEvents] = useState<FormattedEvent[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [search, setSearch] = useState('');
+  const [page, setPage] = useState<number>(1);
+  const [perPage, setPerPage] = useState<number | 'all'>(15);
+  const [meta, setMeta] = useState({
+    current_page: 1,
+    last_page: 1,
+    total: 0,
+    from: 0 as number | null,
+    to: 0 as number | null,
+  });
 
   const formatEventTime = (isoString?: string): string => {
     if (!isoString) return 'Vừa xong';
@@ -48,8 +57,13 @@ export default function TimelinePage() {
   const loadAuditLogs = useCallback(async () => {
     setIsLoading(true);
     try {
-      const res = await auditService.getAuditLogs({ per_page: 50 });
-      const raw = res?.data;
+      const res = await auditService.getAuditLogs({
+        q: search.trim() || undefined,
+        page: perPage === 'all' ? 1 : page,
+        per_page: perPage,
+        all: perPage === 'all' ? true : undefined,
+      });
+      const raw: any = res?.data;
       const list: AuditLogItem[] = Array.isArray(raw) ? raw : (raw?.data || []);
 
       if (Array.isArray(list) && list.length > 0) {
@@ -74,16 +88,25 @@ export default function TimelinePage() {
           };
         });
         setEvents(mapped);
+        setMeta({
+          current_page: Number(raw?.current_page ?? (perPage === 'all' ? 1 : page)),
+          last_page: Number(raw?.last_page ?? 1),
+          total: Number(raw?.total ?? mapped.length),
+          from: raw?.from ?? (mapped.length > 0 ? 1 : 0),
+          to: raw?.to ?? mapped.length,
+        });
       } else {
         setEvents([]);
+        setMeta({ current_page: 1, last_page: 1, total: 0, from: 0, to: 0 });
       }
     } catch (err) {
       console.warn('Could not fetch audit logs from API:', err);
       setEvents([]);
+      setMeta({ current_page: 1, last_page: 1, total: 0, from: 0, to: 0 });
     } finally {
       setIsLoading(false);
     }
-  }, []);
+  }, [search, page, perPage]);
 
   useEffect(() => {
     loadAuditLogs();
@@ -130,7 +153,10 @@ export default function TimelinePage() {
           <div className="mb-5">
             <FilterBar
               searchValue={search}
-              onSearchChange={setSearch}
+              onSearchChange={(val) => {
+                setSearch(val);
+                setPage(1);
+              }}
               searchPlaceholder="Tìm theo sự kiện, kỹ thuật viên hoặc mã đơn..."
             />
           </div>
@@ -151,46 +177,68 @@ export default function TimelinePage() {
               icon="clock"
               actionLabel={search ? 'Xóa bộ lọc' : 'Làm mới'}
               onAction={() => {
-                if (search) setSearch('');
-                else loadAuditLogs();
+                if (search) {
+                  setSearch('');
+                  setPage(1);
+                } else {
+                  loadAuditLogs();
+                }
               }}
             />
           ) : (
-            <div className="space-y-6 relative before:absolute before:left-[17px] before:top-2 before:bottom-2 before:w-[1px] before:bg-[#e6ece8]">
-              {filteredEvents.map((ev) => {
-                const badgeColor =
-                  ev.type === 'success'
-                    ? 'border-[#176b58] text-[#176b58] bg-[#f0f7f3]'
-                    : ev.type === 'progress'
-                    ? 'border-[#2d7ba5] text-[#2d7ba5] bg-[#f0f6fa]'
-                    : ev.type === 'warning'
-                    ? 'border-[#c98327] text-[#c98327] bg-[#fdf8f0]'
-                    : 'border-[#708078] text-[#708078] bg-[#f4f7f5]';
+            <>
+              <div className="space-y-6 relative before:absolute before:left-[17px] before:top-2 before:bottom-2 before:w-[1px] before:bg-[#e6ece8]">
+                {filteredEvents.map((ev) => {
+                  const badgeColor =
+                    ev.type === 'success'
+                      ? 'border-[#176b58] text-[#176b58] bg-[#f0f7f3]'
+                      : ev.type === 'progress'
+                      ? 'border-[#2d7ba5] text-[#2d7ba5] bg-[#f0f6fa]'
+                      : ev.type === 'warning'
+                      ? 'border-[#c98327] text-[#c98327] bg-[#fdf8f0]'
+                      : 'border-[#708078] text-[#708078] bg-[#f4f7f5]';
 
-                return (
-                  <div key={ev.id} className="flex gap-4 relative z-10">
-                    <div
-                      className={`w-[34px] h-[34px] rounded-full border-2 font-bold grid place-items-center text-xs flex-none shadow-xs ${badgeColor}`}
-                    >
-                      {ev.type === 'success' ? (
-                        <Icon name="check" size={14} />
-                      ) : ev.type === 'progress' ? (
-                        <Icon name="refresh" size={14} />
-                      ) : (
-                        <span className="w-1.5 h-1.5 rounded-full bg-current" />
-                      )}
+                  return (
+                    <div key={ev.id} className="flex gap-4 relative z-10">
+                      <div
+                        className={`w-[34px] h-[34px] rounded-full border-2 font-bold grid place-items-center text-xs flex-none shadow-xs ${badgeColor}`}
+                      >
+                        {ev.type === 'success' ? (
+                          <Icon name="check" size={14} />
+                        ) : ev.type === 'progress' ? (
+                          <Icon name="refresh" size={14} />
+                        ) : (
+                          <span className="w-1.5 h-1.5 rounded-full bg-current" />
+                        )}
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <time className="text-xs text-[#9aa59f] font-semibold">{ev.time}</time>
+                        <h4 className="font-heading font-bold text-sm text-[#1c302b] m-0 mt-0.5">
+                          {ev.title}
+                        </h4>
+                        <p className="text-xs text-[#8c9992] m-0 mt-1 break-words">{ev.sub}</p>
+                      </div>
                     </div>
-                    <div className="min-w-0 flex-1">
-                      <time className="text-xs text-[#9aa59f] font-semibold">{ev.time}</time>
-                      <h4 className="font-heading font-bold text-sm text-[#1c302b] m-0 mt-0.5">
-                        {ev.title}
-                      </h4>
-                      <p className="text-xs text-[#8c9992] m-0 mt-1 break-words">{ev.sub}</p>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
+                  );
+                })}
+              </div>
+              <PaginationBar
+                testIdPrefix="timeline-events"
+                itemLabel="sự kiện"
+                currentPage={meta.current_page}
+                lastPage={meta.last_page}
+                total={meta.total || filteredEvents.length}
+                from={meta.from}
+                to={meta.to}
+                perPage={perPage}
+                onPageChange={setPage}
+                onPerPageChange={(val) => {
+                  setPerPage(val);
+                  setPage(1);
+                }}
+                isLoading={isLoading}
+              />
+            </>
           )}
         </div>
       </div>

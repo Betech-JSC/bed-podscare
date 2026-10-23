@@ -9,6 +9,7 @@ import {
   TableSkeleton,
   ErrorFallback,
   StatCard,
+  PaginationBar,
 } from '@podscare/ui';
 import {
   supplierService,
@@ -40,6 +41,8 @@ export const SuppliersTab: React.FC<SuppliersTabProps> = ({
 }) => {
   const [supplierSearch, setSupplierSearch] = useState('');
   const [hasDebtFilter, setHasDebtFilter] = useState<'all' | 'has_debt'>('all');
+  const [page, setPage] = useState<number>(1);
+  const [perPage, setPerPage] = useState<number | 'all'>(15);
 
   // Modals state
   const [createSupplierModalOpen, setCreateSupplierModalOpen] = useState(false);
@@ -59,32 +62,56 @@ export const SuppliersTab: React.FC<SuppliersTabProps> = ({
     isError,
     refetch,
   } = useQuery({
-    queryKey: ['suppliers', supplierSearch, hasDebtFilter],
+    queryKey: ['suppliers', supplierSearch, hasDebtFilter, page, perPage],
     queryFn: async () => {
       const res = await supplierService.getSuppliers({
+        q: supplierSearch.trim() || undefined,
         search: supplierSearch.trim() || undefined,
         has_debt: hasDebtFilter === 'has_debt' ? true : undefined,
-        per_page: 100,
+        page: perPage === 'all' ? 1 : page,
+        per_page: perPage,
+        all: perPage === 'all' ? true : undefined,
       });
-      const data = res?.data;
-      return Array.isArray(data) ? data : (data as any)?.data || [];
+      return res?.data || res;
     },
   });
 
   const suppliers: Supplier[] = useMemo(() => {
-    return Array.isArray(apiSuppliersData) ? apiSuppliersData : [];
+    if (Array.isArray(apiSuppliersData)) return apiSuppliersData;
+    const nested = (apiSuppliersData as any)?.data;
+    return Array.isArray(nested) ? nested : [];
   }, [apiSuppliersData]);
 
-  // KPI summaries
+  const supplierSummary = (apiSuppliersData as any)?.summary;
+  const total = (apiSuppliersData as any)?.total ?? suppliers.length;
+  const currentPage = (apiSuppliersData as any)?.current_page ?? page;
+  const lastPage = (apiSuppliersData as any)?.last_page ?? 1;
+  const from = (apiSuppliersData as any)?.from ?? (suppliers.length > 0 ? 1 : 0);
+  const to = (apiSuppliersData as any)?.to ?? suppliers.length;
+
+  // KPI summaries (ưu tiên summary từ server, fallback về mảng hiện tại)
   const totalAccountsPayable = useMemo(() => {
+    if (supplierSummary?.total_debt !== undefined) {
+      return Number(supplierSummary.total_debt) || 0;
+    }
     return suppliers
       .filter((s) => s.is_active)
       .reduce((sum, s) => sum + (Number(s.debt_balance) || 0), 0);
-  }, [suppliers]);
+  }, [suppliers, supplierSummary]);
 
   const suppliersWithDebtCount = useMemo(() => {
+    if (supplierSummary?.debt_suppliers_count !== undefined) {
+      return Number(supplierSummary.debt_suppliers_count) || 0;
+    }
     return suppliers.filter((s) => Number(s.debt_balance) > 0).length;
-  }, [suppliers]);
+  }, [suppliers, supplierSummary]);
+
+  const totalSuppliersCount = useMemo(() => {
+    if (supplierSummary?.total_suppliers !== undefined) {
+      return Number(supplierSummary.total_suppliers) || 0;
+    }
+    return total;
+  }, [supplierSummary, total]);
 
   // Handlers
   const handleOpenCreateSupplier = () => {
@@ -115,7 +142,7 @@ export const SuppliersTab: React.FC<SuppliersTabProps> = ({
         <div className="flex items-center gap-2 text-xs font-bold text-[#87958e] uppercase tracking-wider">
           <span>NHÀ CUNG CẤP & CÔNG NỢ PHẢI TRẢ (AP)</span>
           <span className="inline-block w-1.5 h-1.5 rounded-full bg-[#176b58]" />
-          <span className="text-[#176b58] font-bold">{suppliers.length} Đối tác</span>
+          <span className="text-[#176b58] font-bold">{totalSuppliersCount} Đối tác</span>
         </div>
 
         <div className="flex items-center gap-2">
@@ -152,7 +179,7 @@ export const SuppliersTab: React.FC<SuppliersTabProps> = ({
         />
         <StatCard
           label="Tổng nhà cung cấp"
-          value={`${suppliers.length} đối tác`}
+          value={`${totalSuppliersCount} đối tác`}
           icon="partners"
           foot="Danh mục quản lý toàn chuỗi"
         />
@@ -162,10 +189,16 @@ export const SuppliersTab: React.FC<SuppliersTabProps> = ({
       <div className="space-y-4">
         <FilterBar
           searchValue={supplierSearch}
-          onSearchChange={setSupplierSearch}
+          onSearchChange={(val: string) => {
+            setSupplierSearch(val);
+            setPage(1);
+          }}
           searchPlaceholder="Tìm theo tên, mã NCC hoặc số điện thoại..."
           selectValue={hasDebtFilter}
-          onSelectChange={(val: string) => setHasDebtFilter(val as any)}
+          onSelectChange={(val: string) => {
+            setHasDebtFilter(val as any);
+            setPage(1);
+          }}
           selectPlaceholder="Lọc theo công nợ"
           selectOptions={[
             { label: 'Tất cả nhà cung cấp', value: 'all' },
@@ -272,6 +305,21 @@ export const SuppliersTab: React.FC<SuppliersTabProps> = ({
                   })}
                 </tbody>
               </table>
+            </div>
+            <div className="px-4 pb-4">
+              <PaginationBar
+                testIdPrefix="inventory-suppliers"
+                itemLabel="nhà cung cấp"
+                currentPage={currentPage}
+                lastPage={lastPage}
+                total={total}
+                from={from}
+                to={to}
+                perPage={perPage}
+                onPageChange={setPage}
+                onPerPageChange={setPerPage}
+                isLoading={isLoading}
+              />
             </div>
           </div>
         )}

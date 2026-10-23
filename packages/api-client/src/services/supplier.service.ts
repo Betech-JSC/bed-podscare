@@ -25,6 +25,47 @@ export type {
   CreateGoodsReceiptItemDTO,
 };
 
+export interface SupplierPaginationParams {
+  page?: number;
+  per_page?: number | 'all';
+  all?: boolean;
+  q?: string;
+  search?: string;
+  has_debt?: boolean | string;
+  branch_id?: number | string;
+  supplier_id?: number | string;
+  status?: string;
+  [key: string]: string | number | boolean | undefined;
+}
+
+function normalizeSupplierParams(
+  params?: Record<string, string | number | boolean | undefined>
+): Record<string, string | number | boolean> | undefined {
+  if (!params || typeof params !== 'object') {
+    return undefined;
+  }
+
+  const cleanParams: Record<string, string | number | boolean> = {};
+  for (const [key, value] of Object.entries(params)) {
+    if (value !== undefined && value !== '') {
+      cleanParams[key] = value;
+    }
+  }
+
+  const queryText = params.q ?? params.search;
+  if (queryText !== undefined && String(queryText).trim() !== '') {
+    cleanParams.q = String(queryText).trim();
+    cleanParams.search = String(queryText).trim();
+  }
+
+  if (params.per_page === 'all' || params.all === true) {
+    cleanParams.per_page = 'all';
+    cleanParams.all = true;
+  }
+
+  return Object.keys(cleanParams).length > 0 ? cleanParams : undefined;
+}
+
 export class SupplierService {
   constructor(private http: HttpClient = defaultHttpClient) {}
 
@@ -32,9 +73,11 @@ export class SupplierService {
    * Lấy danh sách nhà cung cấp.
    */
   async getSuppliers(
-    params?: Record<string, string | number | boolean | undefined>
+    params?: SupplierPaginationParams
   ): Promise<ApiResponse<PaginatedResponse<Supplier> | Supplier[]>> {
-    return this.http.get('/api/v1/suppliers', { params });
+    return this.http.get('/api/v1/suppliers', {
+      params: normalizeSupplierParams(params),
+    });
   }
 
   /**
@@ -83,18 +126,22 @@ export class SupplierService {
    */
   async getDebtHistory(
     id: number | string,
-    params?: Record<string, string | number | boolean | undefined>
+    params?: SupplierPaginationParams
   ): Promise<ApiResponse<PaginatedResponse<SupplierDebtTransaction>>> {
-    return this.http.get(`/api/v1/suppliers/${id}/debt-transactions`, { params });
+    return this.http.get(`/api/v1/suppliers/${id}/debt-transactions`, {
+      params: normalizeSupplierParams(params),
+    });
   }
 
   /**
    * Lấy danh sách phiếu nhập kho linh kiện.
    */
   async getGoodsReceipts(
-    params?: Record<string, string | number | boolean | undefined>
+    params?: SupplierPaginationParams
   ): Promise<ApiResponse<PaginatedResponse<GoodsReceipt>>> {
-    return this.http.get('/api/v1/goods-receipts', { params });
+    return this.http.get('/api/v1/goods-receipts', {
+      params: normalizeSupplierParams(params),
+    });
   }
 
   /**

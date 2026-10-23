@@ -22,15 +22,25 @@ class PaymentController extends Controller
     public function index(Request $request): JsonResponse
     {
         $user = $request->user();
-        $query = Payment::with(['repairOrder.customer', 'receivedByUser:id,name']);
+        $query = Payment::with([
+            'repairOrder.customer',
+            'repairOrder.deviceModel',
+            'repairOrder.branch',
+            'receivedByUser:id,name',
+            'refundedByUser:id,name',
+        ]);
 
         if ($user) {
-            $query->whereHas('repairOrder', function ($q) use ($user) {
+            $query->whereHas('repairOrder', function ($q) use ($user, $request) {
                 if ($user->role !== 'super_admin') {
                     $q->where('tenant_id', $user->tenant_id);
                 }
                 if (! in_array($user->role, ['admin', 'super_admin'], true)) {
                     $q->where('branch_id', $user->branch_id);
+                } elseif ($branchId = $request->input('branch_id')) {
+                    if ($branchId !== 'all') {
+                        $q->where('branch_id', $branchId);
+                    }
                 }
             });
         }
@@ -47,22 +57,85 @@ class PaymentController extends Controller
         $rawSearch = $request->input('q') ?? $request->input('search');
         $search = PhoneHelper::sanitizeText($rawSearch);
         if ($search !== '') {
-            $query->where(function ($q) use ($search) {
+            $searchLower = mb_strtolower($search, 'UTF-8');
+            $matchedMethods = [];
+            if (str_contains($searchLower, 'tiền mặt') || str_contains($searchLower, 'tien mat') || str_contains($searchLower, 'cash')) {
+                $matchedMethods[] = 'cash';
+            }
+            if (
+                str_contains($searchLower, 'vietqr')
+                || str_contains($searchLower, 'chuyển khoản')
+                || str_contains($searchLower, 'chuyen khoan')
+                || str_contains($searchLower, 'sepay')
+                || str_contains($searchLower, 'bank_transfer')
+                || str_contains($searchLower, 'transfer')
+            ) {
+                array_push($matchedMethods, 'bank_transfer', 'transfer', 'vietqr', 'sepay');
+            }
+            if (str_contains($searchLower, 'thẻ') || str_contains($searchLower, 'pos') || str_contains($searchLower, 'card')) {
+                array_push($matchedMethods, 'card', 'card_pos');
+            }
+            if (str_contains($searchLower, 'ví') || str_contains($searchLower, 'wallet')) {
+                $matchedMethods[] = 'wallet';
+            }
+
+            $query->where(function ($q) use ($search, $matchedMethods) {
                 $q->where('payment_code', 'like', "%{$search}%")
                   ->orWhere('transaction_ref', 'like', "%{$search}%")
-                  ->orWhereHas('repairOrder', function ($rq) use ($search) {
-                      $rq->where('order_code', 'like', "%{$search}%")
-                         ->orWhere('serial_number', 'like', "%{$search}%")
-                         ->orWhereHas('customer', function ($cq) use ($search) {
-                             $cq->where('name', 'like', "%{$search}%");
-                             PhoneHelper::applyPhoneColumnSearch($cq, 'phone', $search, 'or');
-                         });
-                  });
+                  ->orWhere('notes', 'like', "%{$search}%")
+                  ->orWhere('payment_method', 'like', "%{$search}%");
+
+                if (! empty($matchedMethods)) {
+                    $q->orWhereIn('payment_method', array_values(array_unique($matchedMethods)));
+                }
+
+                $q->orWhereHas('repairOrder', function ($rq) use ($search) {
+                    $rq->where('order_code', 'like', "%{$search}%")
+                       ->orWhere('serial_number', 'like', "%{$search}%")
+                       ->orWhereHas('customer', function ($cq) use ($search) {
+                           $cq->where(function ($inner) use ($search) {
+                               $inner->where('name', 'like', "%{$search}%");
+                               PhoneHelper::applyPhoneColumnSearch($inner, 'phone', $search, 'or');
+                           });
+                       })
+                       ->orWhereHas('deviceModel', function ($dq) use ($search) {
+                           $dq->where('name', 'like', "%{$search}%");
+                       });
+                });
             });
         }
 
+        if ($status = $request->input('status')) {
+            if (is_array($status) || (is_string($status) && str_contains($status, ','))) {
+                $rawStatuses = is_array($status) ? $status : array_map('trim', explode(',', $status));
+                $expandedStatuses = [];
+                foreach (array_filter($rawStatuses) as $st) {
+                    if (in_array($st, ['paid', 'completed'], true)) {
+                        array_push($expandedStatuses, 'paid', 'completed');
+                    } else {
+                        $expandedStatuses[] = $st;
+                    }
+                }
+                $query->whereIn('status', array_values(array_unique($expandedStatuses)));
+            } elseif ($status !== 'all') {
+                if (in_array($status, ['paid', 'completed'], true)) {
+                    $query->whereIn('status', ['paid', 'completed']);
+                } else {
+                    $query->where('status', $status);
+                }
+            }
+        }
+
         if ($method = $request->input('payment_method')) {
-            $query->where('payment_method', $method);
+            if ($method !== 'all') {
+                if (in_array($method, ['transfer', 'vietqr', 'sepay', 'bank_transfer'], true)) {
+                    $query->whereIn('payment_method', ['transfer', 'vietqr', 'sepay', 'bank_transfer']);
+                } elseif (in_array($method, ['card', 'card_pos'], true)) {
+                    $query->whereIn('payment_method', ['card', 'card_pos']);
+                } else {
+                    $query->where('payment_method', $method);
+                }
+            }
         }
 
         if ($date = $request->input('date')) {
@@ -78,11 +151,120 @@ class PaymentController extends Controller
                         });
                 });
             }
+        } else {
+            $fromDate = $request->input('from_date');
+            $toDate = $request->input('to_date');
+
+            if ($fromDate && is_string($fromDate) && preg_match('/^\d{4}-\d{2}-\d{2}$/', $fromDate)) {
+                $start = Carbon::parse($fromDate)->startOfDay();
+                $query->where(function ($dq) use ($start) {
+                    $dq->where('paid_at', '>=', $start)
+                        ->orWhere(function ($fallbackQ) use ($start) {
+                            $fallbackQ->whereNull('paid_at')
+                                ->where('created_at', '>=', $start);
+                        });
+                });
+            }
+
+            if ($toDate && is_string($toDate) && preg_match('/^\d{4}-\d{2}-\d{2}$/', $toDate)) {
+                $end = Carbon::parse($toDate)->endOfDay();
+                $query->where(function ($dq) use ($end) {
+                    $dq->where('paid_at', '<=', $end)
+                        ->orWhere(function ($fallbackQ) use ($end) {
+                            $fallbackQ->whereNull('paid_at')
+                                ->where('created_at', '<=', $end);
+                        });
+                });
+            }
         }
 
-        $payments = $query->latest('id')->paginate($request->input('per_page', 15));
+        // Tính thống kê tổng (summary) trên toàn bộ tập dữ liệu khớp bộ lọc trước khi cắt trang
+        $statsRow = (clone $query)->withOnly([])->reorder()->selectRaw("
+            COUNT(*) as total_count,
+            SUM(CASE WHEN status IN ('paid', 'completed') THEN 1 ELSE 0 END) as completed_count,
+            SUM(CASE WHEN status = 'pending' THEN 1 ELSE 0 END) as pending_count,
+            SUM(CASE WHEN status = 'refunded' THEN 1 ELSE 0 END) as refunded_count,
+            SUM(CASE WHEN status IN ('paid', 'completed') THEN amount ELSE 0 END) as total_collected,
+            SUM(CASE WHEN status IN ('paid', 'completed') AND payment_method IN ('transfer', 'vietqr', 'sepay', 'bank_transfer') THEN amount ELSE 0 END) as transfer_collected,
+            SUM(CASE WHEN status IN ('paid', 'completed') AND payment_method = 'cash' THEN amount ELSE 0 END) as cash_collected,
+            SUM(CASE WHEN status IN ('paid', 'completed') AND payment_method IN ('card', 'card_pos') THEN amount ELSE 0 END) as card_collected,
+            SUM(CASE WHEN status IN ('paid', 'completed') AND payment_method = 'wallet' THEN amount ELSE 0 END) as wallet_collected,
+            SUM(CASE WHEN status = 'refunded' THEN (CASE WHEN COALESCE(refund_amount, 0) > 0 THEN refund_amount ELSE amount END) ELSE COALESCE(refund_amount, 0) END) as refunded_amount,
+            SUM(CASE WHEN status IN ('paid', 'completed') AND payment_method IN ('transfer', 'vietqr', 'sepay', 'bank_transfer') THEN 1 ELSE 0 END) as transfer_count,
+            SUM(CASE WHEN status IN ('paid', 'completed') AND payment_method = 'cash' THEN 1 ELSE 0 END) as cash_count,
+            SUM(CASE WHEN status IN ('paid', 'completed') AND payment_method IN ('card', 'card_pos') THEN 1 ELSE 0 END) as card_count
+        ")->first();
 
-        return $this->success($payments, 'Lấy danh sách phiếu thanh toán thành công.');
+        $toNum = static fn ($val): int|float => ((float) $val == (int) round((float) $val))
+            ? (int) round((float) $val)
+            : (float) $val;
+
+        $totalCollected = $toNum($statsRow->total_collected ?? 0);
+        $transferCollected = $toNum($statsRow->transfer_collected ?? 0);
+        $cashCollected = $toNum($statsRow->cash_collected ?? 0);
+        $cardCollected = $toNum($statsRow->card_collected ?? 0);
+        $walletCollected = $toNum($statsRow->wallet_collected ?? 0);
+        $refundedAmount = $toNum($statsRow->refunded_amount ?? 0);
+        $totalCount = (int) ($statsRow->total_count ?? 0);
+        $completedCount = (int) ($statsRow->completed_count ?? 0);
+        $pendingCount = (int) ($statsRow->pending_count ?? 0);
+        $refundedCount = (int) ($statsRow->refunded_count ?? 0);
+        $transferCount = (int) ($statsRow->transfer_count ?? 0);
+        $cashCount = (int) ($statsRow->cash_count ?? 0);
+        $cardCount = (int) ($statsRow->card_count ?? 0);
+
+        $summary = [
+            'total_amount'       => $totalCollected,
+            'total_revenue'      => $totalCollected,
+            'total_collected'    => $totalCollected,
+            'transfer_amount'    => $transferCollected,
+            'transfer_collected' => $transferCollected,
+            'vietqr_amount'      => $transferCollected,
+            'sepay_amount'       => $transferCollected,
+            'cash_amount'        => $cashCollected,
+            'cash_collected'     => $cashCollected,
+            'card_amount'        => $cardCollected,
+            'card_collected'     => $cardCollected,
+            'wallet_amount'      => $walletCollected,
+            'refunded_amount'    => $refundedAmount,
+            'refund_amount'      => $refundedAmount,
+            'total_count'        => $totalCount,
+            'completed_count'    => $completedCount,
+            'paid_count'         => $completedCount,
+            'pending_count'      => $pendingCount,
+            'refunded_count'     => $refundedCount,
+            'transfer_count'     => $transferCount,
+            'cash_count'         => $cashCount,
+            'card_count'         => $cardCount,
+        ];
+
+        if ($request->boolean('all') || $request->input('per_page') === 'all') {
+            $items = $query->latest('id')->limit(1000)->get();
+            $total = $items->count();
+
+            return $this->success([
+                'current_page'   => 1,
+                'data'           => $items,
+                'first_page_url' => $request->fullUrlWithQuery(['page' => 1]),
+                'from'           => $total > 0 ? 1 : null,
+                'last_page'      => 1,
+                'last_page_url'  => $request->fullUrlWithQuery(['page' => 1]),
+                'next_page_url'  => null,
+                'path'           => $request->url(),
+                'per_page'       => max($total, 1),
+                'prev_page_url'  => null,
+                'to'             => $total > 0 ? $total : null,
+                'total'          => $total,
+                'summary'        => $summary,
+            ], 'Lấy danh sách phiếu thanh toán thành công.');
+        }
+
+        $perPage = max(1, min(500, (int) $request->input('per_page', 15)));
+        $payments = $query->latest('id')->paginate($perPage);
+        $paginated = $payments->toArray();
+        $paginated['summary'] = $summary;
+
+        return $this->success($paginated, 'Lấy danh sách phiếu thanh toán thành công.');
     }
 
     /**

@@ -509,6 +509,11 @@ export const Providers: React.FC<{ children: React.ReactNode }> = ({ children })
     }
   }, [isAuthenticated, token, fetchBranches, fetchDeviceProfiles, fetchTenantBranding]);
 
+  const tenantRef = React.useRef(userProfile?.tenant || tenantBranding || undefined);
+  React.useEffect(() => {
+    tenantRef.current = userProfile?.tenant || tenantBranding || undefined;
+  }, [userProfile?.tenant, tenantBranding]);
+
   const fetchOrders = useCallback(async (targetBranchId?: string | number, dateFilter: OrderDateFilter = 'today') => {
     if (!isAuthenticated || !token) return;
     try {
@@ -627,7 +632,7 @@ export const Providers: React.FC<{ children: React.ReactNode }> = ({ children })
             checks: mappedChecks,
             photos: mappedPhotos,
             createdBy: o.created_by_user?.name || o.createdBy || 'FIXO',
-            tenant: o.tenant || userProfile?.tenant || tenantBranding || undefined,
+            tenant: o.tenant || tenantRef.current,
           };
         });
 
@@ -639,7 +644,7 @@ export const Providers: React.FC<{ children: React.ReactNode }> = ({ children })
       console.warn('Could not fetch orders from API:', e);
       setOrders([]);
     }
-  }, [branchId, isAuthenticated, token, userProfile?.role, userProfile?.tenant, tenantBranding, role, queryClient]);
+  }, [branchId, isAuthenticated, token, userProfile?.role, role, queryClient]);
 
   useEffect(() => {
     if (isAuthenticated && token) {

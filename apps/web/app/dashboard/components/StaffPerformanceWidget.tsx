@@ -10,6 +10,8 @@ export interface StaffPerformanceWidgetProps {
   branchId?: string | number;
   selectedDate?: string;
   period?: string;
+  fromDate?: string;
+  toDate?: string;
   userRole?: string;
   className?: string;
 }
@@ -36,6 +38,8 @@ export const StaffPerformanceWidget: React.FC<StaffPerformanceWidgetProps> = ({
   branchId,
   selectedDate,
   period,
+  fromDate,
+  toDate,
   userRole,
   className = '',
 }) => {
@@ -44,12 +48,16 @@ export const StaffPerformanceWidget: React.FC<StaffPerformanceWidgetProps> = ({
   const [techSortDir, setTechSortDir] = useState<SortDirection>('desc');
   const [cskhSortKey, setCskhSortKey] = useState<CskhSortKey>('orders_created_count');
   const [cskhSortDir, setCskhSortDir] = useState<SortDirection>('desc');
+  const [pageSize, setPageSize] = useState<number>(5);
+  const [currentPage, setCurrentPage] = useState<number>(1);
 
   const { data, isLoading, isError, refetch, isFetching } = useQuery({
-    queryKey: ['staff-kpi', branchId, selectedDate, period],
+    queryKey: ['staff-kpi', branchId, selectedDate, period, fromDate, toDate],
     queryFn: async () => {
       const res = await kpiService.getStaffKpi({
         branch_id: branchId && branchId !== 'all' ? branchId : undefined,
+        from_date: fromDate,
+        to_date: toDate,
         date: selectedDate,
         period: period,
         role: 'all',
@@ -176,6 +184,20 @@ export const StaffPerformanceWidget: React.FC<StaffPerformanceWidgetProps> = ({
     });
     return list;
   }, [cskhStaff, cskhSortKey, cskhSortDir]);
+
+  const activeList = activeTab === 'technicians' ? sortedTechnicians : sortedCskhStaff;
+  const totalPages = Math.max(1, Math.ceil(activeList.length / pageSize));
+  const safeCurrentPage = Math.min(currentPage, totalPages);
+
+  const pagedTechnicians = useMemo(() => {
+    const start = (safeCurrentPage - 1) * pageSize;
+    return sortedTechnicians.slice(start, start + pageSize);
+  }, [sortedTechnicians, safeCurrentPage, pageSize]);
+
+  const pagedCskhStaff = useMemo(() => {
+    const start = (safeCurrentPage - 1) * pageSize;
+    return sortedCskhStaff.slice(start, start + pageSize);
+  }, [sortedCskhStaff, safeCurrentPage, pageSize]);
 
   const renderSortIcon = (active: boolean, dir: SortDirection) => {
     if (!active) {
@@ -441,7 +463,7 @@ export const StaffPerformanceWidget: React.FC<StaffPerformanceWidgetProps> = ({
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-[#f1f3f2] text-xs">
-                  {sortedTechnicians.map((tech, idx) => {
+                  {pagedTechnicians.map((tech, idx) => {
                     const formattedRev = moneyFormatted(tech.revenue_generated, tech.revenue_generated_formatted);
                     const qcRate = tech.qc_pass_rate;
                     const warrantyRate = getTechWarrantyRate(tech);
@@ -612,7 +634,7 @@ export const StaffPerformanceWidget: React.FC<StaffPerformanceWidgetProps> = ({
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-[#f1f3f2] text-xs">
-                  {sortedCskhStaff.map((staff, idx) => {
+                  {pagedCskhStaff.map((staff, idx) => {
                     const formattedRev = moneyFormatted(staff.revenue_generated, staff.revenue_generated_formatted);
                     const convRate = staff.conversion_rate;
 
@@ -683,6 +705,63 @@ export const StaffPerformanceWidget: React.FC<StaffPerformanceWidgetProps> = ({
           )
         )}
       </div>
+
+      {/* Compact Pagination Bar */}
+      {activeList.length > 0 && (
+        <div className="flex flex-wrap items-center justify-between gap-2 pt-2 px-1 text-xs text-[#6e7f77]">
+          <div className="flex items-center gap-2">
+            <span>
+              {activeList.length === 0
+                ? '0'
+                : `${(safeCurrentPage - 1) * pageSize + 1} - ${Math.min(
+                    safeCurrentPage * pageSize,
+                    activeList.length
+                  )}`}{' '}
+              / {activeList.length} dòng
+            </span>
+            <div className="flex items-center gap-1 bg-[#f4f7f5] rounded-[6px] p-0.5">
+              {[5, 8].map((size) => (
+                <button
+                  key={size}
+                  type="button"
+                  onClick={() => {
+                    setPageSize(size);
+                    setCurrentPage(1);
+                  }}
+                  className={`px-2 py-0.5 rounded-[4px] text-[11px] font-semibold cursor-pointer transition-colors ${
+                    pageSize === size
+                      ? 'bg-[#176b58] text-white'
+                      : 'text-[#55665e] hover:bg-[#e5ece8]'
+                  }`}
+                >
+                  {size} dòng
+                </button>
+              ))}
+            </div>
+          </div>
+          <div className="flex items-center gap-1.5">
+            <button
+              type="button"
+              disabled={safeCurrentPage <= 1}
+              onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+              className="px-2.5 py-1 rounded-[6px] border border-[#d8e2dc] bg-white text-[#1c302b] disabled:opacity-40 disabled:cursor-not-allowed hover:bg-[#f6f8f6] cursor-pointer text-xs font-medium"
+            >
+              Trước
+            </button>
+            <span className="text-[11px] font-mono text-[#55665e] px-1">
+              Trang {safeCurrentPage} / {totalPages}
+            </span>
+            <button
+              type="button"
+              disabled={safeCurrentPage >= totalPages}
+              onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
+              className="px-2.5 py-1 rounded-[6px] border border-[#d8e2dc] bg-white text-[#1c302b] disabled:opacity-40 disabled:cursor-not-allowed hover:bg-[#f6f8f6] cursor-pointer text-xs font-medium"
+            >
+              Sau
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Footer Info */}
       <div className="pt-3 mt-3 border-t border-[#f0f3f1] flex flex-wrap items-center justify-between gap-2 text-[11px] text-[#809088]">

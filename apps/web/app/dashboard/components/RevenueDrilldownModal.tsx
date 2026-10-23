@@ -304,9 +304,8 @@ export const RevenueDrilldownModal: React.FC<RevenueDrilldownModalProps> = ({
               {
                 activeDrilldownRawItems.filter(
                   (i) =>
-                    normalizeStatusCode(i.status) === 'completed' ||
-                    i.status === 'Hoàn tất' ||
-                    Number(i.collected_amount || 0) > 0
+                    (normalizeStatusCode(i.status) === 'completed' || i.status === 'Hoàn tất') &&
+                    Number(i.uncollected_amount || 0) <= 0
                 ).length
               }
               )

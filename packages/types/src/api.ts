@@ -11,7 +11,10 @@ export interface PaginatedResponse<T> {
   limit?: number;
   last_page?: number;
   current_page?: number;
-  per_page?: number;
+  per_page?: number | 'all';
+  from?: number | null;
+  to?: number | null;
+  summary?: Record<string, any>;
 }
 
 export interface ApiError {

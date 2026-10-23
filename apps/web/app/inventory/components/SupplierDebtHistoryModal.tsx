@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { Modal, Button, useToast } from '@podscare/ui';
+import { Modal, Button, useToast, PaginationBar } from '@podscare/ui';
 import {
   supplierService,
   type Supplier,
@@ -27,16 +27,48 @@ export const SupplierDebtHistoryModal: React.FC<SupplierDebtHistoryModalProps> =
   const { toast } = useToast();
   const [debtTransactions, setDebtTransactions] = useState<SupplierDebtTransaction[]>([]);
   const [isLoading, setIsLoading] = useState(false);
+  const [page, setPage] = useState<number>(1);
+  const [perPage, setPerPage] = useState<number | 'all'>(15);
+  const [meta, setMeta] = useState<{
+    total: number;
+    currentPage: number;
+    lastPage: number;
+    from: number;
+    to: number;
+  }>({
+    total: 0,
+    currentPage: 1,
+    lastPage: 1,
+    from: 0,
+    to: 0,
+  });
+
+  useEffect(() => {
+    if (isOpen) {
+      setPage(1);
+    }
+  }, [isOpen, supplier?.id]);
 
   useEffect(() => {
     if (isOpen && supplier) {
       const loadHistory = async () => {
         setIsLoading(true);
         try {
-          const res = await supplierService.getDebtHistory(supplier.id, { per_page: 50 });
-          const data = res?.data;
-          const list = Array.isArray(data) ? data : (data as any)?.data || [];
+          const res = await supplierService.getDebtHistory(supplier.id, {
+            page: perPage === 'all' ? 1 : page,
+            per_page: perPage,
+            all: perPage === 'all' ? true : undefined,
+          });
+          const data: any = res?.data || res;
+          const list = Array.isArray(data) ? data : data?.data || [];
           setDebtTransactions(list);
+          setMeta({
+            total: data?.total ?? list.length,
+            currentPage: data?.current_page ?? page,
+            lastPage: data?.last_page ?? 1,
+            from: data?.from ?? (list.length > 0 ? 1 : 0),
+            to: data?.to ?? list.length,
+          });
         } catch (err) {
           console.warn('Could not load debt history:', err);
           toast('Không thể tải lịch sử biến động công nợ', 'error');
@@ -47,7 +79,7 @@ export const SupplierDebtHistoryModal: React.FC<SupplierDebtHistoryModalProps> =
 
       loadHistory();
     }
-  }, [isOpen, supplier, toast]);
+  }, [isOpen, supplier, page, perPage, toast]);
 
   if (!supplier) return null;
 
@@ -129,6 +161,21 @@ export const SupplierDebtHistoryModal: React.FC<SupplierDebtHistoryModalProps> =
             </table>
           </div>
         )}
+
+        <PaginationBar
+          testIdPrefix="supplier-debt-history"
+          itemLabel="bút toán công nợ"
+          compact
+          currentPage={meta.currentPage}
+          lastPage={meta.lastPage}
+          total={meta.total}
+          from={meta.from}
+          to={meta.to}
+          perPage={perPage}
+          onPageChange={setPage}
+          onPerPageChange={setPerPage}
+          isLoading={isLoading}
+        />
 
         <div className="flex justify-end pt-2">
           <Button variant="secondary" onClick={onClose}>

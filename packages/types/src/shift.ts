@@ -192,8 +192,11 @@ export interface ShiftFilterParams {
   status?: ShiftStatus | string;
   from_date?: string;
   to_date?: string;
+  q?: string;
+  search?: string;
   page?: number;
-  per_page?: number;
+  per_page?: number | 'all';
+  all?: boolean;
 }
 
 export interface CashTransactionFilterParams {
@@ -203,14 +206,36 @@ export interface CashTransactionFilterParams {
   category?: string;
   from_date?: string;
   to_date?: string;
+  q?: string;
+  search?: string;
   page?: number;
-  per_page?: number;
+  per_page?: number | 'all';
+  all?: boolean;
+}
+
+export interface AggregatedBranchShiftSummary {
+  id: number | string;
+  shift_code: string;
+  branch_id: number;
+  branch_name: string;
+  branch_code?: string;
+  cashier_name: string;
+  opened_at?: string;
+  opening_cash: number | string;
+  system_cash_in: number | string;
+  system_cash_out: number | string;
+  expected_cash: number | string;
+  vietqr_total?: number;
+  orders_completed_count?: number;
 }
 
 export interface CurrentShiftSnapshot extends WorkShift {
   vietqr_total?: number;
   orders_completed_count?: number;
   has_active_shift?: boolean;
+  is_aggregated?: boolean;
+  active_shifts_count?: number;
+  branches_summary?: AggregatedBranchShiftSummary[];
 }
 
 export interface CurrentShiftResponse {

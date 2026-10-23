@@ -1,10 +1,11 @@
 'use client';
 
-import React from 'react';
+import React, { useState, useMemo } from 'react';
 import {
   Button,
   StatusTag,
   FilterBar,
+  PaginationBar,
   Avatar,
   EmptyState,
   TableSkeleton,
@@ -53,6 +54,15 @@ export interface RepairQueuePaneProps {
   isError: boolean;
   refetch: () => void;
   filteredOrders: RepairOrder[];
+  page?: number;
+  setPage?: (page: number) => void;
+  perPage?: number | 'all';
+  setPerPage?: (perPage: number | 'all') => void;
+  total?: number;
+  currentPage?: number;
+  lastPage?: number;
+  from?: number | null;
+  to?: number | null;
   isTechRole: boolean;
   isFulfillingSpecialPart: boolean;
   onSelectOrder: (order: RepairOrder) => void;
@@ -90,6 +100,15 @@ export const RepairQueuePane: React.FC<RepairQueuePaneProps> = ({
   isError,
   refetch,
   filteredOrders,
+  page: externalPage,
+  setPage: externalSetPage,
+  perPage: externalPerPage,
+  setPerPage: externalSetPerPage,
+  total: externalTotal,
+  currentPage: externalCurrentPage,
+  lastPage: externalLastPage,
+  from: externalFrom,
+  to: externalTo,
   isTechRole,
   isFulfillingSpecialPart,
   onSelectOrder,
@@ -100,6 +119,56 @@ export const RepairQueuePane: React.FC<RepairQueuePaneProps> = ({
   onFulfillSpecialPart,
   moneyFormatted,
 }) => {
+  const [internalPage, setInternalPage] = useState<number>(1);
+  const [internalPerPage, setInternalPerPage] = useState<number | 'all'>(15);
+
+  const page = externalPage ?? internalPage;
+  const setPage = externalSetPage ?? setInternalPage;
+  const perPage = externalPerPage ?? internalPerPage;
+  const setPerPage = externalSetPerPage ?? setInternalPerPage;
+
+  const total = externalTotal ?? filteredOrders.length;
+  const lastPage = useMemo(() => {
+    if (externalLastPage !== undefined) return externalLastPage;
+    if (perPage === 'all') return 1;
+    const size = Math.max(1, Number(perPage) || 15);
+    return Math.max(1, Math.ceil(total / size));
+  }, [externalLastPage, perPage, total]);
+
+  const currentPage = useMemo(() => {
+    if (externalCurrentPage !== undefined) return externalCurrentPage;
+    if (perPage === 'all') return 1;
+    return Math.min(Math.max(1, page), lastPage);
+  }, [externalCurrentPage, perPage, page, lastPage]);
+
+  const from = useMemo(() => {
+    if (externalFrom !== undefined) return externalFrom;
+    if (total === 0) return 0;
+    if (perPage === 'all') return 1;
+    const size = Math.max(1, Number(perPage) || 15);
+    return (currentPage - 1) * size + 1;
+  }, [externalFrom, total, perPage, currentPage]);
+
+  const to = useMemo(() => {
+    if (externalTo !== undefined) return externalTo;
+    if (total === 0) return 0;
+    if (perPage === 'all') return total;
+    const size = Math.max(1, Number(perPage) || 15);
+    return Math.min(total, currentPage * size);
+  }, [externalTo, total, perPage, currentPage]);
+
+  const pageOffset = useMemo(() => {
+    if (perPage === 'all') return 0;
+    const size = Math.max(1, Number(perPage) || 15);
+    return Math.max(0, (currentPage - 1) * size);
+  }, [perPage, currentPage]);
+
+  const paginatedOrders = useMemo(() => {
+    if (perPage === 'all') return filteredOrders;
+    const size = Math.max(1, Number(perPage) || 15);
+    return filteredOrders.slice(pageOffset, pageOffset + size);
+  }, [filteredOrders, perPage, pageOffset]);
+
   const isAdmin =
     role === 'admin' ||
     currentUserRole === 'admin' ||
@@ -470,7 +539,7 @@ export const RepairQueuePane: React.FC<RepairQueuePaneProps> = ({
               </tr>
             </thead>
             <tbody className="divide-y divide-[#e9eeeb] text-sm text-[#17231f]">
-              {filteredOrders.map((o, idx) => (
+              {paginatedOrders.map((o, idx) => (
                 <tr
                   key={o.id}
                   onClick={() => onSelectOrder(o)}
@@ -480,7 +549,7 @@ export const RepairQueuePane: React.FC<RepairQueuePaneProps> = ({
                     data-testid="order-row-stt"
                     className="px-3 py-3 text-center text-xs font-semibold text-[#81908a] font-mono tabular-nums"
                   >
-                    {filteredOrders.length - idx}
+                    {pageOffset > 0 ? filteredOrders.length - (pageOffset + idx) : filteredOrders.length - idx}
                   </td>
                   <td className="px-4">
                     <div className="font-mono font-bold text-[#176b51]">{o.id}</div>
@@ -664,6 +733,23 @@ export const RepairQueuePane: React.FC<RepairQueuePaneProps> = ({
               ))}
             </tbody>
           </table>
+
+          <PaginationBar
+            testIdPrefix="repairs"
+            currentPage={currentPage}
+            lastPage={lastPage}
+            total={total}
+            from={from}
+            to={to}
+            perPage={perPage}
+            onPageChange={(nextPage) => setPage(nextPage)}
+            onPerPageChange={(nextPerPage) => {
+              setPerPage(nextPerPage);
+              setPage(1);
+            }}
+            itemLabel="đơn sửa chữa"
+            isLoading={isRepairsLoading}
+          />
         </div>
       )}
     </div>

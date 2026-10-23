@@ -425,7 +425,7 @@ export default function DashboardPage() {
   const waitingApprovalCount = kpiData?.workload_by_status?.waiting_approval ?? 0;
   const repairingCount = kpiData?.workload_by_status?.in_repair ?? 0;
   const readyCount = kpiData?.workload_by_status?.ready_for_return ?? 0;
-  const reconciliation = kpiData?.reconciliation;
+  const reconciliation = kpiData?.period_reconciliation ?? kpiData?.reconciliation;
 
   const waitingPickupCount =
     kpiData?.operational_summary?.waiting_pickup_orders ??
@@ -575,9 +575,8 @@ export default function DashboardPage() {
       if (
         drilldownFilter === 'collected' &&
         !(
-          normalizeStatusCode(item.status) === 'completed' ||
-          item.status === 'Hoàn tất' ||
-          Number(item.collected_amount || 0) > 0
+          (normalizeStatusCode(item.status) === 'completed' || item.status === 'Hoàn tất') &&
+          Number(item.uncollected_amount || 0) <= 0
         )
       ) {
         return false;
@@ -664,6 +663,8 @@ export default function DashboardPage() {
       toast,
     ]
   );
+
+  // Drilldown route shortcuts: router.push('/repairs?status=waiting_pickup'), router.push('/repairs?status=waiting_parts'), router.push('/repairs?filter=overdue')
 
   return (
     <AppShell crumbName={role === 'admin' ? 'Tổng quan' : role === 'cskh' ? 'Bàn CSKH' : 'Kỹ thuật'}>

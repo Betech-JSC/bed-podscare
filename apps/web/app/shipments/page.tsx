@@ -8,6 +8,7 @@ import {
   FilterBar,
   EmptyState,
   TableSkeleton,
+  PaginationBar,
   useToast,
   sanitizeInputLive,
   sanitizeSearchQuery,
@@ -33,6 +34,15 @@ export default function ShipmentsPage() {
   const [shipments, setShipments] = useState<FormattedShipment[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [search, setSearch] = useState('');
+  const [page, setPage] = useState<number>(1);
+  const [perPage, setPerPage] = useState<number | 'all'>(15);
+  const [meta, setMeta] = useState({
+    current_page: 1,
+    last_page: 1,
+    total: 0,
+    from: 0 as number | null,
+    to: 0 as number | null,
+  });
 
   const mapStatus = (
     rawStatus: string
@@ -55,8 +65,14 @@ export default function ShipmentsPage() {
   const loadShipments = useCallback(async () => {
     setIsLoading(true);
     try {
-      const res = await shipmentService.getShipments({ per_page: 50 });
-      const raw = res?.data;
+      const cleanQuery = sanitizeSearchQuery(search);
+      const res = await shipmentService.getShipments({
+        q: cleanQuery || undefined,
+        page: perPage === 'all' ? 1 : page,
+        per_page: perPage,
+        all: perPage === 'all' ? true : undefined,
+      });
+      const raw: any = res?.data;
       const list: ShipmentItem[] = Array.isArray(raw) ? raw : (raw?.data || []);
 
       if (Array.isArray(list) && list.length > 0) {
@@ -85,16 +101,25 @@ export default function ShipmentsPage() {
           };
         });
         setShipments(mapped);
+        setMeta({
+          current_page: Number(raw?.current_page ?? (perPage === 'all' ? 1 : page)),
+          last_page: Number(raw?.last_page ?? 1),
+          total: Number(raw?.total ?? mapped.length),
+          from: raw?.from ?? (mapped.length > 0 ? 1 : 0),
+          to: raw?.to ?? mapped.length,
+        });
       } else {
         setShipments([]);
+        setMeta({ current_page: 1, last_page: 1, total: 0, from: 0, to: 0 });
       }
     } catch (err) {
       console.warn('Could not fetch shipments from API:', err);
       setShipments([]);
+      setMeta({ current_page: 1, last_page: 1, total: 0, from: 0, to: 0 });
     } finally {
       setIsLoading(false);
     }
-  }, []);
+  }, [search, page, perPage]);
 
   useEffect(() => {
     loadShipments();
@@ -146,7 +171,10 @@ export default function ShipmentsPage() {
           <div className="mb-4">
             <FilterBar
               searchValue={search}
-              onSearchChange={(val) => setSearch(sanitizeInputLive(val))}
+              onSearchChange={(val) => {
+                setSearch(sanitizeInputLive(val));
+                setPage(1);
+              }}
               searchPlaceholder="Tìm theo mã vận đơn, mã đơn sửa, tên/SĐT khách hoặc đơn vị ship..."
             />
           </div>
@@ -160,50 +188,68 @@ export default function ShipmentsPage() {
               icon="shipments"
             />
           ) : (
-            <div className="overflow-x-auto -mx-4 sm:mx-0">
-              <table className="w-full text-left border-collapse min-w-[750px]">
-                <thead>
-                  <tr className="border-y border-[#f0f3f1] bg-[#fafbfa] text-xs font-bold text-[#9aa59f] uppercase tracking-wider h-9">
-                    <th className="px-3">Mã vận đơn</th>
-                    <th className="px-3">Mã đơn sửa</th>
-                    <th className="px-3">Khách hàng</th>
-                    <th className="px-3">Phương thức</th>
-                    <th className="px-3">Đơn vị vận chuyển</th>
-                    <th className="px-3">Trạng thái</th>
-                    <th className="px-3">Thời gian</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-[#f1f3f2] text-sm">
-                  {filtered.map((s) => (
-                    <tr key={s.id} className="h-12 hover:bg-[#fafcfa] transition-colors">
-                      <td className="px-3 font-mono font-bold text-[#176b58]">{s.id}</td>
-                      <td className="px-3 font-mono font-semibold text-[#2d3d35]">{s.orderCode}</td>
-                      <td className="px-3 font-medium text-[#1c302b]">
-                        <span>{s.customerName}</span>
-                        {s.customerPhone && (
-                          <small className="block text-xs font-mono text-[#6e7e76]">
-                            {s.customerPhone}
-                          </small>
-                        )}
-                      </td>
-                      <td className="px-3 text-[#4d5e56]">{s.method}</td>
-                      <td className="px-3 text-[#708078]">
-                        <span className="font-medium text-[#2d3d35]">{s.carrier}</span>
-                        {s.trackingCode && (
-                          <small className="block text-xs font-mono text-[#8a9690]">
-                            Mã: {s.trackingCode}
-                          </small>
-                        )}
-                      </td>
-                      <td className="px-3">
-                        <StatusTag label={s.status} type={s.statusType} />
-                      </td>
-                      <td className="px-3 text-[#8a9690] text-xs">{s.date}</td>
+            <>
+              <div className="overflow-x-auto -mx-4 sm:mx-0">
+                <table className="w-full text-left border-collapse min-w-[750px]">
+                  <thead>
+                    <tr className="border-y border-[#f0f3f1] bg-[#fafbfa] text-xs font-bold text-[#9aa59f] uppercase tracking-wider h-9">
+                      <th className="px-3">Mã vận đơn</th>
+                      <th className="px-3">Mã đơn sửa</th>
+                      <th className="px-3">Khách hàng</th>
+                      <th className="px-3">Phương thức</th>
+                      <th className="px-3">Đơn vị vận chuyển</th>
+                      <th className="px-3">Trạng thái</th>
+                      <th className="px-3">Thời gian</th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+                  </thead>
+                  <tbody className="divide-y divide-[#f1f3f2] text-sm">
+                    {filtered.map((s) => (
+                      <tr key={s.id} className="h-12 hover:bg-[#fafcfa] transition-colors">
+                        <td className="px-3 font-mono font-bold text-[#176b58]">{s.id}</td>
+                        <td className="px-3 font-mono font-semibold text-[#2d3d35]">{s.orderCode}</td>
+                        <td className="px-3 font-medium text-[#1c302b]">
+                          <span>{s.customerName}</span>
+                          {s.customerPhone && (
+                            <small className="block text-xs font-mono text-[#6e7e76]">
+                              {s.customerPhone}
+                            </small>
+                          )}
+                        </td>
+                        <td className="px-3 text-[#4d5e56]">{s.method}</td>
+                        <td className="px-3 text-[#708078]">
+                          <span className="font-medium text-[#2d3d35]">{s.carrier}</span>
+                          {s.trackingCode && (
+                            <small className="block text-xs font-mono text-[#8a9690]">
+                              Mã: {s.trackingCode}
+                            </small>
+                          )}
+                        </td>
+                        <td className="px-3">
+                          <StatusTag label={s.status} type={s.statusType} />
+                        </td>
+                        <td className="px-3 text-[#8a9690] text-xs">{s.date}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              <PaginationBar
+                testIdPrefix="shipments"
+                itemLabel="vận đơn"
+                currentPage={meta.current_page}
+                lastPage={meta.last_page}
+                total={meta.total || filtered.length}
+                from={meta.from}
+                to={meta.to}
+                perPage={perPage}
+                onPageChange={setPage}
+                onPerPageChange={(val) => {
+                  setPerPage(val);
+                  setPage(1);
+                }}
+                isLoading={isLoading}
+              />
+            </>
           )}
         </div>
       </div>

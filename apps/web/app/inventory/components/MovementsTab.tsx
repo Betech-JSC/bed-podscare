@@ -7,6 +7,7 @@ import {
   TableSkeleton,
   ErrorFallback,
   Icon,
+  PaginationBar,
 } from '@podscare/ui';
 import {
   inventoryService,
@@ -43,6 +44,8 @@ export const MovementsTab: React.FC<MovementsTabProps> = ({
   const [search, setSearch] = useState('');
   const [selectedBranch, setSelectedBranch] = useState<string>(String(branchId || '1'));
   const [selectedType, setSelectedType] = useState<string>('');
+  const [page, setPage] = useState<number>(1);
+  const [perPage, setPerPage] = useState<number | 'all'>(15);
   const [transactionModalOpen, setTransactionModalOpen] = useState(false);
 
   // Sync warehouse filter when context branchId changes or for non-admin
@@ -53,6 +56,7 @@ export const MovementsTab: React.FC<MovementsTabProps> = ({
     } else if (branchId !== undefined && branchId !== null) {
       setSelectedBranch(String(branchId));
     }
+    setPage(1);
   }, [branchId, role, currentUser]);
 
   const {
@@ -61,41 +65,34 @@ export const MovementsTab: React.FC<MovementsTabProps> = ({
     isError,
     refetch,
   } = useQuery({
-    queryKey: ['inventory-transactions', selectedBranch, selectedType],
+    queryKey: ['inventory-transactions', selectedBranch, selectedType, search, page, perPage],
     queryFn: async () => {
       const res = await inventoryService.getTransactions({
         branch_id: selectedBranch && selectedBranch !== 'all' ? Number(selectedBranch) : undefined,
         transaction_type: selectedType || undefined,
-        per_page: 100,
+        q: search.trim() || undefined,
+        search: search.trim() || undefined,
+        page: perPage === 'all' ? 1 : page,
+        per_page: perPage,
+        all: perPage === 'all' ? true : undefined,
       });
-      const data = res?.data;
-      return Array.isArray(data) ? data : (data as any)?.data || [];
+      return res?.data || res;
     },
   });
 
   const transactions: InventoryTransactionItem[] = useMemo(() => {
-    return Array.isArray(apiTxData) ? apiTxData : [];
+    if (Array.isArray(apiTxData)) return apiTxData;
+    const nested = (apiTxData as any)?.data;
+    return Array.isArray(nested) ? nested : [];
   }, [apiTxData]);
 
-  // Filter by search keyword on client
-  const filtered = useMemo(() => {
-    if (!search.trim()) return transactions;
-    const q = search.trim().toLowerCase();
-    return transactions.filter((tx) => {
-      const txCode = (tx.id ? String(tx.id) : '').toLowerCase();
-      const partName = (tx.part?.name || '').toLowerCase();
-      const partSku = (tx.part?.sku || '').toLowerCase();
-      const notes = (tx.notes || '').toLowerCase();
-      const orderCode = (tx.repair_order?.order_code || '').toLowerCase();
-      return (
-        txCode.includes(q) ||
-        partName.includes(q) ||
-        partSku.includes(q) ||
-        notes.includes(q) ||
-        orderCode.includes(q)
-      );
-    });
-  }, [transactions, search]);
+  const total = (apiTxData as any)?.total ?? transactions.length;
+  const currentPage = (apiTxData as any)?.current_page ?? page;
+  const lastPage = (apiTxData as any)?.last_page ?? 1;
+  const from = (apiTxData as any)?.from ?? (transactions.length > 0 ? 1 : 0);
+  const to = (apiTxData as any)?.to ?? transactions.length;
+
+  const filtered = transactions;
 
   const currentWarehouseName =
     selectedBranch === 'all'
@@ -154,6 +151,7 @@ export const MovementsTab: React.FC<MovementsTabProps> = ({
             onClick={() => {
               setSearch('');
               setSelectedType('');
+              setPage(1);
               refetch();
             }}
           >
@@ -178,7 +176,10 @@ export const MovementsTab: React.FC<MovementsTabProps> = ({
               <input
                 type="text"
                 value={search}
-                onChange={(e) => setSearch(e.target.value)}
+                onChange={(e) => {
+                  setSearch(e.target.value);
+                  setPage(1);
+                }}
                 placeholder="Tìm mã SKU, tên linh kiện, mã đơn..."
                 className="w-full h-9 pl-3 pr-3 border border-[#e4eae6] rounded-[8px] text-xs text-[#2b3a32] bg-white outline-none focus:border-[#75a994] focus:ring-2 focus:ring-[#176b58]/10 transition-all placeholder:text-[#9aa59f]"
               />
@@ -190,7 +191,10 @@ export const MovementsTab: React.FC<MovementsTabProps> = ({
               {role === 'admin' ? (
                 <select
                   value={selectedBranch}
-                  onChange={(e) => setSelectedBranch(e.target.value)}
+                  onChange={(e) => {
+                    setSelectedBranch(e.target.value);
+                    setPage(1);
+                  }}
                   className="h-9 border border-[#d6dfda] rounded-[8px] px-2.5 text-xs text-[#1c302b] bg-[#f9fbf9] font-medium outline-none focus:border-[#75a994] cursor-pointer"
                 >
                   <option value="all">Tất cả chi nhánh / kho</option>
@@ -215,7 +219,10 @@ export const MovementsTab: React.FC<MovementsTabProps> = ({
               <span className="text-xs text-[#7c8b84] font-medium hidden sm:inline">Loại GD:</span>
               <select
                 value={selectedType}
-                onChange={(e) => setSelectedType(e.target.value)}
+                onChange={(e) => {
+                  setSelectedType(e.target.value);
+                  setPage(1);
+                }}
                 className="h-9 border border-[#e4eae6] rounded-[8px] px-2.5 text-xs text-[#4c5c54] bg-white outline-none focus:border-[#75a994] cursor-pointer"
               >
                 <option value="">Tất cả loại giao dịch</option>
@@ -318,6 +325,20 @@ export const MovementsTab: React.FC<MovementsTabProps> = ({
             </table>
           </div>
         )}
+
+        <PaginationBar
+          testIdPrefix="inventory-movements"
+          itemLabel="giao dịch kho"
+          currentPage={currentPage}
+          lastPage={lastPage}
+          total={total}
+          from={from}
+          to={to}
+          perPage={perPage}
+          onPageChange={setPage}
+          onPerPageChange={setPerPage}
+          isLoading={isLoading}
+        />
       </div>
 
       {/* Quick Transaction Modal */}

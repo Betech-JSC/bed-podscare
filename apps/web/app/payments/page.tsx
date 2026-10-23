@@ -2,11 +2,18 @@
 
 import React, { useState, useEffect, useCallback } from 'react';
 import Link from 'next/link';
-import { paymentService, repairService, tenantService, type PaymentItem } from '@podscare/api-client';
+import {
+  paymentService,
+  repairService,
+  tenantService,
+  type PaymentItem,
+  type PaymentSummary,
+} from '@podscare/api-client';
 import {
   Button,
   StatusTag,
   FilterBar,
+  PaginationBar,
   EmptyState,
   Modal,
   useToast,
@@ -71,12 +78,24 @@ export default function PaymentsPage() {
   } | null>(null);
   const [search, setSearch] = useState('');
   const [selectedDate, setSelectedDate] = useState('');
+  const [page, setPage] = useState<number>(1);
+  const [perPage, setPerPage] = useState<number | 'all'>(15);
+  const [total, setTotal] = useState<number>(0);
+  const [currentPage, setCurrentPage] = useState<number>(1);
+  const [lastPage, setLastPage] = useState<number>(1);
+  const [from, setFrom] = useState<number>(0);
+  const [to, setTo] = useState<number>(0);
+  const [summary, setSummary] = useState<PaymentSummary | null>(null);
   const [confirmingId, setConfirmingId] = useState<number | string | null>(null);
   const [storeBank, setStoreBank] = useState<{
     bankCode?: string;
     accountNumber?: string;
     accountName?: string;
   }>({});
+
+  useEffect(() => {
+    setPage(1);
+  }, [search, selectedDate]);
 
   useEffect(() => {
     tenantService
@@ -121,13 +140,38 @@ export default function PaymentsPage() {
   const loadPayments = useCallback(async () => {
     setIsLoading(true);
     try {
-      const params: Record<string, any> = { per_page: 50 };
+      const cleanQuery = sanitizeSearchQuery(search);
+      const params: Record<string, any> = {
+        page: perPage === 'all' ? 1 : page,
+        per_page: perPage,
+        all: perPage === 'all' ? true : undefined,
+      };
       if (selectedDate) {
         params.date = selectedDate;
+      }
+      if (cleanQuery) {
+        params.q = cleanQuery;
       }
       const res = await paymentService.getPayments(params);
       const raw = res?.data;
       const list: PaymentItem[] = Array.isArray(raw) ? raw : (raw?.data || []);
+
+      if (raw && !Array.isArray(raw)) {
+        setTotal(Number(raw.total) || list.length);
+        setCurrentPage(Number(raw.current_page) || 1);
+        setLastPage(Number(raw.last_page) || 1);
+        setFrom(Number(raw.from) || (list.length > 0 ? 1 : 0));
+        setTo(Number(raw.to) || list.length);
+        if (raw.summary) {
+          setSummary(raw.summary);
+        }
+      } else {
+        setTotal(list.length);
+        setCurrentPage(1);
+        setLastPage(1);
+        setFrom(list.length > 0 ? 1 : 0);
+        setTo(list.length);
+      }
 
       if (Array.isArray(list) && list.length > 0) {
         const mapped: FormattedPayment[] = list.map((p: any) => {
@@ -165,10 +209,13 @@ export default function PaymentsPage() {
     } catch (err) {
       console.warn('Could not fetch payments from API:', err);
       setPayments([]);
+      setTotal(0);
+      setFrom(0);
+      setTo(0);
     } finally {
       setIsLoading(false);
     }
-  }, [selectedDate]);
+  }, [page, perPage, selectedDate, search]);
 
   const handleConfirmPayment = async (paymentId: number | string, orderCode?: string) => {
     setConfirmingId(paymentId);
@@ -199,7 +246,11 @@ export default function PaymentsPage() {
 
   const loadPendingOrders = useCallback(async () => {
     try {
-      const res = await repairService.getRepairs({ per_page: 50 });
+      const res = await repairService.getRepairs({
+        per_page: 'all',
+        all: true,
+        date_filter: 'all',
+      });
       const raw = res?.data;
       const list = Array.isArray(raw) ? raw : (raw?.data || (Array.isArray(res) ? res : []));
       if (Array.isArray(list) && list.length > 0) {
@@ -287,9 +338,21 @@ export default function PaymentsPage() {
     }
   };
 
-  const totalAmount = payments.reduce((sum, p) => sum + p.amount, 0);
-  const transferCount = payments.filter((p) => p.methodKey === 'bank_transfer').length;
-  const cashCount = payments.filter((p) => p.methodKey === 'cash').length;
+  const totalAmount =
+    summary?.total_amount ?? payments.reduce((sum, p) => sum + p.amount, 0);
+  const transferAmount =
+    summary?.transfer_amount ??
+    payments
+      .filter((p) => p.methodKey === 'bank_transfer')
+      .reduce((sum, p) => sum + p.amount, 0);
+  const cashAmount =
+    summary?.cash_amount ??
+    payments.filter((p) => p.methodKey === 'cash').reduce((sum, p) => sum + p.amount, 0);
+  const transferCount =
+    summary?.transfer_count ?? payments.filter((p) => p.methodKey === 'bank_transfer').length;
+  const cashCount =
+    summary?.cash_count ?? payments.filter((p) => p.methodKey === 'cash').length;
+  const totalPaymentsCount = summary?.total_count ?? (total || payments.length);
 
   const filtered = payments.filter((p) => {
     const q = sanitizeSearchQuery(search).toLowerCase();
@@ -388,23 +451,23 @@ export default function PaymentsPage() {
           />
           <StatCard
             label="Chuyển khoản VietQR"
-            value={`${transferCount} giao dịch`}
+            value={moneyFormatted(transferAmount)}
             icon="check"
-            foot="Xác nhận chuyển khoản tiệm"
+            foot={`${transferCount} giao dịch · Xác nhận chuyển khoản tiệm`}
             periodLabel=""
             trend="neutral"
           />
           <StatCard
             label="Tiền mặt tại quầy"
-            value={`${cashCount} phiếu thu`}
+            value={moneyFormatted(cashAmount)}
             icon="money"
-            foot="Đã xác nhận thu ngân"
+            foot={`${cashCount} phiếu thu · Đã xác nhận thu ngân`}
             periodLabel=""
             trend="neutral"
           />
           <StatCard
             label="Tổng phiếu thu"
-            value={String(payments.length).padStart(2, '0')}
+            value={String(totalPaymentsCount).padStart(2, '0')}
             icon="quotes"
             foot="Cập nhật theo thời gian thực"
             periodLabel=""
@@ -543,6 +606,23 @@ export default function PaymentsPage() {
               </table>
             </div>
           )}
+
+          <PaginationBar
+            total={total}
+            currentPage={currentPage}
+            lastPage={lastPage}
+            perPage={perPage}
+            from={from}
+            to={to}
+            onPageChange={(nextPage) => setPage(nextPage)}
+            onPerPageChange={(nextPerPage) => {
+              setPerPage(nextPerPage);
+              setPage(1);
+            }}
+            itemLabel="giao dịch"
+            testIdPrefix="payments"
+            className="mt-4"
+          />
         </div>
 
         {/* VietQR Generator Modal */}

@@ -6,6 +6,7 @@ import { qcService, repairService, deviceService } from '@podscare/api-client';
 import {
   Button,
   StatusTag,
+  PaginationBar,
   Modal,
   Textarea,
   Checkbox,
@@ -26,18 +27,31 @@ export default function QCInspectionPage() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [loadingCriteria, setLoadingCriteria] = useState(false);
 
+  // Pagination state cho danh sách Chờ QC và Lịch sử kiểm định
+  const [pendingPage, setPendingPage] = useState<number>(1);
+  const [pendingPerPage, setPendingPerPage] = useState<number | 'all'>(15);
+  const [historyPage, setHistoryPage] = useState<number>(1);
+  const [historyPerPage, setHistoryPerPage] = useState<number | 'all'>(15);
+
   // QC Checklist Items State: boolean map
   const [qcCriteria, setQcCriteria] = useState<string[]>([]);
   const [checkedItems, setCheckedItems] = useState<Record<string, boolean>>({});
   const [reworkReason, setReworkReason] = useState('');
   const [qcNotes, setQcNotes] = useState('');
 
-  // Nạp độc lập danh sách đơn hàng QC với date_filter: 'all' để không sót các đơn chờ QC tồn đọng từ những ngày trước
-  const { data: apiQcOrdersData } = useQuery({
-    queryKey: ['qc-orders', branchId],
+  React.useEffect(() => {
+    setPendingPage(1);
+    setHistoryPage(1);
+  }, [branchId]);
+
+  // Nạp trực tiếp các đơn chờ QC (status: 'waiting_qc') từ server với per_page: 'all'
+  const { data: apiPendingQcData, isLoading: isPendingQcLoading, refetch: refetchPendingQc } = useQuery({
+    queryKey: ['qc-pending-orders', branchId],
     queryFn: async () => {
       const params: Record<string, any> = {
-        per_page: 100,
+        status: 'waiting_qc',
+        per_page: 'all',
+        all: true,
         date_filter: 'all',
       };
       if (branchId && branchId !== 'all') {
@@ -48,44 +62,67 @@ export default function QCInspectionPage() {
     },
   });
 
+  // Nạp độc lập danh sách đơn hàng QC với per_page: 'all', date_filter: 'all' để không sót các đơn chờ QC tồn đọng và lịch sử kiểm định
+  const { data: apiQcOrdersData, isLoading: isHistoryQcLoading, refetch: refetchHistoryQc } = useQuery({
+    queryKey: ['qc-orders', branchId],
+    queryFn: async () => {
+      const params: Record<string, any> = {
+        per_page: 'all',
+        all: true,
+        date_filter: 'all',
+      };
+      if (branchId && branchId !== 'all') {
+        params.branch_id = branchId;
+      }
+      const res = await repairService.getRepairs(params);
+      return res?.data || res;
+    },
+  });
+
+  const mapRawOrderToRepairOrder = (o: any): RepairOrder => {
+    const mappedStatus = resolveOrderStatus(o.status);
+    return {
+      id: o.order_code || String(o.id),
+      order_type: o.order_type || o.orderType || 'in_store',
+      orderType: o.order_type || o.orderType || 'in_store',
+      name: o.customer?.name || 'Khách lẻ',
+      phone: o.customer?.phone || '',
+      deviceCategory: o.device_model?.category || 'AirPods',
+      device: o.device_model?.name || 'AirPods',
+      device_id: o.device_model_id || o.device_model?.id || o.device_id || null,
+      device_model_id: o.device_model_id || o.device_model?.id || o.device_id || null,
+      serial: o.serial_number || 'Chưa cập nhật',
+      issue: o.issue_description || 'Kiểm tra',
+      status: mappedStatus.label,
+      statusType: mappedStatus.type,
+      price: Number(o.total_price) || Number(o.estimated_price) || 0,
+      total_price: Number(o.total_price) || Number(o.price) || 0,
+      tech: o.technician?.name || 'Chưa phân công',
+      technicianId: o.technician_id ?? o.technician?.id ?? null,
+      technician_id: o.technician_id ?? o.technician?.id ?? null,
+      date: o.created_at
+        ? new Intl.DateTimeFormat('vi-VN').format(new Date(o.created_at))
+        : 'Hôm nay',
+      branch: o.branch?.name || 'Chi nhánh FIXO',
+      branchId: o.branch_id || o.branch?.id || 1,
+      branchName: o.branch?.name || 'Chi nhánh FIXO',
+      repairNote: o.repair_note,
+      partsUsed: o.parts_used_summary,
+      finalCheck: o.final_check_result,
+      qcIssue: o.qc_note,
+    };
+  };
+
   const mergedOrders: RepairOrder[] = useMemo(() => {
     const raw = apiQcOrdersData?.data || apiQcOrdersData;
     const apiList = Array.isArray(raw) ? raw : [];
-    const mappedApi: RepairOrder[] = apiList.map((o: any) => {
-      const mappedStatus = resolveOrderStatus(o.status);
-      return {
-        id: o.order_code || String(o.id),
-        order_type: o.order_type || o.orderType || 'in_store',
-        orderType: o.order_type || o.orderType || 'in_store',
-        name: o.customer?.name || 'Khách lẻ',
-        phone: o.customer?.phone || '',
-        deviceCategory: o.device_model?.category || 'AirPods',
-        device: o.device_model?.name || 'AirPods',
-        device_id: o.device_model_id || o.device_model?.id || o.device_id || null,
-        device_model_id: o.device_model_id || o.device_model?.id || o.device_id || null,
-        serial: o.serial_number || 'Chưa cập nhật',
-        issue: o.issue_description || 'Kiểm tra',
-        status: mappedStatus.label,
-        statusType: mappedStatus.type,
-        price: Number(o.total_price) || Number(o.estimated_price) || 0,
-        total_price: Number(o.total_price) || Number(o.price) || 0,
-        tech: o.technician?.name || 'Chưa phân công',
-        technicianId: o.technician_id ?? o.technician?.id ?? null,
-        technician_id: o.technician_id ?? o.technician?.id ?? null,
-        date: o.created_at
-          ? new Intl.DateTimeFormat('vi-VN').format(new Date(o.created_at))
-          : 'Hôm nay',
-        branch: o.branch?.name || 'Chi nhánh FIXO',
-        branchId: o.branch_id || o.branch?.id || 1,
-        branchName: o.branch?.name || 'Chi nhánh FIXO',
-        repairNote: o.repair_note,
-        partsUsed: o.parts_used_summary,
-        finalCheck: o.final_check_result,
-        qcIssue: o.qc_note,
-      };
-    });
+    const mappedApi: RepairOrder[] = apiList.map(mapRawOrderToRepairOrder);
 
-    if (mappedApi.length === 0) {
+    const rawPending = apiPendingQcData?.data || apiPendingQcData;
+    const pendingList = Array.isArray(rawPending) ? rawPending : [];
+    const mappedPending: RepairOrder[] = pendingList.map(mapRawOrderToRepairOrder);
+
+    if (mappedApi.length === 0 && mappedPending.length === 0) {
       return orders;
     }
 
@@ -95,14 +132,78 @@ export default function QCInspectionPage() {
       const existing = byId.get(String(o.id));
       byId.set(String(o.id), existing ? { ...existing, ...o } : o);
     });
+    mappedPending.forEach((o) => {
+      const existing = byId.get(String(o.id));
+      byId.set(String(o.id), existing ? { ...existing, ...o } : o);
+    });
     return Array.from(byId.values());
-  }, [apiQcOrdersData, orders]);
+  }, [apiQcOrdersData, apiPendingQcData, orders]);
 
   // Orders waiting for QC inspection
   const qcOrders = mergedOrders.filter((o) => o.status === 'Chờ QC');
   const pastQcOrders = mergedOrders.filter((o) =>
     ['Sẵn sàng trả', 'Cần sửa lại', 'Hoàn tất'].includes(o.status)
   );
+
+  // Pagination calculation for Pending QC
+  const pendingTotal = qcOrders.length;
+  const pendingLastPage = useMemo(() => {
+    if (pendingPerPage === 'all') return 1;
+    const size = Math.max(1, Number(pendingPerPage) || 15);
+    return Math.max(1, Math.ceil(pendingTotal / size));
+  }, [pendingPerPage, pendingTotal]);
+  const pendingCurrentPage = useMemo(() => {
+    if (pendingPerPage === 'all') return 1;
+    return Math.min(Math.max(1, pendingPage), pendingLastPage);
+  }, [pendingPerPage, pendingPage, pendingLastPage]);
+  const pendingFrom = useMemo(() => {
+    if (pendingTotal === 0) return 0;
+    if (pendingPerPage === 'all') return 1;
+    const size = Math.max(1, Number(pendingPerPage) || 15);
+    return (pendingCurrentPage - 1) * size + 1;
+  }, [pendingTotal, pendingPerPage, pendingCurrentPage]);
+  const pendingTo = useMemo(() => {
+    if (pendingTotal === 0) return 0;
+    if (pendingPerPage === 'all') return pendingTotal;
+    const size = Math.max(1, Number(pendingPerPage) || 15);
+    return Math.min(pendingTotal, pendingCurrentPage * size);
+  }, [pendingTotal, pendingPerPage, pendingCurrentPage]);
+  const paginatedQcOrders = useMemo(() => {
+    if (pendingPerPage === 'all') return qcOrders;
+    const size = Math.max(1, Number(pendingPerPage) || 15);
+    const start = Math.max(0, (pendingCurrentPage - 1) * size);
+    return qcOrders.slice(start, start + size);
+  }, [qcOrders, pendingPerPage, pendingCurrentPage]);
+
+  // Pagination calculation for Past QC History
+  const historyTotal = pastQcOrders.length;
+  const historyLastPage = useMemo(() => {
+    if (historyPerPage === 'all') return 1;
+    const size = Math.max(1, Number(historyPerPage) || 15);
+    return Math.max(1, Math.ceil(historyTotal / size));
+  }, [historyPerPage, historyTotal]);
+  const historyCurrentPage = useMemo(() => {
+    if (historyPerPage === 'all') return 1;
+    return Math.min(Math.max(1, historyPage), historyLastPage);
+  }, [historyPerPage, historyPage, historyLastPage]);
+  const historyFrom = useMemo(() => {
+    if (historyTotal === 0) return 0;
+    if (historyPerPage === 'all') return 1;
+    const size = Math.max(1, Number(historyPerPage) || 15);
+    return (historyCurrentPage - 1) * size + 1;
+  }, [historyTotal, historyPerPage, historyCurrentPage]);
+  const historyTo = useMemo(() => {
+    if (historyTotal === 0) return 0;
+    if (historyPerPage === 'all') return historyTotal;
+    const size = Math.max(1, Number(historyPerPage) || 15);
+    return Math.min(historyTotal, historyCurrentPage * size);
+  }, [historyTotal, historyPerPage, historyCurrentPage]);
+  const paginatedPastQcOrders = useMemo(() => {
+    if (historyPerPage === 'all') return pastQcOrders;
+    const size = Math.max(1, Number(historyPerPage) || 15);
+    const start = Math.max(0, (historyCurrentPage - 1) * size);
+    return pastQcOrders.slice(start, start + size);
+  }, [pastQcOrders, historyPerPage, historyCurrentPage]);
 
   const defaultQcCriteria = [
     'Chức năng âm thanh hai bên cân bằng, không rè âm',
@@ -187,6 +288,8 @@ export default function QCInspectionPage() {
       }
 
       await invalidateOrders();
+      refetchPendingQc();
+      refetchHistoryQc();
       toast(`Đơn ${selectedOrder.id} đã ĐẠT QC · Sẵn sàng trả máy cho khách`, 'success');
       setInspectModalOpen(false);
       setSelectedOrder(null);
@@ -228,6 +331,8 @@ export default function QCInspectionPage() {
       }
 
       await invalidateOrders();
+      refetchPendingQc();
+      refetchHistoryQc();
       toast(`Đơn ${selectedOrder.id} đã bị TỪ CHỐI QC · Chuyển về kỹ thuật sửa lại`, 'error');
       setInspectModalOpen(false);
       setSelectedOrder(null);
@@ -273,53 +378,71 @@ export default function QCInspectionPage() {
           </div>
 
           {qcOrders.length > 0 ? (
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
-              {qcOrders.map((order) => (
-                <div
-                  key={order.id}
-                  className="bg-white border border-[#e5ece8] rounded-[10px] p-4 flex flex-col justify-between shadow-xs hover:border-[#b8d0c1] transition-all"
-                >
-                  <div>
-                    <div className="flex justify-between items-center mb-2">
-                      <span className="font-mono font-bold text-xs text-[#176b58]">
-                        {order.id}
-                      </span>
-                      <StatusTag label={order.status} type={order.statusType} />
-                    </div>
-
-                    <h3 className="font-heading font-bold text-sm text-[#1c302b] m-0">
-                      {order.device}
-                    </h3>
-                    <p className="text-xs text-[#75837b] my-1">
-                      Kỹ Thuật:{' '}<b>{order.tech}</b> · {order.date}
-                    </p>
-
-                    <div className="bg-[#f7faf8] p-2.5 rounded border border-[#edf1ee] my-2 text-xs">
-                      <span className="text-[#81908a] block">Lỗi ban đầu:</span>
-                      <b className="text-[#33443c] block truncate">{order.issue}</b>
-                      {order.repairNote && (
-                        <>
-                          <span className="text-[#81908a] block mt-1">Nội dung Kỹ Thuật đã sửa:</span>
-                          <span className="text-[#176b58] font-medium block truncate">
-                            {order.repairNote}
-                          </span>
-                        </>
-                      )}
-                    </div>
-                  </div>
-
-                  <Button
-                    variant="primary"
-                    size="sm"
-                    className="w-full mt-2"
-                    icon="check"
-                    onClick={() => openInspectModal(order)}
+            <>
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+                {paginatedQcOrders.map((order) => (
+                  <div
+                    key={order.id}
+                    className="bg-white border border-[#e5ece8] rounded-[10px] p-4 flex flex-col justify-between shadow-xs hover:border-[#b8d0c1] transition-all"
                   >
-                    Tiến hành kiểm định QC →
-                  </Button>
-                </div>
-              ))}
-            </div>
+                    <div>
+                      <div className="flex justify-between items-center mb-2">
+                        <span className="font-mono font-bold text-xs text-[#176b58]">
+                          {order.id}
+                        </span>
+                        <StatusTag label={order.status} type={order.statusType} />
+                      </div>
+
+                      <h3 className="font-heading font-bold text-sm text-[#1c302b] m-0">
+                        {order.device}
+                      </h3>
+                      <p className="text-xs text-[#75837b] my-1">
+                        Kỹ Thuật:{' '}<b>{order.tech}</b> · {order.date}
+                      </p>
+
+                      <div className="bg-[#f7faf8] p-2.5 rounded border border-[#edf1ee] my-2 text-xs">
+                        <span className="text-[#81908a] block">Lỗi ban đầu:</span>
+                        <b className="text-[#33443c] block truncate">{order.issue}</b>
+                        {order.repairNote && (
+                          <>
+                            <span className="text-[#81908a] block mt-1">Nội dung Kỹ Thuật đã sửa:</span>
+                            <span className="text-[#176b58] font-medium block truncate">
+                              {order.repairNote}
+                            </span>
+                          </>
+                        )}
+                      </div>
+                    </div>
+
+                    <Button
+                      variant="primary"
+                      size="sm"
+                      className="w-full mt-2"
+                      icon="check"
+                      onClick={() => openInspectModal(order)}
+                    >
+                      Tiến hành kiểm định QC →
+                    </Button>
+                  </div>
+                ))}
+              </div>
+              <PaginationBar
+                testIdPrefix="qc-pending"
+                currentPage={pendingCurrentPage}
+                lastPage={pendingLastPage}
+                total={pendingTotal}
+                from={pendingFrom}
+                to={pendingTo}
+                perPage={pendingPerPage}
+                onPageChange={(nextPage) => setPendingPage(nextPage)}
+                onPerPageChange={(nextPerPage) => {
+                  setPendingPerPage(nextPerPage);
+                  setPendingPage(1);
+                }}
+                itemLabel="đơn chờ QC"
+                isLoading={isPendingQcLoading}
+              />
+            </>
           ) : (
             <EmptyState
               title="Hiện không có đơn nào chờ kiểm định QC"
@@ -334,18 +457,40 @@ export default function QCInspectionPage() {
           <h2 className="font-heading font-bold text-base text-[#1c302b] mb-3">
             Lịch sử kiểm định gần đây
           </h2>
-          <div className="divide-y divide-[#f1f3f2]">
-            {pastQcOrders.slice(0, 5).map((o) => (
-              <div key={o.id} className="py-2.5 flex items-center justify-between text-sm">
-                <div className="flex items-center gap-3">
-                  <span className="font-mono font-bold text-[#176b58]">{o.id}</span>
-                  <b>{o.device}</b>
-                  <span className="text-[#81908a]">Kỹ Thuật: {o.tech}</span>
-                </div>
-                <StatusTag label={o.status} type={o.statusType} />
+          {pastQcOrders.length > 0 ? (
+            <>
+              <div className="divide-y divide-[#f1f3f2]">
+                {paginatedPastQcOrders.map((o) => (
+                  <div key={o.id} className="py-2.5 flex items-center justify-between text-sm">
+                    <div className="flex items-center gap-3">
+                      <span className="font-mono font-bold text-[#176b58]">{o.id}</span>
+                      <b>{o.device}</b>
+                      <span className="text-[#81908a]">Kỹ Thuật: {o.tech}</span>
+                    </div>
+                    <StatusTag label={o.status} type={o.statusType} />
+                  </div>
+                ))}
               </div>
-            ))}
-          </div>
+              <PaginationBar
+                testIdPrefix="qc-history"
+                currentPage={historyCurrentPage}
+                lastPage={historyLastPage}
+                total={historyTotal}
+                from={historyFrom}
+                to={historyTo}
+                perPage={historyPerPage}
+                onPageChange={(nextPage) => setHistoryPage(nextPage)}
+                onPerPageChange={(nextPerPage) => {
+                  setHistoryPerPage(nextPerPage);
+                  setHistoryPage(1);
+                }}
+                itemLabel="lịch sử kiểm định"
+                isLoading={isHistoryQcLoading}
+              />
+            </>
+          ) : (
+            <p className="text-xs text-[#89958f] m-0">Chưa có lịch sử kiểm định QC nào.</p>
+          )}
         </div>
       </div>
 

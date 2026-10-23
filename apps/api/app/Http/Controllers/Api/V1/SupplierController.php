@@ -29,7 +29,55 @@ class SupplierController extends Controller
 
         $suppliers = $this->supplierService->getSuppliers($user->tenant_id, $request->all());
 
-        return $this->success($suppliers, 'Lấy danh sách nhà cung cấp thành công.');
+        $statsRow = Supplier::where('tenant_id', $user->tenant_id)
+            ->selectRaw('
+                COUNT(*) as total_suppliers,
+                COALESCE(SUM(CASE WHEN is_active = 1 THEN debt_balance ELSE 0 END), 0) as total_debt_amount,
+                COALESCE(SUM(CASE WHEN debt_balance > 0 THEN 1 ELSE 0 END), 0) as suppliers_with_debt_count,
+                COALESCE(SUM(CASE WHEN is_active = 1 THEN 1 ELSE 0 END), 0) as active_suppliers_count
+            ')
+            ->first();
+
+        $toNum = static fn ($val): int|float => ((float) $val == (int) round((float) $val))
+            ? (int) round((float) $val)
+            : (float) $val;
+
+        $totalSuppliers = (int) ($statsRow->total_suppliers ?? 0);
+        $totalDebtAmount = $toNum($statsRow->total_debt_amount ?? 0);
+        $suppliersWithDebtCount = (int) ($statsRow->suppliers_with_debt_count ?? 0);
+        $activeSuppliersCount = (int) ($statsRow->active_suppliers_count ?? 0);
+
+        $summary = [
+            'total_suppliers'           => $totalSuppliers,
+            'total_count'               => $totalSuppliers,
+            'active_suppliers_count'    => $activeSuppliersCount,
+            'total_debt_amount'         => $totalDebtAmount,
+            'total_accounts_payable'    => $totalDebtAmount,
+            'total_debt'                => $totalDebtAmount,
+            'suppliers_with_debt_count' => $suppliersWithDebtCount,
+            'debt_suppliers_count'      => $suppliersWithDebtCount,
+        ];
+
+        $payload = $suppliers instanceof \Illuminate\Pagination\LengthAwarePaginator
+            ? $suppliers->toArray()
+            : [
+                'current_page'   => 1,
+                'data'           => $suppliers,
+                'first_page_url' => $request->fullUrlWithQuery(['page' => 1]),
+                'from'           => $suppliers->count() > 0 ? 1 : null,
+                'last_page'      => 1,
+                'last_page_url'  => $request->fullUrlWithQuery(['page' => 1]),
+                'next_page_url'  => null,
+                'path'           => $request->url(),
+                'per_page'       => max($suppliers->count(), 1),
+                'prev_page_url'  => null,
+                'to'             => $suppliers->count() > 0 ? $suppliers->count() : null,
+                'total'          => $suppliers->count(),
+            ];
+
+        $payload['summary'] = $summary;
+
+        return $this->success($payload, 'Lấy danh sách nhà cung cấp thành công.');
     }
 
     /**

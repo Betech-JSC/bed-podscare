@@ -14,11 +14,16 @@ export class RepairService {
   constructor(private http: HttpClient = defaultHttpClient) {}
 
   async getRepairs(params?: OrderFilterDTO): Promise<any> {
+    const queryParams: Record<string, any> = {
+      ...params,
+      q: params?.q || params?.search,
+    };
+    if (params?.per_page === 'all' || params?.all === true) {
+      queryParams.per_page = 'all';
+      queryParams.all = true;
+    }
     return this.http.get('/api/v1/orders', {
-      params: {
-        ...params,
-        q: params?.q || params?.search,
-      },
+      params: queryParams,
     });
   }
 

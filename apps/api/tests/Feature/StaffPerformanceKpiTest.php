@@ -331,4 +331,40 @@ class StaffPerformanceKpiTest extends TestCase
         $this->assertFalse($staffList2->contains('id', $this->technician1->id));
         $this->assertTrue($staffList2->contains('id', $this->technician2->id));
     }
+
+    /**
+     * 7. Hỗ trợ lọc theo khoảng ngày (from_date & to_date) và period preset.
+     */
+    public function test_staff_kpi_supports_from_date_to_date_and_period_filters(): void
+    {
+        $orderInRange = $this->createOrder([
+            'branch_id'     => $this->branch1->id,
+            'technician_id' => $this->technician1->id,
+            'status'        => 'completed',
+            'total_price'   => 600000,
+        ]);
+        $orderInRange->created_at = \Carbon\Carbon::parse('2026-03-10 10:00:00', 'Asia/Ho_Chi_Minh');
+        $orderInRange->saveQuietly();
+
+        $orderOutOfRange = $this->createOrder([
+            'branch_id'     => $this->branch1->id,
+            'technician_id' => $this->technician1->id,
+            'status'        => 'completed',
+            'total_price'   => 900000,
+        ]);
+        $orderOutOfRange->created_at = \Carbon\Carbon::parse('2026-02-10 10:00:00', 'Asia/Ho_Chi_Minh');
+        $orderOutOfRange->saveQuietly();
+
+        $response = $this->actingAs($this->adminUser)
+            ->getJson("/api/v1/kpi/staff?branch_id={$this->branch1->id}&from_date=2026-03-01&to_date=2026-03-31");
+
+        $response->assertStatus(200)
+            ->assertJsonPath('data.from_date', '2026-03-01')
+            ->assertJsonPath('data.to_date', '2026-03-31');
+
+        $techStat = collect($response->json('data.staff'))->firstWhere('id', $this->technician1->id);
+        $this->assertNotNull($techStat);
+        $this->assertEquals(1, $techStat['total_orders']);
+        $this->assertEquals(600000, $techStat['revenue_generated']);
+    }
 }

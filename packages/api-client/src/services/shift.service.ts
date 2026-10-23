@@ -23,7 +23,25 @@ export class ShiftService {
   async getShifts(
     params?: ShiftFilterParams
   ): Promise<ApiResponse<PaginatedResponse<WorkShift>>> {
-    return this.http.get('/api/v1/shifts', { params: params as Record<string, string | number | boolean | undefined> });
+    const cleanParams: Record<string, string | number | boolean> = {};
+    if (params) {
+      for (const [key, val] of Object.entries(params)) {
+        if (val !== undefined && val !== '') {
+          cleanParams[key] = val as string | number | boolean;
+        }
+      }
+      const queryText = params.q ?? params.search;
+      if (queryText !== undefined && String(queryText).trim() !== '') {
+        cleanParams.q = String(queryText).trim();
+      }
+      if (params.per_page === 'all' || params.all === true) {
+        cleanParams.per_page = 'all';
+        cleanParams.all = true;
+      }
+    }
+    return this.http.get('/api/v1/shifts', {
+      params: Object.keys(cleanParams).length > 0 ? cleanParams : undefined,
+    });
   }
 
   /**

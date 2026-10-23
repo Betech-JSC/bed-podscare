@@ -62,7 +62,7 @@ function InventoryMasterView() {
 
   const loadSuppliers = useCallback(async () => {
     try {
-      const res = await supplierService.getSuppliers({ per_page: 100 });
+      const res = await supplierService.getSuppliers({ per_page: 'all', all: true });
       const data = res?.data;
       const list = Array.isArray(data) ? data : (data as any)?.data || [];
       setSuppliers(list);
@@ -73,7 +73,7 @@ function InventoryMasterView() {
 
   const loadParts = useCallback(async () => {
     try {
-      const res = await inventoryService.getParts({ per_page: 100 });
+      const res = await inventoryService.getParts({ per_page: 'all', all: true });
       const data = res?.data;
       const list = Array.isArray(data) ? data : (data as any)?.data || [];
       setAvailableParts(list);

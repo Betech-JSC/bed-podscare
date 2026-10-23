@@ -46,68 +46,23 @@ class OrderController extends Controller
             'qcInspector',
             'createdByUser:id,name,role',
             'tenant:id,name,code,logo_url,hotline,receipt_footer_note',
+            'payments',
         ]);
 
         $status = $request->input('status');
+        $statusesInput = $request->input('statuses');
         $filter = $request->input('filter');
 
-        if ($filter === 'overdue' || $status === 'overdue') {
-            $query->whereNotIn('status', ['completed', 'cancelled', 'rejected', 'ready_for_return', 'waiting_pickup'])
-                  ->where('created_at', '<=', Carbon::now('Asia/Ho_Chi_Minh')->subHours(24));
+        $rawMultiStatuses = $statusesInput ?? ((is_array($status) || (is_string($status) && str_contains($status, ','))) ? $status : null);
+        $multiStatusList = [];
+        if ($rawMultiStatuses !== null) {
+            $parsedList = is_array($rawMultiStatuses)
+                ? $rawMultiStatuses
+                : array_map('trim', explode(',', (string) $rawMultiStatuses));
+            $multiStatusList = array_values(array_filter($parsedList, fn ($s) => is_string($s) && $s !== ''));
         }
 
-        if ($status && $status !== 'overdue') {
-            if ($status === 'special_parts') {
-                $query->specialPartsPending();
-            } elseif ($status === 'open') {
-                $query->whereNotIn('status', ['completed', 'cancelled', 'rejected']);
-            } elseif ($status === 'in_workshop') {
-                $query->whereNotIn('status', ['completed', 'cancelled', 'rejected', 'ready_for_return', 'waiting_pickup']);
-            } elseif (in_array($status, ['waiting_pickup', 'ready_for_return'], true)) {
-                $query->whereIn('status', ['waiting_pickup', 'ready_for_return']);
-            } elseif ($status === 'waiting_parts') {
-                $query->where(function ($q) {
-                    $q->where('status', 'waiting_parts')
-                      ->orWhere('special_parts_status', 'pending');
-                })->whereNotIn('status', ['completed', 'cancelled', 'rejected']);
-            } else {
-                $normalized = $this->normalizeStatus($status);
-                if ($normalized === 'waiting_qc') {
-                    $query->whereIn('status', ['waiting_qc', 'qc_pending', 'qc_inspecting']);
-                } elseif ($normalized === 'waiting_approval') {
-                    $query->whereIn('status', ['waiting_approval', 'quote_pending']);
-                } else {
-                    $query->where('status', $status);
-                }
-            }
-        } elseif ($filter && $filter !== 'overdue') {
-            if ($filter === 'open') {
-                $query->whereNotIn('status', ['completed', 'cancelled', 'rejected']);
-            } elseif ($filter === 'in_workshop') {
-                $query->whereNotIn('status', ['completed', 'cancelled', 'rejected', 'ready_for_return', 'waiting_pickup']);
-            } elseif (in_array($filter, ['waiting_pickup', 'ready_for_return'], true)) {
-                $query->whereIn('status', ['waiting_pickup', 'ready_for_return']);
-            } elseif ($filter === 'waiting_parts') {
-                $query->where(function ($q) {
-                    $q->where('status', 'waiting_parts')
-                      ->orWhere('special_parts_status', 'pending');
-                })->whereNotIn('status', ['completed', 'cancelled', 'rejected']);
-            }
-        }
-
-        if ($specialPartsStatus = $request->input('special_parts_status')) {
-            if ($specialPartsStatus === 'pending') {
-                $query->specialPartsPending();
-            } elseif ($specialPartsStatus === 'purchased') {
-                $query->specialPartsPurchased();
-            } elseif ($specialPartsStatus === 'all') {
-                $query->whereNotNull('special_parts_status');
-            } else {
-                $query->where('special_parts_status', $specialPartsStatus);
-            }
-        } elseif ($request->boolean('special_parts') || $request->input('special_parts') === 'true') {
-            $query->specialPartsPending();
-        }
+        $singleStatus = ($rawMultiStatuses === null && is_string($status)) ? trim($status) : null;
 
         $user = $request->user();
         if ($user && ! in_array($user->role, ['admin', 'super_admin'], true)) {
@@ -130,10 +85,10 @@ class OrderController extends Controller
             $query->where('intake_batch_code', $batchCode);
         }
 
-        if ($orderType = $request->input('order_type')) {
-            if ($orderType !== 'all') {
-                $query->where('order_type', $orderType);
-            }
+        if ($request->boolean('unpaid_only') || $request->input('payment_status') === 'unpaid') {
+            $query->whereDoesntHave('payments', function ($pq) {
+                $pq->whereIn('status', ['paid', 'completed']);
+            });
         }
 
         $rawSearch = $request->input('q') ?? $request->input('search');
@@ -145,8 +100,13 @@ class OrderController extends Controller
                   ->orWhere('serial_number', 'like', "%{$search}%")
                   ->orWhere('issue_description', 'like', "%{$search}%")
                   ->orWhereHas('customer', function ($sq) use ($search) {
-                      $sq->where('name', 'like', "%{$search}%");
-                      PhoneHelper::applyPhoneColumnSearch($sq, 'phone', $search, 'or');
+                      $sq->where(function ($inner) use ($search) {
+                          $inner->where('name', 'like', "%{$search}%");
+                          PhoneHelper::applyPhoneColumnSearch($inner, 'phone', $search, 'or');
+                      });
+                  })
+                  ->orWhereHas('deviceModel', function ($dq) use ($search) {
+                      $dq->where('name', 'like', "%{$search}%");
                   });
             });
         }
@@ -186,6 +146,20 @@ class OrderController extends Controller
             }
         };
 
+        $filterDateTo = function ($q, $end) use ($isCompletedDate) {
+            if ($isCompletedDate) {
+                $q->where(function ($sq) use ($end) {
+                    $sq->where('handed_over_at', '<=', $end)
+                       ->orWhere(function ($sub) use ($end) {
+                           $sub->whereNull('handed_over_at')
+                               ->where('updated_at', '<=', $end);
+                       });
+                });
+            } else {
+                $q->where('created_at', '<=', $end);
+            }
+        };
+
         // Nếu có date cụ thể (YYYY-MM-DD), ưu tiên lọc theo ngày đó thay vì preset
         $specificDate = $request->input('date') ?? $request->input('exact_date');
         $hasSpecificDate = false;
@@ -204,16 +178,50 @@ class OrderController extends Controller
             }
         }
 
+        // Hỗ trợ lọc theo khoảng từ ngày - đến ngày (from_date / to_date)
+        $fromDate = $request->input('from_date');
+        $toDate = $request->input('to_date');
+        $hasDateRange = false;
+
         if (! $hasSpecificDate) {
-            $isQcQueueFilter = in_array($status, ['waiting_qc', 'qc_pending', 'qc_inspecting'], true)
-                || in_array($filter, ['waiting_qc', 'qc_pending', 'qc_inspecting'], true);
+            if ($fromDate && is_string($fromDate) && preg_match('/^\d{4}-\d{2}-\d{2}$/', $fromDate)) {
+                try {
+                    $parsedFrom = Carbon::createFromFormat('Y-m-d', $fromDate, $tz);
+                    if ($parsedFrom && $parsedFrom->format('Y-m-d') === $fromDate) {
+                        $filterDateFrom($query, $parsedFrom->copy()->startOfDay());
+                        $hasDateRange = true;
+                    }
+                } catch (\Throwable $e) {
+                }
+            }
+
+            if ($toDate && is_string($toDate) && preg_match('/^\d{4}-\d{2}-\d{2}$/', $toDate)) {
+                try {
+                    $parsedTo = Carbon::createFromFormat('Y-m-d', $toDate, $tz);
+                    if ($parsedTo && $parsedTo->format('Y-m-d') === $toDate) {
+                        $filterDateTo($query, $parsedTo->copy()->endOfDay());
+                        $hasDateRange = true;
+                    }
+                } catch (\Throwable $e) {
+                }
+            }
+        }
+
+        if (! $hasSpecificDate && ! $hasDateRange) {
+            $isQcQueueFilter = in_array($singleStatus, ['waiting_qc', 'qc_pending', 'qc_inspecting'], true)
+                || in_array($filter, ['waiting_qc', 'qc_pending', 'qc_inspecting'], true)
+                || count(array_intersect($multiStatusList, ['waiting_qc', 'qc_pending', 'qc_inspecting'])) > 0;
 
             $hasSpecialPartsFilter = $request->has('special_parts_status')
                 || $request->boolean('special_parts')
                 || $request->input('special_parts') === 'true'
                 || $isQcQueueFilter
-                || in_array($status, ['special_parts', 'open', 'in_workshop', 'waiting_pickup', 'ready_for_return', 'waiting_parts', 'overdue'], true)
-                || in_array($filter, ['open', 'in_workshop', 'waiting_pickup', 'ready_for_return', 'waiting_parts', 'overdue'], true);
+                || ! empty($multiStatusList)
+                || $request->boolean('unpaid_only')
+                || $request->boolean('quote_candidates')
+                || $request->input('payment_status') === 'unpaid'
+                || in_array($singleStatus, ['special_parts', 'open', 'in_workshop', 'waiting_pickup', 'ready_for_return', 'waiting_parts', 'overdue', 'waiting_approval', 'quote_pending', 'quote_candidates'], true)
+                || in_array($filter, ['open', 'in_workshop', 'waiting_pickup', 'ready_for_return', 'waiting_parts', 'overdue', 'waiting_approval', 'quote_pending', 'quote_candidates'], true);
 
             if ($search !== '' && ($dateFilter === 'today' || ! $request->filled('date_filter'))) {
                 $dateFilter = 'all';
@@ -262,9 +270,191 @@ class OrderController extends Controller
             }
         }
 
-        $orders = $query->latest('id')->paginate($request->input('per_page', 15));
+        // Bản sao truy vấn trước khi lọc theo status và order_type để tính thống kê đối chiếu trạng thái toàn cục
+        $baseSummaryQuery = clone $query;
 
-        return $this->success($orders, 'Lấy danh sách đơn sửa chữa thành công.');
+        if ($filter === 'overdue' || $singleStatus === 'overdue') {
+            $query->whereNotIn('status', ['completed', 'cancelled', 'rejected', 'ready_for_return', 'waiting_pickup'])
+                  ->where('created_at', '<=', Carbon::now('Asia/Ho_Chi_Minh')->subHours(24));
+        }
+
+        if (! empty($multiStatusList)) {
+            $expandedStatuses = [];
+            $includeSpecialPartsPending = false;
+
+            foreach ($multiStatusList as $st) {
+                $norm = $this->normalizeStatus($st);
+                if ($norm === 'waiting_qc') {
+                    array_push($expandedStatuses, 'waiting_qc', 'qc_pending', 'qc_inspecting');
+                } elseif ($norm === 'waiting_approval') {
+                    array_push($expandedStatuses, 'waiting_approval', 'quote_pending');
+                } elseif (in_array($norm, ['waiting_pickup', 'ready_for_return'], true)) {
+                    array_push($expandedStatuses, 'waiting_pickup', 'ready_for_return');
+                } elseif ($norm === 'received') {
+                    array_push($expandedStatuses, 'received', 'new', 'pending');
+                } elseif ($norm === 'quote_candidates') {
+                    array_push($expandedStatuses, 'waiting_approval', 'quote_pending', 'inspecting', 'received', 'new', 'pending');
+                } else {
+                    $expandedStatuses[] = $st;
+                    if ($norm && $norm !== $st) {
+                        $expandedStatuses[] = $norm;
+                    }
+                }
+
+                if ($st === 'waiting_parts') {
+                    $includeSpecialPartsPending = true;
+                }
+            }
+
+            $expandedStatuses = array_values(array_unique($expandedStatuses));
+
+            if ($includeSpecialPartsPending) {
+                $query->where(function ($q) use ($expandedStatuses) {
+                    $q->whereIn('status', $expandedStatuses)
+                      ->orWhere(function ($sq) {
+                          $sq->where('special_parts_status', 'pending')
+                             ->whereNotIn('status', ['completed', 'cancelled', 'rejected']);
+                      });
+                });
+            } else {
+                $query->whereIn('status', $expandedStatuses);
+            }
+        } elseif ($singleStatus && ! in_array($singleStatus, ['overdue', 'special_parts', 'all'], true)) {
+            if ($singleStatus === 'open') {
+                $query->whereNotIn('status', ['completed', 'cancelled', 'rejected']);
+            } elseif ($singleStatus === 'in_workshop') {
+                $query->whereNotIn('status', ['completed', 'cancelled', 'rejected', 'ready_for_return', 'waiting_pickup']);
+            } elseif (in_array($singleStatus, ['waiting_pickup', 'ready_for_return'], true)) {
+                $query->whereIn('status', ['waiting_pickup', 'ready_for_return']);
+            } elseif ($singleStatus === 'waiting_parts') {
+                $query->where(function ($q) {
+                    $q->where('status', 'waiting_parts')
+                      ->orWhere('special_parts_status', 'pending');
+                })->whereNotIn('status', ['completed', 'cancelled', 'rejected']);
+            } elseif ($singleStatus === 'quote_candidates') {
+                $query->whereIn('status', ['waiting_approval', 'quote_pending', 'inspecting', 'received', 'new', 'pending']);
+            } else {
+                $normalized = $this->normalizeStatus($singleStatus);
+                if ($normalized === 'waiting_qc') {
+                    $query->whereIn('status', ['waiting_qc', 'qc_pending', 'qc_inspecting']);
+                } elseif ($normalized === 'waiting_approval') {
+                    $query->whereIn('status', ['waiting_approval', 'quote_pending']);
+                } elseif ($normalized === 'received') {
+                    $query->whereIn('status', ['received', 'new', 'pending']);
+                } else {
+                    $query->where('status', $singleStatus);
+                }
+            }
+        } elseif ($filter && $filter !== 'overdue') {
+            if ($filter === 'open') {
+                $query->whereNotIn('status', ['completed', 'cancelled', 'rejected']);
+            } elseif ($filter === 'in_workshop') {
+                $query->whereNotIn('status', ['completed', 'cancelled', 'rejected', 'ready_for_return', 'waiting_pickup']);
+            } elseif (in_array($filter, ['waiting_pickup', 'ready_for_return'], true)) {
+                $query->whereIn('status', ['waiting_pickup', 'ready_for_return']);
+            } elseif ($filter === 'waiting_parts') {
+                $query->where(function ($q) {
+                    $q->where('status', 'waiting_parts')
+                      ->orWhere('special_parts_status', 'pending');
+                })->whereNotIn('status', ['completed', 'cancelled', 'rejected']);
+            } elseif ($filter === 'quote_candidates') {
+                $query->whereIn('status', ['waiting_approval', 'quote_pending', 'inspecting', 'received', 'new', 'pending']);
+            }
+        }
+
+        if ($request->boolean('quote_candidates')) {
+            $query->whereIn('status', ['waiting_approval', 'quote_pending', 'inspecting', 'received', 'new', 'pending']);
+        }
+
+        // Bản sao truy vấn sau khi lọc status nhưng trước khi lọc order_type / special_parts để đếm đúng số lượng từng tab loại đơn
+        $typeSummaryQuery = clone $query;
+
+        if ($singleStatus === 'special_parts') {
+            $query->specialPartsPending();
+        }
+
+        if ($specialPartsStatus = $request->input('special_parts_status')) {
+            if ($specialPartsStatus === 'pending') {
+                $query->specialPartsPending();
+            } elseif ($specialPartsStatus === 'purchased') {
+                $query->specialPartsPurchased();
+            } elseif ($specialPartsStatus === 'all') {
+                $query->whereNotNull('special_parts_status');
+            } else {
+                $query->where('special_parts_status', $specialPartsStatus);
+            }
+        } elseif ($request->boolean('special_parts') || $request->input('special_parts') === 'true') {
+            $query->specialPartsPending();
+        }
+
+        if ($orderType = $request->input('order_type')) {
+            if ($orderType === 'special_parts') {
+                $query->specialPartsPending();
+            } elseif ($orderType !== 'all') {
+                $query->where('order_type', $orderType);
+            }
+        }
+
+        $baseStats = (clone $baseSummaryQuery)->withOnly([])->reorder()->selectRaw("
+            COUNT(*) as all_count,
+            SUM(CASE WHEN status NOT IN ('completed', 'cancelled', 'rejected') THEN 1 ELSE 0 END) as open_count,
+            SUM(CASE WHEN status NOT IN ('completed', 'cancelled', 'rejected', 'ready_for_return', 'waiting_pickup') THEN 1 ELSE 0 END) as in_workshop_count,
+            SUM(CASE WHEN status IN ('ready_for_return', 'waiting_pickup') THEN 1 ELSE 0 END) as waiting_pickup_count,
+            SUM(CASE WHEN status IN ('waiting_qc', 'qc_pending', 'qc_inspecting') THEN 1 ELSE 0 END) as waiting_qc_count,
+            SUM(CASE WHEN status = 'completed' THEN 1 ELSE 0 END) as completed_count,
+            SUM(CASE WHEN technician_id IS NULL THEN 1 ELSE 0 END) as unassigned_count
+        ")->first();
+
+        $typeStats = (clone $typeSummaryQuery)->withOnly([])->reorder()->selectRaw("
+            COUNT(*) as total_count,
+            SUM(CASE WHEN order_type = 'in_store' OR order_type IS NULL THEN 1 ELSE 0 END) as in_store_count,
+            SUM(CASE WHEN order_type = 'cod' THEN 1 ELSE 0 END) as cod_count,
+            SUM(CASE WHEN order_type = 'warranty' THEN 1 ELSE 0 END) as warranty_count,
+            SUM(CASE WHEN special_parts_status = 'pending' THEN 1 ELSE 0 END) as special_parts_count
+        ")->first();
+
+        $summary = [
+            'total'                => (int) ($typeStats->total_count ?? 0),
+            'in_store_count'       => (int) ($typeStats->in_store_count ?? 0),
+            'cod_count'            => (int) ($typeStats->cod_count ?? 0),
+            'warranty_count'       => (int) ($typeStats->warranty_count ?? 0),
+            'special_parts_count'  => (int) ($typeStats->special_parts_count ?? 0),
+            'unassigned_count'     => (int) ($baseStats->unassigned_count ?? 0),
+            'all_count'            => (int) ($baseStats->all_count ?? 0),
+            'open_count'           => (int) ($baseStats->open_count ?? 0),
+            'in_workshop_count'    => (int) ($baseStats->in_workshop_count ?? 0),
+            'waiting_pickup_count' => (int) ($baseStats->waiting_pickup_count ?? 0),
+            'waiting_qc_count'     => (int) ($baseStats->waiting_qc_count ?? 0),
+            'completed_count'      => (int) ($baseStats->completed_count ?? 0),
+        ];
+
+        if ($request->boolean('all') || $request->input('per_page') === 'all') {
+            $items = $query->latest('id')->limit(1000)->get();
+            $total = $items->count();
+
+            return $this->success([
+                'current_page'   => 1,
+                'data'           => $items,
+                'first_page_url' => $request->fullUrlWithQuery(['page' => 1]),
+                'from'           => $total > 0 ? 1 : null,
+                'last_page'      => 1,
+                'last_page_url'  => $request->fullUrlWithQuery(['page' => 1]),
+                'next_page_url'  => null,
+                'path'           => $request->url(),
+                'per_page'       => max($total, 1),
+                'prev_page_url'  => null,
+                'to'             => $total > 0 ? $total : null,
+                'total'          => $total,
+                'summary'        => $summary,
+            ], 'Lấy danh sách đơn sửa chữa thành công.');
+        }
+
+        $perPage = max(1, min(500, (int) $request->input('per_page', 15)));
+        $orders = $query->latest('id')->paginate($perPage);
+        $paginated = $orders->toArray();
+        $paginated['summary'] = $summary;
+
+        return $this->success($paginated, 'Lấy danh sách đơn sửa chữa thành công.');
     }
 
     /**

@@ -14,17 +14,39 @@ export interface PartnerItem {
   updated_at?: string;
 }
 
+export interface PartnerQueryParams {
+  status?: string;
+  service_type?: string;
+  q?: string;
+  search?: string;
+  per_page?: number | 'all';
+  all?: boolean;
+  page?: number;
+}
+
 export class PartnerService {
   constructor(private http: HttpClient = defaultHttpClient) {}
 
-  async getPartners(params?: {
-    status?: string;
-    service_type?: string;
-    q?: string;
-    per_page?: number;
-    page?: number;
-  }): Promise<any> {
-    return this.http.get('/api/v1/partners', { params });
+  async getPartners(params?: PartnerQueryParams): Promise<any> {
+    const cleanParams: Record<string, string | number | boolean> = {};
+    if (params) {
+      for (const [key, val] of Object.entries(params)) {
+        if (val !== undefined && val !== '') {
+          cleanParams[key] = val;
+        }
+      }
+      const queryText = params.q ?? params.search;
+      if (queryText !== undefined && String(queryText).trim() !== '') {
+        cleanParams.q = String(queryText).trim();
+      }
+      if (params.per_page === 'all' || params.all === true) {
+        cleanParams.per_page = 'all';
+        cleanParams.all = true;
+      }
+    }
+    return this.http.get('/api/v1/partners', {
+      params: Object.keys(cleanParams).length > 0 ? cleanParams : undefined,
+    });
   }
 
   async getPartnerById(id: number | string): Promise<any> {

@@ -7,6 +7,7 @@ import {
   TableSkeleton,
   ErrorFallback,
   Icon,
+  PaginationBar,
 } from '@podscare/ui';
 import { inventoryService } from '@podscare/api-client';
 import { useQuery } from '@tanstack/react-query';
@@ -60,6 +61,8 @@ export const StockTab: React.FC<StockTabProps> = ({
   const [selectedShelf, setSelectedShelf] = useState<string>('');
   const [selectedCategory, setSelectedCategory] = useState<string>('');
   const [onlyLowStock, setOnlyLowStock] = useState(false);
+  const [page, setPage] = useState<number>(1);
+  const [perPage, setPerPage] = useState<number | 'all'>(15);
   const [transactionModalOpen, setTransactionModalOpen] = useState(false);
 
   // Sync warehouse filter when context branchId changes or for non-admin
@@ -70,11 +73,13 @@ export const StockTab: React.FC<StockTabProps> = ({
     } else if (branchId !== undefined && branchId !== null) {
       setSelectedWarehouse(String(branchId));
     }
+    setPage(1);
   }, [branchId, role, currentUser]);
 
   const handleWarehouseFilterChange = (val: string) => {
     if (role !== 'admin') return;
     setSelectedWarehouse(val);
+    setPage(1);
     const found = branches.find((b) => String(b.id) === val);
     if (found && setBranch) {
       setBranch(found.name, found.id);
@@ -88,14 +93,16 @@ export const StockTab: React.FC<StockTabProps> = ({
     isError,
     refetch,
   } = useQuery({
-    queryKey: ['inventory-parts', selectedWarehouse, selectedCategory, onlyLowStock, search],
+    queryKey: ['inventory-parts', selectedWarehouse, selectedCategory, onlyLowStock, search, page, perPage],
     queryFn: async () => {
       const res = await inventoryService.getParts({
-        branch_id: selectedWarehouse ? Number(selectedWarehouse) : undefined,
+        branch_id: selectedWarehouse && selectedWarehouse !== 'all' ? Number(selectedWarehouse) : undefined, // branch_id: selectedWarehouse ? Number(selectedWarehouse) : undefined
         category: selectedCategory || undefined,
         low_stock: onlyLowStock ? true : undefined,
         q: search.trim() || undefined,
-        per_page: 50,
+        page: perPage === 'all' ? 1 : page,
+        per_page: perPage,
+        all: perPage === 'all' ? true : undefined,
       });
       return res?.data || res;
     },
@@ -165,24 +172,51 @@ export const StockTab: React.FC<StockTabProps> = ({
     });
   }, [allParts, selectedShelf]);
 
-  // Summary statistics
+  // Summary statistics (ưu tiên lấy từ apiPartsData.summary của Backend, fallback sang mảng hiện tại)
+  const serverSummary = apiPartsData?.summary;
   const stats = useMemo(() => {
-    const totalItems = filtered.reduce((acc, curr) => acc + curr.stock, 0);
-    const lowStockCount = filtered.filter((i) => i.stock <= i.min).length;
-    const totalEstValue = filtered.reduce((acc, curr) => acc + curr.stock * curr.rawPrice, 0);
-    const totalCostValue = filtered.reduce(
+    const fallbackTotalItems = filtered.reduce((acc, curr) => acc + curr.stock, 0);
+    const fallbackLowStockCount = filtered.filter((i) => i.stock <= i.min).length;
+    const fallbackOutOfStockCount = filtered.filter((i) => i.stock <= 0).length;
+    const fallbackTotalEstValue = filtered.reduce((acc, curr) => acc + curr.stock * curr.rawPrice, 0);
+    const fallbackTotalCostValue = filtered.reduce(
       (acc, curr) => acc + curr.stock * (curr.costPrice || 0),
       0
     );
 
+    const skuCount =
+      serverSummary?.total_sku ??
+      serverSummary?.total_parts ??
+      apiPartsData?.total ??
+      filtered.length;
+    const totalItems =
+      serverSummary?.total_quantity ??
+      serverSummary?.total_stock_quantity ??
+      fallbackTotalItems;
+    const lowStockCount =
+      serverSummary?.low_stock_count ?? fallbackLowStockCount;
+    const outOfStockCount =
+      serverSummary?.out_of_stock_count ?? fallbackOutOfStockCount;
+    const rawCostValue =
+      serverSummary?.total_stock_value ??
+      serverSummary?.total_cost_value ??
+      fallbackTotalCostValue;
+
     return {
-      skuCount: filtered.length,
+      skuCount,
       totalItems,
       lowStockCount,
-      totalEstValue: new Intl.NumberFormat('vi-VN').format(totalEstValue) + ' ₫',
-      totalCostValue: new Intl.NumberFormat('vi-VN').format(totalCostValue) + ' ₫',
+      outOfStockCount,
+      totalEstValue: new Intl.NumberFormat('vi-VN').format(fallbackTotalEstValue) + ' ₫',
+      totalCostValue: new Intl.NumberFormat('vi-VN').format(Number(rawCostValue) || 0) + ' ₫',
     };
-  }, [filtered]);
+  }, [filtered, serverSummary, apiPartsData]);
+
+  const total = apiPartsData?.total ?? filtered.length;
+  const currentPage = apiPartsData?.current_page ?? page;
+  const lastPage = apiPartsData?.last_page ?? 1;
+  const from = apiPartsData?.from ?? (filtered.length > 0 ? 1 : 0);
+  const to = apiPartsData?.to ?? filtered.length;
 
   const currentWarehouseName =
     selectedWarehouse === 'all'
@@ -208,6 +242,7 @@ export const StockTab: React.FC<StockTabProps> = ({
               setSelectedShelf('');
               setSelectedCategory('');
               setOnlyLowStock(false);
+              setPage(1);
               refetch();
             }}
           >
@@ -288,7 +323,10 @@ export const StockTab: React.FC<StockTabProps> = ({
               <input
                 type="text"
                 value={search}
-                onChange={(e) => setSearch(e.target.value)}
+                onChange={(e) => {
+                  setSearch(e.target.value);
+                  setPage(1);
+                }}
                 placeholder="Tìm mã SKU, tên, vị trí..."
                 className="w-full h-9 pl-3 pr-3 border border-[#e4eae6] rounded-[8px] text-xs text-[#2b3a32] bg-white outline-none focus:border-[#75a994] focus:ring-2 focus:ring-[#176b58]/10 transition-all placeholder:text-[#9aa59f]"
               />
@@ -325,7 +363,10 @@ export const StockTab: React.FC<StockTabProps> = ({
               <span className="text-xs text-[#7c8b84] font-medium hidden sm:inline">Kệ:</span>
               <select
                 value={selectedShelf}
-                onChange={(e) => setSelectedShelf(e.target.value)}
+                onChange={(e) => {
+                  setSelectedShelf(e.target.value);
+                  setPage(1);
+                }}
                 className="h-9 border border-[#e4eae6] rounded-[8px] px-2.5 text-xs text-[#4c5c54] bg-white outline-none focus:border-[#75a994] cursor-pointer"
               >
                 <option value="">Tất cả vị trí kệ</option>
@@ -341,7 +382,10 @@ export const StockTab: React.FC<StockTabProps> = ({
             <div className="flex items-center gap-1.5">
               <select
                 value={selectedCategory}
-                onChange={(e) => setSelectedCategory(e.target.value)}
+                onChange={(e) => {
+                  setSelectedCategory(e.target.value);
+                  setPage(1);
+                }}
                 className="h-9 border border-[#e4eae6] rounded-[8px] px-2.5 text-xs text-[#4c5c54] bg-white outline-none focus:border-[#75a994] cursor-pointer"
               >
                 <option value="">Tất cả danh mục</option>
@@ -359,7 +403,10 @@ export const StockTab: React.FC<StockTabProps> = ({
             <input
               type="checkbox"
               checked={onlyLowStock}
-              onChange={(e) => setOnlyLowStock(e.target.checked)}
+              onChange={(e) => {
+                setOnlyLowStock(e.target.checked);
+                setPage(1);
+              }}
               className="w-4 h-4 rounded text-[#176b58] accent-[#176b58] cursor-pointer"
             />
             <span className="text-xs font-semibold text-[#bc5b52]">Chỉ xem mã sắp hết hàng</span>
@@ -452,6 +499,20 @@ export const StockTab: React.FC<StockTabProps> = ({
             </table>
           </div>
         )}
+
+        <PaginationBar
+          testIdPrefix="inventory-stock"
+          itemLabel="mã linh kiện"
+          currentPage={currentPage}
+          lastPage={lastPage}
+          total={total}
+          from={from}
+          to={to}
+          perPage={perPage}
+          onPageChange={setPage}
+          onPerPageChange={setPerPage}
+          isLoading={isLoading}
+        />
       </div>
 
       {/* Transaction Modal */}

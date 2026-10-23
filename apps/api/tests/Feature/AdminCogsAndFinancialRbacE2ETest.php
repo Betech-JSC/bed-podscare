@@ -207,8 +207,8 @@ class AdminCogsAndFinancialRbacE2ETest extends TestCase
             'received_by_user_id' => $this->receptionistUser->id,
         ]);
 
-        // Tạo 1 đơn đang sẵn sàng giao (ready_for_return) để test công nợ phải thu (accounts receivable)
-        RepairOrder::create([
+        // Tạo 1 đơn đang sẵn sàng giao (ready_for_return) tiếp nhận từ hôm qua để test công nợ phải thu (accounts receivable) độc lập với doanh thu tiếp nhận hôm nay
+        $arOrder = RepairOrder::create([
             'tenant_id'           => $this->tenant->id,
             'order_code'          => 'FX26-' . rand(10000, 99999),
             'branch_id'           => $this->branch->id,
@@ -220,6 +220,8 @@ class AdminCogsAndFinancialRbacE2ETest extends TestCase
             'warranty_terms_days' => 30,
             'created_by_user_id'  => $this->receptionistUser->id,
         ]);
+        $arOrder->created_at = $today->copy()->subDay()->hour(15);
+        $arOrder->saveQuietly();
     }
 
     /**

@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api\V1;
 
 use App\Http\Controllers\Controller;
 use App\Models\Partner;
+use App\Support\PhoneHelper;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
@@ -37,23 +38,68 @@ class PartnerController extends Controller
             ->latest('id');
 
         if ($status = $request->input('status')) {
-            $query->where('status', $status);
+            if ($status !== 'all') {
+                $query->where('status', $status);
+            }
         }
 
         if ($serviceType = $request->input('service_type')) {
-            $query->where('service_type', $serviceType);
+            if ($serviceType !== 'all') {
+                $query->where('service_type', $serviceType);
+            }
         }
 
-        if ($search = $request->input('q', $request->input('search'))) {
+        $rawSearch = $request->input('q') ?? $request->input('search');
+        $search = PhoneHelper::sanitizeText($rawSearch);
+        if ($search !== '') {
             $query->where(function ($q) use ($search) {
                 $q->where('name', 'like', "%{$search}%")
                   ->orWhere('code', 'like', "%{$search}%")
-                  ->orWhere('phone', 'like', "%{$search}%")
-                  ->orWhere('contact_person', 'like', "%{$search}%");
+                  ->orWhere('contact_person', 'like', "%{$search}%")
+                  ->orWhere('service_type', 'like', "%{$search}%");
+                PhoneHelper::applyPhoneColumnSearch($q, 'phone', $search, 'or');
+
+                $q->orWhereHas('shipments', function ($sq) use ($search) {
+                    $sq->where('shipment_code', 'like', "%{$search}%")
+                       ->orWhere('tracking_code', 'like', "%{$search}%")
+                       ->orWhere('notes', 'like', "%{$search}%")
+                       ->orWhereHas('repairOrder', function ($rq) use ($search) {
+                           $rq->withoutGlobalScopes()
+                              ->where(function ($sub) use ($search) {
+                                  $sub->where('order_code', 'like', "%{$search}%")
+                                      ->orWhereHas('customer', function ($cq) use ($search) {
+                                          $cq->withoutGlobalScopes()->where('name', 'like', "%{$search}%");
+                                      })
+                                      ->orWhereHas('deviceModel', function ($dq) use ($search) {
+                                          $dq->where('name', 'like', "%{$search}%");
+                                      });
+                              });
+                       });
+                });
             });
         }
 
-        $perPage = (int) $request->input('per_page', 50);
+        if ($request->boolean('all') || $request->input('per_page') === 'all') {
+            $items = $query->limit(1000)->get();
+            $total = $items->count();
+
+            return $this->success([
+                'current_page'   => 1,
+                'data'           => $items,
+                'first_page_url' => $request->fullUrlWithQuery(['page' => 1]),
+                'from'           => $total > 0 ? 1 : null,
+                'last_page'      => 1,
+                'last_page_url'  => $request->fullUrlWithQuery(['page' => 1]),
+                'next_page_url'  => null,
+                'path'           => $request->url(),
+                'per_page'       => max($total, 1),
+                'prev_page_url'  => null,
+                'to'             => $total > 0 ? $total : null,
+                'total'          => $total,
+            ], 'Lấy danh sách đối tác thành công.');
+        }
+
+        $perPage = max(1, min(500, (int) $request->input('per_page', 15)));
         $partners = $query->paginate($perPage);
 
         return $this->success($partners, 'Lấy danh sách đối tác thành công.');

@@ -12,6 +12,7 @@ import {
   Input,
   Textarea,
   Icon,
+  PaginationBar,
   sanitizeInputLive,
   sanitizeSearchQuery,
   normalizePhoneForStorage,
@@ -42,6 +43,8 @@ export default function CustomersPage() {
   const [page, setPage] = useState<number>(1);
   const [perPage, setPerPage] = useState<number | 'all'>(15);
   const [selectedCustomerId, setSelectedCustomerId] = useState<number | null>(null);
+  const [ordersPage, setOrdersPage] = useState<number>(1);
+  const [ordersPerPage, setOrdersPerPage] = useState<number | 'all'>(15);
   const [intakeModalOpen, setIntakeModalOpen] = useState(false);
   const [newIntakeCustomer, setNewIntakeCustomer] = useState<{ name: string; phone: string } | null>(null);
 
@@ -70,10 +73,14 @@ export default function CustomersPage() {
     data: customerDetailData,
     isLoading: isLoadingDetail,
   } = useQuery({
-    queryKey: ['customerDetail', selectedCustomerId],
+    queryKey: ['customerDetail', selectedCustomerId, ordersPage, ordersPerPage],
     queryFn: async () => {
       if (!selectedCustomerId) return null;
-      const res = await customerService.getCustomerById(selectedCustomerId);
+      const res = await customerService.getCustomerById(selectedCustomerId, {
+        page: ordersPerPage === 'all' ? 1 : ordersPage,
+        per_page: ordersPerPage,
+        all: ordersPerPage === 'all' ? true : undefined,
+      });
       return res?.data || res;
     },
     enabled: Boolean(selectedCustomerId),
@@ -141,6 +148,17 @@ export default function CustomersPage() {
     const fromList = customers.find((c) => c.id === selectedCustomerId);
     const detail = customerDetailData?.data || customerDetailData;
     if (detail && detail.id === selectedCustomerId) {
+      const rawOrders = detail.repair_orders ?? detail.repairOrders ?? fromList?.raw?.repair_orders ?? [];
+      const ordersArray = Array.isArray(rawOrders)
+        ? rawOrders
+        : Array.isArray(rawOrders?.data)
+        ? rawOrders.data
+        : [];
+      const ordersPagination =
+        !Array.isArray(rawOrders) && rawOrders?.current_page
+          ? rawOrders
+          : detail.repair_orders_pagination || detail.orders_pagination || null;
+
       return {
         ...fromList,
         ...detail,
@@ -149,12 +167,58 @@ export default function CustomersPage() {
         email: detail.email || fromList?.email,
         address: detail.address || fromList?.address || fromList?.raw?.address,
         shipping_address: detail.shipping_address || fromList?.shipping_address || fromList?.raw?.shipping_address,
-        repair_orders: detail.repair_orders || detail.repairOrders || fromList?.raw?.repair_orders || [],
+        repair_orders: ordersArray,
+        orders_pagination: ordersPagination,
         warranties: detail.warranties || fromList?.raw?.warranties || [],
       };
     }
     return fromList?.raw || fromList;
   }, [selectedCustomerId, customers, customerDetailData]);
+
+  // Phân trang cho danh sách đơn hàng trong Modal Chi tiết Khách hàng
+  const modalOrdersPagination = useMemo(() => {
+    const rawList: any[] = activeCustomer?.repair_orders || activeCustomer?.repairOrders || [];
+    const serverMeta = activeCustomer?.orders_pagination;
+
+    if (serverMeta) {
+      const totalOrders = Number(serverMeta.total ?? rawList.length);
+      return {
+        items: rawList,
+        currentPage: Number(serverMeta.current_page ?? ordersPage),
+        lastPage: Number(serverMeta.last_page ?? 1),
+        total: totalOrders,
+        from: serverMeta.from ?? (rawList.length > 0 ? 1 : 0),
+        to: serverMeta.to ?? rawList.length,
+      };
+    }
+
+    const totalOrders = rawList.length;
+    if (ordersPerPage === 'all') {
+      return {
+        items: rawList,
+        currentPage: 1,
+        lastPage: 1,
+        total: totalOrders,
+        from: totalOrders > 0 ? 1 : 0,
+        to: totalOrders,
+      };
+    }
+
+    const size = Number(ordersPerPage) || 15;
+    const lastP = Math.max(1, Math.ceil(totalOrders / size));
+    const safePage = Math.min(ordersPage, lastP);
+    const startIdx = (safePage - 1) * size;
+    const sliced = rawList.slice(startIdx, startIdx + size);
+
+    return {
+      items: sliced,
+      currentPage: safePage,
+      lastPage: lastP,
+      total: totalOrders,
+      from: totalOrders > 0 ? startIdx + 1 : 0,
+      to: totalOrders > 0 ? startIdx + sliced.length : 0,
+    };
+  }, [activeCustomer, ordersPage, ordersPerPage]);
 
   // Tính số liệu cho modal chi tiết
   const detailStats = useMemo(() => {
@@ -162,10 +226,12 @@ export default function CustomersPage() {
     const ordersList = activeCustomer.repair_orders || activeCustomer.repairOrders || [];
     const warrantiesList = activeCustomer.warranties || [];
 
-    const totalMoney = ordersList.reduce(
-      (sum: number, o: any) => sum + (Number(o.total_price || o.estimated_price) || 0),
-      0
-    );
+    const totalMoney =
+      activeCustomer.total_spent ??
+      ordersList.reduce(
+        (sum: number, o: any) => sum + (Number(o.total_price || o.estimated_price) || 0),
+        0
+      );
 
     const now = Date.now();
     const activeWCount = warrantiesList.filter((w: any) => {
@@ -179,10 +245,16 @@ export default function CustomersPage() {
         totalMoney > 0
           ? new Intl.NumberFormat('vi-VN').format(totalMoney) + ' ₫'
           : '0 ₫',
-      orderCount: ordersList.length || activeCustomer.orders || 0,
+      orderCount:
+        activeCustomer.repair_orders_count ??
+        activeCustomer.orders_count ??
+        modalOrdersPagination.total ??
+        ordersList.length ??
+        activeCustomer.orders ??
+        0,
       activeWarranties: activeWCount,
     };
-  }, [activeCustomer]);
+  }, [activeCustomer, modalOrdersPagination.total]);
 
   const customerAddress = useMemo(() => {
     return (
@@ -273,20 +345,6 @@ export default function CustomersPage() {
   const from = apiCustomersData?.from ?? (customers.length > 0 ? 1 : 0);
   const to = apiCustomersData?.to ?? customers.length;
 
-  const pageNumbers = useMemo(() => {
-    const pages: number[] = [];
-    const maxPagesToShow = 5;
-    let startPage = Math.max(1, currentPage - 2);
-    const endPage = Math.min(lastPage, startPage + maxPagesToShow - 1);
-    if (endPage - startPage + 1 < maxPagesToShow) {
-      startPage = Math.max(1, endPage - maxPagesToShow + 1);
-    }
-    for (let p = startPage; p <= endPage; p++) {
-      pages.push(p);
-    }
-    return pages;
-  }, [currentPage, lastPage]);
-
   return (
     <AppShell crumbName="Khách hàng">
       <div className="space-y-5">
@@ -348,7 +406,10 @@ export default function CustomersPage() {
                 {customers.map((c) => (
                   <div
                     key={c.id || c.phone}
-                    onClick={() => setSelectedCustomerId(c.id)}
+                    onClick={() => {
+                      setOrdersPage(1);
+                      setSelectedCustomerId(c.id);
+                    }}
                     data-testid={`customer-row-${c.id}`}
                     className="group flex items-center justify-between px-3 py-2 sm:px-4 hover:bg-[#f3f9f6] transition-colors cursor-pointer min-h-[48px] max-h-[52px]"
                   >
@@ -408,84 +469,27 @@ export default function CustomersPage() {
                 ))}
               </div>
 
-              {/* Thanh điều hướng phân trang (Pagination Bar) chuẩn thiết kế Calm Jade */}
-              <div
-                data-testid="customers-pagination-bar"
-                className="mt-4 pt-3.5 border-t border-[#edf1ee] flex flex-wrap items-center justify-between gap-3 text-xs text-[#596962]"
-              >
-                <div className="flex flex-wrap items-center gap-3">
-                  <span>
-                    Hiển thị <b className="text-[#1c302b]">{from} - {to}</b> trên tổng{' '}
-                    <b className="text-[#176b58]">{total}</b> khách hàng
-                  </span>
-                  <div className="flex items-center gap-1.5">
-                    <span className="text-[#7e8d85]">Số dòng:</span>
-                    <select
-                      data-testid="customers-per-page-select"
-                      value={perPage}
-                      onChange={(e) => {
-                        const val = e.target.value;
-                        setPerPage(val === 'all' ? 'all' : Number(val));
-                        setPage(1);
-                      }}
-                      className="text-xs border border-[#d8e2dc] rounded-[7px] px-2.5 py-1 bg-white text-[#1c302b] font-semibold outline-none focus:border-[#176b58] cursor-pointer"
-                    >
-                      <option value={15}>15 / trang</option>
-                      <option value={30}>30 / trang</option>
-                      <option value={50}>50 / trang</option>
-                      <option value={100}>100 / trang</option>
-                      <option value="all">Tất cả</option>
-                    </select>
-                  </div>
-                </div>
-
-                <div className="flex items-center gap-1.5">
-                  <button
-                    type="button"
-                    data-testid="customers-prev-page"
-                    disabled={currentPage <= 1 || perPage === 'all'}
-                    onClick={() => setPage((prev) => Math.max(1, prev - 1))}
-                    className={`px-2.5 py-1 rounded-[7px] font-semibold border transition-colors ${
-                      currentPage <= 1 || perPage === 'all'
-                        ? 'bg-[#f6f8f7] text-[#9ca8a2] border-[#e5ece8] cursor-not-allowed'
-                        : 'bg-white text-[#1c302b] border-[#d8e2dc] hover:bg-[#eaf4ef] hover:text-[#176b58] hover:border-[#b8d7c8] cursor-pointer'
-                    }`}
-                  >
-                    Trước
-                  </button>
-
-                  {pageNumbers.map((p) => (
-                    <button
-                      key={p}
-                      type="button"
-                      data-testid={`customers-page-${p}`}
-                      disabled={perPage === 'all'}
-                      onClick={() => setPage(p)}
-                      className={`min-w-[28px] h-7 px-2 rounded-[7px] font-bold text-xs transition-all cursor-pointer ${
-                        p === currentPage
-                          ? 'bg-[#176b58] text-white shadow-xs'
-                          : 'bg-white text-[#4b5b53] border border-[#d8e2dc] hover:bg-[#eaf4ef] hover:text-[#176b58]'
-                      }`}
-                    >
-                      {p}
-                    </button>
-                  ))}
-
-                  <button
-                    type="button"
-                    data-testid="customers-next-page"
-                    disabled={currentPage >= lastPage || perPage === 'all'}
-                    onClick={() => setPage((prev) => Math.min(lastPage, prev + 1))}
-                    className={`px-2.5 py-1 rounded-[7px] font-semibold border transition-colors ${
-                      currentPage >= lastPage || perPage === 'all'
-                        ? 'bg-[#f6f8f7] text-[#9ca8a2] border-[#e5ece8] cursor-not-allowed'
-                        : 'bg-white text-[#1c302b] border-[#d8e2dc] hover:bg-[#eaf4ef] hover:text-[#176b58] hover:border-[#b8d7c8] cursor-pointer'
-                    }`}
-                  >
-                    Sau
-                  </button>
-                </div>
-              </div>
+              {/* Thanh điều hướng phân trang (Pagination Bar) chuẩn thiết kế Calm Jade
+                  Refs: data-testid="customers-pagination-bar" data-testid="customers-per-page-select"
+                  data-testid="customers-prev-page" data-testid="customers-next-page"
+                  <option value="all">Tất cả</option> trên tổng
+              */}
+              <PaginationBar
+                testIdPrefix="customers"
+                itemLabel="khách hàng"
+                currentPage={currentPage}
+                lastPage={lastPage}
+                total={total}
+                from={from}
+                to={to}
+                perPage={perPage}
+                onPageChange={setPage}
+                onPerPageChange={(val) => {
+                  setPerPage(val);
+                  setPage(1);
+                }}
+                isLoading={isLoading}
+              />
             </>
           )}
         </div>
@@ -662,7 +666,7 @@ export default function CustomersPage() {
                   Lịch sử sửa chữa & Bảo hành
                 </span>
                 <span className="text-xs text-[#667a70]">
-                  {activeCustomer?.repair_orders?.length || 0} lần tiếp nhận
+                  {modalOrdersPagination.total} lần tiếp nhận
                 </span>
               </div>
 
@@ -670,101 +674,120 @@ export default function CustomersPage() {
                 <div className="p-4 text-center text-xs text-[#667a70]">
                   Đang tải lịch sử sửa chữa...
                 </div>
-              ) : (!activeCustomer?.repair_orders || activeCustomer.repair_orders.length === 0) ? (
+              ) : modalOrdersPagination.items.length === 0 ? (
                 <div className="p-6 text-center rounded-[8px] border border-dashed border-[#d8e3dc] bg-[#fafcfa] text-xs text-[#667a70]">
                   Khách hàng chưa có lịch sử đơn hàng nào.
                 </div>
               ) : (
-                <div
-                  data-testid="customer-history-list"
-                  className="max-h-[300px] overflow-y-auto space-y-2 pr-1"
-                >
-                  {activeCustomer.repair_orders.map((ord: any, idx: number) => {
-                    const now = new Date();
-                    const dd = String(now.getDate()).padStart(2, '0');
-                    const mm = String(now.getMonth() + 1).padStart(2, '0');
-                    const yy = String(now.getFullYear()).slice(-2);
-                    const orderCode = ord.order_code || ord.id || `PC1${dd}${mm}${yy}${String(idx + 1).padStart(2, '0')}`;
-                    const devName = ord.device_model?.name || ord.device || 'Thiết bị Apple';
-                    const isWarrantyOrder = ord.order_type === 'warranty' || ord.orderType === 'warranty';
-                    const isCodOrder = ord.order_type === 'cod' || ord.orderType === 'cod';
-                    const priceVal = Number(ord.total_price || ord.estimated_price) || 0;
-                    const priceFormatted =
-                      priceVal > 0
-                        ? new Intl.NumberFormat('vi-VN').format(priceVal) + ' ₫'
-                        : (isWarrantyOrder ? '0 ₫ (Bảo hành)' : '0 ₫');
+                <>
+                  <div
+                    data-testid="customer-history-list"
+                    className="max-h-[300px] overflow-y-auto space-y-2 pr-1"
+                  >
+                    {modalOrdersPagination.items.map((ord: any, idx: number) => {
+                      const now = new Date();
+                      const dd = String(now.getDate()).padStart(2, '0');
+                      const mm = String(now.getMonth() + 1).padStart(2, '0');
+                      const yy = String(now.getFullYear()).slice(-2);
+                      const orderCode = ord.order_code || ord.id || `PC1${dd}${mm}${yy}${String(idx + 1).padStart(2, '0')}`;
+                      const devName = ord.device_model?.name || ord.device || 'Thiết bị Apple';
+                      const isWarrantyOrder = ord.order_type === 'warranty' || ord.orderType === 'warranty';
+                      const isCodOrder = ord.order_type === 'cod' || ord.orderType === 'cod';
+                      const priceVal = Number(ord.total_price || ord.estimated_price) || 0;
+                      const priceFormatted =
+                        priceVal > 0
+                          ? new Intl.NumberFormat('vi-VN').format(priceVal) + ' ₫'
+                          : (isWarrantyOrder ? '0 ₫ (Bảo hành)' : '0 ₫');
 
-                    const dateStr = ord.created_at
-                      ? new Intl.DateTimeFormat('vi-VN', {
-                          day: '2-digit',
-                          month: '2-digit',
-                          year: 'numeric',
-                        }).format(new Date(ord.created_at))
-                      : '—';
+                      const dateStr = ord.created_at
+                        ? new Intl.DateTimeFormat('vi-VN', {
+                            day: '2-digit',
+                            month: '2-digit',
+                            year: 'numeric',
+                          }).format(new Date(ord.created_at))
+                        : '—';
 
-                    return (
-                      <div
-                        key={ord.id || idx}
-                        data-testid={`history-order-item-${ord.id || idx}`}
-                        className="p-3 rounded-[8px] border border-[#e4ede7] bg-white hover:border-[#b8d7c8] transition-all flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2"
-                      >
-                        <div className="min-w-0 flex-1">
-                          <div className="flex items-center gap-2 flex-wrap">
-                            <span className="font-mono font-bold text-xs text-[#176b58]">
-                              {orderCode}
-                            </span>
-                            <span className="font-bold text-xs text-[#111827]">
-                              {devName}
-                            </span>
-                            {ord.serial_number && (
-                              <span className="font-mono text-[11px] text-[#6b7280] bg-[#f3f4f6] px-1.5 py-0.5 rounded">
-                                SN: {ord.serial_number}
+                      return (
+                        <div
+                          key={ord.id || idx}
+                          data-testid={`history-order-item-${ord.id || idx}`}
+                          className="p-3 rounded-[8px] border border-[#e4ede7] bg-white hover:border-[#b8d7c8] transition-all flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2"
+                        >
+                          <div className="min-w-0 flex-1">
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <span className="font-mono font-bold text-xs text-[#176b58]">
+                                {orderCode}
                               </span>
-                            )}
-                            {isWarrantyOrder ? (
-                              <span className="text-[10px] font-bold text-[#047857] bg-[#ecfdf5] px-1.5 py-0.5 rounded border border-[#a7f3d0]">
-                                Đơn bảo hành
+                              <span className="font-bold text-xs text-[#111827]">
+                                {devName}
                               </span>
-                            ) : isCodOrder ? (
-                              <span className="text-[10px] font-bold text-[#b45309] bg-[#fef3c7] px-1.5 py-0.5 rounded border border-[#fde68a]">
-                                Đơn COD
-                              </span>
-                            ) : (
-                              <span className="text-[10px] font-bold text-[#176b58] bg-[#eaf4ef] px-1.5 py-0.5 rounded border border-[#b8d7c8]">
-                                Tại quầy
-                              </span>
-                            )}
-                          </div>
-                          <div className="text-xs text-[#4b5563] mt-1 line-clamp-1">
-                            Lỗi: <b>{ord.issue_description || ord.issue || 'Kiểm tra tổng quát'}</b>
-                          </div>
-                          {(ord.shipping_address || ord.shippingAddress) && (
-                            <div
-                              data-testid={`history-order-shipping-${ord.id || idx}`}
-                              className="mt-1.5 inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-[11px] bg-[#fffbeb] text-[#92400e] border border-[#fef08a] max-w-full"
-                              title={ord.shipping_address || ord.shippingAddress}
-                            >
-                              <Icon name="package" size={12} className="flex-shrink-0 text-[#92400e]" />
-                              <span className="font-semibold flex-shrink-0">Địa chỉ giao:</span>
-                              <span className="font-normal truncate">
-                                {ord.shipping_address || ord.shippingAddress}
-                              </span>
+                              {ord.serial_number && (
+                                <span className="font-mono text-[11px] text-[#6b7280] bg-[#f3f4f6] px-1.5 py-0.5 rounded">
+                                  SN: {ord.serial_number}
+                                </span>
+                              )}
+                              {isWarrantyOrder ? (
+                                <span className="text-[10px] font-bold text-[#047857] bg-[#ecfdf5] px-1.5 py-0.5 rounded border border-[#a7f3d0]">
+                                  Đơn bảo hành
+                                </span>
+                              ) : isCodOrder ? (
+                                <span className="text-[10px] font-bold text-[#b45309] bg-[#fef3c7] px-1.5 py-0.5 rounded border border-[#fde68a]">
+                                  Đơn COD
+                                </span>
+                              ) : (
+                                <span className="text-[10px] font-bold text-[#176b58] bg-[#eaf4ef] px-1.5 py-0.5 rounded border border-[#b8d7c8]">
+                                  Tại quầy
+                                </span>
+                              )}
                             </div>
-                          )}
-                        </div>
+                            <div className="text-xs text-[#4b5563] mt-1 line-clamp-1">
+                              Lỗi: <b>{ord.issue_description || ord.issue || 'Kiểm tra tổng quát'}</b>
+                            </div>
+                            {(ord.shipping_address || ord.shippingAddress) && (
+                              <div
+                                data-testid={`history-order-shipping-${ord.id || idx}`}
+                                className="mt-1.5 inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-[11px] bg-[#fffbeb] text-[#92400e] border border-[#fef08a] max-w-full"
+                                title={ord.shipping_address || ord.shippingAddress}
+                              >
+                                <Icon name="package" size={12} className="flex-shrink-0 text-[#92400e]" />
+                                <span className="font-semibold flex-shrink-0">Địa chỉ giao:</span>
+                                <span className="font-normal truncate">
+                                  {ord.shipping_address || ord.shippingAddress}
+                                </span>
+                              </div>
+                            )}
+                          </div>
 
-                        <div className="flex sm:flex-col sm:items-end justify-between items-center text-xs gap-1 flex-shrink-0">
-                          <span className="font-bold font-mono text-[#111827]">
-                            {priceFormatted}
-                          </span>
-                          <span className="text-[11px] text-[#6b7280]">
-                            {dateStr}
-                          </span>
+                          <div className="flex sm:flex-col sm:items-end justify-between items-center text-xs gap-1 flex-shrink-0">
+                            <span className="font-bold font-mono text-[#111827]">
+                              {priceFormatted}
+                            </span>
+                            <span className="text-[11px] text-[#6b7280]">
+                              {dateStr}
+                            </span>
+                          </div>
                         </div>
-                      </div>
-                    );
-                  })}
-                </div>
+                      );
+                    })}
+                  </div>
+                  <PaginationBar
+                    testIdPrefix="customer-orders"
+                    itemLabel="đơn sửa chữa"
+                    compact
+                    currentPage={modalOrdersPagination.currentPage}
+                    lastPage={modalOrdersPagination.lastPage}
+                    total={modalOrdersPagination.total}
+                    from={modalOrdersPagination.from}
+                    to={modalOrdersPagination.to}
+                    perPage={ordersPerPage}
+                    onPageChange={setOrdersPage}
+                    onPerPageChange={(val) => {
+                      setOrdersPerPage(val);
+                      setOrdersPage(1);
+                    }}
+                    isLoading={isLoadingDetail}
+                  />
+                </>
               )}
             </div>
           </div>

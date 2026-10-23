@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect, useCallback } from 'react';
 import { partnerService, type PartnerItem } from '@podscare/api-client';
-import { Button, StatusTag, FilterBar, EmptyState, Modal, useToast, StatCard } from '@podscare/ui';
+import { Button, StatusTag, FilterBar, EmptyState, Modal, useToast, StatCard, PaginationBar } from '@podscare/ui';
 import { AppShell } from '../components/AppShell';
 
 interface FormattedPartner {
@@ -24,6 +24,15 @@ export default function PartnersPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [typeFilter, setTypeFilter] = useState('all');
+  const [page, setPage] = useState<number>(1);
+  const [perPage, setPerPage] = useState<number | 'all'>(15);
+  const [meta, setMeta] = useState({
+    current_page: 1,
+    last_page: 1,
+    total: 0,
+    from: 0 as number | null,
+    to: 0 as number | null,
+  });
 
   // Modal create partner
   const [addModalOpen, setAddModalOpen] = useState(false);
@@ -52,8 +61,14 @@ export default function PartnersPage() {
   const loadPartners = useCallback(async () => {
     setIsLoading(true);
     try {
-      const res = await partnerService.getPartners({ per_page: 50 });
-      const raw = res?.data;
+      const res = await partnerService.getPartners({
+        q: search.trim() || undefined,
+        service_type: typeFilter !== 'all' ? typeFilter : undefined,
+        page: perPage === 'all' ? 1 : page,
+        per_page: perPage,
+        all: perPage === 'all' ? true : undefined,
+      });
+      const raw: any = res?.data;
       const list: PartnerItem[] = Array.isArray(raw) ? raw : (raw?.data || []);
 
       if (Array.isArray(list) && list.length > 0) {
@@ -70,16 +85,25 @@ export default function PartnersPage() {
           shipmentsCount: Number(p.shipments_count) || 0,
         }));
         setPartners(mapped);
+        setMeta({
+          current_page: Number(raw?.current_page ?? (perPage === 'all' ? 1 : page)),
+          last_page: Number(raw?.last_page ?? 1),
+          total: Number(raw?.total ?? mapped.length),
+          from: raw?.from ?? (mapped.length > 0 ? 1 : 0),
+          to: raw?.to ?? mapped.length,
+        });
       } else {
         setPartners([]);
+        setMeta({ current_page: 1, last_page: 1, total: 0, from: 0, to: 0 });
       }
     } catch (err) {
       console.warn('Could not fetch partners from API:', err);
       setPartners([]);
+      setMeta({ current_page: 1, last_page: 1, total: 0, from: 0, to: 0 });
     } finally {
       setIsLoading(false);
     }
-  }, []);
+  }, [search, typeFilter, page, perPage]);
 
   useEffect(() => {
     loadPartners();
@@ -222,14 +246,20 @@ export default function PartnersPage() {
             <div className="flex-1 min-w-[240px]">
               <FilterBar
                 searchValue={search}
-                onSearchChange={setSearch}
+                onSearchChange={(val) => {
+                  setSearch(val);
+                  setPage(1);
+                }}
                 searchPlaceholder="Tìm theo tên đối tác, mã đại lý, người liên hệ, số điện thoại..."
               />
             </div>
             <div className="flex items-center gap-2">
               <select
                 value={typeFilter}
-                onChange={(e) => setTypeFilter(e.target.value)}
+                onChange={(e) => {
+                  setTypeFilter(e.target.value);
+                  setPage(1);
+                }}
                 className="text-xs border border-[#e4eae6] rounded-[7px] px-3 py-2 bg-white text-[#55655d] outline-none"
               >
                 <option value="all">Tất cả phân loại</option>
@@ -260,62 +290,81 @@ export default function PartnersPage() {
                 if (search || typeFilter !== 'all') {
                   setSearch('');
                   setTypeFilter('all');
+                  setPage(1);
                 } else {
                   setAddModalOpen(true);
                 }
               }}
             />
           ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-              {filtered.map((p) => (
-                <div
-                  key={p.id}
-                  className="bg-white border border-[#e5ece8] rounded-[10px] p-4 flex flex-col justify-between hover:border-[#b4d6c4] hover:shadow-xs transition-all"
-                >
-                  <div>
-                    <div className="flex justify-between items-start mb-2">
-                      <span className="font-mono text-xs font-bold px-2 py-0.5 rounded bg-[#eaf4ef] text-[#176b58]">
-                        {p.code}
-                      </span>
-                      <StatusTag label={p.status} type={p.statusType} />
+            <>
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                {filtered.map((p) => (
+                  <div
+                    key={p.id}
+                    className="bg-white border border-[#e5ece8] rounded-[10px] p-4 flex flex-col justify-between hover:border-[#b4d6c4] hover:shadow-xs transition-all"
+                  >
+                    <div>
+                      <div className="flex justify-between items-start mb-2">
+                        <span className="font-mono text-xs font-bold px-2 py-0.5 rounded bg-[#eaf4ef] text-[#176b58]">
+                          {p.code}
+                        </span>
+                        <StatusTag label={p.status} type={p.statusType} />
+                      </div>
+
+                      <h3 className="font-heading font-bold text-sm text-[#1c302b] m-0 mb-1 leading-snug">
+                        {p.name}
+                      </h3>
+                      <div className="text-xs font-medium text-[#176b58] mb-3">
+                        {p.serviceTypeLabel}
+                      </div>
+
+                      <div className="space-y-1.5 text-xs text-[#52635a] pt-2.5 border-t border-[#f0f3f1]">
+                        <div className="flex items-center gap-2">
+                          <span className="text-[#84948c] w-20 flex-none">Người liên hệ:</span>
+                          <b className="text-[#20312a] truncate">{p.contactPerson}</b>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <span className="text-[#84948c] w-20 flex-none">Điện thoại:</span>
+                          <span className="font-mono text-[#1c302b] font-medium">{p.phone}</span>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <span className="text-[#84948c] w-20 flex-none">Vận đơn xử lý:</span>
+                          <span className="font-bold text-[#176b58]">{p.shipmentsCount} lượt</span>
+                        </div>
+                      </div>
                     </div>
 
-                    <h3 className="font-heading font-bold text-sm text-[#1c302b] m-0 mb-1 leading-snug">
-                      {p.name}
-                    </h3>
-                    <div className="text-xs font-medium text-[#176b58] mb-3">
-                      {p.serviceTypeLabel}
-                    </div>
-
-                    <div className="space-y-1.5 text-xs text-[#52635a] pt-2.5 border-t border-[#f0f3f1]">
-                      <div className="flex items-center gap-2">
-                        <span className="text-[#84948c] w-20 flex-none">Người liên hệ:</span>
-                        <b className="text-[#20312a] truncate">{p.contactPerson}</b>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <span className="text-[#84948c] w-20 flex-none">Điện thoại:</span>
-                        <span className="font-mono text-[#1c302b] font-medium">{p.phone}</span>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <span className="text-[#84948c] w-20 flex-none">Vận đơn xử lý:</span>
-                        <span className="font-bold text-[#176b58]">{p.shipmentsCount} lượt</span>
-                      </div>
+                    <div className="pt-3 mt-3 border-t border-[#f0f3f1] flex items-center justify-between">
+                      <button
+                        type="button"
+                        onClick={() => toast(`Đang kết nối API với đối tác ${p.code}...`, 'info')}
+                        className="text-xs font-bold text-[#176b58] hover:underline flex items-center gap-1"
+                      >
+                        Kết nối API <span>↗</span>
+                      </button>
+                      <span className="text-xs text-[#8a9690]">ID #{p.id}</span>
                     </div>
                   </div>
-
-                  <div className="pt-3 mt-3 border-t border-[#f0f3f1] flex items-center justify-between">
-                    <button
-                      type="button"
-                      onClick={() => toast(`Đang kết nối API với đối tác ${p.code}...`, 'info')}
-                      className="text-xs font-bold text-[#176b58] hover:underline flex items-center gap-1"
-                    >
-                      Kết nối API <span>↗</span>
-                    </button>
-                    <span className="text-xs text-[#8a9690]">ID #{p.id}</span>
-                  </div>
-                </div>
-              ))}
-            </div>
+                ))}
+              </div>
+              <PaginationBar
+                testIdPrefix="partners"
+                itemLabel="đơn đối tác"
+                currentPage={meta.current_page}
+                lastPage={meta.last_page}
+                total={meta.total || filtered.length}
+                from={meta.from}
+                to={meta.to}
+                perPage={perPage}
+                onPageChange={setPage}
+                onPerPageChange={(val) => {
+                  setPerPage(val);
+                  setPage(1);
+                }}
+                isLoading={isLoading}
+              />
+            </>
           )}
         </div>
 

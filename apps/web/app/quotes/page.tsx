@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { quoteService, repairService, type QuoteRecord } from '@podscare/api-client';
 import {
@@ -13,6 +13,11 @@ import {
   useToast,
   TableSkeleton,
   EmptyState,
+  FilterBar,
+  PaginationBar,
+  sanitizeInputLive,
+  sanitizeSearchQuery,
+  matchesPhoneFlexible,
 } from '@podscare/ui';
 import { AppShell } from '../components/AppShell';
 import { usePodsCare } from '../providers';
@@ -33,6 +38,15 @@ export default function QuotesPage() {
   const [quoteNote, setQuoteNote] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
 
+  const [search, setSearch] = useState('');
+  const [filterStatus, setFilterStatus] = useState<string>('all');
+  const [page, setPage] = useState<number>(1);
+  const [perPage, setPerPage] = useState<number | 'all'>(15);
+
+  useEffect(() => {
+    setPage(1);
+  }, [search, filterStatus]);
+
   // Fetch real quotes list from API
   const {
     data: quotes = [],
@@ -41,7 +55,7 @@ export default function QuotesPage() {
   } = useQuery({
     queryKey: ['quotes'],
     queryFn: async () => {
-      const res = await quoteService.getQuotes();
+      const res = await quoteService.getQuotes({ per_page: 'all', all: true });
       const raw = res?.data;
       return Array.isArray(raw)
         ? raw
@@ -50,9 +64,43 @@ export default function QuotesPage() {
   });
 
   // Orders that are waiting for quote approval or inspection
-  const quoteCandidates = orders.filter((o) =>
-    ['Chờ khách duyệt', 'Đang kiểm tra', 'Tiếp nhận mới'].includes(o.status)
-  );
+  const quoteCandidates = useMemo(() => {
+    const cleanQ = sanitizeSearchQuery(search).toLowerCase();
+    return orders.filter((o) => {
+      const isCandidate = ['Chờ khách duyệt', 'Đang kiểm tra', 'Tiếp nhận mới'].includes(
+        o.status
+      );
+      if (!isCandidate) return false;
+      if (filterStatus !== 'all' && o.status !== filterStatus) return false;
+      if (!cleanQ) return true;
+      return (
+        o.id.toLowerCase().includes(cleanQ) ||
+        o.name.toLowerCase().includes(cleanQ) ||
+        o.phone.toLowerCase().includes(cleanQ) ||
+        matchesPhoneFlexible(o.phone, cleanQ) ||
+        o.device.toLowerCase().includes(cleanQ) ||
+        o.issue.toLowerCase().includes(cleanQ)
+      );
+    });
+  }, [orders, search, filterStatus]);
+
+  const total = quoteCandidates.length;
+  const numericPerPage = perPage === 'all' ? Math.max(1, total) : perPage;
+  const lastPage = perPage === 'all' ? 1 : Math.max(1, Math.ceil(total / numericPerPage));
+  const currentPage = Math.min(page, lastPage);
+  const from = total === 0 ? 0 : perPage === 'all' ? 1 : (currentPage - 1) * numericPerPage + 1;
+  const to =
+    total === 0
+      ? 0
+      : perPage === 'all'
+      ? total
+      : Math.min(total, currentPage * numericPerPage);
+
+  const paginatedQuotes = useMemo(() => {
+    if (perPage === 'all') return quoteCandidates;
+    const start = (currentPage - 1) * numericPerPage;
+    return quoteCandidates.slice(start, start + numericPerPage);
+  }, [quoteCandidates, perPage, currentPage, numericPerPage]);
 
   const normalizeVndPrice = (raw: unknown): number => {
     const val = Number(raw) || 0;
@@ -226,6 +274,24 @@ export default function QuotesPage() {
         </div>
 
         <div className="bg-white rounded-[10px] border border-[#e5ece8] p-4 sm:p-5 shadow-xs">
+          <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+            <div className="flex-1 min-w-[260px]">
+              <FilterBar
+                searchValue={search}
+                onSearchChange={(val) => setSearch(sanitizeInputLive(val))}
+                searchPlaceholder="Tìm mã đơn, tên khách hàng, SĐT, thiết bị..."
+                selectValue={filterStatus === 'all' ? '' : filterStatus}
+                onSelectChange={(val) => setFilterStatus(val || 'all')}
+                selectPlaceholder="Tất cả trạng thái"
+                selectOptions={[
+                  { value: 'Chờ khách duyệt', label: 'Chờ khách duyệt' },
+                  { value: 'Đang kiểm tra', label: 'Đang kiểm tra' },
+                  { value: 'Tiếp nhận mới', label: 'Tiếp nhận mới' },
+                ]}
+              />
+            </div>
+          </div>
+
           {isQuotesLoading && quoteCandidates.length === 0 ? (
             <TableSkeleton rows={4} cols={6} />
           ) : quoteCandidates.length === 0 ? (
@@ -247,7 +313,7 @@ export default function QuotesPage() {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-[#f1f3f2] text-sm">
-                  {quoteCandidates.map((o) => (
+                  {paginatedQuotes.map((o) => (
                     <tr key={o.id} className="h-12 hover:bg-[#fafcfa]">
                       <td className="px-3 font-mono font-bold text-[#176b58]">{o.id}</td>
                       <td className="px-3">
@@ -299,6 +365,23 @@ export default function QuotesPage() {
               </table>
             </div>
           )}
+
+          <PaginationBar
+            total={total}
+            currentPage={currentPage}
+            lastPage={lastPage}
+            perPage={perPage}
+            from={from}
+            to={to}
+            onPageChange={(nextPage) => setPage(nextPage)}
+            onPerPageChange={(nextPerPage) => {
+              setPerPage(nextPerPage);
+              setPage(1);
+            }}
+            itemLabel="báo giá"
+            testIdPrefix="quotes"
+            className="mt-4"
+          />
         </div>
       </div>
 

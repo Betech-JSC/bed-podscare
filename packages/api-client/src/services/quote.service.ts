@@ -55,16 +55,33 @@ export interface CreateQuoteDTO {
   items: CreateQuoteItemDTO[];
 }
 
+export interface QuoteFilterDTO {
+  repair_order_id?: string | number;
+  status?: string;
+  q?: string;
+  search?: string;
+  page?: number;
+  per_page?: number | 'all';
+  all?: boolean;
+  [key: string]: any;
+}
+
 export class QuoteService {
   constructor(private http: HttpClient = defaultHttpClient) {}
 
-  async getQuotes(params?: {
-    repair_order_id?: string | number;
-    status?: string;
-    page?: number;
-    per_page?: number;
-  }): Promise<any> {
-    return this.http.get('/api/v1/quotes', { params });
+  async getQuotes(params?: QuoteFilterDTO): Promise<any> {
+    if (!params) {
+      return this.http.get('/api/v1/quotes');
+    }
+    const queryParams: Record<string, any> = {
+      ...params,
+      q: params.q || params.search,
+    };
+    if (params.per_page === 'all' || params.all === true) {
+      queryParams.per_page = 'all';
+      queryParams.all = true;
+    }
+    return this.http.get('/api/v1/quotes', { params: queryParams });
   }
 
   async createQuote(dto: CreateQuoteDTO): Promise<any> {

@@ -58,20 +58,56 @@ export interface PlatformSepayConfig {
   is_connected?: boolean;
 }
 
+export interface PlatformPaginationParams {
+  page?: number;
+  per_page?: number | 'all';
+  all?: boolean;
+  q?: string;
+  search?: string;
+  status?: string;
+}
+
+function normalizePlatformParams(
+  params?: PlatformPaginationParams
+): Record<string, string | number | boolean> | undefined {
+  if (!params || typeof params !== 'object') {
+    return undefined;
+  }
+  const cleanParams: Record<string, string | number | boolean> = {};
+  for (const [key, val] of Object.entries(params)) {
+    if (val !== undefined && val !== '') {
+      cleanParams[key] = val as string | number | boolean;
+    }
+  }
+  const queryText = params.q ?? params.search;
+  if (queryText !== undefined && String(queryText).trim() !== '') {
+    cleanParams.q = String(queryText).trim();
+    cleanParams.search = String(queryText).trim();
+  }
+  if (params.per_page === 'all' || params.all === true) {
+    cleanParams.per_page = 'all';
+    cleanParams.all = true;
+  }
+  return Object.keys(cleanParams).length > 0 ? cleanParams : undefined;
+}
+
 export class PlatformService {
   constructor(private http: HttpClient = defaultHttpClient) {}
+
+  async getStores(params?: PlatformPaginationParams): Promise<any> {
+    return this.http.get('/api/v1/platform/stores', {
+      params: normalizePlatformParams(params),
+    });
+  }
 
   async getBillingStats(): Promise<any> {
     return this.http.get('/api/v1/platform/billing-stats');
   }
 
-  async getTransactions(params?: {
-    page?: number;
-    per_page?: number;
-    search?: string;
-    status?: string;
-  }): Promise<any> {
-    return this.http.get('/api/v1/platform/transactions', { params });
+  async getTransactions(params?: PlatformPaginationParams): Promise<any> {
+    return this.http.get('/api/v1/platform/transactions', {
+      params: normalizePlatformParams(params),
+    });
   }
 
   async remindFee(storeId: number | string): Promise<any> {

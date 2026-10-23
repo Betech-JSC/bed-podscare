@@ -62,7 +62,7 @@ class WorkShiftTest extends TestCase
             'is_active' => true,
         ]);
 
-        $this->adminUser = User::create([
+        $this->adminUser = User::forceCreate([
             'tenant_id' => $this->tenant->id,
             'branch_id' => $this->branch->id,
             'name'      => 'Admin Q1',
@@ -443,5 +443,52 @@ class WorkShiftTest extends TestCase
             ->assertJsonPath('success', true)
             ->assertJsonPath('data', null)
             ->assertJsonPath('has_active_shift', false);
+    }
+
+    /**
+     * 11. Khi Admin chọn "Tất cả chi nhánh" (branch_id=all hoặc không truyền branch_id),
+     * API tổng hợp toàn bộ các ca đang mở trên các chi nhánh của Tenant.
+     */
+    public function test_admin_can_get_aggregated_active_shifts_across_all_branches(): void
+    {
+        // Mở ca tại chi nhánh 1 (1.000.000đ)
+        $this->actingAs($this->adminUser)
+            ->postJson('/api/v1/shifts/open', [
+                'branch_id'    => $this->branch->id,
+                'opening_cash' => 1000000,
+                'notes'        => 'Ca sáng CN1',
+            ])
+            ->assertStatus(201);
+
+        $branch2 = Branch::create([
+            'tenant_id' => $this->tenant->id,
+            'name'      => 'Chi nhánh 2',
+            'code'      => 'BR_2_' . uniqid(),
+            'phone'     => '0901234568',
+            'address'   => '456 CMT8',
+            'is_active' => true,
+        ]);
+
+        // Mở ca tại chi nhánh 2 (2.500.000đ)
+        $this->actingAs($this->adminUser)
+            ->postJson('/api/v1/shifts/open', [
+                'branch_id'    => $branch2->id,
+                'opening_cash' => 2500000,
+                'notes'        => 'Ca sáng CN2',
+            ])
+            ->assertStatus(201);
+
+        $response = $this->actingAs($this->adminUser)
+            ->getJson('/api/v1/shifts/current?branch_id=all');
+
+        $response->assertStatus(200)
+            ->assertJsonPath('success', true)
+            ->assertJsonPath('has_active_shift', true)
+            ->assertJsonPath('data.is_aggregated', true)
+            ->assertJsonPath('data.active_shifts_count', 2)
+            ->assertJsonPath('data.opening_cash', '3500000.00')
+            ->assertJsonPath('data.expected_cash', '3500000.00');
+
+        $this->assertCount(2, $response->json('data.branches_summary'));
     }
 }

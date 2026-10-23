@@ -42,10 +42,14 @@ class SuperAdminController extends Controller
         ]);
 
         if ($status = $request->input('status')) {
-            $query->where('status', $status);
+            if ($status !== 'all') {
+                $query->where('status', $status);
+            }
         }
 
-        if ($search = $request->input('search')) {
+        $rawSearch = $request->input('q') ?? $request->input('search');
+        if ($rawSearch !== null && trim((string) $rawSearch) !== '') {
+            $search = trim((string) $rawSearch);
             $query->where(function ($q) use ($search) {
                 $q->where('code', 'like', "%{$search}%")
                     ->orWhere('name', 'like', "%{$search}%")
@@ -54,7 +58,27 @@ class SuperAdminController extends Controller
             });
         }
 
-        $perPage = (int) $request->input('per_page', 15);
+        if ($request->boolean('all') || $request->input('per_page') === 'all') {
+            $items = $query->orderBy('id', 'desc')->limit(1000)->get();
+            $total = $items->count();
+
+            return $this->success([
+                'current_page'   => 1,
+                'data'           => $items,
+                'first_page_url' => $request->fullUrlWithQuery(['page' => 1]),
+                'from'           => $total > 0 ? 1 : null,
+                'last_page'      => 1,
+                'last_page_url'  => $request->fullUrlWithQuery(['page' => 1]),
+                'next_page_url'  => null,
+                'path'           => $request->url(),
+                'per_page'       => max($total, 1),
+                'prev_page_url'  => null,
+                'to'             => $total > 0 ? $total : null,
+                'total'          => $total,
+            ], 'Lấy danh sách gian hàng thành công.');
+        }
+
+        $perPage = max(1, min(500, (int) $request->input('per_page', 15)));
         $stores = $query->orderBy('id', 'desc')->paginate($perPage);
 
         return $this->success($stores, 'Lấy danh sách gian hàng thành công.');
