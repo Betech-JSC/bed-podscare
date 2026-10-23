@@ -98,7 +98,11 @@ test('OpenSpec: tech-parts-request-and-admin-resume Test Suite', async (t) => {
 
   await t.test('Task 5.1 & 5.2: repairs/page.tsx hiển thị Badge linh kiện và nút bấm tiếp tục sửa cho Admin/CSKH', () => {
     assert.ok(fs.existsSync(repairsPagePath), 'repairs/page.tsx phải tồn tại');
-    const pageContent = fs.readFileSync(repairsPagePath, 'utf-8');
+    const compDir = path.join(path.dirname(repairsPagePath), 'components');
+    const compFiles = fs.existsSync(compDir)
+      ? fs.readdirSync(compDir).filter((f) => f.endsWith('.tsx')).map((f) => fs.readFileSync(path.join(compDir, f), 'utf-8'))
+      : [];
+    const pageContent = [fs.readFileSync(repairsPagePath, 'utf-8'), ...compFiles].join('\n');
 
     // Mapping parts_needed và paused_at trong filteredOrders
     assert.ok(
@@ -114,8 +118,9 @@ test('OpenSpec: tech-parts-request-and-admin-resume Test Suite', async (t) => {
 
     // Nút Đã có linh kiện trên bảng danh sách
     assert.ok(
-      pageContent.includes('Đã có linh kiện') && pageContent.includes('handleResumeOrder(o)'),
-      'Cột thao tác của bảng danh sách phải có nút Đã có linh kiện gọi handleResumeOrder'
+      pageContent.includes('Đã có linh kiện') &&
+        (pageContent.includes('handleResumeOrder(o)') || pageContent.includes('onResumeOrder(o)')),
+      'Cột thao tác của bảng danh sách phải có nút Đã có linh kiện gọi handleResumeOrder / onResumeOrder'
     );
 
     // Khối cảnh báo màu cam nổi bật trong modal chi tiết

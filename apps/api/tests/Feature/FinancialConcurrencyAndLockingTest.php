@@ -268,6 +268,16 @@ class FinancialConcurrencyAndLockingTest extends TestCase
         // Bản sao thứ hai trong bộ nhớ vẫn mang status = 'ready_for_return' (mô phỏng request đồng thời)
         $orderStale2 = RepairOrder::withoutGlobalScopes()->find($orderStale1->id);
 
+        \App\Models\Payment::create([
+            'payment_code'        => 'PAY-STALE-' . uniqid(),
+            'repair_order_id'     => $orderStale1->id,
+            'amount'              => 250000,
+            'payment_method'      => 'cash',
+            'status'              => 'paid',
+            'paid_at'             => now(),
+            'received_by_user_id' => $ctx['admin']->id,
+        ]);
+
         $workflow = app(OrderWorkflowService::class);
         $workflow->transition($orderStale1, 'completed', ['user' => $ctx['admin']]);
 

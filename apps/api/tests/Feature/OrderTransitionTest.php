@@ -154,6 +154,15 @@ class OrderTransitionTest extends TestCase
     {
         $user = $this->getAuthenticatedUser();
         $order = $this->createTestOrder('ready_for_return');
+        \App\Models\Payment::create([
+            'payment_code'        => 'PAY-TR-' . uniqid(),
+            'repair_order_id'     => $order->id,
+            'amount'              => $order->total_price,
+            'payment_method'      => 'cash',
+            'status'              => 'paid',
+            'paid_at'             => now(),
+            'received_by_user_id' => $user->id,
+        ]);
         $customer = $order->customer;
         $initialSpent = (float) $customer->total_spent;
         $initialOrdersCount = $customer->orders_count;

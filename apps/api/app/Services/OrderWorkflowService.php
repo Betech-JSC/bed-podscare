@@ -22,11 +22,11 @@ class OrderWorkflowService extends BaseWorkflowService
         'waiting_approval' => ['waiting_tech', 'rejected', 'cancelled'],
         'quote_pending'    => ['waiting_tech', 'rejected', 'cancelled'],
         'rejected'         => ['inspecting', 'waiting_pickup', 'completed', 'cancelled'],
-        'waiting_tech'     => ['assigned', 'in_repair', 'ready_for_return'],
-        'assigned'         => ['in_repair', 'ready_for_return', 'waiting_parts', 'waiting_tech', 'assigned'],
+        'waiting_tech'     => ['assigned', 'in_repair', 'waiting_qc', 'ready_for_return'],
+        'assigned'         => ['in_repair', 'waiting_qc', 'ready_for_return', 'waiting_parts', 'waiting_tech', 'assigned'],
         'in_repair'        => ['waiting_parts', 'waiting_qc', 'qc_pending', 'qc_inspecting', 'ready_for_return', 'waiting_tech', 'assigned'],
-        'waiting_parts'    => ['in_repair', 'waiting_tech', 'assigned', 'ready_for_return'],
-        'rework_needed'    => ['in_repair', 'ready_for_return', 'waiting_parts', 'waiting_tech', 'assigned'],
+        'waiting_parts'    => ['in_repair', 'waiting_tech', 'assigned', 'waiting_qc', 'ready_for_return'],
+        'rework_needed'    => ['in_repair', 'waiting_qc', 'ready_for_return', 'waiting_parts', 'waiting_tech', 'assigned'],
         'waiting_qc'       => ['ready_for_return', 'rework_needed'],
         'qc_pending'       => ['ready_for_return', 'rework_needed'],
         'qc_inspecting'    => ['ready_for_return', 'rework_needed'],
@@ -129,6 +129,29 @@ class OrderWorkflowService extends BaseWorkflowService
         $user = $options['user'] ?? auth()->user();
         $techStatuses = ['waiting_tech', 'assigned', 'in_repair', 'waiting_parts', 'rework_needed'];
 
+        // Khi chuyển sang waiting_qc từ các bước kỹ thuật: bắt buộc xác thực KTV thực hiện
+        if ($newStatus === 'waiting_qc' && in_array($oldStatus, $techStatuses, true)) {
+            $passedTechId = $options['technician_id'] ?? null;
+            if (! empty($passedTechId)) {
+                $techUser = \App\Models\User::find($passedTechId);
+                if (! $techUser || ! $this->isTechnicianUser($techUser)) {
+                    throw new \DomainException(
+                        'Kỹ thuật viên được chọn không hợp lệ. Vui lòng chọn đúng nhân sự có vai trò Kỹ thuật viên.'
+                    );
+                }
+            }
+
+            $effectiveTechId = ! empty($passedTechId)
+                ? $passedTechId
+                : ($model->technician_id ?: ($this->isTechnicianUser($user) ? $user?->id : null));
+
+            if (! $effectiveTechId && ($oldStatus !== 'in_repair' || $this->resolveUserRole($user) === 'cskh')) {
+                throw new \DomainException(
+                    'Vui lòng chọn kỹ thuật viên thực hiện trước khi hoàn thành sửa chữa.'
+                );
+            }
+        }
+
         // Khi chuyển sang ready_for_return:
         if ($newStatus === 'ready_for_return') {
             $passedTechId = $options['technician_id'] ?? null;
@@ -190,8 +213,18 @@ class OrderWorkflowService extends BaseWorkflowService
             }
         }
 
-        // Khi chuyển sang completed: tự động đảm bảo có QcInspection (result = 'pass') cho cả đơn thường lẫn đơn bảo hành
+        // Khi chuyển sang completed: kiểm tra cổng thanh toán (Payment Gate) và đảm bảo có QcInspection (result = 'pass')
         if ($newStatus === 'completed') {
+            $orderTotal = RepairOrder::normalizeVndAmount($model->total_price ?? 0);
+            if ($orderTotal > 0) {
+                $paidSum = RepairOrder::normalizeVndAmount($model->payments()->where('status', 'paid')->sum('amount'));
+                if ($paidSum < $orderTotal) {
+                    throw new \DomainException(
+                        'Đơn hàng có chi phí sửa chữa (' . number_format($orderTotal, 0, ',', '.') . ' ₫) chưa được thanh toán đủ. Vui lòng thực hiện Thu tiền & Trả máy trước khi hoàn tất đơn.'
+                    );
+                }
+            }
+
             $hasPassedQc = QcInspection::where('repair_order_id', $model->id)
                 ->where('result', 'pass')
                 ->exists();
@@ -279,12 +312,37 @@ class OrderWorkflowService extends BaseWorkflowService
             case 'waiting_qc':
             case 'qc_pending':
             case 'qc_inspecting':
+                if ($oldStatus === 'waiting_parts') {
+                    $updates['paused_at'] = null;
+                }
+
+                // Bảo vệ và gán technician_id hợp lệ khi chuyển sang waiting_qc từ các bước kỹ thuật
+                if (! empty($options['technician_id'])) {
+                    $techUser = \App\Models\User::find($options['technician_id']);
+                    if ($techUser && $this->isTechnicianUser($techUser)) {
+                        $updates['technician_id'] = $techUser->id;
+                        if (! $model->tech_accepted_at) {
+                            $updates['tech_accepted_at'] = $now;
+                        }
+                    }
+                } elseif (! $model->technician_id && $this->isTechnicianUser($user)) {
+                    $updates['technician_id'] = $user->id;
+                    if (! $model->tech_accepted_at) {
+                        $updates['tech_accepted_at'] = $now;
+                    }
+                }
+
+                if (! $model->repair_started_at) {
+                    $updates['repair_started_at'] = $model->tech_accepted_at ?? ($updates['tech_accepted_at'] ?? $now);
+                }
                 $updates['repair_completed_at'] = $now;
                 if (! empty($options['repair_note'])) {
                     $updates['repair_note'] = $options['repair_note'];
                 }
                 if (! empty($options['parts_used'])) {
                     $updates['parts_used_summary'] = $options['parts_used'];
+                } elseif (! empty($options['parts_used_summary'])) {
+                    $updates['parts_used_summary'] = $options['parts_used_summary'];
                 }
                 if (! empty($options['final_check_result'])) {
                     $updates['final_check_result'] = mb_substr((string) $options['final_check_result'], 0, 255);
@@ -342,100 +400,16 @@ class OrderWorkflowService extends BaseWorkflowService
                 $updates['customer_notified_at'] = $now;
                 break;
             case 'completed':
-                $updates['handed_over_at'] = $now;
-                $updates['delivered_at'] = $now;
                 $adminId = $options['admin_id'] ?? ($user?->id ?? auth()->id());
-                $updates['handed_over_by_user_id'] = $adminId;
-
-                // Bảo toàn timestamps kỹ thuật & QC
-                if (! $model->repair_started_at) {
-                    $updates['repair_started_at'] = $model->tech_accepted_at ?? $model->customer_approved_at ?? $model->created_at ?? $now;
+                if ($model instanceof RepairOrder) {
+                    $this->completeOrderLifecycle($model, [
+                        'actor_id'                 => $adminId,
+                        'user'                     => $user,
+                        'technician_id'            => $options['technician_id'] ?? null,
+                        'repair_note'              => $options['repair_note'] ?? null,
+                        'overwrite_handed_over_by' => true,
+                    ]);
                 }
-                if (! $model->repair_completed_at) {
-                    $updates['repair_completed_at'] = $model->qc_passed_at ?? $now;
-                }
-                if (! $model->qc_passed_at) {
-                    $updates['qc_passed_at'] = $now;
-                }
-
-                // Bảo toàn technician_id (chỉ cập nhật nếu truyền technician_id hợp lệ hoặc đơn chưa có mà actor là KTV)
-                if (! empty($options['technician_id'])) {
-                    $techUser = \App\Models\User::find($options['technician_id']);
-                    if ($techUser && $this->isTechnicianUser($techUser)) {
-                        $updates['technician_id'] = $techUser->id;
-                    }
-                } elseif (! $model->technician_id && $this->isTechnicianUser($user)) {
-                    $updates['technician_id'] = $user->id;
-                }
-
-                $isWarrantyOrder = ($model->order_type === 'warranty') || ! empty($model->claim_id);
-
-                if ($isWarrantyOrder) {
-                    // Đồng bộ đóng WarrantyClaim liên kết sang resolved
-                    $claimQuery = \App\Models\WarrantyClaim::query()->where('rework_order_id', $model->id);
-                    if (! empty($model->claim_id)) {
-                        $claimQuery->orWhere('id', $model->claim_id);
-                    }
-                    $claimQuery->update(['status' => 'resolved']);
-
-                    // Đơn bảo hành: không tạo chồng sổ bảo hành mới và không cộng trùng orders_count
-                    if ($model->customer_id && (float) $model->total_price > 0) {
-                        $priceDelta = (float) $model->total_price;
-                        \App\Models\Customer::whereKey($model->customer_id)->increment('total_spent', $priceDelta);
-                        if ($model->relationLoaded('customer') && $model->customer) {
-                            $model->customer->total_spent = (float) ($model->customer->total_spent ?? 0) + $priceDelta;
-                        }
-                    }
-                } else {
-                    // Tự động kích hoạt sổ bảo hành điện tử cho đơn thường (chỉ query warranties 1 lần)
-                    $existingWarranties = $model->warranties()->get();
-                    if ($model->warranty_terms_days > 0 && $existingWarranties->isEmpty()) {
-                        $year = date('y');
-                        do {
-                            $randomCode = str_pad((string) random_int(100, 999999), 6, '0', STR_PAD_LEFT);
-                            $warrantyCode = "FX{$year}-WR-{$randomCode}";
-                        } while (Warranty::withoutGlobalScopes()->where('warranty_code', $warrantyCode)->exists());
-
-                        Warranty::create([
-                            'warranty_code'   => $warrantyCode,
-                            'repair_order_id' => $model->id,
-                            'customer_id'     => $model->customer_id,
-                            'device_model_id' => $model->device_model_id,
-                            'coverage_item'   => $model->price_note ?? 'Dịch vụ sửa chữa',
-                            'start_date'      => $now->toDateString(),
-                            'duration_days'   => $model->warranty_terms_days,
-                            'end_date'        => $now->copy()->addDays($model->warranty_terms_days)->toDateString(),
-                            'status'          => 'active',
-                        ]);
-                    } elseif ($existingWarranties->isNotEmpty()) {
-                        foreach ($existingWarranties as $warranty) {
-                            $duration = $warranty->duration_days ?: ($model->warranty_terms_days ?: 90);
-                            $warranty->update([
-                                'status'     => 'active',
-                                'start_date' => $now->toDateString(),
-                                'end_date'   => $now->copy()->addDays($duration)->toDateString(),
-                            ]);
-                        }
-                    }
-
-                    // Tích lũy doanh số khách hàng cho đơn thường (gộp 1 câu lệnh UPDATE duy nhất)
-                    if ($model->customer_id) {
-                        $priceDelta = (float) ($model->total_price ?? 0);
-                        \App\Models\Customer::whereKey($model->customer_id)->update([
-                            'orders_count' => DB::raw('COALESCE(orders_count, 0) + 1'),
-                            'total_spent'  => DB::raw('COALESCE(total_spent, 0) + ' . $priceDelta),
-                            'updated_at'   => $now,
-                        ]);
-
-                        if ($model->relationLoaded('customer') && $model->customer) {
-                            $model->customer->orders_count = (int) ($model->customer->orders_count ?? 0) + 1;
-                            $model->customer->total_spent = (float) ($model->customer->total_spent ?? 0) + $priceDelta;
-                        }
-                    }
-                }
-
-                // Tự động trừ tồn kho linh kiện đã sử dụng (export_repair)
-                $this->deductInventoryForOrder($model, $adminId);
                 break;
 
             case 'cancelled':
@@ -448,6 +422,164 @@ class OrderWorkflowService extends BaseWorkflowService
         if (! empty($updates)) {
             $model->update($updates);
         }
+    }
+
+    /**
+     * Hoàn tất toàn bộ vòng đời đơn sửa chữa tại một nơi duy nhất (Single Source of Truth):
+     * - Đảm bảo biên bản QcInspection (result = 'pass')
+     * - Cập nhật timestamps (repair_started_at, repair_completed_at, qc_passed_at, handed_over_at, delivered_at) và status = 'completed'
+     * - Tự động trừ kho linh kiện (idempotent export_repair)
+     * - Kích hoạt sổ bảo hành điện tử (hoặc đóng WarrantyClaim nếu là đơn bảo hành)
+     * - Cộng dồn orders_count và total_spent nguyên tử cho khách hàng
+     */
+    public function completeOrderLifecycle(RepairOrder $order, array $context = []): RepairOrder
+    {
+        $now = Carbon::now();
+        $user = $context['user'] ?? auth()->user();
+        $actorId = $context['actor_id'] ?? ($context['admin_id'] ?? ($user?->id ?? auth()->id()));
+        $isWarrantyOrder = ($order->order_type === 'warranty') || ! empty($order->claim_id);
+
+        // 1. Đảm bảo có bản ghi QcInspection (result = 'pass') trước khi hoàn tất
+        $hasPassedQc = QcInspection::where('repair_order_id', $order->id)
+            ->where('result', 'pass')
+            ->exists();
+
+        if (! $hasPassedQc) {
+            $inspectorId = $order->technician_id
+                ?? ($context['technician_id']
+                ?? ($actorId
+                ?? $order->created_by_user_id));
+
+            if ($inspectorId) {
+                $defaultNote = $isWarrantyOrder
+                    ? 'Nghiệm thu hoàn tất đơn bảo hành'
+                    : 'Nghiệm thu hoàn tất đơn sửa chữa';
+
+                QcInspection::create([
+                    'tenant_id'       => $order->tenant_id,
+                    'repair_order_id' => $order->id,
+                    'inspector_id'    => $inspectorId,
+                    'result'          => 'pass',
+                    'notes'           => $context['repair_note'] ?? ($order->repair_note ?? $defaultNote),
+                ]);
+            }
+        }
+
+        $wasAlreadyCompleted = $order->getOriginal('status') === 'completed' && ! empty($order->getOriginal('handed_over_at'));
+
+        // 2. Cập nhật trạng thái, timestamps kiểm toán và bảo toàn technician_id
+        $order->status = 'completed';
+        if (! $order->repair_started_at) {
+            $order->repair_started_at = $order->tech_accepted_at ?? $order->customer_approved_at ?? $order->created_at ?? $now;
+        }
+        if (! $order->repair_completed_at) {
+            $order->repair_completed_at = $order->qc_passed_at ?? $now;
+        }
+        if (! $order->qc_passed_at) {
+            $order->qc_passed_at = $now;
+        }
+        if (! $order->handed_over_at) {
+            $order->handed_over_at = $now;
+        }
+        if (! $order->delivered_at) {
+            $order->delivered_at = $now;
+        }
+        if ((! $order->handed_over_by_user_id || ! empty($context['overwrite_handed_over_by'])) && $actorId) {
+            $order->handed_over_by_user_id = $actorId;
+        }
+
+        if (! empty($context['technician_id'])) {
+            $techUser = \App\Models\User::find($context['technician_id']);
+            if ($techUser && $this->isTechnicianUser($techUser)) {
+                $order->technician_id = $techUser->id;
+            }
+        } elseif (! $order->technician_id && $this->isTechnicianUser($user)) {
+            $order->technician_id = $user->id;
+        }
+
+        if (array_key_exists('warranty_days', $context) && $context['warranty_days'] !== null) {
+            $order->warranty_terms_days = (int) $context['warranty_days'];
+        }
+
+        $order->save();
+
+        // 3. Tự động trừ tồn kho linh kiện đã sử dụng (export_repair - idempotent)
+        $this->deductInventoryForOrder($order, $actorId ? (int) $actorId : null);
+
+        // 4. Xử lý bảo hành & cộng dồn doanh số khách hàng (idempotent nếu đơn đã hoàn tất trước đó)
+        $revenueAmount = array_key_exists('revenue_amount', $context) && $context['revenue_amount'] !== null
+            ? (float) $context['revenue_amount']
+            : (float) ($order->total_price ?? 0);
+
+        if ($isWarrantyOrder) {
+            $claimQuery = \App\Models\WarrantyClaim::query()->where('rework_order_id', $order->id);
+            if (! empty($order->claim_id)) {
+                $claimQuery->orWhere('id', $order->claim_id);
+            }
+            $claimQuery->update(['status' => 'resolved']);
+
+            if (! $wasAlreadyCompleted && $order->customer_id && $revenueAmount > 0) {
+                \App\Models\Customer::whereKey($order->customer_id)->increment('total_spent', $revenueAmount);
+                if ($order->relationLoaded('customer') && $order->customer) {
+                    $order->customer->total_spent = (float) ($order->customer->total_spent ?? 0) + $revenueAmount;
+                }
+            }
+        } else {
+            $warrantyDays = (int) ($context['warranty_days']
+                ?? ($order->warranty_terms_days ?: ($context['default_warranty_days'] ?? 0)));
+
+            $existingWarranties = $order->relationLoaded('warranties')
+                ? $order->warranties
+                : $order->warranties()->get();
+
+            if ($warrantyDays > 0 && $existingWarranties->isEmpty()) {
+                $year = date('y');
+                do {
+                    $randomCode = str_pad((string) random_int(100, 999999), 6, '0', STR_PAD_LEFT);
+                    $warrantyCode = "FX{$year}-WR-{$randomCode}";
+                } while (Warranty::withoutGlobalScopes()->where('warranty_code', $warrantyCode)->exists());
+
+                Warranty::create([
+                    'warranty_code'   => $warrantyCode,
+                    'repair_order_id' => $order->id,
+                    'customer_id'     => $order->customer_id,
+                    'device_model_id' => $order->device_model_id,
+                    'coverage_item'   => $order->price_note ?? 'Dịch vụ sửa chữa',
+                    'start_date'      => $now->toDateString(),
+                    'duration_days'   => $warrantyDays,
+                    'end_date'        => $now->copy()->addDays($warrantyDays)->toDateString(),
+                    'status'          => 'active',
+                ]);
+            } elseif ($existingWarranties->isNotEmpty()) {
+                foreach ($existingWarranties as $warranty) {
+                    $duration = (int) ($context['warranty_days']
+                        ?? (! empty($context['default_warranty_days'])
+                            ? ($order->warranty_terms_days ?: $context['default_warranty_days'])
+                            : ($warranty->duration_days ?: ($order->warranty_terms_days ?: 90))));
+                    $warranty->update([
+                        'status'        => 'active',
+                        'start_date'    => $now->toDateString(),
+                        'duration_days' => $duration,
+                        'end_date'      => $now->copy()->addDays($duration)->toDateString(),
+                    ]);
+                }
+            }
+
+            if (! $wasAlreadyCompleted && $order->customer_id) {
+                \App\Models\Customer::whereKey($order->customer_id)->update([
+                    'orders_count' => DB::raw('COALESCE(orders_count, 0) + 1'),
+                    'total_spent'  => DB::raw('COALESCE(total_spent, 0) + ' . $revenueAmount),
+                    'updated_at'   => $now,
+                ]);
+
+                if ($order->relationLoaded('customer') && $order->customer) {
+                    $order->customer->orders_count = (int) ($order->customer->orders_count ?? 0) + 1;
+                    $order->customer->total_spent = (float) ($order->customer->total_spent ?? 0) + $revenueAmount;
+                }
+            }
+        }
+
+        return $order;
     }
 
     /**
@@ -498,7 +630,7 @@ class OrderWorkflowService extends BaseWorkflowService
                 ->keyBy('part_id');
 
             $date = date('Ymd');
-            $actorId = $userId ?? $order->handed_over_by_user_id ?? $order->technician_id ?? 1;
+            $actorId = $userId ?? $order->handed_over_by_user_id ?? $order->technician_id ?? $order->created_by_user_id ?? auth()->id();
 
             $existingTxCodes = \App\Models\InventoryTransaction::where('transaction_code', 'like', "TX-{$date}-%")
                 ->pluck('transaction_code')
@@ -588,7 +720,7 @@ class OrderWorkflowService extends BaseWorkflowService
                 : collect();
 
             $date = date('Ymd');
-            $actorId = $userId ?? 1;
+            $actorId = $userId ?? $order->handed_over_by_user_id ?? $order->technician_id ?? $order->created_by_user_id ?? auth()->id();
 
             $existingTxCodes = \App\Models\InventoryTransaction::where('transaction_code', 'like', "TX-{$date}-%")
                 ->pluck('transaction_code')
@@ -672,7 +804,7 @@ class OrderWorkflowService extends BaseWorkflowService
                 : collect();
 
             $date = date('Ymd');
-            $actorId = $userId ?? 1;
+            $actorId = $userId ?? $order->handed_over_by_user_id ?? $order->technician_id ?? $order->created_by_user_id ?? auth()->id();
 
             $existingTxCodes = \App\Models\InventoryTransaction::where('transaction_code', 'like', "TX-{$date}-%")
                 ->pluck('transaction_code')

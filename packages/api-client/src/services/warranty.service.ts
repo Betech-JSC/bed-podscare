@@ -56,29 +56,75 @@ export interface CreateWarrantyClaimDTO {
   notes?: string;
 }
 
+export interface WarrantySummaryCounts {
+  total: number;
+  active: number;
+  expiring_soon: number;
+  expired: number;
+  total_warranties?: number;
+  active_count?: number;
+  expiring_soon_count?: number;
+  expired_or_revoked_count?: number;
+}
+
+export type WarrantySummary = WarrantySummaryCounts;
+
+export interface WarrantyPaginationParams {
+  page?: number;
+  per_page?: number | 'all';
+  all?: boolean;
+  q?: string;
+  search?: string;
+  status?: string;
+}
+
+export interface WarrantyQueryParams extends WarrantyPaginationParams {
+  phone?: string;
+  serial_number?: string;
+}
+
+export interface WarrantyClaimQueryParams extends WarrantyPaginationParams {}
+
 export interface WarrantyLookupParams {
   [key: string]: string | number | boolean | undefined;
   code?: string;
   phone?: string;
 }
 
+function buildCleanPaginationParams(
+  params?: Record<string, string | number | boolean | undefined>
+): Record<string, string | number | boolean> | undefined {
+  if (!params || typeof params !== 'object') {
+    return undefined;
+  }
+
+  const cleanParams: Record<string, string | number | boolean> = {};
+  for (const [key, value] of Object.entries(params)) {
+    if (value !== undefined && value !== '') {
+      cleanParams[key] = value;
+    }
+  }
+
+  const queryText = params.q ?? params.search;
+  if (queryText !== undefined && String(queryText).trim() !== '') {
+    cleanParams.q = String(queryText).trim();
+  }
+
+  if (params.per_page === 'all' || params.all === true) {
+    cleanParams.per_page = 'all';
+    cleanParams.all = true;
+  }
+
+  return Object.keys(cleanParams).length > 0 ? cleanParams : undefined;
+}
+
 export class WarrantyService {
   constructor(private http: HttpClient = defaultHttpClient) {}
 
-  async getWarranties(params?: {
-    status?: string;
-    q?: string;
-    search?: string;
-    phone?: string;
-    serial_number?: string;
-    per_page?: number;
-    page?: number;
-  }): Promise<any> {
+  async getWarranties(params?: WarrantyQueryParams): Promise<any> {
+    const cleanParams = buildCleanPaginationParams(params as Record<string, string | number | boolean | undefined>);
     return this.http.get('/api/v1/warranties', {
-      params: {
-        ...params,
-        q: params?.q || params?.search,
-      },
+      params: cleanParams,
     });
   }
 
@@ -96,12 +142,11 @@ export class WarrantyService {
     return this.http.get('/api/v1/warranties/lookup', { params });
   }
 
-  async getClaims(params?: {
-    status?: string;
-    per_page?: number;
-    page?: number;
-  }): Promise<any> {
-    return this.http.get('/api/v1/warranties/claims', { params });
+  async getClaims(params?: WarrantyClaimQueryParams): Promise<any> {
+    const cleanParams = buildCleanPaginationParams(params as Record<string, string | number | boolean | undefined>);
+    return this.http.get('/api/v1/warranties/claims', {
+      params: cleanParams,
+    });
   }
 
   async createClaim(dto: CreateWarrantyClaimDTO): Promise<any> {

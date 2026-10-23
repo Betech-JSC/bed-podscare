@@ -1,4 +1,5 @@
 import React from 'react';
+import { Icon } from '../atoms/Icons';
 
 export interface StepItem {
   id: string | number;
@@ -61,7 +62,7 @@ export const StepperWidget: React.FC<StepperWidgetProps> = ({
             {index < steps.length - 1 && (
               <div
                 className={`absolute top-[12px] sm:top-[14px] left-[55%] right-[-45%] h-[2px] z-0 transition-colors ${
-                  isLineDone ? 'bg-[#4d9775]' : 'bg-[#e7eeea]'
+                  isLineDone ? 'bg-[#28805e]' : 'bg-[#e9eeeb]'
                 }`}
               />
             )}
@@ -70,24 +71,24 @@ export const StepperWidget: React.FC<StepperWidgetProps> = ({
             <div
               className={`w-6 h-6 sm:w-7 sm:h-7 rounded-full mx-auto mb-1 sm:mb-1.5 grid place-items-center text-[11px] sm:text-xs font-bold relative z-10 transition-all ${
                 isActive
-                  ? 'bg-[#176b58] text-white shadow-[0_0_0_3px_#e4f1e9] sm:shadow-[0_0_0_4px_#e4f1e9]'
+                  ? 'bg-[#176b51] text-white shadow-[0_0_0_3px_#e9f4ef] sm:shadow-[0_0_0_4px_#e9f4ef]'
                   : isDone
-                  ? 'bg-[#e0f0e6] text-[#287452]'
-                  : 'bg-[#edf2ef] text-[#8e9a94]'
+                  ? 'bg-[#eaf5ef] text-[#28805e]'
+                  : 'bg-[#f0f3f1] text-[#81908a]'
               }`}
             >
-              {isDone ? '✓' : index + 1}
+              {isDone ? <Icon name="check" size={12} /> : index + 1}
             </div>
 
             <small
               className={`block text-[11px] sm:text-xs font-medium leading-tight truncate px-0.5 ${
-                isActive ? 'text-[#176b58] font-bold' : isDone ? 'text-[#287452]' : 'text-[#7d8b84]'
+                isActive ? 'text-[#176b51] font-bold' : isDone ? 'text-[#28805e]' : 'text-[#81908a]'
               }`}
             >
               {step.label}
             </small>
             {step.sublabel && (
-              <span className="block text-[10px] sm:text-xs text-[#93a099] mt-0.5 truncate">{step.sublabel}</span>
+              <span className="block text-[10px] sm:text-xs text-[#9aa59f] mt-0.5 truncate">{step.sublabel}</span>
             )}
           </div>
         );
@@ -95,3 +96,4 @@ export const StepperWidget: React.FC<StepperWidgetProps> = ({
     </div>
   );
 };
+

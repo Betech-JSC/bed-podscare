@@ -86,7 +86,11 @@ test('COD Shipping Address Note - Code Review & Independent Verification', async
   });
 
   await t.test('3. Frontend Repairs Page: In-place COD Shipping Address Update for CSKH / Admin', () => {
-    const repairsSource = fs.readFileSync(repairsPagePath, 'utf8');
+    const repairsComponentsDir = path.join(path.dirname(repairsPagePath), 'components');
+    const repairsComponentFiles = fs.existsSync(repairsComponentsDir)
+      ? fs.readdirSync(repairsComponentsDir).filter((f) => f.endsWith('.tsx')).map((f) => fs.readFileSync(path.join(repairsComponentsDir, f), 'utf8'))
+      : [];
+    const repairsSource = [fs.readFileSync(repairsPagePath, 'utf8'), ...repairsComponentFiles].join('\n');
 
     // Kiểm tra phân quyền canManageShippingAddress
     assert.ok(

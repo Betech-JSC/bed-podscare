@@ -2,7 +2,7 @@
 
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { ToastProvider, ConfirmProvider, useToast } from '@podscare/ui';
+import { ToastProvider, ConfirmProvider, useToast, resolveOrderStatus } from '@podscare/ui';
 import type { UserRole, UserProfile, TenantInfo, RepairOrder, DeviceProfile, OrderDateFilter } from '@podscare/types';
 import {
   repairService,
@@ -80,6 +80,7 @@ export const invalidateOrdersQuery = async (client: QueryClient) => {
     client.invalidateQueries({ queryKey: ['orders'] }),
     client.invalidateQueries({ queryKey: ['repairs'] }),
     client.invalidateQueries({ queryKey: ['tech-orders'] }),
+    client.invalidateQueries({ queryKey: ['qc-orders'] }),
   ]);
 };
 
@@ -289,13 +290,16 @@ export const Providers: React.FC<{ children: React.ReactNode }> = ({ children })
     }
   }, [isAuthenticated, token]);
 
-  // Nạp danh mục thiết bị từ API và đồng bộ localStorage
+  // Nạp danh mục thiết bị từ API song song (Promise.allSettled) và đồng bộ localStorage
   const fetchDeviceProfiles = useCallback(async () => {
     if (!isAuthenticated || !token) return;
     try {
-      const res = await deviceService.getDevices();
-      const raw = res?.data;
-      const list = Array.isArray(raw) ? raw : (raw as any)?.data || (Array.isArray(res) ? res : []);
+      const [devicesOutcome, tplOutcome, catOutcome] = await Promise.allSettled([
+        deviceService.getDevices(),
+        deviceService.getChecklistTemplate(),
+        deviceService.getCategories(),
+      ]);
+
       let defaultChecks = [
         'Kết nối Bluetooth',
         'Âm thanh tai trái',
@@ -307,19 +311,19 @@ export const Providers: React.FC<{ children: React.ReactNode }> = ({ children })
         'Xuyên âm',
         'Cảm ứng / thao tác',
       ];
-      try {
-        const tplRes = await deviceService.getChecklistTemplate();
+
+      if (tplOutcome.status === 'fulfilled') {
+        const tplRes = tplOutcome.value;
         const tplData = tplRes?.data || tplRes;
         if (Array.isArray(tplData) && tplData.length > 0) {
           defaultChecks = tplData.map((item: any) => item.item_name || item.name || String(item));
         }
-      } catch (err) {
-        console.warn('Could not fetch default checklist templates:', err);
+      } else {
+        console.warn('Could not fetch default checklist templates:', tplOutcome.reason);
       }
 
-      // Nạp dynamic categories từ API
-      try {
-        const catRes = await deviceService.getCategories();
+      if (catOutcome.status === 'fulfilled') {
+        const catRes = catOutcome.value;
         const catData = catRes?.data || (Array.isArray(catRes) ? catRes : []);
         if (Array.isArray(catData) && catData.length > 0) {
           setCategories(catData);
@@ -329,40 +333,47 @@ export const Providers: React.FC<{ children: React.ReactNode }> = ({ children })
             // ignore
           }
         }
-      } catch (err) {
-        console.warn('Could not fetch categories from API:', err);
+      } else {
+        console.warn('Could not fetch categories from API:', catOutcome.reason);
       }
 
-      if (Array.isArray(list) && list.length > 0) {
-        const mapped: DeviceProfile[] = list.map((d: any) => {
-          const modelChecks =
-            Array.isArray(d.checklist_templates) && d.checklist_templates.length > 0
-              ? d.checklist_templates.map((c: any) => c.item_name || c.name || String(c))
-              : defaultChecks;
+      if (devicesOutcome.status === 'fulfilled') {
+        const res = devicesOutcome.value;
+        const raw = res?.data;
+        const list = Array.isArray(raw) ? raw : (raw as any)?.data || (Array.isArray(res) ? res : []);
+        if (Array.isArray(list) && list.length > 0) {
+          const mapped: DeviceProfile[] = list.map((d: any) => {
+            const modelChecks =
+              Array.isArray(d.checklist_templates) && d.checklist_templates.length > 0
+                ? d.checklist_templates.map((c: any) => c.item_name || c.name || String(c))
+                : defaultChecks;
 
-          return {
-            id: d.id,
-            name: d.name,
-            category: d.category || 'AirPods',
-            maker: d.manufacturer || 'Apple',
-            model: d.model_code || '',
-            icon:
-              d.category === 'Apple Watch'
-                ? 'watch'
-                : d.category === 'Apple Pencil'
-                ? 'pencil'
-                : d.category === 'MacBook' || d.category === 'iPad'
-                ? 'device'
-                : 'headphones',
-            checks: modelChecks,
-          };
-        });
-        setDeviceProfiles(mapped);
-        try {
-          localStorage.setItem('podscare_device_profiles', JSON.stringify(mapped));
-        } catch {
-          // ignore
+            return {
+              id: d.id,
+              name: d.name,
+              category: d.category || 'AirPods',
+              maker: d.manufacturer || 'Apple',
+              model: d.model_code || '',
+              icon:
+                d.category === 'Apple Watch'
+                  ? 'watch'
+                  : d.category === 'Apple Pencil'
+                  ? 'pencil'
+                  : d.category === 'MacBook' || d.category === 'iPad'
+                  ? 'device'
+                  : 'headphones',
+              checks: modelChecks,
+            };
+          });
+          setDeviceProfiles(mapped);
+          try {
+            localStorage.setItem('podscare_device_profiles', JSON.stringify(mapped));
+          } catch {
+            // ignore
+          }
         }
+      } else {
+        console.warn('Could not fetch device profiles from API:', devicesOutcome.reason);
       }
     } catch (e) {
       console.warn('Could not fetch device profiles from API:', e);
@@ -506,7 +517,11 @@ export const Providers: React.FC<{ children: React.ReactNode }> = ({ children })
         userProfile?.role === 'admin' ||
         userProfile?.role === 'super_admin' ||
         role === 'admin';
-      const params: Record<string, any> = { per_page: 50, date_filter: dateFilter };
+      const effectiveDateFilter: OrderDateFilter = isAdminUser ? 'all' : dateFilter;
+      const params: Record<string, any> = {
+        per_page: 500,
+        date_filter: effectiveDateFilter,
+      };
       if (isAdminUser) {
         params.per_page = 500;
         params.date_filter = 'all';
@@ -514,32 +529,19 @@ export const Providers: React.FC<{ children: React.ReactNode }> = ({ children })
       if (activeBranchId && activeBranchId !== 'all') {
         params.branch_id = activeBranchId;
       }
-      const res = await repairService.getRepairs(params);
-      const raw = res?.data;
+      const res = await queryClient.fetchQuery({
+        queryKey: ['repairs', activeBranchId, effectiveDateFilter],
+        queryFn: async () => {
+          const response = await repairService.getRepairs(params);
+          return response?.data || response;
+        },
+        staleTime: 30_000,
+      });
+      const raw = res?.data ?? res;
       const list = Array.isArray(raw) ? raw : (raw as any)?.data || (Array.isArray(res) ? res : []);
       if (Array.isArray(list)) {
-        const statusMap: Record<string, { label: string; type: any }> = {
-          inspecting: { label: 'Đang kiểm tra', type: 'progress' },
-          waiting_approval: { label: 'Chờ khách duyệt', type: 'wait' },
-          waiting_tech: { label: 'Chờ kỹ thuật', type: 'new' },
-          assigned: { label: 'Đã nhận đơn', type: 'wait' },
-          in_repair: { label: 'Đang sửa', type: 'progress' },
-          waiting_parts: { label: 'Chờ linh kiện', type: 'wait' },
-          rework_needed: { label: 'Cần sửa lại', type: 'danger' },
-          waiting_qc: { label: 'Chờ QC', type: 'ready' },
-          qc_pending: { label: 'Chờ QC', type: 'ready' },
-          ready_for_return: { label: 'Sẵn sàng trả', type: 'ready' },
-          waiting_pickup: { label: 'Chờ khách nhận', type: 'ready' },
-          completed: { label: 'Hoàn tất', type: 'gray' },
-          rejected: { label: 'Từ chối sửa', type: 'danger' },
-          cancelled: { label: 'Đã hủy', type: 'gray' },
-        };
         const mapped: RepairOrder[] = list.map((o: any) => {
-          const rawStatus = o.status === 'qc_pending' ? 'waiting_qc' : o.status;
-          const mappedStatus = statusMap[rawStatus] || statusMap[o.status] || {
-            label: o.status || 'Tiếp nhận mới',
-            type: 'wait',
-          };
+          const mappedStatus = resolveOrderStatus(o.status);
           const mappedChecks = Array.isArray(o.intake_checklists)
             ? o.intake_checklists.map((c: any) => ({
                 label: c.item_name,
@@ -637,7 +639,7 @@ export const Providers: React.FC<{ children: React.ReactNode }> = ({ children })
       console.warn('Could not fetch orders from API:', e);
       setOrders([]);
     }
-  }, [branchId, isAuthenticated, token, userProfile?.role, userProfile?.tenant, tenantBranding, role]);
+  }, [branchId, isAuthenticated, token, userProfile?.role, userProfile?.tenant, tenantBranding, role, queryClient]);
 
   useEffect(() => {
     if (isAuthenticated && token) {
@@ -652,6 +654,7 @@ export const Providers: React.FC<{ children: React.ReactNode }> = ({ children })
         queryClient.invalidateQueries({ queryKey: ['orders'] }),
         queryClient.invalidateQueries({ queryKey: ['repairs'] }),
         queryClient.invalidateQueries({ queryKey: ['tech-orders'] }),
+        queryClient.invalidateQueries({ queryKey: ['qc-orders'] }),
       ]);
     } catch {
       // ignore

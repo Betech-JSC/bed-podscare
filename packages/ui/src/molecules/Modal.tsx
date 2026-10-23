@@ -141,7 +141,7 @@ export const Modal: React.FC<ModalProps> = ({
   const modalContent = (
     <div
       ref={overlayRef}
-      className="fixed inset-0 z-50 bg-[#17251f]/60 backdrop-blur-sm flex flex-col justify-end sm:justify-center items-center p-0 sm:p-4 md:p-6 overflow-hidden overscroll-contain animate-in fade-in duration-150"
+      className="fixed inset-0 z-50 bg-[#17231f]/60 flex flex-col justify-end sm:justify-center items-center p-0 sm:p-4 md:p-6 overflow-hidden overscroll-contain animate-in fade-in duration-150"
       style={{ overscrollBehavior: 'contain' }}
       onClick={(e) => {
         if (e.target === e.currentTarget) onClose();
@@ -152,25 +152,25 @@ export const Modal: React.FC<ModalProps> = ({
           fullHeightOnMobile ? 'h-[100dvh]' : 'h-auto max-h-[92dvh]'
         } sm:h-auto max-h-[100dvh] sm:max-h-[90vh] flex flex-col bg-white rounded-none ${
           fullHeightOnMobile ? '' : 'rounded-t-2xl'
-        } sm:rounded-2xl shadow-[0_24px_90px_rgba(18,37,27,0.18)] border-0 sm:border border-[#e5ece8] overflow-hidden my-0 sm:my-auto animate-in ${
+        } sm:rounded-2xl shadow-[0_24px_90px_rgba(18,37,27,0.18)] border-0 sm:border border-[#e9eeeb] overflow-hidden my-0 sm:my-auto animate-in ${
           fullHeightOnMobile ? 'slide-in-from-bottom-2' : 'slide-in-from-bottom-full'
         } sm:zoom-in-95 duration-150 ${className}`}
         onClick={(e) => e.stopPropagation()}
       >
         {/* Head - Sticky / Flex-shrink-0 */}
-        <div className="flex-none bg-white border-b border-[#e5ece8] px-4 py-3 sm:p-6 z-20 pt-[max(0.75rem,env(safe-area-inset-top))] sm:pt-6">
+        <div className="flex-none bg-white border-b border-[#e9eeeb] px-4 py-3 sm:p-6 z-20 pt-[max(0.75rem,env(safe-area-inset-top))] sm:pt-6">
           <div className="flex items-start justify-between gap-3">
             <div className="min-w-0 flex-1">
               {eyebrow && (
-                <div className="text-[10px] sm:text-xs font-bold text-[#819089] uppercase tracking-[1.05px] mb-0.5 sm:mb-1 truncate">
+                <div className="text-[10px] sm:text-xs font-bold text-[#81908a] uppercase tracking-[1.05px] mb-0.5 sm:mb-1 truncate">
                   {eyebrow}
                 </div>
               )}
-              <h2 className="font-heading font-bold text-base sm:text-xl text-[#1c302b] m-0 leading-tight">
+              <h2 className="font-heading font-bold text-base sm:text-xl text-[#17231f] m-0 leading-tight">
                 {title}
               </h2>
               {subtitle && (
-                <p className="text-xs sm:text-sm text-[#7d8c85] mt-1 mb-0 line-clamp-2 sm:line-clamp-none">
+                <p className="text-xs sm:text-sm text-[#81908a] mt-1 mb-0 line-clamp-2 sm:line-clamp-none">
                   {subtitle}
                 </p>
               )}
@@ -179,14 +179,14 @@ export const Modal: React.FC<ModalProps> = ({
               type="button"
               onClick={onClose}
               aria-label="Đóng modal"
-              className="w-9 h-9 sm:w-8 sm:h-8 rounded-[8px] text-[#708078] hover:bg-[#f1f4f2] hover:text-[#1c302b] active:bg-[#e2e8e5] grid place-items-center text-2xl sm:text-xl leading-none transition-colors flex-none touch-manipulation cursor-pointer"
+              className="w-9 h-9 sm:w-8 sm:h-8 rounded-[8px] text-[#81908a] hover:bg-[#f0f3f1] hover:text-[#17231f] active:bg-[#e9eeeb] grid place-items-center text-2xl sm:text-xl leading-none transition-colors flex-none touch-manipulation cursor-pointer"
             >
               ×
             </button>
           </div>
 
           {headerExtra && (
-            <div className="mt-2.5 sm:mt-3 pt-2.5 sm:pt-3 border-t border-[#edf2ef]">
+            <div className="mt-2.5 sm:mt-3 pt-2.5 sm:pt-3 border-t border-[#f0f3f1]">
               {headerExtra}
             </div>
           )}
@@ -202,7 +202,7 @@ export const Modal: React.FC<ModalProps> = ({
 
         {/* Foot - Sticky Bottom with iOS Safe Area support */}
         {footer && (
-          <div className="flex-none sticky bottom-0 z-20 bg-white/95 backdrop-blur-md border-t border-slate-200/80 shadow-[0_-4px_16px_rgba(0,0,0,0.06)] px-4 py-3 sm:px-6 sm:py-4 pb-[max(0.75rem,env(safe-area-inset-bottom))]">
+          <div className="flex-none sticky bottom-0 z-20 bg-white border-t border-[#e9eeeb] shadow-[0_-4px_16px_rgba(0,0,0,0.06)] px-4 py-3 sm:px-6 sm:py-4 pb-[max(0.75rem,env(safe-area-inset-bottom))]">
             {footer}
           </div>
         )}

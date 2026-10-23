@@ -398,19 +398,11 @@ export default function CustomersPage() {
                       <span className="font-bold font-mono text-xs text-[#111827] min-w-[75px] sm:min-w-[90px] text-right whitespace-nowrap">
                         {c.spent}
                       </span>
-                      <svg
-                        className="w-4 h-4 text-[#9ca3af] group-hover:text-[#176b58] transition-colors flex-shrink-0"
-                        fill="none"
-                        viewBox="0 0 24 24"
-                        stroke="currentColor"
-                      >
-                        <path
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                          strokeWidth={2}
-                          d="M9 5l7 7-7 7"
-                        />
-                      </svg>
+                      <Icon
+                        name="chevronRight"
+                        size={16}
+                        className="text-[#9ca3af] group-hover:text-[#176b58] transition-colors flex-shrink-0"
+                      />
                     </div>
                   </div>
                 ))}
@@ -752,7 +744,8 @@ export default function CustomersPage() {
                               className="mt-1.5 inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-[11px] bg-[#fffbeb] text-[#92400e] border border-[#fef08a] max-w-full"
                               title={ord.shipping_address || ord.shippingAddress}
                             >
-                              <span className="font-semibold flex-shrink-0">📦 Địa chỉ giao:</span>
+                              <Icon name="package" size={12} className="flex-shrink-0 text-[#92400e]" />
+                              <span className="font-semibold flex-shrink-0">Địa chỉ giao:</span>
                               <span className="font-normal truncate">
                                 {ord.shipping_address || ord.shippingAddress}
                               </span>

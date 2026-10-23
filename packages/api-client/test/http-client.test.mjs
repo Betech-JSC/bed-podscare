@@ -150,4 +150,30 @@ describe('OpenSpec: Task 5.3 HttpClient 401 Resilience & skipAuthRedirect Tests'
       'notification.service.ts phải cấu hình skipAuthRedirect: true trong getNotifications'
     );
   });
+
+  test('3.5. WarrantyService hỗ trợ đầy đủ phân trang (page, per_page, per_page="all", all=true), tìm kiếm q và WarrantySummaryCounts', () => {
+    const warrantyServicePath = path.resolve(__dirname, '../src/services/warranty.service.ts');
+    const warrantyContent = fs.readFileSync(warrantyServicePath, 'utf-8');
+
+    assert.ok(
+      warrantyContent.includes('export interface WarrantySummaryCounts'),
+      'warranty.service.ts phải khai báo WarrantySummaryCounts'
+    );
+    assert.ok(
+      warrantyContent.includes("per_page?: number | 'all'"),
+      'WarrantyPaginationParams phải hỗ trợ per_page?: number | "all"'
+    );
+    assert.ok(
+      warrantyContent.includes("params.per_page === 'all' || params.all === true"),
+      'buildCleanPaginationParams phải đồng bộ per_page = "all" và all = true'
+    );
+    assert.ok(
+      warrantyContent.includes("this.http.get('/api/v1/warranties'"),
+      'getWarranties phải gọi GET /api/v1/warranties kèm params phân trang'
+    );
+    assert.ok(
+      warrantyContent.includes("this.http.get('/api/v1/warranties/claims'"),
+      'getClaims phải gọi GET /api/v1/warranties/claims kèm params phân trang'
+    );
+  });
 });

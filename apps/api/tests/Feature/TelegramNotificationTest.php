@@ -510,7 +510,7 @@ class TelegramNotificationTest extends TestCase
     }
 
     /**
-     * 9. Zero-click Sync: Admin bấm Start trên Telegram rồi tắt trình duyệt -> khi có đơn mới hệ thống tự sync chat_id và bắn thông báo đơn luôn.
+     * 9. Zero-click Sync tại GET /api/v1/telegram-recipients và tạo đơn mới không gọi getUpdates đồng bộ.
      */
     public function test_zero_click_auto_sync_links_pending_recipient_and_notifies_on_new_order(): void
     {
@@ -540,6 +540,16 @@ class TelegramNotificationTest extends TestCase
             'api.telegram.org/*/sendMessage*' => Http::response(['ok' => true], 200),
         ]);
 
+        // Mở danh sách người nhận -> tự động syncUpdates() zero-click cho các bản ghi chưa có chat_id
+        $listRes = $this->actingAs($this->adminA, 'sanctum')
+            ->getJson('/api/v1/telegram-recipients');
+        $listRes->assertStatus(200);
+
+        $recipient->refresh();
+        $this->assertEquals('55443322', $recipient->telegram_chat_id);
+        $this->assertNotNull($recipient->connected_at);
+
+        // Khi tạo đơn mới -> bắn thông báo qua SendTelegramNewOrderNotificationJob mà không gọi lại getUpdates
         $orderRes = $this->actingAs($this->adminA, 'sanctum')
             ->postJson('/api/v1/orders', [
                 'branch_id'         => $this->branchA1->id,
@@ -551,10 +561,6 @@ class TelegramNotificationTest extends TestCase
             ]);
 
         $orderRes->assertStatus(201);
-
-        $recipient->refresh();
-        $this->assertEquals('55443322', $recipient->telegram_chat_id);
-        $this->assertNotNull($recipient->connected_at);
 
         Http::assertSent(function ($request) {
             return str_contains($request->url(), '/sendMessage')
@@ -669,6 +675,57 @@ class TelegramNotificationTest extends TestCase
 
         $this->assertTrue($ok);
     }
+
+    /**
+     * 12. Tạo đơn mới đẩy SendTelegramNewOrderNotificationJob vào Queue (Queue::fake) và thực thi trực tiếp handle() không gọi getUpdates.
+     */
+    public function test_new_order_dispatches_send_telegram_new_order_notification_job_and_executes_handle_directly(): void
+    {
+        \Illuminate\Support\Facades\Queue::fake();
+
+        TelegramRecipient::create([
+            'tenant_id'         => $this->tenantA->id,
+            'branch_id'         => null,
+            'label'             => 'Admin Queue Test',
+            'phone'             => '0862389728',
+            'target_role'       => 'admin',
+            'telegram_chat_id'  => '8841956211',
+            'connect_token'     => 'adm_queue_test_token',
+            'subscribed_events' => ['order.created'],
+            'is_active'         => true,
+        ]);
+
+        $orderRes = $this->actingAs($this->adminA, 'sanctum')
+            ->postJson('/api/v1/orders', [
+                'branch_id'         => $this->branchA1->id,
+                'customer_name'     => 'Khách Queue Job',
+                'customer_phone'    => '0908887766',
+                'device_model_id'   => $this->deviceModel->id,
+                'issue_description' => 'Thay màng loa AirPods Pro',
+                'estimated_price'   => 400000,
+            ]);
+
+        $orderRes->assertStatus(201);
+        $orderId = (int) $orderRes->json('data.id');
+
+        \Illuminate\Support\Facades\Queue::assertPushed(
+            \App\Jobs\SendTelegramNewOrderNotificationJob::class,
+            fn (\App\Jobs\SendTelegramNewOrderNotificationJob $job) => $job->orderId === $orderId
+        );
+
+        // Thực thi trực tiếp handle() của Job và xác nhận gọi sendMessage nhưng KHÔNG gọi getUpdates
+        Http::fake([
+            'api.telegram.org/*/sendMessage*' => Http::response(['ok' => true], 200),
+            'api.telegram.org/*/getUpdates*'  => Http::response(['ok' => true, 'result' => []], 200),
+        ]);
+
+        $job = new \App\Jobs\SendTelegramNewOrderNotificationJob($orderId);
+        $job->handle(app(\App\Services\TelegramNotificationService::class));
+
+        Http::assertSent(fn ($req) => str_contains($req->url(), '/sendMessage') && (string) $req['chat_id'] === '8841956211');
+        Http::assertNotSent(fn ($req) => str_contains($req->url(), '/getUpdates'));
+    }
 }
+
 
 

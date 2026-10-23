@@ -111,19 +111,25 @@ describe('OpenSpec: daily-branch-order-code-format Frontend & Print Suite', () =
 
   test('5. UI repairs/page.tsx và tech/page.tsx: Hiển thị mã đơn bằng font-mono rõ ràng', () => {
     const repairsPath = path.join(rootDir, 'app/repairs/page.tsx');
+    const queuePanePath = path.join(rootDir, 'app/repairs/components/RepairQueuePane.tsx');
+    const canvasPanePath = path.join(rootDir, 'app/repairs/components/RepairCanvasPane.tsx');
     const techPath = path.join(rootDir, 'app/tech/page.tsx');
 
-    const repairsContent = fs.readFileSync(repairsPath, 'utf-8');
+    const repairsContent = [
+      fs.readFileSync(repairsPath, 'utf-8'),
+      fs.existsSync(queuePanePath) ? fs.readFileSync(queuePanePath, 'utf-8') : '',
+      fs.existsSync(canvasPanePath) ? fs.readFileSync(canvasPanePath, 'utf-8') : '',
+    ].join('\n');
     const techContent = fs.readFileSync(techPath, 'utf-8');
 
     assert.ok(
-      repairsContent.includes('font-mono font-bold text-[#176b58]'),
-      'repairs/page.tsx phải áp dụng class font-mono font-bold text-[#176b58] cho mã đơn'
+      repairsContent.includes('font-mono') && repairsContent.includes('#176b51'),
+      'repairs/page.tsx (và các sub-components) phải áp dụng class font-mono và màu #176b51 cho mã đơn'
     );
 
     assert.ok(
-      techContent.includes('font-mono font-bold text-sm text-[#176b58]'),
-      'tech/page.tsx phải áp dụng class font-mono font-bold text-sm text-[#176b58] cho mã đơn'
+      techContent.includes('font-mono font-bold text-sm text-[#176b51]'),
+      'tech/page.tsx phải áp dụng class font-mono font-bold text-sm text-[#176b51] cho mã đơn'
     );
   });
 });

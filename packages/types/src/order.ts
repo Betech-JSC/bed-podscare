@@ -99,6 +99,9 @@ export interface RepairOrder {
   address?: string | null;
   price: number;
   total_price?: number;
+  paid_amount?: number;
+  paidAmount?: number;
+  payments?: any[];
   initial_price?: number;
   initialPrice?: number;
   additional_services?: AdditionalServiceItem[];

@@ -21,7 +21,8 @@ class SePaySaaSWebhookTest extends TestCase
     {
         parent::setUp();
 
-        $this->webhookSecret = config('sepay.webhook_secret') ?? config('services.sepay.api_key') ?? 'fixo_secret_sepay_platform_2026';
+        $sepayConfig = \App\Models\SystemSetting::getPlatformSepayConfig();
+        $this->webhookSecret = $sepayConfig['webhook_secret'] ?: 'fixo_secret_sepay_platform_2026';
     }
 
     private function createTenantWithOwner(string $plan = 'trial', ?\DateTimeInterface $expiresAt = null): array
@@ -308,4 +309,57 @@ class SePaySaaSWebhookTest extends TestCase
             ->assertJsonPath('data.status', 'paid')
             ->assertJsonPath('data.plan', 'standard');
     }
+
+    /**
+     * Case 14: Cấu hình SePay lưu qua Super Admin được áp dụng ngay vào /saas/subscribe và /webhooks/sepay.
+     */
+    public function test_case_14_super_admin_sepay_config_syncs_to_subscribe_and_webhook(): void
+    {
+        $superAdmin = User::forceCreate([
+            'tenant_id' => null,
+            'name'      => 'Super Admin SePay',
+            'email'     => 'sa_sepay_' . uniqid() . '@fixo.com.vn',
+            'phone'     => '090' . rand(1000000, 9999999),
+            'password'  => Hash::make('password123'),
+            'role'      => 'super_admin',
+            'is_active' => true,
+        ]);
+
+        // 1. Super Admin cập nhật cấu hình SePay mới (gồm api_token mới)
+        $customSecret = 'dynamic_super_admin_sepay_secret_2026';
+        $updateRes = $this->actingAs($superAdmin, 'sanctum')
+            ->postJson('/api/v1/platform/integrations/sepay', [
+                'bank_code'      => 'ACB',
+                'account_number' => '8888999900',
+                'account_name'   => 'CONG TY FIXO PLATFORM',
+                'api_token'      => $customSecret,
+            ]);
+        $updateRes->assertStatus(200);
+
+        // 2. Chủ gian hàng tạo lệnh subscribe -> nhận ngay QR theo ACB - 8888999900
+        [$tenant, $owner] = $this->createTenantWithOwner('trial', now()->addDays(5));
+        $subRes = $this->actingAs($owner, 'sanctum')->postJson('/api/v1/saas/subscribe', [
+            'plan_id'       => 'standard',
+            'billing_cycle' => 'monthly',
+        ]);
+        $subRes->assertStatus(201)
+            ->assertJsonPath('data.bank_code', 'ACB')
+            ->assertJsonPath('data.account_number', '8888999900')
+            ->assertJsonPath('data.account_name', 'CONG TY FIXO PLATFORM');
+
+        $refCode = $subRes->json('data.reference_code');
+
+        // 3. Webhook dùng secret mới từ SystemSetting được chấp nhận HTTP 200
+        $webhookRes = $this->withHeaders([
+            'Authorization' => "Apikey {$customSecret}",
+        ])->postJson('/api/v1/webhooks/sepay', [
+            'id'             => 'TXN_DYN_CFG_' . uniqid(),
+            'content'        => "Thanh toan {$refCode}",
+            'transferAmount' => 299000,
+        ]);
+
+        $webhookRes->assertStatus(200)
+            ->assertJsonPath('success', true);
+    }
 }
+

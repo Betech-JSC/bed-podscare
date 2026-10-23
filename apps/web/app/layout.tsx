@@ -3,10 +3,16 @@ import localFont from 'next/font/local';
 import './globals.css';
 import { Providers } from './providers';
 
-const inter = localFont({
-  src: '../public/fonts/Inter-Variable.woff2',
+const dmSans = localFont({
+  src: '../public/fonts/DMSans-Variable.woff2',
   display: 'swap',
-  variable: '--font-inter',
+  variable: '--font-dm-sans',
+});
+
+const manrope = localFont({
+  src: '../public/fonts/Manrope-Variable.woff2',
+  display: 'swap',
+  variable: '--font-manrope',
 });
 
 export const metadata: Metadata = {
@@ -25,7 +31,7 @@ export const metadata: Metadata = {
 };
 
 export const viewport: Viewport = {
-  themeColor: '#f4f7f5',
+  themeColor: '#f6f8f6',
   width: 'device-width',
   initialScale: 1,
 };
@@ -36,7 +42,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    <html lang="vi" className={inter.variable}>
+    <html lang="vi" className={`${dmSans.variable} ${manrope.variable}`}>
       <head>
         {/* Google tag (gtag.js) */}
         <script async src="https://www.googletagmanager.com/gtag/js?id=G-MD8TXSM4S8" />
@@ -102,8 +108,8 @@ export default function RootLayout({
         />
       </head>
       <body
-        className={`${inter.className} font-sans bg-[#f4f7f5] text-[#1c302b] min-h-screen`}
-        style={{ fontFamily: "'Inter', var(--font-inter), -apple-system, BlinkMacSystemFont, sans-serif" }}
+        className={`${dmSans.className} font-sans bg-[#f6f8f6] text-[#17231f] min-h-screen`}
+        style={{ fontFamily: "var(--font-dm-sans), 'DM Sans', -apple-system, BlinkMacSystemFont, sans-serif" }}
       >
         <Providers>{children}</Providers>
       </body>

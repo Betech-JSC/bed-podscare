@@ -7,10 +7,12 @@ use App\Models\BranchPart;
 use App\Models\Part;
 use App\Models\Tenant;
 use App\Models\User;
+use Illuminate\Foundation\Testing\DatabaseTransactions;
 use Tests\TestCase;
 
 class BranchInventoryQueryTest extends TestCase
 {
+    use DatabaseTransactions;
     protected Tenant $tenant;
     protected Branch $branchA;
     protected Branch $branchB;

@@ -248,12 +248,44 @@ class PlatformBillingApiTest extends TestCase
             ->assertJsonPath('data.bank_code', 'VCB')
             ->assertJsonPath('data.account_number', '9988776655');
 
-        // 3. Test kết nối
+        // 3. Test kết nối hợp lệ (đo latency_ms thực tế, không hardcode)
         $resTest = $this->actingAs($this->superAdmin, 'sanctum')
             ->postJson('/api/v1/platform/integrations/sepay/test-connection');
 
         $resTest->assertStatus(200)
             ->assertJsonPath('success', true)
-            ->assertJsonPath('data.connected', true);
+            ->assertJsonPath('data.connected', true)
+            ->assertJsonPath('data.bank_code', 'VCB')
+            ->assertJsonPath('data.account_number', '9988776655');
+        $this->assertIsInt($resTest->json('data.latency_ms'));
+
+        // 4. Cấu hình vừa lưu bởi Super Admin được áp dụng ngay vào mã QR /api/v1/saas/subscribe
+        $resSubscribe = $this->actingAs($this->regularUser, 'sanctum')
+            ->postJson('/api/v1/saas/subscribe', [
+                'plan_id'       => 'standard',
+                'billing_cycle' => 'monthly',
+            ]);
+
+        $resSubscribe->assertStatus(201)
+            ->assertJsonPath('success', true)
+            ->assertJsonPath('data.bank_code', 'VCB')
+            ->assertJsonPath('data.account_number', '9988776655')
+            ->assertJsonPath('data.account_name', 'CTY TNHH CONG NGHE FIXO');
+        $this->assertStringContainsString('qr.sepay.vn/img?acc=9988776655&bank=VCB', $resSubscribe->json('data.qr_url'));
+
+        // 5. Khi bank_code hoặc account_number trống thì test-connection trả HTTP 422 và connected: false
+        \App\Models\SystemSetting::set('platform_sepay_config', [
+            'bank_code'      => '',
+            'account_number' => '',
+            'account_name'   => '',
+        ]);
+
+        $resTestInvalid = $this->actingAs($this->superAdmin, 'sanctum')
+            ->postJson('/api/v1/platform/integrations/sepay/test-connection');
+
+        $resTestInvalid->assertStatus(422)
+            ->assertJsonPath('success', false)
+            ->assertJsonPath('errors.connected', false);
     }
 }
+

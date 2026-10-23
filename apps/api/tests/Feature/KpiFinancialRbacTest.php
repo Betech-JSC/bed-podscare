@@ -293,9 +293,9 @@ class KpiFinancialRbacTest extends TestCase
         $resp->assertStatus(200);
         $data = $resp->json('data');
 
-        // Doanh thu
+        // Doanh thu: selected_date_revenue tính tổng toàn bộ đơn tiếp nhận hôm nay (500k + 300k + 400k = 1.200.000), monthly_revenue tính đơn completed (500k)
         $this->assertArrayHasKey('selected_date_revenue', $data);
-        $this->assertEquals(500000, (float) $data['selected_date_revenue']);
+        $this->assertEquals(1200000, (float) $data['selected_date_revenue']);
         $this->assertArrayHasKey('monthly_revenue', $data);
         $this->assertEquals(500000, (float) $data['monthly_revenue']);
         $this->assertArrayHasKey('revenue_chart', $data);
@@ -308,9 +308,9 @@ class KpiFinancialRbacTest extends TestCase
         $this->assertEquals(200000, (float) $data['monthly_cogs']);
         $this->assertArrayHasKey('selected_date_cogs_formatted', $data);
 
-        // Lợi nhuận gộp Gross Profit: 500,000 - 200,000 = 300,000
+        // Lợi nhuận gộp Gross Profit: selected_date = 1,200,000 - 200,000 = 1,000,000; monthly = 500,000 - 200,000 = 300,000
         $this->assertArrayHasKey('selected_date_gross_profit', $data);
-        $this->assertEquals(300000, (float) $data['selected_date_gross_profit']);
+        $this->assertEquals(1000000, (float) $data['selected_date_gross_profit']);
         $this->assertArrayHasKey('monthly_gross_profit', $data);
         $this->assertEquals(300000, (float) $data['monthly_gross_profit']);
         $this->assertArrayHasKey('selected_date_gross_profit_formatted', $data);

@@ -5,8 +5,8 @@
  */
 
 import type { RepairOrder } from '@podscare/types';
-import { generateBarcodeSVG, generateQRCodeSVG, extractOrderDisplaySuffix } from './BarcodeQRUtils';
-import { formatMoney, formatOrderTypeLabel, formatMultiOrderTypeLabel, FIXO_LOGO_A4_SVG, type TenantReceiptBranding } from './thermalK80HtmlBuilder';
+import { generateBarcodeSVG, generateQRCodeSVG, extractOrderDisplaySuffix } from './BarcodeQRUtils.ts';
+import { formatMoney, formatOrderTypeLabel, formatMultiOrderTypeLabel, FIXO_LOGO_A4_SVG, type TenantReceiptBranding } from './thermalK80HtmlBuilder.ts';
 
 /**
  * Sinh chuỗi HTML độc lập cho khổ giấy A4 (2 liên đối soát).

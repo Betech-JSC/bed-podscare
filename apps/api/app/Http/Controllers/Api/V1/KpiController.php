@@ -119,60 +119,92 @@ class KpiController extends Controller
             }
 
             $techIds = $technicians->pluck('id')->all();
-            $ordersGrouped = collect();
+            $techOrderStats = collect();
+            $techQcStats = collect();
 
             if (! empty($techIds)) {
-                $ordersQuery = RepairOrder::whereIn('technician_id', $techIds)
-                    ->select([
-                        'id',
-                        'tenant_id',
-                        'branch_id',
-                        'technician_id',
-                        'status',
-                        'order_type',
-                        'claim_id',
-                        'parent_order_id',
-                        'total_price',
-                        'qc_passed_at',
-                        'repair_started_at',
-                        'repair_completed_at',
-                        'tech_accepted_at',
-                        'created_at',
-                    ]);
+                $durationExpr = 'CASE
+                    WHEN repair_orders.repair_completed_at IS NOT NULL AND COALESCE(repair_orders.repair_started_at, repair_orders.tech_accepted_at, repair_orders.created_at) IS NOT NULL
+                    THEN ABS(TIMESTAMPDIFF(SECOND, COALESCE(repair_orders.repair_started_at, repair_orders.tech_accepted_at, repair_orders.created_at), repair_orders.repair_completed_at)) / 60.0
+                    ELSE NULL
+                END';
+
+                $ordersStatsQuery = RepairOrder::query()
+                    ->whereIn('repair_orders.technician_id', $techIds)
+                    ->selectRaw("
+                        repair_orders.technician_id,
+                        COUNT(*) AS total_orders,
+                        SUM(CASE WHEN repair_orders.status = 'completed' THEN 1 ELSE 0 END) AS completed_count,
+                        COALESCE(SUM(CASE WHEN repair_orders.status = 'completed' THEN repair_orders.total_price ELSE 0 END), 0) AS revenue_generated,
+                        SUM(CASE WHEN repair_orders.status IN ('assigned', 'in_repair', 'waiting_parts', 'waiting_qc') THEN 1 ELSE 0 END) AS in_repair_count,
+                        SUM(CASE WHEN repair_orders.status = 'rework_needed' OR EXISTS (
+                            SELECT 1 FROM qc_inspections WHERE qc_inspections.repair_order_id = repair_orders.id AND qc_inspections.result = 'fail'
+                        ) THEN 1 ELSE 0 END) AS rework_count,
+                        SUM(CASE WHEN repair_orders.status = 'rework_needed'
+                            OR repair_orders.order_type = 'warranty'
+                            OR repair_orders.claim_id IS NOT NULL
+                            OR repair_orders.parent_order_id IS NOT NULL
+                            OR EXISTS (
+                                SELECT 1 FROM qc_inspections WHERE qc_inspections.repair_order_id = repair_orders.id AND qc_inspections.result = 'fail'
+                            ) THEN 1 ELSE 0 END) AS warranty_count,
+                        SUM(CASE WHEN repair_orders.qc_passed_at IS NOT NULL OR repair_orders.status IN ('ready_for_return', 'waiting_pickup', 'completed', 'rework_needed') THEN 1 ELSE 0 END) AS fallback_qc_eligible,
+                        SUM(CASE WHEN repair_orders.qc_passed_at IS NOT NULL OR repair_orders.status IN ('ready_for_return', 'waiting_pickup', 'completed') THEN 1 ELSE 0 END) AS fallback_qc_passed,
+                        AVG({$durationExpr}) AS avg_duration_minutes,
+                        COALESCE(SUM({$durationExpr}), 0) AS sum_duration_minutes,
+                        COUNT({$durationExpr}) AS count_duration_orders
+                    ");
+
+                $qcStatsQuery = \App\Models\QcInspection::withoutGlobalScopes()
+                    ->join('repair_orders', 'qc_inspections.repair_order_id', '=', 'repair_orders.id')
+                    ->whereIn('repair_orders.technician_id', $techIds)
+                    ->selectRaw("
+                        repair_orders.technician_id,
+                        COUNT(qc_inspections.id) AS qc_total,
+                        SUM(CASE WHEN qc_inspections.result = 'pass' THEN 1 ELSE 0 END) AS qc_passed
+                    ");
 
                 if ($user && $user->tenant_id && $user->role !== 'super_admin') {
-                    $ordersQuery->where('tenant_id', $user->tenant_id);
+                    $ordersStatsQuery->where('repair_orders.tenant_id', $user->tenant_id);
+                    $qcStatsQuery->where('repair_orders.tenant_id', $user->tenant_id);
                 }
 
                 if ($branchId && $branchId !== 'all') {
-                    $ordersQuery->where('branch_id', $branchId);
+                    $ordersStatsQuery->where('repair_orders.branch_id', $branchId);
+                    $qcStatsQuery->where('repair_orders.branch_id', $branchId);
                 }
 
                 if ($fromDate) {
-                    $ordersQuery->where('created_at', '>=', Carbon::parse($fromDate)->startOfDay());
+                    $fromBound = Carbon::parse($fromDate)->startOfDay();
+                    $ordersStatsQuery->where('repair_orders.created_at', '>=', $fromBound);
+                    $qcStatsQuery->where('repair_orders.created_at', '>=', $fromBound);
                 }
 
                 if ($toDate) {
-                    $ordersQuery->where('created_at', '<=', Carbon::parse($toDate)->endOfDay());
+                    $toBound = Carbon::parse($toDate)->endOfDay();
+                    $ordersStatsQuery->where('repair_orders.created_at', '<=', $toBound);
+                    $qcStatsQuery->where('repair_orders.created_at', '<=', $toBound);
                 }
 
-                $ordersGrouped = $ordersQuery
-                    ->with(['qcInspections:id,repair_order_id,result'])
+                $techOrderStats = $ordersStatsQuery
+                    ->groupBy('repair_orders.technician_id')
                     ->get()
-                    ->groupBy('technician_id');
+                    ->keyBy('technician_id');
+
+                $techQcStats = $qcStatsQuery
+                    ->groupBy('repair_orders.technician_id')
+                    ->get()
+                    ->keyBy('technician_id');
             }
 
             foreach ($technicians as $tech) {
-                /** @var \Illuminate\Support\Collection<int, RepairOrder> $techOrders */
-                $techOrders = $ordersGrouped->get($tech->id, collect());
-                $orderCount = $techOrders->count();
+                $stat = $techOrderStats->get($tech->id);
+                $qcStat = $techQcStats->get($tech->id);
 
-                // Tổng đơn hoàn tất
-                $completedOrders = $techOrders->where('status', 'completed');
-                $completedCount = $completedOrders->count();
+                $orderCount = (int) ($stat->total_orders ?? 0);
+                $completedCount = (int) ($stat->completed_count ?? 0);
 
                 // Doanh thu dịch vụ tạo ra (Task 1.1 & 1.2)
-                $revenueGenerated = (float) $completedOrders->sum('total_price');
+                $revenueGenerated = (float) ($stat->revenue_generated ?? 0);
                 $revenueGeneratedFormatted = number_format($revenueGenerated, 0, ',', '.') . ' ₫';
 
                 if (! $canViewRevenue) {
@@ -181,61 +213,31 @@ class KpiController extends Controller
                 }
 
                 // Đơn sửa lại / bảo hành (rework_needed hoặc fail QC)
-                $reworkOrders = $techOrders->filter(function ($order) {
-                    return $order->status === 'rework_needed'
-                        || $order->qcInspections->contains('result', 'fail');
-                });
-                $reworkCount = $reworkOrders->count();
+                $reworkCount = (int) ($stat->rework_count ?? 0);
 
                 // Tỷ lệ bảo hành / sửa lại của KTV
-                $techWarrantyCount = $techOrders->filter(function ($order) {
-                    return $order->status === 'rework_needed'
-                        || ($order->order_type ?? '') === 'warranty'
-                        || ! empty($order->is_warranty_claim)
-                        || ! empty($order->claim_id)
-                        || ! empty($order->parent_order_id)
-                        || $order->qcInspections->contains('result', 'fail');
-                })->count();
+                $techWarrantyCount = (int) ($stat->warranty_count ?? 0);
                 $techWarrantyRate = $completedCount > 0
                     ? round(($techWarrantyCount / $completedCount) * 100, 1)
                     : 0.0;
 
                 // Tỉ lệ đạt QC
-                $allQc = $techOrders->flatMap->qcInspections;
-                $qcTotal = $allQc->count();
-                $qcPassed = $allQc->where('result', 'pass')->count();
+                $qcTotal = (int) ($qcStat->qc_total ?? 0);
+                $qcPassed = (int) ($qcStat->qc_passed ?? 0);
 
                 if ($qcTotal > 0) {
                     $qcPassRate = round(($qcPassed / $qcTotal) * 100, 1);
                 } else {
-                    $eligibleOrders = $techOrders->filter(function ($o) {
-                        return $o->qc_passed_at !== null
-                            || in_array($o->status, ['ready_for_return', 'waiting_pickup', 'completed', 'rework_needed'], true);
-                    });
-                    $passedOrders = $techOrders->filter(function ($o) {
-                        return $o->qc_passed_at !== null
-                            || in_array($o->status, ['ready_for_return', 'waiting_pickup', 'completed'], true);
-                    });
-                    $qcPassRate = $eligibleOrders->count() > 0
-                        ? round(($passedOrders->count() / $eligibleOrders->count()) * 100, 1)
+                    $eligibleCount = (int) ($stat->fallback_qc_eligible ?? 0);
+                    $passedCount = (int) ($stat->fallback_qc_passed ?? 0);
+                    $qcPassRate = $eligibleCount > 0
+                        ? round(($passedCount / $eligibleCount) * 100, 1)
                         : null;
                 }
 
                 // Thời gian xử lý trung bình (phút)
-                $durations = $techOrders->map(function ($order) {
-                    if ($order->repair_started_at && $order->repair_completed_at) {
-                        return abs(Carbon::parse($order->repair_completed_at)->diffInMinutes(Carbon::parse($order->repair_started_at)));
-                    }
-                    if ($order->repair_completed_at && $order->tech_accepted_at) {
-                        return abs(Carbon::parse($order->repair_completed_at)->diffInMinutes(Carbon::parse($order->tech_accepted_at)));
-                    }
-                    if ($order->repair_completed_at && $order->created_at) {
-                        return abs(Carbon::parse($order->repair_completed_at)->diffInMinutes(Carbon::parse($order->created_at)));
-                    }
-                    return null;
-                })->filter(fn($val) => $val !== null && $val >= 0);
-
-                $avgMinutes = $durations->count() > 0 ? round($durations->avg(), 1) : 0.0;
+                $durationOrdersCount = (int) ($stat->count_duration_orders ?? 0);
+                $avgMinutes = $durationOrdersCount > 0 ? round((float) $stat->avg_duration_minutes, 1) : 0.0;
                 $avgHours = round($avgMinutes / 60, 2);
 
                 $hoursPart = floor($avgMinutes / 60);
@@ -249,8 +251,11 @@ class KpiController extends Controller
                 $totalSystemWarranty += $techWarrantyCount;
                 $totalSystemQcTotal += $qcTotal;
                 $totalSystemQcPassed += $qcPassed;
-                foreach ($durations as $d) {
-                    $allSystemDurations[] = $d;
+                if ($durationOrdersCount > 0) {
+                    $allSystemDurations[] = [
+                        'sum'   => (float) ($stat->sum_duration_minutes ?? 0),
+                        'count' => $durationOrdersCount,
+                    ];
                 }
 
                 $roleLabel = match ($tech->role) {
@@ -289,7 +294,7 @@ class KpiController extends Controller
                     'warranty_count'               => $techWarrantyCount,
                     'warranty_rate'                => $techWarrantyRate,
                     'warranty_rate_formatted'      => "{$techWarrantyRate}%",
-                    'in_repair'                    => $techOrders->whereIn('status', ['assigned', 'in_repair', 'waiting_parts', 'waiting_qc'])->count(),
+                    'in_repair'                    => (int) ($stat->in_repair_count ?? 0),
                     'qc_passed'                    => $qcPassed,
                     'qc_total'                     => $qcTotal,
                     'qc_pass_rate'                 => $qcPassRate,
@@ -333,48 +338,47 @@ class KpiController extends Controller
             ]);
             $cskhIds = $cskhUsers->pluck('id')->all();
 
-            $cskhOrdersGrouped = collect();
+            $cskhOrderStats = collect();
 
             if (! empty($cskhIds)) {
-                $cskhOrdersQuery = RepairOrder::whereIn('created_by_user_id', $cskhIds)
-                    ->select([
-                        'id',
-                        'tenant_id',
-                        'branch_id',
-                        'created_by_user_id',
-                        'status',
-                        'total_price',
-                        'created_at',
-                    ]);
+                $cskhOrdersQuery = RepairOrder::query()
+                    ->whereIn('repair_orders.created_by_user_id', $cskhIds)
+                    ->selectRaw("
+                        repair_orders.created_by_user_id,
+                        COUNT(*) AS created_count,
+                        SUM(CASE WHEN repair_orders.status = 'completed' THEN 1 ELSE 0 END) AS completed_count,
+                        COALESCE(SUM(CASE WHEN repair_orders.status = 'completed' THEN repair_orders.total_price ELSE 0 END), 0) AS revenue_generated
+                    ");
 
                 if ($user && $user->tenant_id && $user->role !== 'super_admin') {
-                    $cskhOrdersQuery->where('tenant_id', $user->tenant_id);
+                    $cskhOrdersQuery->where('repair_orders.tenant_id', $user->tenant_id);
                 }
 
                 if ($branchId && $branchId !== 'all') {
-                    $cskhOrdersQuery->where('branch_id', $branchId);
+                    $cskhOrdersQuery->where('repair_orders.branch_id', $branchId);
                 }
 
                 if ($fromDate) {
-                    $cskhOrdersQuery->where('created_at', '>=', Carbon::parse($fromDate)->startOfDay());
+                    $cskhOrdersQuery->where('repair_orders.created_at', '>=', Carbon::parse($fromDate)->startOfDay());
                 }
 
                 if ($toDate) {
-                    $cskhOrdersQuery->where('created_at', '<=', Carbon::parse($toDate)->endOfDay());
+                    $cskhOrdersQuery->where('repair_orders.created_at', '<=', Carbon::parse($toDate)->endOfDay());
                 }
 
-                $cskhOrdersGrouped = $cskhOrdersQuery->get()->groupBy('created_by_user_id');
+                $cskhOrderStats = $cskhOrdersQuery
+                    ->groupBy('repair_orders.created_by_user_id')
+                    ->get()
+                    ->keyBy('created_by_user_id');
             }
 
             foreach ($cskhUsers as $cskh) {
-                /** @var \Illuminate\Support\Collection<int, RepairOrder> $cskhOrders */
-                $cskhOrders = $cskhOrdersGrouped->get($cskh->id, collect());
-                $createdCount = $cskhOrders->count();
-                $completedOrders = $cskhOrders->where('status', 'completed');
-                $completedCount = $completedOrders->count();
+                $cskhStat = $cskhOrderStats->get($cskh->id);
+                $createdCount = (int) ($cskhStat->created_count ?? 0);
+                $completedCount = (int) ($cskhStat->completed_count ?? 0);
                 $conversionRate = $createdCount > 0 ? round(($completedCount / $createdCount) * 100, 1) : 0.0;
 
-                $cskhRevenue = (float) $completedOrders->sum('total_price');
+                $cskhRevenue = (float) ($cskhStat->revenue_generated ?? 0);
                 $cskhRevenueFormatted = number_format($cskhRevenue, 0, ',', '.') . ' ₫';
 
                 if (! $canViewRevenue) {
@@ -406,8 +410,9 @@ class KpiController extends Controller
         }
 
         // Tính tổng hợp hệ thống
-        $durationCount = count($allSystemDurations);
-        $systemAvgMinutes = $durationCount > 0 ? round(array_sum($allSystemDurations) / $durationCount, 1) : 0.0;
+        $durationSum = array_sum(array_column($allSystemDurations, 'sum'));
+        $durationCount = array_sum(array_column($allSystemDurations, 'count'));
+        $systemAvgMinutes = $durationCount > 0 ? round($durationSum / $durationCount, 1) : 0.0;
         $systemAvgHours = round($systemAvgMinutes / 60, 2);
         $systemAvgDays = round($systemAvgHours / 8, 1); // 8 giờ làm việc / ngày
         $systemHoursPart = floor($systemAvgMinutes / 60);
@@ -489,7 +494,7 @@ class KpiController extends Controller
     public function dashboard(Request $request): JsonResponse
     {
         $user = $request->user();
-        $isAdmin = $user && $user->role === 'admin';
+        $isAdmin = $user && in_array($user->role, ['admin', 'super_admin'], true);
         $branchId = $request->input('branch_id');
         if (! $isAdmin && $user) {
             $branchId = $user->branch_id;
@@ -533,27 +538,50 @@ class KpiController extends Controller
             ->whereBetween('created_at', [$today->copy()->startOfDay(), $today->copy()->endOfDay()])
             ->count();
 
-        // Xử lý tham số ngày tra cứu (date hoặc target_date)
-        $targetDateInput = $request->input('date', $request->input('target_date'));
-        $targetDateStr = null;
-
-        if ($targetDateInput && is_string($targetDateInput) && preg_match('/^\d{4}-\d{2}-\d{2}$/', $targetDateInput)) {
-            try {
-                $parsedDate = Carbon::createFromFormat('Y-m-d', $targetDateInput, $tz);
-                if ($parsedDate && $parsedDate->format('Y-m-d') === $targetDateInput) {
-                    $targetDateStr = $targetDateInput;
+        // Xử lý tham số ngày tra cứu (date/target_date) và khoảng ngày (from_date/date_from -> to_date/date_to)
+        $parseValidDateStr = static function ($input) use ($tz): ?string {
+            if ($input && is_string($input) && preg_match('/^\d{4}-\d{2}-\d{2}$/', $input)) {
+                try {
+                    $parsedDate = Carbon::createFromFormat('Y-m-d', $input, $tz);
+                    if ($parsedDate && $parsedDate->format('Y-m-d') === $input) {
+                        return $input;
+                    }
+                } catch (\Throwable $e) {
+                    return null;
                 }
-            } catch (\Throwable $e) {
-                $targetDateStr = null;
+            }
+
+            return null;
+        };
+
+        $targetDateStr = $parseValidDateStr($request->input('date', $request->input('target_date')));
+        $fromDateStr = $parseValidDateStr($request->input('from_date', $request->input('date_from')));
+        $toDateStr = $parseValidDateStr($request->input('to_date', $request->input('date_to')));
+
+        if (! $fromDateStr && ! $toDateStr) {
+            $resolvedSingleDate = $targetDateStr ?? $today->toDateString();
+            $fromDateStr = $resolvedSingleDate;
+            $toDateStr = $resolvedSingleDate;
+            $targetDateStr = $resolvedSingleDate;
+        } else {
+            if (! $fromDateStr) {
+                $fromDateStr = $toDateStr ?? $targetDateStr ?? $today->toDateString();
+            }
+            if (! $toDateStr) {
+                $toDateStr = $fromDateStr;
+            }
+            if ($fromDateStr > $toDateStr) {
+                [$fromDateStr, $toDateStr] = [$toDateStr, $fromDateStr];
+            }
+            if (! $targetDateStr) {
+                $targetDateStr = $toDateStr;
             }
         }
 
-        if (! $targetDateStr) {
-            $targetDateStr = $today->toDateString();
-        }
-
-        $targetDateStart = Carbon::parse($targetDateStr, $tz)->startOfDay();
-        $targetDateEnd = Carbon::parse($targetDateStr, $tz)->endOfDay();
+        $fromDateStart = Carbon::parse($fromDateStr, $tz)->startOfDay();
+        $toDateEnd = Carbon::parse($toDateStr, $tz)->endOfDay();
+        $targetDateStart = $fromDateStart;
+        $targetDateEnd = $toDateEnd;
 
         // 3. Doanh thu hôm nay (cho tất cả các đơn completed: tại quầy và COD)
         $todayStart = Carbon::today($tz)->startOfDay();
@@ -576,19 +604,16 @@ class KpiController extends Controller
             $dailyRevenueFormatted = number_format($dailyRevenue, 0, ',', '.') . ' ₫';
         }
 
-        // 3b. Doanh thu ngày được chọn (selected_date) — gộp COUNT(*) và SUM(total_price) trong 1 truy vấn
+        // 3b. Doanh thu ngày/kỳ được chọn (selected_date / from_date -> to_date) theo ngày nhận đơn (created_at) ở mọi trạng thái hoạt động
         $selectedDateOrdersQuery = (clone $baseQuery)
-            ->where('status', 'completed')
-            ->where(function ($q) use ($targetDateStart, $targetDateEnd) {
-                $q->whereBetween('handed_over_at', [$targetDateStart, $targetDateEnd])
-                  ->orWhere(function ($sq) use ($targetDateStart, $targetDateEnd) {
-                      $sq->whereNull('handed_over_at')
-                         ->whereBetween('updated_at', [$targetDateStart, $targetDateEnd]);
-                  });
-            });
+            ->whereNotIn('status', ['cancelled', 'rejected'])
+            ->whereBetween('created_at', [$fromDateStart, $toDateEnd]);
+
+        $rawSelectedDateExpr = 'CASE WHEN COALESCE(total_price, 0) > 1 THEN COALESCE(total_price, 0) ELSE COALESCE(initial_price, 0) END';
+        $normSelectedDateExpr = "CASE WHEN ({$rawSelectedDateExpr}) <= 1 THEN 0 WHEN ROUND({$rawSelectedDateExpr}) >= 500 THEN ROUND(({$rawSelectedDateExpr}) / 1000.0) * 1000 ELSE ROUND({$rawSelectedDateExpr}) END";
 
         $selectedDateAgg = (clone $selectedDateOrdersQuery)
-            ->selectRaw('COUNT(*) as completed_count, COALESCE(SUM(total_price), 0) as revenue_sum')
+            ->selectRaw("SUM(CASE WHEN status = 'completed' THEN 1 ELSE 0 END) as completed_count, COALESCE(SUM({$normSelectedDateExpr}), 0) as revenue_sum")
             ->first();
         $selectedDateRevenue = (float) ($selectedDateAgg?->revenue_sum ?? 0);
         $selectedDateCompletedOrders = (int) ($selectedDateAgg?->completed_count ?? 0);
@@ -776,13 +801,16 @@ class KpiController extends Controller
                     }
 
                     if ($order->status === 'completed') {
-                        $orderCollected = $paidSum > 0 ? $paidSum : $orderTotal;
-                        if ($paidSum <= 0 && $orderCollected > 0) {
-                            $orderCash = $orderCollected;
-                            $orderTransfer = 0.0;
+                        if ($paidSum > 0) {
+                            $orderCollected = $paidSum;
+                            $orderUncollected = 0.0;
+                            $effectiveOrderTotal = $orderCollected;
+                        } else {
+                            $orderCollected = 0.0;
+                            $orderCash = 0.0;
+                            $orderUncollected = $orderTotal;
+                            $effectiveOrderTotal = $orderTotal;
                         }
-                        $orderUncollected = 0.0;
-                        $effectiveOrderTotal = $orderCollected;
                         $completedOrdersCount++;
                     } else {
                         $orderCollected = $paidSum;
@@ -813,6 +841,7 @@ class KpiController extends Controller
                         'customer_phone'               => $order->customer?->phone ?? $order->customer_phone ?? '',
                         'customer_orders_count'        => $customerOrdersCount,
                         'device_name'                  => $order->deviceModel?->name ?? $order->device_name ?? 'Thiết bị',
+                        'model_code'                   => $order->deviceModel?->model_code ?? null,
                         'status'                       => $order->status,
                         'total_price'                  => $effectiveOrderTotal,
                         'total_price_formatted'        => $formatCurrency($effectiveOrderTotal),
@@ -822,6 +851,8 @@ class KpiController extends Controller
                         'transfer_amount'              => $orderTransfer,
                         'uncollected_amount'           => $orderUncollected,
                         'uncollected_amount_formatted' => $formatCurrency($orderUncollected),
+                        'created_at'                   => $order->created_at?->toIso8601String(),
+                        'handed_over_at'               => $order->handed_over_at?->toIso8601String(),
                         'completed_at'                 => $completedAtIso,
                         'updated_at'                   => $completedAtIso,
                     ];
@@ -866,7 +897,7 @@ class KpiController extends Controller
                     $q->select(['id', 'name', 'phone', 'orders_count'])
                       ->withCount('repairOrders');
                 },
-                'deviceModel:id,name',
+                'deviceModel:id,name,model_code',
             ];
 
             $monthlyFinishedOrders = (clone $baseQuery)
@@ -905,34 +936,11 @@ class KpiController extends Controller
 
             $selectedDateFinishedOrders = (clone $baseQuery)
                 ->select($finishedOrderColumns)
-                ->where(function ($query) use ($targetDateStart, $targetDateEnd) {
-                    $query->where(function ($cq) use ($targetDateStart, $targetDateEnd) {
-                        $cq->where('status', 'completed')
-                           ->where(function ($q) use ($targetDateStart, $targetDateEnd) {
-                               $q->whereBetween('handed_over_at', [$targetDateStart, $targetDateEnd])
-                                 ->orWhere(function ($sq) use ($targetDateStart, $targetDateEnd) {
-                                     $sq->whereNull('handed_over_at')
-                                        ->whereBetween('updated_at', [$targetDateStart, $targetDateEnd]);
-                                 });
-                           });
-                    })->orWhere(function ($wq) use ($targetDateStart, $targetDateEnd) {
-                        $wq->whereIn('status', ['ready_for_return', 'waiting_pickup'])
-                           ->where(function ($q) use ($targetDateStart, $targetDateEnd) {
-                               $q->whereBetween('qc_passed_at', [$targetDateStart, $targetDateEnd])
-                                 ->orWhere(function ($sq) use ($targetDateStart, $targetDateEnd) {
-                                     $sq->whereNull('qc_passed_at')
-                                        ->whereBetween('repair_completed_at', [$targetDateStart, $targetDateEnd]);
-                                 })
-                                 ->orWhere(function ($sq2) use ($targetDateStart, $targetDateEnd) {
-                                     $sq2->whereNull('qc_passed_at')
-                                         ->whereNull('repair_completed_at')
-                                         ->whereBetween('created_at', [$targetDateStart, $targetDateEnd]);
-                                 });
-                           });
-                    });
-                })
+                ->whereNotIn('status', ['cancelled', 'rejected'])
+                ->whereBetween('created_at', [$fromDateStart, $toDateEnd])
                 ->with($finishedOrderRelations)
-                ->orderByDesc(DB::raw('COALESCE(handed_over_at, qc_passed_at, repair_completed_at, updated_at)'))
+                ->orderByDesc('created_at')
+                ->orderByDesc('id')
                 ->get();
 
             $monthlyPeriodStats = $buildPeriodBreakdown($monthlyFinishedOrders);
@@ -960,6 +968,10 @@ class KpiController extends Controller
             $selectedDateUncollectedAmountFormatted = $formatCurrency($selectedDateUncollectedAmount);
             $selectedDateUncollectedOrdersCount = $selectedDatePeriodStats['uncollected_orders_count'];
             $selectedDateOrdersBreakdown = $selectedDatePeriodStats['orders_breakdown'];
+
+            $selectedDateRevenue = $selectedDateTotalRevenue;
+            $selectedDateCompletedOrders = $selectedDateCompletedOrdersCount;
+            $selectedDateRevenueFormatted = $formatCurrencyShort($selectedDateRevenue);
 
             $calcCogsForOrderIds = function (array $orderIds): float {
                 if (empty($orderIds)) {
@@ -1364,6 +1376,8 @@ class KpiController extends Controller
             'intake_today'                   => $intakeToday,
             'today_orders'                   => $intakeToday,
             'selected_date'                  => $targetDateStr,
+            'from_date'                      => $fromDateStr,
+            'to_date'                        => $toDateStr,
             'selected_date_completed_orders' => $selectedDateCompletedOrders,
             'completion_rate'                => $completionRate,
             'warranty_rate'                  => $warrantyRate,
@@ -1431,6 +1445,8 @@ class KpiController extends Controller
             'intake_today'                    => $intakeToday,
             'today_orders'                    => $intakeToday,
             'selected_date'                   => $targetDateStr,
+            'from_date'                       => $fromDateStr,
+            'to_date'                         => $toDateStr,
             'selected_date_completed_orders'  => $selectedDateCompletedOrders,
             'reconciliation'                  => $reconciliation,
             'completion_rate'                 => $completionRate,

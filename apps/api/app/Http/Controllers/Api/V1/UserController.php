@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\User;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Validation\Rule;
 
@@ -79,10 +80,9 @@ class UserController extends Controller
         $authUser = $request->user();
         $authUser?->loadMissing('tenant');
         $tenant = $authUser?->tenant;
+
         if ($tenant) {
-            $quotaService = app(\App\Services\QuotaService::class);
-            $quotaService->checkSubscriptionActive($tenant);
-            $quotaService->checkUserQuota($tenant);
+            app(\App\Services\QuotaService::class)->checkSubscriptionActive($tenant);
         }
 
         $validated = $request->validate([
@@ -102,22 +102,33 @@ class UserController extends Controller
 
         $role = $validated['role'] === 'tech' ? 'technician' : $validated['role'];
 
-        $user = new User([
-            'tenant_id'  => $tenant?->id ?? $authUser?->tenant_id,
-            'name'       => $validated['name'],
-            'email'      => $validated['email'],
-            'phone'      => $validated['phone'] ?? null,
-            'password'   => Hash::make($validated['password']),
-            'branch_id'  => $validated['branch_id'] ?? null,
-            'is_active'  => true,
-            'avatar_url' => 'https://ui-avatars.com/api/?name=' . urlencode($validated['name']) . '&background=176B58&color=fff',
-        ]);
+        $user = DB::transaction(function () use ($tenant, $authUser, $validated, $role) {
+            if ($tenant) {
+                $quotaService = app(\App\Services\QuotaService::class);
+                $quotaService->checkSubscriptionActive($tenant);
+                $quotaService->checkUserQuota($tenant);
+            }
 
-        if ($authUser && in_array($authUser->role, ['admin', 'super_admin'], true)) {
-            $user->role = $role;
-        }
+            $user = new User([
+                'tenant_id'  => $tenant?->id ?? $authUser?->tenant_id,
+                'name'       => $validated['name'],
+                'email'      => $validated['email'],
+                'phone'      => $validated['phone'] ?? null,
+                'password'   => Hash::make($validated['password']),
+                'branch_id'  => $validated['branch_id'] ?? null,
+                'is_active'  => true,
+                'avatar_url' => 'https://ui-avatars.com/api/?name=' . urlencode($validated['name']) . '&background=176B58&color=fff',
+            ]);
 
-        $user->save();
+            if ($authUser && in_array($authUser->role, ['admin', 'super_admin'], true)) {
+                $user->role = $role;
+            }
+
+            $user->save();
+
+            return $user;
+        });
+
         $user->load('branch');
 
         return $this->success($user, 'Cấp tài khoản nhân viên thành công.', 201);

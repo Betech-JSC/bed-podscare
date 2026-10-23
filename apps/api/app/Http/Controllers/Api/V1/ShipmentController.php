@@ -192,26 +192,47 @@ class ShipmentController extends Controller
             );
         }
 
-        return DB::transaction(function () use ($shipment, $validated, $newStatus, $request) {
-            if ($request->filled('proof_photo_url')) {
-                ShipmentProof::create([
-                    'shipment_id' => $shipment->id,
-                    'photo_url'   => $request->input('proof_photo_url'),
-                    'caption'     => $request->input('proof_caption', 'Ảnh xác minh giao hàng'),
+        try {
+            return DB::transaction(function () use ($shipment, $validated, $newStatus, $request) {
+                $order = null;
+                if ($newStatus === 'delivered' && $shipment->repair_order_id) {
+                    $order = RepairOrder::lockForUpdate()->find($shipment->repair_order_id);
+                    if ($order && $order->status !== 'completed') {
+                        if (! in_array($order->status, ['ready_for_return', 'waiting_pickup', 'shipping'], true)) {
+                            throw new \DomainException(
+                                'Đơn sửa chữa chưa ở trạng thái sẵn sàng giao trả hoặc chờ khách nhận nên không thể hoàn tất giao vận đơn.'
+                            );
+                        }
+
+                        $orderTotal = RepairOrder::normalizeVndAmount($order->total_price ?? 0);
+                        if ($orderTotal > 0) {
+                            $paidSum = RepairOrder::normalizeVndAmount($order->payments()->where('status', 'paid')->sum('amount'));
+                            if ($paidSum < $orderTotal) {
+                                throw new \DomainException(
+                                    'Đơn hàng có chi phí sửa chữa (' . number_format($orderTotal, 0, ',', '.') . ' ₫) chưa được thanh toán đủ. Vui lòng thực hiện Thu tiền & Trả máy trước khi hoàn tất đơn.'
+                                );
+                            }
+                        }
+                    }
+                }
+
+                if ($request->filled('proof_photo_url')) {
+                    ShipmentProof::create([
+                        'shipment_id' => $shipment->id,
+                        'photo_url'   => $request->input('proof_photo_url'),
+                        'caption'     => $request->input('proof_caption', 'Ảnh xác minh giao hàng'),
+                    ]);
+                }
+
+                $shipment->update([
+                    'status'       => $newStatus,
+                    'delivered_at' => $newStatus === 'delivered' ? Carbon::now() : $shipment->delivered_at,
+                    'notes'        => $validated['notes'] ?? $shipment->notes,
                 ]);
-            }
 
-            $shipment->update([
-                'status'       => $newStatus,
-                'delivered_at' => $newStatus === 'delivered' ? Carbon::now() : $shipment->delivered_at,
-                'notes'        => $validated['notes'] ?? $shipment->notes,
-            ]);
-
-            // Khi trạng thái chuyển sang delivered, tự động hoàn tất đơn sửa chữa liên quan
-            if ($newStatus === 'delivered' && $shipment->repair_order_id) {
-                $order = RepairOrder::find($shipment->repair_order_id);
-                if ($order && $order->status !== 'completed') {
-                    if (! in_array($order->status, ['ready_for_return', 'waiting_pickup', 'rejected'], true)) {
+                // Khi trạng thái chuyển sang delivered, tự động hoàn tất đơn sửa chữa liên quan qua workflowService
+                if ($newStatus === 'delivered' && $order && $order->status !== 'completed') {
+                    if ($order->status === 'shipping') {
                         $order->status = 'ready_for_return';
                         $order->save();
                     }
@@ -225,19 +246,21 @@ class ShipmentController extends Controller
                         'user_agent' => $request->userAgent(),
                     ]);
                 }
-            }
 
-            AuditLog::create([
-                'user_id'        => $request->user()->id,
-                'user_name'      => $request->user()->name,
-                'action'         => "Cập nhật vận đơn: {$newStatus}",
-                'auditable_type' => 'Shipment',
-                'auditable_id'   => $shipment->id,
-                'details'        => "Vận đơn {$shipment->shipment_code} chuyển sang {$newStatus}",
-                'ip_address'     => $request->ip(),
-            ]);
+                AuditLog::create([
+                    'user_id'        => $request->user()->id,
+                    'user_name'      => $request->user()->name,
+                    'action'         => "Cập nhật vận đơn: {$newStatus}",
+                    'auditable_type' => 'Shipment',
+                    'auditable_id'   => $shipment->id,
+                    'details'        => "Vận đơn {$shipment->shipment_code} chuyển sang {$newStatus}",
+                    'ip_address'     => $request->ip(),
+                ]);
 
-            return $this->success($shipment->fresh('proofs'), 'Cập nhật trạng thái giao nhận thành công.');
-        });
+                return $this->success($shipment->fresh('proofs'), 'Cập nhật trạng thái giao nhận thành công.');
+            });
+        } catch (\DomainException $e) {
+            return $this->failure($e->getMessage(), 422);
+        }
     }
 }

@@ -14,7 +14,27 @@ class PartnerController extends Controller
      */
     public function index(Request $request): JsonResponse
     {
-        $query = Partner::query()->withCount('shipments')->latest('id');
+        $user = $request->user('sanctum') ?? $request->user();
+
+        $query = Partner::query()
+            ->withCount([
+                'shipments' => function ($q) use ($user) {
+                    if (! $user) {
+                        $q->whereRaw('1 = 0');
+                        return;
+                    }
+
+                    if ($user->role !== 'super_admin') {
+                        $q->whereHas('repairOrder', function ($ro) use ($user) {
+                            $ro->withoutGlobalScopes()->where('tenant_id', $user->tenant_id);
+                            if (! in_array($user->role, ['admin', 'super_admin'], true) && $user->branch_id) {
+                                $ro->where('branch_id', $user->branch_id);
+                            }
+                        });
+                    }
+                },
+            ])
+            ->latest('id');
 
         if ($status = $request->input('status')) {
             $query->where('status', $status);
@@ -75,9 +95,27 @@ class PartnerController extends Controller
     /**
      * Xem thông tin chi tiết đối tác.
      */
-    public function show(int $id): JsonResponse
+    public function show(Request $request, int $id): JsonResponse
     {
-        $partner = Partner::with('shipments')->find($id);
+        $user = $request->user('sanctum') ?? $request->user();
+
+        $partner = Partner::with([
+            'shipments' => function ($q) use ($user) {
+                if (! $user) {
+                    $q->whereRaw('1 = 0');
+                    return;
+                }
+
+                if ($user->role !== 'super_admin') {
+                    $q->whereHas('repairOrder', function ($ro) use ($user) {
+                        $ro->withoutGlobalScopes()->where('tenant_id', $user->tenant_id);
+                        if (! in_array($user->role, ['admin', 'super_admin'], true) && $user->branch_id) {
+                            $ro->where('branch_id', $user->branch_id);
+                        }
+                    });
+                }
+            },
+        ])->find($id);
 
         if (! $partner) {
             return $this->empty('Không tìm thấy đối tác.');

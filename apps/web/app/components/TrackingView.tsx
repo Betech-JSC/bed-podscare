@@ -1,10 +1,22 @@
 'use client';
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
-import { Button, StatusTag, Icon, StepperWidget, useToast } from '@podscare/ui';
+import {
+  Button,
+  StatusTag,
+  Icon,
+  StepperWidget,
+  HardwarePartSelector,
+  parseHardwarePartsFromText,
+  resolveOrderStatus,
+  getOrderStepIndex,
+  formatVND,
+  useToast,
+} from '@podscare/ui';
 import type { RepairOrder } from '@podscare/types';
 import { repairService } from '@podscare/api-client';
+import { generateQRCodeSVG } from './print/BarcodeQRUtils';
 
 export const TrackingView: React.FC<{ initialId?: string }> = ({ initialId = '' }) => {
   const router = useRouter();
@@ -24,42 +36,26 @@ export const TrackingView: React.FC<{ initialId?: string }> = ({ initialId = '' 
     setSearchedOrder(null);
 
     try {
-      let o: any = null;
-      try {
-        const res = await repairService.trackOrder(cleanId, phone ? phone.trim() : undefined);
-        const data = res?.data || res;
-        o = data?.order || data;
-      } catch {
-        // Fallback to getRepairById if trackOrder fails
-        try {
-          const res = await repairService.getRepairById(cleanId);
-          o = res?.data || res;
-        } catch {
-          o = null;
-        }
-      }
+      const res = await repairService.trackOrder(cleanId, phone ? phone.trim() : undefined);
+      const data = res?.data || res;
+      const o = data?.order || data;
 
       if (o && (o.id || o.order_code)) {
-        const statusMap: Record<string, { label: string; type: any }> = {
-          inspecting: { label: 'Đang kiểm tra', type: 'progress' },
-          waiting_approval: { label: 'Chờ khách duyệt', type: 'wait' },
-          waiting_tech: { label: 'Chờ kỹ thuật', type: 'new' },
-          assigned: { label: 'Đã nhận đơn', type: 'wait' },
-          in_repair: { label: 'Đang sửa', type: 'progress' },
-          waiting_parts: { label: 'Chờ linh kiện', type: 'wait' },
-          rework_needed: { label: 'Cần sửa lại', type: 'danger' },
-          waiting_qc: { label: 'Chờ QC', type: 'ready' },
-          ready_for_return: { label: 'Sẵn sàng trả', type: 'ready' },
-          waiting_pickup: { label: 'Chờ khách nhận', type: 'ready' },
-          completed: { label: 'Hoàn tất', type: 'gray' },
-          rejected: { label: 'Từ chối sửa', type: 'danger' },
-          cancelled: { label: 'Đã hủy', type: 'gray' },
-        };
+        const mappedStatus = resolveOrderStatus(o.status, 'Đang xử lý');
 
-        const mappedStatus = statusMap[o.status] || {
-          label: o.status || 'Đang xử lý',
-          type: 'wait',
-        };
+        const mappedChecks = Array.isArray(o.intake_checklists)
+          ? o.intake_checklists.map((c: any) => ({
+              label: c.item_name || c.label || 'Hạng mục kiểm tra',
+              status:
+                c.status === 'pass' || c.status === 'passed' || c.status === 'good' || c.status === 'Hoạt động'
+                  ? ('Hoạt động' as const)
+                  : c.status === 'fail' || c.status === 'failed' || c.status === 'Lỗi'
+                  ? ('Lỗi' as const)
+                  : ('Không kiểm tra' as const),
+            }))
+          : Array.isArray(o.checks)
+          ? o.checks
+          : [];
 
         const mappedOrder: RepairOrder = {
           id: o.order_code || cleanId,
@@ -80,6 +76,9 @@ export const TrackingView: React.FC<{ initialId?: string }> = ({ initialId = '' 
             ? new Intl.DateTimeFormat('vi-VN').format(new Date(o.created_at))
             : 'Hôm nay',
           branch: o.branch?.name || 'Chi nhánh FIXO',
+          accessories: o.accessories || '',
+          appearance: o.appearance_notes || o.appearance || '',
+          checks: mappedChecks,
         };
         setSearchedOrder(mappedOrder);
       } else {
@@ -103,35 +102,27 @@ export const TrackingView: React.FC<{ initialId?: string }> = ({ initialId = '' 
     executeSearch(searchId, searchPhone);
   };
 
-  const moneyFormatted = (n: number) =>
-    n ? new Intl.NumberFormat('vi-VN').format(n) + ' ₫' : '—';
+  const moneyFormatted = (n: number) => (n ? formatVND(n) : '—');
 
-  const getStepIndex = (status: string) => {
-    switch (status) {
-      case 'Tiếp nhận mới':
-        return 0;
-      case 'Chờ kỹ thuật':
-      case 'Đang kiểm tra':
-      case 'Chờ khách duyệt':
-        return 1;
-      case 'Đã nhận đơn':
-      case 'Đang sửa':
-      case 'Chờ linh kiện':
-        return 2;
-      case 'Chờ QC':
-        return 3;
-      case 'Sẵn sàng trả':
-      case 'Hoàn tất':
-      default:
-        return 4;
-    }
-  };
+  const qrSvgMarkup = useMemo(() => {
+    if (!searchedOrder?.id) return '';
+    const origin =
+      typeof window !== 'undefined' && window.location?.origin
+        ? window.location.origin
+        : 'https://fixo.vn';
+    const trackUrl = `${origin}/track?id=${encodeURIComponent(searchedOrder.id)}`;
+    return generateQRCodeSVG(trackUrl, { size: 64, margin: 1 });
+  }, [searchedOrder?.id]);
+
+  const selectedHardwareParts = useMemo(() => {
+    return parseHardwarePartsFromText(searchedOrder?.accessories);
+  }, [searchedOrder?.accessories]);
 
   return (
-    <div className="min-h-screen bg-[#f4f7f5] text-[#1c302b] flex flex-col items-center p-4 sm:p-8">
+    <div className="min-h-screen bg-[#f6f8f6] text-[#17231f] flex flex-col items-center p-4 sm:p-8">
       <div className="max-w-[760px] w-full space-y-6">
         {/* Brand Bar */}
-        <div className="flex items-center justify-between pb-4 border-b border-[#e5ece8]">
+        <div className="flex items-center justify-between pb-4 border-b border-[#e9eeeb]">
           <div className="flex items-center gap-2.5">
             <img
               src="/logo.png"
@@ -139,10 +130,10 @@ export const TrackingView: React.FC<{ initialId?: string }> = ({ initialId = '' 
               className="w-9 h-9 rounded-[10px] object-contain shadow-sm flex-none"
             />
             <div>
-              <b className="font-heading font-extrabold text-xl tracking-tight text-[#1c302b]">
+              <b className="font-heading font-extrabold text-xl tracking-tight text-[#17231f]">
                 FIXO Tra cứu
               </b>
-              <small className="block text-xs tracking-[1.1px] text-[#7f8f87] font-bold">
+              <small className="block text-xs tracking-[1.1px] text-[#81908a] font-bold">
                 CUSTOMER TRACKING PORTAL
               </small>
             </div>
@@ -153,14 +144,14 @@ export const TrackingView: React.FC<{ initialId?: string }> = ({ initialId = '' 
         </div>
 
         {/* Hero & Search Card */}
-        <div className="bg-white p-6 sm:p-8 rounded-[14px] border border-[#e5ece8] shadow-soft">
-          <div className="text-xs font-bold text-[#176b58] uppercase tracking-[1.05px] mb-1.5">
+        <div className="bg-white p-6 sm:p-8 rounded-[14px] border border-[#e9eeeb] shadow-soft">
+          <div className="text-xs font-bold text-[#176b51] uppercase tracking-[1.05px] mb-1.5">
             CUSTOMER PORTAL
           </div>
-          <h1 className="font-heading font-bold text-2xl sm:text-3xl text-[#1c302b] m-0">
+          <h1 className="font-heading font-bold text-2xl sm:text-3xl text-[#17231f] m-0">
             Theo dõi tiến độ sửa chữa thiết bị
           </h1>
-          <p className="text-sm text-[#7e8d85] mt-2 mb-6 max-w-[540px] leading-relaxed">
+          <p className="text-sm text-[#81908a] mt-2 mb-6 max-w-[540px] leading-relaxed">
             Nhập mã phiếu sửa chữa và số điện thoại trên biên nhận để xem cập nhật thời gian thực từ
             kỹ thuật viên.
           </p>
@@ -172,14 +163,14 @@ export const TrackingView: React.FC<{ initialId?: string }> = ({ initialId = '' 
               onChange={(e) => setSearchId(e.target.value)}
               placeholder="Mã phiếu (ví dụ: PC26-00981)"
               required
-              className="flex-1 h-11 px-4 border border-[#e1e9e4] rounded-[8px] text-sm outline-none focus:border-[#75a994] focus:ring-2 focus:ring-[#176b58]/10"
+              className="flex-1 h-11 px-4 border border-[#e9eeeb] rounded-[8px] text-sm outline-none focus:border-[#176b51] focus:ring-2 focus:ring-[#176b51]/10"
             />
             <input
               type="tel"
               value={searchPhone}
               onChange={(e) => setSearchPhone(e.target.value)}
               placeholder="Số điện thoại người gửi máy"
-              className="sm:w-[220px] h-11 px-4 border border-[#e1e9e4] rounded-[8px] text-sm outline-none focus:border-[#75a994] focus:ring-2 focus:ring-[#176b58]/10"
+              className="sm:w-[220px] h-11 px-4 border border-[#e9eeeb] rounded-[8px] text-sm outline-none focus:border-[#176b51] focus:ring-2 focus:ring-[#176b51]/10"
             />
             <Button
               variant="primary"
@@ -194,17 +185,17 @@ export const TrackingView: React.FC<{ initialId?: string }> = ({ initialId = '' 
 
         {/* Result Card or Not Found */}
         {hasSearched && searchedOrder ? (
-          <div className="bg-white rounded-[14px] border border-[#e5ece8] shadow-soft overflow-hidden">
+          <div className="bg-white rounded-[14px] border border-[#e9eeeb] shadow-soft overflow-hidden">
             {/* Order Head */}
-            <div className="flex flex-wrap items-center justify-between p-5 sm:p-6 border-b border-[#e5ece8] gap-3 bg-[#fafbfa]">
+            <div className="flex flex-wrap items-center justify-between p-5 sm:p-6 border-b border-[#e9eeeb] gap-3 bg-[#f6f8f6]">
               <div>
-                <div className="text-xs font-bold text-[#819089] uppercase tracking-[1px] mb-1">
+                <div className="text-xs font-bold text-[#81908a] uppercase tracking-[1px] mb-1">
                   MÃ PHIẾU · {searchedOrder.id}
                 </div>
-                <h2 className="font-heading font-bold text-lg sm:text-xl text-[#1c302b] m-0">
+                <h2 className="font-heading font-bold text-lg sm:text-xl text-[#17231f] m-0">
                   {searchedOrder.device}
                 </h2>
-                <p className="text-sm text-[#7e8d85] mt-1 mb-0">
+                <p className="text-sm text-[#81908a] mt-1 mb-0">
                   {searchedOrder.name} · Ngày tiếp nhận: {searchedOrder.date} · Chi nhánh{' '}
                   {searchedOrder.branch}
                 </p>
@@ -217,7 +208,7 @@ export const TrackingView: React.FC<{ initialId?: string }> = ({ initialId = '' 
             </div>
 
             {/* Stepper */}
-            <div className="p-5 sm:p-6 border-b border-[#f0f3f1]">
+            <div className="p-5 sm:p-6 border-b border-[#e9eeeb]">
               <StepperWidget
                 steps={[
                   { id: '1', label: 'Tiếp nhận' },
@@ -226,15 +217,15 @@ export const TrackingView: React.FC<{ initialId?: string }> = ({ initialId = '' 
                   { id: '4', label: 'Kiểm định QC' },
                   { id: '5', label: 'Sẵn sàng giao' },
                 ]}
-                currentStepIndex={getStepIndex(searchedOrder.status)}
+                currentStepIndex={getOrderStepIndex(searchedOrder.status)}
               />
             </div>
 
             {/* Content Details */}
             <div className="p-5 sm:p-6 space-y-4">
-              <div className="bg-[#f7faf8] p-4 sm:p-5 rounded-[10px] border border-[#e4ede7]">
-                <b className="block text-sm text-[#1c302b] mb-1.5 font-bold">Cập nhật tiến độ gần nhất</b>
-                <p className="text-sm text-[#46574f] leading-relaxed m-0">
+              <div className="bg-[#e9f4ef] p-4 sm:p-5 rounded-[10px] border border-[#cce3d8]">
+                <b className="block text-sm text-[#17231f] mb-1.5 font-bold">Cập nhật tiến độ gần nhất</b>
+                <p className="text-sm text-[#17231f] leading-relaxed m-0">
                   {searchedOrder.status === 'Đang sửa'
                     ? `Kỹ thuật viên đang xử lý tình trạng: "${searchedOrder.issue}". Dự kiến hoàn thành trong ngày.`
                     : searchedOrder.status === 'Chờ QC'
@@ -248,27 +239,76 @@ export const TrackingView: React.FC<{ initialId?: string }> = ({ initialId = '' 
               </div>
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5 text-sm">
-                <div className="p-4 bg-white rounded-[8px] border border-[#e5ece8]">
-                  <span className="text-[#84948c] block mb-1 text-xs">Tình trạng lỗi tiếp nhận:</span>
-                  <b className="text-[#1c302b]">{searchedOrder.issue}</b>
+                <div className="p-4 bg-white rounded-[8px] border border-[#e9eeeb]">
+                  <span className="text-[#81908a] block mb-1 text-xs">Tình trạng lỗi tiếp nhận:</span>
+                  <b className="text-[#17231f]">{searchedOrder.issue}</b>
                 </div>
-                <div className="p-4 bg-white rounded-[8px] border border-[#e5ece8]">
-                  <span className="text-[#84948c] block mb-1 text-xs">Chi phí sửa chữa xác nhận:</span>
-                  <b className="text-[#176b58] font-heading text-base">
+                <div className="p-4 bg-white rounded-[8px] border border-[#e9eeeb]">
+                  <span className="text-[#81908a] block mb-1 text-xs">Chi phí sửa chữa xác nhận:</span>
+                  <b className="text-[#176b51] font-heading text-base font-mono tabular-nums">
                     {moneyFormatted(searchedOrder.price)}
                   </b>
                 </div>
               </div>
 
+              {/* Linh kiện bàn giao (L / R / Case) */}
+              <div className="p-4 bg-white rounded-[8px] border border-[#e9eeeb] space-y-2.5">
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-xs font-bold text-[#81908a] uppercase tracking-wider">
+                    Thành phần linh kiện tiếp nhận (L / R / Case)
+                  </span>
+                  {searchedOrder.accessories && (
+                    <span className="text-xs text-[#17231f] font-medium">
+                      {searchedOrder.accessories}
+                    </span>
+                  )}
+                </div>
+                <HardwarePartSelector
+                  selectedParts={selectedHardwareParts}
+                  readOnly
+                />
+              </div>
+
+              {/* Bảng checklist tiếp nhận ban đầu */}
+              {Array.isArray(searchedOrder.checks) && searchedOrder.checks.length > 0 && (
+                <div className="p-4 bg-white rounded-[8px] border border-[#e9eeeb] space-y-2.5">
+                  <span className="text-xs font-bold text-[#81908a] uppercase tracking-wider block">
+                    Biên bản kiểm tra tình trạng tiếp nhận ({searchedOrder.checks.length} hạng mục)
+                  </span>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                    {searchedOrder.checks.map((chk, idx) => (
+                      <div
+                        key={`${chk.label}-${idx}`}
+                        className="flex items-center justify-between gap-2 px-3 py-2 rounded-[6px] bg-[#f6f8f6] border border-[#e9eeeb] text-xs"
+                      >
+                        <span className="text-[#17231f] font-medium truncate">{chk.label}</span>
+                        <span
+                          className={`px-2 py-0.5 rounded font-bold whitespace-nowrap ${
+                            chk.status === 'Hoạt động'
+                              ? 'bg-[#e9f4ef] text-[#176b51]'
+                              : chk.status === 'Lỗi'
+                              ? 'bg-[#fbefed] text-[#bc5b52]'
+                              : 'bg-[#eff2f0] text-[#5c6964]'
+                          }`}
+                        >
+                          {chk.status}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
               {/* QR Code section */}
               <div className="flex flex-wrap items-center gap-4 p-4 border border-dashed border-[#d9e3dc] rounded-[10px] bg-[#fbfdfb]">
-                <div className="w-[60px] h-[60px] bg-white border border-[#e3e8e4] p-1 grid place-items-center flex-none">
-                  <Icon name="qr" size={44} className="text-[#1c302b]" />
-                </div>
+                <div
+                  className="w-[72px] h-[72px] bg-white border border-[#e9eeeb] p-1 grid place-items-center flex-none rounded-[6px]"
+                  dangerouslySetInnerHTML={{ __html: qrSvgMarkup }}
+                />
                 <div className="flex-1 min-w-[200px]">
-                  <b className="text-sm text-[#1c302b] block font-bold">Mã QR tra cứu nhanh</b>
-                  <p className="text-xs text-[#7e8d85] mt-0.5 mb-0">
-                    Lưu mã này để tiện tra cứu trên điện thoại mà không cần nhập lại mã đơn.
+                  <b className="text-sm text-[#17231f] block font-bold">Mã QR tra cứu nhanh</b>
+                  <p className="text-xs text-[#81908a] mt-0.5 mb-0">
+                    Quét mã QR bằng camera điện thoại hoặc lưu liên kết để tra cứu trực tiếp đơn {searchedOrder.id}.
                   </p>
                 </div>
                 <Button
@@ -293,10 +333,10 @@ export const TrackingView: React.FC<{ initialId?: string }> = ({ initialId = '' 
             <div className="w-12 h-12 rounded-full bg-[#fbefed] text-[#bc5b52] grid place-items-center mx-auto">
               <Icon name="alert" size={24} />
             </div>
-            <h3 className="font-heading font-bold text-base text-[#1c302b] m-0">
-              Không tìm thấy đơn sửa chữa phù hợp
+            <h3 className="font-heading font-bold text-base text-[#17231f] m-0">
+              Không tìm thấy phiếu sửa chữa
             </h3>
-            <p className="text-sm text-[#7e8d85] max-w-[440px] mx-auto leading-relaxed">
+            <p className="text-sm text-[#81908a] max-w-[440px] mx-auto leading-relaxed">
               Không tìm thấy phiếu có mã{' '}
               <b>{searchId}</b>. Quý khách vui lòng kiểm tra lại mã số
               trên biên lai hoặc liên hệ hotline cửa hàng để được hỗ trợ.
@@ -307,3 +347,4 @@ export const TrackingView: React.FC<{ initialId?: string }> = ({ initialId = '' 
     </div>
   );
 };
+

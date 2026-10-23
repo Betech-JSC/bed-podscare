@@ -49,18 +49,56 @@ class WarrantyController extends Controller
     public function index(Request $request): JsonResponse
     {
         $user = $request->user();
-        $query = Warranty::with([
+        $baseQuery = Warranty::query()->whereHas('repairOrder', function ($rq) use ($user) {
+            $this->applyOrderTenantAndBranchScope($rq, $user);
+        });
+
+        $todayDate = now()->startOfDay()->toDateString();
+        $expiringLimit = now()->addDays(7)->endOfDay()->toDateTimeString();
+
+        $totalCount = (clone $baseQuery)->count();
+        $activeCount = (clone $baseQuery)
+            ->where('status', 'active')
+            ->where('end_date', '>=', $todayDate)
+            ->count();
+        $expiringSoonCount = (clone $baseQuery)
+            ->where('status', 'active')
+            ->where('end_date', '>=', $todayDate)
+            ->where('end_date', '<=', $expiringLimit)
+            ->count();
+        $expiredCount = (clone $baseQuery)
+            ->where(function ($q) use ($todayDate) {
+                $q->where('status', '!=', 'active')
+                  ->orWhere('end_date', '<', $todayDate)
+                  ->orWhereNull('end_date');
+            })
+            ->count();
+
+        $summary = [
+            'total'                    => $totalCount,
+            'active'                   => $activeCount,
+            'expiring_soon'            => $expiringSoonCount,
+            'expired'                  => $expiredCount,
+            'total_warranties'         => $totalCount,
+            'active_count'             => $activeCount,
+            'expiring_soon_count'      => $expiringSoonCount,
+            'expired_or_revoked_count' => $expiredCount,
+        ];
+
+        $query = (clone $baseQuery)->with([
             'repairOrder.technician',
             'repairOrder.qcInspections',
             'repairOrder.branch',
             'customer',
             'deviceModel',
-        ])->whereHas('repairOrder', function ($rq) use ($user) {
-            $this->applyOrderTenantAndBranchScope($rq, $user);
-        });
+        ]);
 
         if ($status = $request->input('status')) {
             $query->where('status', $status);
+        }
+
+        if ($repairOrderId = $request->input('repair_order_id')) {
+            $query->where('repair_order_id', $repairOrderId);
         }
 
         $phone = PhoneHelper::sanitizeText($request->input('phone') ?: $request->input('customer_phone'));
@@ -87,15 +125,44 @@ class WarrantyController extends Controller
                          ->orWhere('order_code', 'like', "%{$search}%");
                   })
                   ->orWhereHas('customer', function ($sq) use ($search) {
-                      $sq->where('name', 'like', "%{$search}%");
-                      PhoneHelper::applyPhoneColumnSearch($sq, 'phone', $search, 'or');
+                      $sq->where(function ($inner) use ($search) {
+                          $inner->where('name', 'like', "%{$search}%");
+                          PhoneHelper::applyPhoneColumnSearch($inner, 'phone', $search, 'or');
+                      });
+                  })
+                  ->orWhereHas('deviceModel', function ($dq) use ($search) {
+                      $dq->where('name', 'like', "%{$search}%");
                   });
             });
         }
 
-        $warranties = $query->latest('id')->paginate($request->input('per_page', 15));
+        if ($request->boolean('all') || $request->input('per_page') === 'all') {
+            $items = $query->latest('id')->limit(1000)->get();
+            $total = $items->count();
 
-        return $this->success($warranties, 'Lấy danh sách bảo hành thành công.');
+            return $this->success([
+                'current_page'   => 1,
+                'data'           => $items,
+                'first_page_url' => $request->fullUrlWithQuery(['page' => 1]),
+                'from'           => $total > 0 ? 1 : null,
+                'last_page'      => 1,
+                'last_page_url'  => $request->fullUrlWithQuery(['page' => 1]),
+                'next_page_url'  => null,
+                'path'           => $request->url(),
+                'per_page'       => max($total, 1),
+                'prev_page_url'  => null,
+                'to'             => $total > 0 ? $total : null,
+                'total'          => $total,
+                'summary'        => $summary,
+            ], 'Lấy danh sách bảo hành thành công.');
+        }
+
+        $perPage = max(1, min(500, (int) $request->input('per_page', 15)));
+        $warranties = $query->latest('id')->paginate($perPage);
+        $paginated = $warranties->toArray();
+        $paginated['summary'] = $summary;
+
+        return $this->success($paginated, 'Lấy danh sách bảo hành thành công.');
     }
 
     /**
@@ -353,16 +420,71 @@ class WarrantyController extends Controller
     public function claims(Request $request): JsonResponse
     {
         $user = $request->user();
-        $query = WarrantyClaim::with(['warranty.customer', 'warranty.deviceModel', 'reworkOrder', 'receivedByUser:id,name'])
-            ->whereHas('warranty.repairOrder', function ($rq) use ($user) {
-                $this->applyOrderTenantAndBranchScope($rq, $user);
-            });
+        $query = WarrantyClaim::with([
+            'warranty.customer',
+            'warranty.deviceModel',
+            'warranty.repairOrder',
+            'reworkOrder',
+            'receivedByUser:id,name',
+        ])->whereHas('warranty.repairOrder', function ($rq) use ($user) {
+            $this->applyOrderTenantAndBranchScope($rq, $user);
+        });
 
         if ($status = $request->input('status')) {
             $query->where('status', $status);
         }
 
-        $claims = $query->latest('id')->paginate($request->input('per_page', 15));
+        $rawSearch = $request->input('q') ?? $request->input('search');
+        $search = PhoneHelper::sanitizeText($rawSearch);
+        if ($search !== '') {
+            $query->where(function ($q) use ($search) {
+                $q->where('claim_code', 'like', "%{$search}%")
+                  ->orWhere('issue_description', 'like', "%{$search}%")
+                  ->orWhereHas('reworkOrder', function ($roq) use ($search) {
+                      $roq->where('order_code', 'like', "%{$search}%")
+                          ->orWhere('serial_number', 'like', "%{$search}%");
+                  })
+                  ->orWhereHas('warranty', function ($wq) use ($search) {
+                      $wq->where('warranty_code', 'like', "%{$search}%")
+                         ->orWhereHas('repairOrder', function ($rq) use ($search) {
+                             $rq->where('serial_number', 'like', "%{$search}%")
+                                ->orWhere('order_code', 'like', "%{$search}%");
+                         })
+                         ->orWhereHas('deviceModel', function ($dq) use ($search) {
+                             $dq->where('name', 'like', "%{$search}%");
+                         })
+                         ->orWhereHas('customer', function ($cq) use ($search) {
+                             $cq->where(function ($inner) use ($search) {
+                                 $inner->where('name', 'like', "%{$search}%");
+                                 PhoneHelper::applyPhoneColumnSearch($inner, 'phone', $search, 'or');
+                             });
+                         });
+                  });
+            });
+        }
+
+        if ($request->boolean('all') || $request->input('per_page') === 'all') {
+            $items = $query->latest('id')->limit(1000)->get();
+            $total = $items->count();
+
+            return $this->success([
+                'current_page'   => 1,
+                'data'           => $items,
+                'first_page_url' => $request->fullUrlWithQuery(['page' => 1]),
+                'from'           => $total > 0 ? 1 : null,
+                'last_page'      => 1,
+                'last_page_url'  => $request->fullUrlWithQuery(['page' => 1]),
+                'next_page_url'  => null,
+                'path'           => $request->url(),
+                'per_page'       => max($total, 1),
+                'prev_page_url'  => null,
+                'to'             => $total > 0 ? $total : null,
+                'total'          => $total,
+            ], 'Lấy danh sách yêu cầu bảo hành thành công.');
+        }
+
+        $perPage = max(1, min(500, (int) $request->input('per_page', 15)));
+        $claims = $query->latest('id')->paginate($perPage);
 
         return $this->success($claims, 'Lấy danh sách yêu cầu bảo hành thành công.');
     }
@@ -503,12 +625,15 @@ class WarrantyController extends Controller
      */
     public function revoke(Request $request, int|string $id): JsonResponse
     {
+        $user = $request->user();
+        if (! $user || ! in_array($user->role, ['admin', 'super_admin'], true)) {
+            return $this->failure('Chỉ quản trị viên (Admin) mới có quyền thu hồi sổ bảo hành.', 403);
+        }
+
         $validated = $request->validate([
             'reason'         => 'nullable|string|max:255',
             'revoked_reason' => 'nullable|string|max:255',
         ]);
-
-        $user = $request->user();
 
         return DB::transaction(function () use ($request, $validated, $id, $user) {
             $warranty = Warranty::with('repairOrder')->lockForUpdate()->find($id);

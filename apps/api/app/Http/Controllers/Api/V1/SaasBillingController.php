@@ -119,10 +119,12 @@ class SaasBillingController extends Controller
         $refCode = 'FIXSUB' . $invoice->id;
         $invoice->update(['reference_code' => $refCode]);
 
-        // Sinh link QR SePay
-        $accNumber = config('sepay.account_number');
-        $bankCode = config('sepay.bank_code');
-        $template = config('sepay.qr_template', 'compact2');
+        // Sinh link QR SePay theo cấu hình Platform (ưu tiên SystemSetting('platform_sepay_config') rồi fallback config('sepay.*'))
+        $sepayConfig = \App\Models\SystemSetting::getPlatformSepayConfig();
+        $accNumber = $sepayConfig['account_number'];
+        $bankCode = $sepayConfig['bank_code'];
+        $accountHolder = $sepayConfig['account_holder'];
+        $template = $sepayConfig['qr_template'] ?? config('sepay.qr_template', 'compact2');
         $qrUrl = "https://qr.sepay.vn/img?acc={$accNumber}&bank={$bankCode}&amount={$amount}&des={$refCode}&template={$template}";
 
         return $this->created([
@@ -137,7 +139,8 @@ class SaasBillingController extends Controller
             'billing_cycle'  => $billingCycle,
             'account_number' => $accNumber,
             'bank_code'      => $bankCode,
-            'account_holder' => config('sepay.account_holder'),
+            'account_holder' => $accountHolder,
+            'account_name'   => $accountHolder,
             'qr_url'         => $qrUrl,
             'expires_at'     => $invoice->expires_at?->toISOString(),
             'status'         => $invoice->status,

@@ -1807,5 +1807,64 @@ class TelegramAiAssistantPhase1Test extends TestCase
         $this->assertStringContainsString('<b>Hệ thống Trợ lý AI tạm thời bận</b>', $sentMessages[0]);
         $this->assertStringContainsString('Vui lòng thử lại sau ít phút.', $sentMessages[0]);
     }
+
+    /**
+     * 35. Webhook Telegram đẩy ProcessTelegramAiMessageJob vào hàng đợi (Queue::fake) và thực thi trực tiếp handle().
+     */
+    public function test_webhook_dispatches_process_telegram_ai_message_job_and_executes_handle_directly(): void
+    {
+        \Illuminate\Support\Facades\Queue::fake();
+
+        $webhookRes = $this->postJson('/api/v1/webhooks/telegram', [
+            'update_id' => 999888,
+            'message'   => [
+                'message_id' => 555,
+                'chat'       => ['id' => 8841956211, 'type' => 'private'],
+                'text'       => 'Xin chào Trợ lý AI qua Queue',
+            ],
+        ]);
+
+        $webhookRes->assertStatus(200)
+            ->assertJsonPath('data.handled', true)
+            ->assertJsonPath('data.recipient_id', $this->activeRecipient->id);
+
+        \Illuminate\Support\Facades\Queue::assertPushed(
+            \App\Jobs\ProcessTelegramAiMessageJob::class,
+            fn (\App\Jobs\ProcessTelegramAiMessageJob $job) => $job->recipientId === $this->activeRecipient->id
+                && $job->messageText === 'Xin chào Trợ lý AI qua Queue'
+                && $job->messageId === 555
+        );
+
+        // Thực thi trực tiếp handle() của ProcessTelegramAiMessageJob
+        Http::fake([
+            '127.0.0.1:20128/v1/chat/completions*' => Http::response([
+                'id'      => 'chatcmpl-queue-test',
+                'object'  => 'chat.completion',
+                'model'   => 'podscare-ai',
+                'choices' => [
+                    [
+                        'index'   => 0,
+                        'message' => [
+                            'role'    => 'assistant',
+                            'content' => '<b>Xin chào!</b> Đã xử lý qua ProcessTelegramAiMessageJob.',
+                        ],
+                    ],
+                ],
+            ], 200),
+            'api.telegram.org/*/sendMessage*' => Http::response(['ok' => true], 200),
+        ]);
+
+        $job = new \App\Jobs\ProcessTelegramAiMessageJob(
+            $this->activeRecipient->id,
+            'Xin chào Trợ lý AI qua Queue',
+            555
+        );
+        $job->handle(app(\App\Services\TelegramAi\TelegramAiAssistantService::class));
+
+        Http::assertSent(fn ($req) => str_contains($req->url(), '/sendMessage')
+            && (string) $req['chat_id'] === '8841956211'
+            && str_contains($req['text'], 'ProcessTelegramAiMessageJob'));
+    }
 }
+
 

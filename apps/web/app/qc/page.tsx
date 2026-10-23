@@ -1,6 +1,7 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import { qcService, repairService, deviceService } from '@podscare/api-client';
 import {
   Button,
@@ -10,6 +11,7 @@ import {
   Checkbox,
   useToast,
   EmptyState,
+  resolveOrderStatus,
 } from '@podscare/ui';
 import { AppShell } from '../components/AppShell';
 import { usePodsCare } from '../providers';
@@ -17,7 +19,7 @@ import type { RepairOrder } from '@podscare/types';
 
 export default function QCInspectionPage() {
   const { toast } = useToast();
-  const { orders, invalidateOrders } = usePodsCare();
+  const { orders, branchId, invalidateOrders } = usePodsCare();
 
   const [selectedOrder, setSelectedOrder] = useState<RepairOrder | null>(null);
   const [inspectModalOpen, setInspectModalOpen] = useState(false);
@@ -30,9 +32,75 @@ export default function QCInspectionPage() {
   const [reworkReason, setReworkReason] = useState('');
   const [qcNotes, setQcNotes] = useState('');
 
+  // Nạp độc lập danh sách đơn hàng QC với date_filter: 'all' để không sót các đơn chờ QC tồn đọng từ những ngày trước
+  const { data: apiQcOrdersData } = useQuery({
+    queryKey: ['qc-orders', branchId],
+    queryFn: async () => {
+      const params: Record<string, any> = {
+        per_page: 100,
+        date_filter: 'all',
+      };
+      if (branchId && branchId !== 'all') {
+        params.branch_id = branchId;
+      }
+      const res = await repairService.getRepairs(params);
+      return res?.data || res;
+    },
+  });
+
+  const mergedOrders: RepairOrder[] = useMemo(() => {
+    const raw = apiQcOrdersData?.data || apiQcOrdersData;
+    const apiList = Array.isArray(raw) ? raw : [];
+    const mappedApi: RepairOrder[] = apiList.map((o: any) => {
+      const mappedStatus = resolveOrderStatus(o.status);
+      return {
+        id: o.order_code || String(o.id),
+        order_type: o.order_type || o.orderType || 'in_store',
+        orderType: o.order_type || o.orderType || 'in_store',
+        name: o.customer?.name || 'Khách lẻ',
+        phone: o.customer?.phone || '',
+        deviceCategory: o.device_model?.category || 'AirPods',
+        device: o.device_model?.name || 'AirPods',
+        device_id: o.device_model_id || o.device_model?.id || o.device_id || null,
+        device_model_id: o.device_model_id || o.device_model?.id || o.device_id || null,
+        serial: o.serial_number || 'Chưa cập nhật',
+        issue: o.issue_description || 'Kiểm tra',
+        status: mappedStatus.label,
+        statusType: mappedStatus.type,
+        price: Number(o.total_price) || Number(o.estimated_price) || 0,
+        total_price: Number(o.total_price) || Number(o.price) || 0,
+        tech: o.technician?.name || 'Chưa phân công',
+        technicianId: o.technician_id ?? o.technician?.id ?? null,
+        technician_id: o.technician_id ?? o.technician?.id ?? null,
+        date: o.created_at
+          ? new Intl.DateTimeFormat('vi-VN').format(new Date(o.created_at))
+          : 'Hôm nay',
+        branch: o.branch?.name || 'Chi nhánh FIXO',
+        branchId: o.branch_id || o.branch?.id || 1,
+        branchName: o.branch?.name || 'Chi nhánh FIXO',
+        repairNote: o.repair_note,
+        partsUsed: o.parts_used_summary,
+        finalCheck: o.final_check_result,
+        qcIssue: o.qc_note,
+      };
+    });
+
+    if (mappedApi.length === 0) {
+      return orders;
+    }
+
+    const byId = new Map<string, RepairOrder>();
+    orders.forEach((o) => byId.set(String(o.id), o));
+    mappedApi.forEach((o) => {
+      const existing = byId.get(String(o.id));
+      byId.set(String(o.id), existing ? { ...existing, ...o } : o);
+    });
+    return Array.from(byId.values());
+  }, [apiQcOrdersData, orders]);
+
   // Orders waiting for QC inspection
-  const qcOrders = orders.filter((o) => o.status === 'Chờ QC');
-  const pastQcOrders = orders.filter((o) =>
+  const qcOrders = mergedOrders.filter((o) => o.status === 'Chờ QC');
+  const pastQcOrders = mergedOrders.filter((o) =>
     ['Sẵn sàng trả', 'Cần sửa lại', 'Hoàn tất'].includes(o.status)
   );
 

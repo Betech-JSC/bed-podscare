@@ -11,6 +11,7 @@ class DeviceModel extends Model
     use HasFactory;
 
     protected $fillable = [
+        'tenant_id',
         'name',
         'category',
         'model_code',

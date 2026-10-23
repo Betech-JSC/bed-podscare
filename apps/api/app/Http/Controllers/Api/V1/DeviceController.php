@@ -14,11 +14,59 @@ use Illuminate\Validation\Rule;
 class DeviceController extends Controller
 {
     /**
+     * Áp dụng bộ lọc cô lập dữ liệu dòng thiết bị theo Tenant.
+     */
+    protected function applyTenantFilter($query, Request $request)
+    {
+        $user = $request->user('sanctum') ?? $request->user();
+        $masterTenantId = \App\Models\Scopes\TenantScope::resolveMasterTenantId();
+
+        if (! $user) {
+            return $query->where(function ($q) use ($masterTenantId) {
+                $q->whereNull('tenant_id');
+                if ($masterTenantId) {
+                    $q->orWhere('tenant_id', $masterTenantId);
+                }
+            });
+        }
+
+        if ($user->role !== 'super_admin') {
+            $tenantId = $user->tenant_id;
+            $query->where(function ($q) use ($tenantId, $masterTenantId) {
+                $q->whereNull('tenant_id');
+                if ($tenantId) {
+                    $q->orWhere('tenant_id', $tenantId);
+                } elseif ($masterTenantId) {
+                    $q->orWhere('tenant_id', $masterTenantId);
+                }
+            });
+        }
+
+        return $query;
+    }
+
+    protected function canModifyDevice($user, DeviceModel $device): bool
+    {
+        if (! $user) {
+            return false;
+        }
+        if ($user->role === 'super_admin') {
+            return true;
+        }
+        if ($device->tenant_id !== null) {
+            return ! empty($user->tenant_id) && (int) $device->tenant_id === (int) $user->tenant_id;
+        }
+        $masterTenantId = \App\Models\Scopes\TenantScope::resolveMasterTenantId();
+
+        return empty($user->tenant_id) || ($masterTenantId && (int) $user->tenant_id === (int) $masterTenantId);
+    }
+
+    /**
      * Danh sách thiết bị kèm theo checklist templates của từng máy.
      */
     public function index(Request $request): JsonResponse
     {
-        $query = DeviceModel::query()
+        $query = $this->applyTenantFilter(DeviceModel::query(), $request)
             ->with(['checklistTemplates' => function ($q) {
                 $q->where('is_active', true)->orderBy('order_index', 'asc');
             }])
@@ -46,7 +94,8 @@ class DeviceController extends Controller
     {
         $defaultCategories = ['AirPods', 'Apple Watch', 'Apple Pencil', 'MacBook', 'iPad'];
 
-        $deviceCats = DeviceModel::distinct()
+        $deviceCats = $this->applyTenantFilter(DeviceModel::query(), $request)
+            ->distinct()
             ->whereNotNull('category')
             ->pluck('category')
             ->filter()
@@ -97,10 +146,26 @@ class DeviceController extends Controller
      */
     public function store(Request $request): JsonResponse
     {
+        $user = $request->user();
+        $tenantId = $user?->role === 'super_admin'
+            ? $request->input('tenant_id')
+            : $user?->tenant_id;
+
         $validated = $request->validate([
             'name' => ['required', 'string', 'max:100'],
             'category' => ['required', 'string', 'max:50'],
-            'model_code' => ['nullable', 'string', 'max:100', 'unique:device_models,model_code'],
+            'model_code' => [
+                'nullable',
+                'string',
+                'max:100',
+                Rule::unique('device_models', 'model_code')->where(function ($q) use ($tenantId) {
+                    if ($tenantId) {
+                        $q->where('tenant_id', $tenantId);
+                    } else {
+                        $q->whereNull('tenant_id');
+                    }
+                }),
+            ],
             'release_year' => ['nullable', 'integer', 'min:2000', 'max:2100'],
             'manufacturer' => ['nullable', 'string', 'max:100'],
             'has_anc' => ['nullable', 'boolean'],
@@ -110,7 +175,7 @@ class DeviceController extends Controller
             'checks.*' => ['required', 'string', 'max:150'],
         ]);
 
-        $device = DB::transaction(function () use ($validated, $request) {
+        $device = DB::transaction(function () use ($validated, $tenantId) {
             $modelCode = $validated['model_code'] ?? null;
             if (empty($modelCode)) {
                 $base = strtoupper(Str::slug($validated['name'], '-'));
@@ -118,6 +183,7 @@ class DeviceController extends Controller
             }
 
             $device = DeviceModel::create([
+                'tenant_id' => $tenantId,
                 'name' => trim($validated['name']),
                 'category' => trim($validated['category']),
                 'model_code' => $modelCode,
@@ -162,16 +228,17 @@ class DeviceController extends Controller
     /**
      * Chi tiết thiết bị kèm các dịch vụ áp dụng và checklist templates.
      */
-    public function show(int $id): JsonResponse
+    public function show(Request $request, int $id): JsonResponse
     {
-        $device = DeviceModel::with([
-            'checklistTemplates' => function ($q) {
-                $q->where('is_active', true)->orderBy('order_index', 'asc');
-            },
-            'repairServices' => function ($q) {
-                $q->where('is_active', true);
-            },
-        ])->find($id);
+        $device = $this->applyTenantFilter(DeviceModel::query(), $request)
+            ->with([
+                'checklistTemplates' => function ($q) {
+                    $q->where('is_active', true)->orderBy('order_index', 'asc');
+                },
+                'repairServices' => function ($q) {
+                    $q->where('is_active', true);
+                },
+            ])->find($id);
 
         if (! $device) {
             return $this->empty('Không tìm thấy dòng thiết bị.');
@@ -190,6 +257,13 @@ class DeviceController extends Controller
             return $this->empty('Không tìm thấy dòng thiết bị.');
         }
 
+        $user = $request->user();
+        if (! $this->canModifyDevice($user, $device)) {
+            return $this->failure('Bạn chỉ có quyền chỉnh sửa dòng thiết bị thuộc cửa hàng của mình.', 403);
+        }
+
+        $tenantId = $device->tenant_id;
+
         $validated = $request->validate([
             'name' => ['sometimes', 'required', 'string', 'max:100'],
             'category' => ['sometimes', 'required', 'string', 'max:50'],
@@ -197,7 +271,15 @@ class DeviceController extends Controller
                 'nullable',
                 'string',
                 'max:100',
-                Rule::unique('device_models', 'model_code')->ignore($device->id),
+                Rule::unique('device_models', 'model_code')
+                    ->where(function ($q) use ($tenantId) {
+                        if ($tenantId) {
+                            $q->where('tenant_id', $tenantId);
+                        } else {
+                            $q->whereNull('tenant_id');
+                        }
+                    })
+                    ->ignore($device->id),
             ],
             'release_year' => ['nullable', 'integer', 'min:2000', 'max:2100'],
             'manufacturer' => ['nullable', 'string', 'max:100'],
@@ -277,14 +359,19 @@ class DeviceController extends Controller
     /**
      * Xóa dòng máy an toàn: nếu có đơn sửa chữa liên kết thì deactivate, ngược lại xóa sạch.
      */
-    public function destroy(int $id): JsonResponse
+    public function destroy(Request $request, int $id): JsonResponse
     {
         $device = DeviceModel::find($id);
         if (! $device) {
             return $this->empty('Không tìm thấy dòng thiết bị.');
         }
 
-        $hasOrders = $device->repairOrders()->exists();
+        $user = $request->user();
+        if (! $this->canModifyDevice($user, $device)) {
+            return $this->failure('Bạn chỉ có quyền xóa dòng thiết bị thuộc cửa hàng của mình.', 403);
+        }
+
+        $hasOrders = $device->repairOrders()->withoutGlobalScopes()->exists();
 
         if ($hasOrders) {
             $device->update(['is_active' => false]);
@@ -312,16 +399,21 @@ class DeviceController extends Controller
 
         $modelId = $request->input('device_model_id') ?: $request->input('model_id');
         if (! $modelId && $request->filled('model_name')) {
-            $model = DeviceModel::where('name', $request->input('model_name'))->first();
+            $model = $this->applyTenantFilter(DeviceModel::query(), $request)
+                ->where('name', $request->input('model_name'))
+                ->first();
             $modelId = $model?->id;
         }
 
         if ($modelId) {
+            $model = $this->applyTenantFilter(DeviceModel::query(), $request)->find($modelId);
+            if (! $model) {
+                return $this->success(collect(), 'Lấy checklist mẫu kiểm tra tiếp nhận thành công.');
+            }
             $hasModelSpecific = ChecklistTemplate::active()->where('device_model_id', $modelId)->exists();
             if ($hasModelSpecific) {
                 $query->where('device_model_id', $modelId);
             } else {
-                $model = DeviceModel::find($modelId);
                 $cat = $request->input('category') ?: ($model?->category ?? 'AirPods');
                 $query->where('category', $cat);
             }

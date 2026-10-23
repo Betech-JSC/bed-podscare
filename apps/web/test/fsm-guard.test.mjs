@@ -126,10 +126,19 @@ describe('OpenSpec: friendly-fsm-status-messages-and-ui-guard Group 2 Verificati
     );
   });
 
+  const readRepairsSource = () => {
+    const pagePath = path.join(webAppDir, 'repairs/page.tsx');
+    const compDir = path.join(webAppDir, 'repairs/components');
+    const compFiles = fs.existsSync(compDir)
+      ? fs.readdirSync(compDir).filter((f) => f.endsWith('.tsx')).map((f) => fs.readFileSync(path.join(compDir, f), 'utf-8'))
+      : [];
+    return [fs.readFileSync(pagePath, 'utf-8'), ...compFiles].join('\n');
+  };
+
   test('Task 2.2: repairs/page.tsx replaces static buttons with dynamic FSM_QUICK_ACTIONS rendering', () => {
     const pagePath = path.join(webAppDir, 'repairs/page.tsx');
     assert.ok(fs.existsSync(pagePath), 'repairs/page.tsx must exist');
-    const content = fs.readFileSync(pagePath, 'utf-8');
+    const content = readRepairsSource();
 
     // Must import and use getQuickActionsForStatus
     assert.ok(content.includes('getQuickActionsForStatus'), 'Must use getQuickActionsForStatus');
@@ -146,8 +155,7 @@ describe('OpenSpec: friendly-fsm-status-messages-and-ui-guard Group 2 Verificati
   });
 
   test('Task 2.3: repairs/page.tsx implements specialized handling for Chờ QC (waiting_qc)', () => {
-    const pagePath = path.join(webAppDir, 'repairs/page.tsx');
-    const content = fs.readFileSync(pagePath, 'utf-8');
+    const content = readRepairsSource();
 
     // Must detect waiting_qc
     assert.ok(
@@ -167,8 +175,7 @@ describe('OpenSpec: friendly-fsm-status-messages-and-ui-guard Group 2 Verificati
   });
 
   test('Task 2.4: handleUpdateStatus extracts Vietnamese error message from API response and toasts it', () => {
-    const pagePath = path.join(webAppDir, 'repairs/page.tsx');
-    const content = fs.readFileSync(pagePath, 'utf-8');
+    const content = readRepairsSource();
 
     // Check Toast error extraction pattern
     assert.ok(

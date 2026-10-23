@@ -7,6 +7,7 @@ use App\Models\AuditLog;
 use App\Models\Branch;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\Rule;
 
 class BranchController extends Controller
@@ -85,10 +86,10 @@ class BranchController extends Controller
 
         $user->loadMissing('tenant');
         $tenant = $user->tenant;
+        $tenantId = $user->tenant_id;
+
         if ($tenant) {
-            $quotaService = app(\App\Services\QuotaService::class);
-            $quotaService->checkSubscriptionActive($tenant);
-            $quotaService->checkBranchQuota($tenant);
+            app(\App\Services\QuotaService::class)->checkSubscriptionActive($tenant);
         }
 
         if ($request->has('code') && is_string($request->input('code'))) {
@@ -96,7 +97,18 @@ class BranchController extends Controller
         }
 
         $validated = $request->validate([
-            'code'      => 'required|string|max:20|unique:branches,code',
+            'code' => [
+                'required',
+                'string',
+                'max:20',
+                Rule::unique('branches', 'code')->where(function ($q) use ($tenantId) {
+                    if ($tenantId) {
+                        $q->where('tenant_id', $tenantId);
+                    } else {
+                        $q->whereNull('tenant_id');
+                    }
+                }),
+            ],
             'name'      => 'required|string|max:255',
             'address'   => 'required|string|max:500',
             'phone'     => 'nullable|string|max:20',
@@ -106,20 +118,30 @@ class BranchController extends Controller
         $validated['code'] = strtoupper(trim($validated['code']));
         $validated['is_active'] = $validated['is_active'] ?? true;
 
-        $branch = Branch::create($validated);
+        $branch = DB::transaction(function () use ($tenant, $validated, $request) {
+            if ($tenant) {
+                $quotaService = app(\App\Services\QuotaService::class);
+                $quotaService->checkSubscriptionActive($tenant);
+                $quotaService->checkBranchQuota($tenant);
+            }
 
-        AuditLog::create([
-            'user_id'        => $request->user()->id,
-            'user_name'      => $request->user()->name,
-            'action'         => 'branch.created',
-            'module'         => 'branch',
-            'auditable_type' => 'Branch',
-            'auditable_id'   => $branch->id,
-            'description'    => "Quản trị viên {$request->user()->name} đã tạo mới chi nhánh {$branch->name} ({$branch->code})",
-            'details'        => "Quản trị viên {$request->user()->name} đã tạo mới chi nhánh {$branch->name} ({$branch->code})",
-            'metadata'       => ['branch_id' => $branch->id, 'code' => $branch->code],
-            'ip_address'     => $request->ip(),
-        ]);
+            $branch = Branch::create($validated);
+
+            AuditLog::create([
+                'user_id'        => $request->user()->id,
+                'user_name'      => $request->user()->name,
+                'action'         => 'branch.created',
+                'module'         => 'branch',
+                'auditable_type' => 'Branch',
+                'auditable_id'   => $branch->id,
+                'description'    => "Quản trị viên {$request->user()->name} đã tạo mới chi nhánh {$branch->name} ({$branch->code})",
+                'details'        => "Quản trị viên {$request->user()->name} đã tạo mới chi nhánh {$branch->name} ({$branch->code})",
+                'metadata'       => ['branch_id' => $branch->id, 'code' => $branch->code],
+                'ip_address'     => $request->ip(),
+            ]);
+
+            return $branch;
+        });
 
         return $this->created($branch, 'Tạo chi nhánh mới thành công.');
     }
@@ -143,8 +165,24 @@ class BranchController extends Controller
             $request->merge(['code' => strtoupper(trim($request->input('code')))]);
         }
 
+        $tenantId = $branch->tenant_id;
+
         $validated = $request->validate([
-            'code'      => ['sometimes', 'required', 'string', 'max:20', Rule::unique('branches', 'code')->ignore($branch->id)],
+            'code' => [
+                'sometimes',
+                'required',
+                'string',
+                'max:20',
+                Rule::unique('branches', 'code')
+                    ->where(function ($q) use ($tenantId) {
+                        if ($tenantId) {
+                            $q->where('tenant_id', $tenantId);
+                        } else {
+                            $q->whereNull('tenant_id');
+                        }
+                    })
+                    ->ignore($branch->id),
+            ],
             'name'      => 'sometimes|required|string|max:255',
             'address'   => 'sometimes|required|string|max:500',
             'phone'     => 'nullable|string|max:20',

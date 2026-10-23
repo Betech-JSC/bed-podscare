@@ -188,6 +188,8 @@ export const CheckoutHandoverModal: React.FC<CheckoutHandoverModalProps> = ({
         ...order,
         total_price: servicePrice,
         price: servicePrice,
+        paid_amount: finalAmount,
+        paidAmount: finalAmount,
         status: 'Hoàn tất',
         statusType: 'gray',
         warrantyTerm: isWarrantyOrder ? order.warrantyTerm : `${warrantyMonths} tháng`,

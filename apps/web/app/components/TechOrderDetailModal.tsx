@@ -301,8 +301,8 @@ export const TechOrderDetailModal: React.FC<TechOrderDetailModalProps> = ({
 
     try {
       const payload = {
-        transition: 'ready_for_return',
-        status: 'ready_for_return',
+        transition: 'waiting_qc',
+        status: 'waiting_qc',
         repair_note: repairNote.trim(),
         parts_used: effectivePartsUsed || undefined,
         final_check_result: finalCheck,
@@ -311,7 +311,7 @@ export const TechOrderDetailModal: React.FC<TechOrderDetailModalProps> = ({
 
       await repairService.transition(order.id, payload);
       if (invalidateOrders) await invalidateOrders();
-      toast(`Đã hoàn tất sửa chữa ${order.id} · Sẵn sàng bàn giao quầy CSKH!`, 'success');
+      toast(`Đã hoàn tất sửa chữa ${order.id} · Chuyển sang hàng đợi Kiểm định QC!`, 'success');
 
       const matchedTech = technicians.find((t) => String(t.id) === String(resolvedTechnicianId));
       const resolvedTechName =
@@ -322,7 +322,7 @@ export const TechOrderDetailModal: React.FC<TechOrderDetailModalProps> = ({
 
       const updated: RepairOrder = {
         ...order,
-        status: 'Sẵn sàng trả',
+        status: 'Chờ QC',
         statusType: 'ready',
         tech: resolvedTechName,
         technician_id: typeof resolvedTechnicianId === 'number' ? resolvedTechnicianId : order.technician_id,
@@ -378,7 +378,7 @@ export const TechOrderDetailModal: React.FC<TechOrderDetailModalProps> = ({
               size="md"
               disabled={isSilentPrinting}
               onClick={handlePrint}
-              className="flex items-center gap-1.5 text-xs text-[#176b58] border-[#b8d0c5] hover:bg-[#f0f8f4]"
+              className="flex items-center gap-1.5 text-xs text-[#176b51] border-[#b8d0c5] hover:bg-[#f0f8f4]"
             >
               <Icon name="printer" size={14} />
               <span>{isSilentPrinting ? 'Đang in...' : 'In tem dán khay K80'}</span>
@@ -395,7 +395,7 @@ export const TechOrderDetailModal: React.FC<TechOrderDetailModalProps> = ({
                 variant="outline"
                 size="md"
                 onClick={() => setIsHandoverOpen(true)}
-                className="flex items-center gap-1.5 text-xs text-[#176b58] border-[#b8d0c5] hover:bg-[#f0f8f4] font-semibold"
+                className="flex items-center gap-1.5 text-xs text-[#176b51] border-[#b8d0c5] hover:bg-[#f0f8f4] font-semibold"
               >
                 <Icon name="refresh" size={14} />
                 <span>Bàn giao KTV khác</span>
@@ -408,7 +408,7 @@ export const TechOrderDetailModal: React.FC<TechOrderDetailModalProps> = ({
                 size="md"
                 disabled={isSubmitting}
                 onClick={handleGrab}
-                className="bg-[#176b58] hover:bg-[#125848] text-white font-bold shadow-xs flex items-center gap-1.5"
+                className="bg-[#176b51] hover:bg-[#125848] text-white font-bold shadow-xs flex items-center gap-1.5"
               >
                 <Icon name="wrench" size={14} />
                 <span>Nhận máy vào bàn sửa</span>
@@ -421,7 +421,7 @@ export const TechOrderDetailModal: React.FC<TechOrderDetailModalProps> = ({
                 size="md"
                 disabled={isSubmitting}
                 onClick={handleCompleteRepair}
-                className="bg-[#176b58] hover:bg-[#125848] text-white font-bold text-sm shadow-xs px-5 flex items-center gap-1.5"
+                className="bg-[#176b51] hover:bg-[#125848] text-white font-bold text-sm shadow-xs px-5 flex items-center gap-1.5"
               >
                 <Icon name="check" size={16} />
                 <span>{isSubmitting ? 'Đang xử lý...' : 'HOÀN THÀNH SỬA CHỮA'}</span>
@@ -455,7 +455,7 @@ export const TechOrderDetailModal: React.FC<TechOrderDetailModalProps> = ({
         {/* ========================================================================= */}
         <div className="space-y-4">
           <div className="flex items-center justify-between pb-2 border-b border-[#edf1ee]">
-            <h4 className="text-xs font-bold text-[#176b58] uppercase tracking-[1px] m-0 flex items-center gap-1.5">
+            <h4 className="text-xs font-bold text-[#176b51] uppercase tracking-[1px] m-0 flex items-center gap-1.5">
               KHỐI 1: THÔNG TIN TIẾP NHẬN TỪ QUẦY CSKH
             </h4>
             <span className="text-xs text-[#7d8c85]">
@@ -467,7 +467,7 @@ export const TechOrderDetailModal: React.FC<TechOrderDetailModalProps> = ({
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 bg-[#fafbfa] p-4 rounded-[10px] border border-[#edf1ee] text-xs">
             <div>
               <span className="text-[#84948c] block mb-0.5">Mã đơn sửa:</span>
-              <b className="font-mono text-sm text-[#176b58] font-bold">{order.id}</b>
+              <b className="font-mono text-sm text-[#176b51] font-bold">{order.id}</b>
             </div>
             <div>
               <span className="text-[#84948c] block mb-0.5">Khách hàng:</span>
@@ -543,7 +543,7 @@ export const TechOrderDetailModal: React.FC<TechOrderDetailModalProps> = ({
                       <span
                         className={`px-2 py-0.5 rounded text-[11px] font-bold ${
                           isPass
-                            ? 'bg-[#e0f1e8] text-[#176b58]'
+                            ? 'bg-[#e0f1e8] text-[#176b51]'
                             : isFail
                             ? 'bg-[#fbe3e4] text-[#b83b3b]'
                             : 'bg-[#ecefe8] text-[#718079]'
@@ -565,8 +565,8 @@ export const TechOrderDetailModal: React.FC<TechOrderDetailModalProps> = ({
           {/* Ghi chú test nếu có */}
           {(order.testNote || (order as any).test_note) && (
             <div data-testid="tech-order-detail-test-note" className="p-3 bg-[#eaf5ef] rounded-[8px] border border-[#a9c9b9] text-xs">
-              <span className="font-bold text-[#176b58] block mb-1">Ghi chú test từ CSKH:</span>
-              <p className="text-[#176b58] font-medium m-0 whitespace-pre-wrap">{order.testNote || (order as any).test_note}</p>
+              <span className="font-bold text-[#176b51] block mb-1">Ghi chú test từ CSKH:</span>
+              <p className="text-[#176b51] font-medium m-0 whitespace-pre-wrap">{order.testNote || (order as any).test_note}</p>
             </div>
           )}
 
@@ -607,12 +607,12 @@ export const TechOrderDetailModal: React.FC<TechOrderDetailModalProps> = ({
         {/* CARD CẢNH BÁO DỊCH VỤ SỬA THÊM (TỪ QUẦY CSKH)                             */}
         {/* ========================================================================= */}
         {hasAdditionalServices && (
-          <div className="p-4 bg-[#f0f8f5] rounded-[10px] border-2 border-[#176b58] space-y-2.5 shadow-sm">
+          <div className="p-4 bg-[#f0f8f5] rounded-[10px] border-2 border-[#176b51] space-y-2.5 shadow-sm">
             <div className="flex items-center justify-between pb-1.5 border-b border-[#cfe5da]">
-              <h4 className="text-xs font-bold text-[#176b58] uppercase tracking-wide m-0 flex items-center gap-1.5">
+              <h4 className="text-xs font-bold text-[#176b51] uppercase tracking-wide m-0 flex items-center gap-1.5">
                 DỊCH VỤ KHÁCH YÊU CẦU LÀM THÊM (TỪ QUẦY CSKH)
               </h4>
-              <span className="text-[11px] font-bold text-[#176b58] bg-[#d7ede2] px-2 py-0.5 rounded-full">
+              <span className="text-[11px] font-bold text-[#176b51] bg-[#d7ede2] px-2 py-0.5 rounded-full">
                 {additionalServicesList.length} hạng mục bổ sung
               </span>
             </div>
@@ -636,7 +636,7 @@ export const TechOrderDetailModal: React.FC<TechOrderDetailModalProps> = ({
                 </div>
               ))}
             </div>
-            <div className="pt-1.5 border-t border-[#dceee5] flex items-center justify-between text-xs text-[#176b58]">
+            <div className="pt-1.5 border-t border-[#dceee5] flex items-center justify-between text-xs text-[#176b51]">
               <span className="font-semibold italic">
                 Thợ chú ý kiểm tra và xử lý trọn vẹn các dịch vụ làm thêm trên trước khi hoàn thành sửa chữa!
               </span>
@@ -649,11 +649,11 @@ export const TechOrderDetailModal: React.FC<TechOrderDetailModalProps> = ({
         {/* ========================================================================= */}
         <div className="pt-4 border-t-2 border-[#edf1ee] space-y-4">
           <div className="flex items-center justify-between pb-2 border-b border-[#edf1ee]">
-            <h4 className="text-xs font-bold text-[#176b58] uppercase tracking-[1px] m-0 flex items-center gap-1.5">
+            <h4 className="text-xs font-bold text-[#176b51] uppercase tracking-[1px] m-0 flex items-center gap-1.5">
               KHỐI 2: THAO TÁC KỸ THUẬT & NGHIỆM THU
             </h4>
             {isActive && (
-              <span className="text-xs text-[#176b58] font-semibold bg-[#eaf4ef] px-2.5 py-0.5 rounded-full">
+              <span className="text-xs text-[#176b51] font-semibold bg-[#eaf4ef] px-2.5 py-0.5 rounded-full">
                 Đang trong ca sửa chữa
               </span>
             )}
@@ -670,7 +670,7 @@ export const TechOrderDetailModal: React.FC<TechOrderDetailModalProps> = ({
           {isActive && (
             <div className="p-4 bg-[#fbfdfc] rounded-[10px] border border-[#dce8e1] space-y-3.5 shadow-xs">
               <div className="flex items-center justify-between pb-2 border-b border-[#e8f1ec]">
-                <h5 className="text-xs font-bold text-[#176b58] uppercase tracking-[0.8px] m-0 flex items-center gap-1.5">
+                <h5 className="text-xs font-bold text-[#176b51] uppercase tracking-[0.8px] m-0 flex items-center gap-1.5">
                   YÊU CẦU & GHI CHÚ LINH KIỆN
                 </h5>
                 {code === 'waiting_parts' && (
@@ -709,7 +709,7 @@ export const TechOrderDetailModal: React.FC<TechOrderDetailModalProps> = ({
                   size="sm"
                   disabled={isSavingPartsNote || isRequestingParts}
                   onClick={handleSavePartsNote}
-                  className="flex items-center gap-1.5 text-xs text-[#176b58] border-[#a9c9b9] hover:bg-[#eef6f1] font-semibold"
+                  className="flex items-center gap-1.5 text-xs text-[#176b51] border-[#a9c9b9] hover:bg-[#eef6f1] font-semibold"
                 >
                   <Icon name="check" size={14} />
                   <span>{isSavingPartsNote ? 'Đang lưu...' : 'Lưu ghi chú linh kiện'}</span>
@@ -828,7 +828,7 @@ export const TechOrderDetailModal: React.FC<TechOrderDetailModalProps> = ({
                                 toast('Lỗi khi tiếp tục sửa máy', 'error');
                               }
                             }}
-                            className="bg-[#176b58] hover:bg-[#125848] text-white font-bold text-xs"
+                            className="bg-[#176b51] hover:bg-[#125848] text-white font-bold text-xs"
                           >
                             Tiếp tục sửa máy
                           </Button>
@@ -898,7 +898,7 @@ export const TechOrderDetailModal: React.FC<TechOrderDetailModalProps> = ({
                       if (formError) setFormError('');
                     }}
                     disabled={isSubmitting}
-                    className="w-full h-10 px-3.5 pr-8 bg-white border border-[#b8d0c5] focus:border-[#176b58] focus:ring-1 focus:ring-[#176b58] rounded-[8px] text-xs font-medium text-[#1c302b] outline-hidden cursor-pointer"
+                    className="w-full h-10 px-3.5 pr-8 bg-white border border-[#b8d0c5] focus:border-[#176b51] focus:ring-1 focus:ring-[#176b51] rounded-[8px] text-xs font-medium text-[#1c302b] outline-hidden cursor-pointer"
                   >
                     <option value="">-- Chọn kỹ thuật viên thực hiện sửa chữa --</option>
                     {Boolean(order.technician_id || order.technicianId) &&
@@ -926,7 +926,7 @@ export const TechOrderDetailModal: React.FC<TechOrderDetailModalProps> = ({
               ) : (
                 <div className="p-3 bg-[#f7faf8] rounded-[8px] border border-[#dce8e1] flex items-center justify-between text-xs">
                   <span className="text-[#55665d] font-medium">Kỹ thuật viên thực hiện:</span>
-                  <b className="text-[#176b58]">
+                  <b className="text-[#176b51]">
                     {order.tech && order.tech !== 'Chưa phân công'
                       ? order.tech
                       : effectiveUser?.name || 'Kỹ thuật viên'}
@@ -1012,7 +1012,7 @@ export const TechOrderDetailModal: React.FC<TechOrderDetailModalProps> = ({
               )}
               <div>
                 <span className="text-[#72827a] block mb-1 font-semibold">Kết quả nghiệm thu:</span>
-                <p className="text-[#176b58] font-bold m-0 bg-[#eaf4ef] p-2 rounded-[6px] border border-[#d2e8dd]">
+                <p className="text-[#176b51] font-bold m-0 bg-[#eaf4ef] p-2 rounded-[6px] border border-[#d2e8dd]">
                   {order.finalCheck || 'Đã chạy thử, hoạt động hoàn hảo'}
                 </p>
               </div>

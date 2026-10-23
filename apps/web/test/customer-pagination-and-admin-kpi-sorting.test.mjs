@@ -117,9 +117,13 @@ describe('OpenSpec: customer-pagination-and-admin-kpi-sorting Frontend Verificat
 
   test('Task 3.1: DashboardPage (/dashboard) removes duplicate "Tỷ lệ hoàn thành" StatCard and uses "Tỉ lệ bảo hành"', () => {
     const dashboardPath = path.join(webRoot, 'app/dashboard/page.tsx');
+    const adminViewPath = path.join(webRoot, 'app/dashboard/components/AdminDashboardView.tsx');
     assert.ok(fs.existsSync(dashboardPath), 'dashboard/page.tsx must exist');
 
-    const content = fs.readFileSync(dashboardPath, 'utf-8');
+    const content = [
+      fs.readFileSync(dashboardPath, 'utf-8'),
+      fs.existsSync(adminViewPath) ? fs.readFileSync(adminViewPath, 'utf-8') : '',
+    ].join('\n');
 
     assert.strictEqual(
       content.includes('label="Tỷ lệ hoàn thành"'),

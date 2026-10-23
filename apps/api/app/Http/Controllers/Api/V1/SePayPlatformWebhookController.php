@@ -21,11 +21,16 @@ class SePayPlatformWebhookController extends Controller
      */
     public function handle(Request $request): JsonResponse
     {
-        // 1. Xác thực Secret API Key SePay
-        $secret = config('sepay.webhook_secret')
-            ?: config('services.sepay.webhook_secret')
-            ?: config('services.sepay.api_key')
-            ?: '';
+        // 1. Xác thực Secret API Key SePay (ưu tiên SystemSetting('platform_sepay_config') rồi fallback config)
+        $sepayConfig = \App\Models\SystemSetting::getPlatformSepayConfig();
+        $secret = ! empty($sepayConfig['webhook_secret'])
+            ? $sepayConfig['webhook_secret']
+            : (! empty($sepayConfig['api_token'])
+                ? $sepayConfig['api_token']
+                : (config('sepay.webhook_secret')
+                    ?: config('services.sepay.webhook_secret')
+                    ?: config('services.sepay.api_key')
+                    ?: ''));
 
         $headerKey = $request->header('SePay-Api-Key') 
             ?? $request->header('X-SePay-Api-Key') 

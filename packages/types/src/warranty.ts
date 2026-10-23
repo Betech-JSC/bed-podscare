@@ -131,3 +131,33 @@ export interface CreateWarrantyClaimDTO {
   resolution_mode?: 'store_check' | 'send_tech' | 'replace_part' | 'rejected' | string;
   notes?: string;
 }
+
+export interface WarrantySummaryCounts {
+  total: number;
+  active: number;
+  expiring_soon: number;
+  expired: number;
+  total_warranties?: number;
+  active_count?: number;
+  expiring_soon_count?: number;
+  expired_or_revoked_count?: number;
+}
+
+export type WarrantySummary = WarrantySummaryCounts;
+
+export interface WarrantyPaginationParams {
+  page?: number;
+  per_page?: number | 'all';
+  all?: boolean;
+  q?: string;
+  search?: string;
+  status?: string;
+}
+
+export interface WarrantyQueryParams extends WarrantyPaginationParams {
+  phone?: string;
+  serial_number?: string;
+}
+
+export interface WarrantyClaimQueryParams extends WarrantyPaginationParams {}
+

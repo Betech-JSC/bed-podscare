@@ -15,10 +15,12 @@ use App\Models\RepairQuote;
 use App\Models\Tenant;
 use App\Models\User;
 use Carbon\Carbon;
+use Illuminate\Foundation\Testing\DatabaseTransactions;
 use Tests\TestCase;
 
 class DashboardFinancialKpiTest extends TestCase
 {
+    use DatabaseTransactions;
     protected Tenant $tenant;
     protected Branch $branch;
     protected User $adminUser;

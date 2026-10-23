@@ -3,6 +3,10 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import {
+  buildRevenueExcelWorkbook,
+  formatOrderStatusForReport,
+} from '../app/dashboard/utils/revenueExcelExport.ts';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -39,11 +43,33 @@ describe('OpenSpec: admin-dashboard-four-revenue-and-debt-cards Frontend Verific
     }
   });
 
+  const readDashboardAll = () => {
+    const dashboardPath = path.join(webRoot, 'app/dashboard/page.tsx');
+    const compDir = path.join(webRoot, 'app/dashboard/components');
+    const utilsDir = path.join(webRoot, 'app/dashboard/utils');
+    const compFiles = fs.existsSync(compDir)
+      ? fs.readdirSync(compDir).filter((f) => f.endsWith('.tsx')).map((f) => fs.readFileSync(path.join(compDir, f), 'utf-8'))
+      : [];
+    const utilFiles = fs.existsSync(utilsDir)
+      ? fs.readdirSync(utilsDir).filter((f) => f.endsWith('.ts')).map((f) => fs.readFileSync(path.join(utilsDir, f), 'utf-8'))
+      : [];
+    return [fs.readFileSync(dashboardPath, 'utf-8'), ...compFiles, ...utilFiles].join('\n');
+  };
+
+  const readRepairsAll = () => {
+    const repairsPath = path.join(webRoot, 'app/repairs/page.tsx');
+    const compDir = path.join(webRoot, 'app/repairs/components');
+    const compFiles = fs.existsSync(compDir)
+      ? fs.readdirSync(compDir).filter((f) => f.endsWith('.tsx')).map((f) => fs.readFileSync(path.join(compDir, f), 'utf-8'))
+      : [];
+    return [fs.readFileSync(repairsPath, 'utf-8'), ...compFiles].join('\n');
+  };
+
   test('Task 2.2: DashboardPage (/dashboard) renders the exact 4 top financial cards in order with synchronized completed/waiting-pickup counts and status-aware fallback', () => {
     const dashboardPath = path.join(webRoot, 'app/dashboard/page.tsx');
     assert.ok(fs.existsSync(dashboardPath), 'apps/web/app/dashboard/page.tsx must exist');
 
-    const content = fs.readFileSync(dashboardPath, 'utf-8');
+    const content = readDashboardAll();
 
     // Verify exact 4 card testids and their order in JSX
     const idxCard1 = content.indexOf('data-testid="admin-card-monthly-total"');
@@ -120,8 +146,7 @@ describe('OpenSpec: admin-dashboard-four-revenue-and-debt-cards Frontend Verific
   });
 
   test('Task 2.3: DashboardPage (/dashboard) implements Customer Revenue & Debt Drill-Down Modal with reconciliation summary, filter tabs, sortable columns, and quick actions', () => {
-    const dashboardPath = path.join(webRoot, 'app/dashboard/page.tsx');
-    const content = fs.readFileSync(dashboardPath, 'utf-8');
+    const content = readDashboardAll();
 
     // Modal container and period switchers
     assert.ok(
@@ -195,8 +220,7 @@ describe('OpenSpec: admin-dashboard-four-revenue-and-debt-cards Frontend Verific
   });
 
   test('Task 3.1 & 3.2 (GMT+7 & Daily Order Filter): DashboardPage uses Asia/Ho_Chi_Minh timezone for date initialization and queries kpi-dashboard directly', () => {
-    const dashboardPath = path.join(webRoot, 'app/dashboard/page.tsx');
-    const content = fs.readFileSync(dashboardPath, 'utf-8');
+    const content = readDashboardAll();
 
     assert.ok(
       content.includes("const formatDateInGmt7 = (date: Date): string =>") &&
@@ -212,7 +236,7 @@ describe('OpenSpec: admin-dashboard-four-revenue-and-debt-cards Frontend Verific
     );
 
     assert.ok(
-      content.includes("queryKey: ['kpi-dashboard', branchId, period, selectedDate]"),
+      content.includes("queryKey: ['kpi-dashboard', branchId, period, selectedDate"),
       'DashboardPage must query kpi-dashboard with selectedDate'
     );
   });
@@ -220,21 +244,21 @@ describe('OpenSpec: admin-dashboard-four-revenue-and-debt-cards Frontend Verific
   test('Task 3.1 & 3.2: Technician views (/tech, renderTechDashboard, TechOrderDetailModal, /repairs) hide all price figures', () => {
     const techPagePath = path.join(webRoot, 'app/tech/page.tsx');
     const techModalPath = path.join(webRoot, 'app/components/TechOrderDetailModal.tsx');
-    const dashboardPath = path.join(webRoot, 'app/dashboard/page.tsx');
-    const repairsPath = path.join(webRoot, 'app/repairs/page.tsx');
+    const techDashPath = path.join(webRoot, 'app/dashboard/components/TechDashboardView.tsx');
 
     const techPageContent = fs.readFileSync(techPagePath, 'utf-8');
     const techModalContent = fs.readFileSync(techModalPath, 'utf-8');
-    const dashboardContent = fs.readFileSync(dashboardPath, 'utf-8');
-    const repairsContent = fs.readFileSync(repairsPath, 'utf-8');
+    const techDashboardSlice = fs.existsSync(techDashPath)
+      ? fs.readFileSync(techDashPath, 'utf-8')
+      : readDashboardAll();
+    const repairsContent = readRepairsAll();
 
     // 1. /tech page must not render Báo giá: or Chi phí: or moneyFormatted(order.price)
     assert.ok(!techPageContent.includes('Báo giá:'), 'tech/page.tsx must not display "Báo giá:"');
     assert.ok(!techPageContent.includes('Chi phí:'), 'tech/page.tsx must not display "Chi phí:"');
     assert.ok(!techPageContent.includes('moneyFormatted(order.price)'), 'tech/page.tsx must not format order.price');
 
-    // 2. renderTechDashboard in dashboard/page.tsx must not render Báo giá: or Chi phí:
-    const techDashboardSlice = dashboardContent.slice(dashboardContent.indexOf('const renderTechDashboard'));
+    // 2. TechDashboardView must not render Báo giá: or Chi phí:
     assert.ok(!techDashboardSlice.includes('Báo giá:'), 'renderTechDashboard must not display "Báo giá:"');
     assert.ok(!techDashboardSlice.includes('Chi phí:'), 'renderTechDashboard must not display "Chi phí:"');
     assert.ok(!techDashboardSlice.includes('moneyFormatted(order.price)'), 'renderTechDashboard must not format order.price');
@@ -252,9 +276,9 @@ describe('OpenSpec: admin-dashboard-four-revenue-and-debt-cards Frontend Verific
   });
 
   test('Tasks 3.1, 3.2, 3.3 (admin-self-explanatory-kpi-and-data-normalization): Operational breakdown, Admin Sidebar all-orders scope, Repairs composite filters, and VND price normalization', () => {
-    const dashboardContent = fs.readFileSync(path.join(webRoot, 'app/dashboard/page.tsx'), 'utf-8');
+    const dashboardContent = readDashboardAll();
     const providersContent = fs.readFileSync(path.join(webRoot, 'app/providers.tsx'), 'utf-8');
-    const repairsContent = fs.readFileSync(path.join(webRoot, 'app/repairs/page.tsx'), 'utf-8');
+    const repairsContent = readRepairsAll();
     const checkoutContent = fs.readFileSync(path.join(webRoot, 'app/components/CheckoutHandoverModal.tsx'), 'utf-8');
     const quotesContent = fs.readFileSync(path.join(webRoot, 'app/quotes/page.tsx'), 'utf-8');
     const adminEditContent = fs.readFileSync(path.join(webRoot, 'app/components/AdminEditOrderModal.tsx'), 'utf-8');
@@ -269,17 +293,17 @@ describe('OpenSpec: admin-dashboard-four-revenue-and-debt-cards Frontend Verific
       'Overdue card must state "Máy đang sửa quá 24h trong xưởng"'
     );
     assert.ok(
-      dashboardContent.includes("router.push('/repairs?status=open&date_filter=all')") &&
-        dashboardContent.includes("router.push('/repairs?status=waiting_pickup&date_filter=all')") &&
-        dashboardContent.includes("router.push('/repairs?status=in_workshop&date_filter=all')") &&
-        dashboardContent.includes("router.push('/repairs?filter=overdue&date_filter=all')"),
+      dashboardContent.includes("'/repairs?status=open&date_filter=all'") &&
+        dashboardContent.includes("'/repairs?status=waiting_pickup&date_filter=all'") &&
+        dashboardContent.includes("'/repairs?status=in_workshop&date_filter=all'") &&
+        dashboardContent.includes("'/repairs?filter=overdue&date_filter=all'"),
       'Dashboard cards and reconciliation blocks must link to /repairs with date_filter=all'
     );
 
     // Task 3.2: Providers Admin scope (per_page: 500, date_filter: all)
     assert.ok(
-      providersContent.includes('params.per_page = 500;') &&
-        providersContent.includes("params.date_filter = 'all';"),
+      (providersContent.includes('per_page: 500') || providersContent.includes('per_page = 500')) &&
+        (providersContent.includes("date_filter = 'all'") || providersContent.includes("effectiveDateFilter = (isAdmin ? 'all'")),
       'providers.tsx must set per_page=500 and date_filter=all for Admin'
     );
 
@@ -300,7 +324,7 @@ describe('OpenSpec: admin-dashboard-four-revenue-and-debt-cards Frontend Verific
   });
 
   test('OpenSpec: dashboard-remove-fallback-and-add-loading-skeleton (Tasks 1.1, 1.2, 2.1, 2.2): Single Source of Truth kpiData and Loading Skeletons across Dashboard, ActionableTasksCenter, and StaffPerformanceWidget', () => {
-    const dashboardContent = fs.readFileSync(path.join(webRoot, 'app/dashboard/page.tsx'), 'utf-8');
+    const dashboardContent = readDashboardAll();
     const actionableContent = fs.readFileSync(
       path.join(webRoot, 'app/dashboard/components/ActionableTasksCenter.tsx'),
       'utf-8'
@@ -356,7 +380,7 @@ describe('OpenSpec: admin-dashboard-four-revenue-and-debt-cards Frontend Verific
       path.join(webRoot, 'app/dashboard/components/ActionableTasksCenter.tsx'),
       'utf-8'
     );
-    const repairsContent = fs.readFileSync(path.join(webRoot, 'app/repairs/page.tsx'), 'utf-8');
+    const repairsContent = readRepairsAll();
 
     // Task 2.1: ActionableTasks.counts in packages/types/src/kpi.ts
     assert.ok(
@@ -415,6 +439,123 @@ describe('OpenSpec: admin-dashboard-four-revenue-and-debt-cards Frontend Verific
         repairsContent.includes('data-testid="status-pill-waiting-pickup"') &&
         repairsContent.includes('data-testid="status-pill-completed"'),
       'repairs/page.tsx must render admin-repairs-status-reconciliation-bar with all 5 status reconciliation pills for Admin'
+    );
+  });
+
+  test('OpenSpec: intake-date-revenue-and-excel-export (Tasks 2.1, 2.2, 2.3, 2.4): Date range filter (from_date -> to_date), all active statuses support, and Excel report export with STT, Họ tên, Mã máy, Tiền, and TỔNG TIỀN footer', () => {
+    const kpiTypesContent = fs.readFileSync(path.join(repoRoot, 'packages/types/src/kpi.ts'), 'utf-8');
+    const kpiServiceContent = fs.readFileSync(
+      path.join(repoRoot, 'packages/api-client/src/services/kpi.service.ts'),
+      'utf-8'
+    );
+    const dashboardContent = readDashboardAll();
+
+    // Task 2.1: Types & API client support from_date, to_date, created_at
+    assert.ok(
+      kpiTypesContent.includes('from_date?: string;') &&
+        kpiTypesContent.includes('to_date?: string;') &&
+        kpiTypesContent.includes('created_at?: string | null;'),
+      'packages/types/src/kpi.ts must include from_date, to_date, and created_at'
+    );
+    assert.ok(
+      kpiServiceContent.includes('from_date?: string;') &&
+        kpiServiceContent.includes('to_date?: string;'),
+      'packages/api-client/src/services/kpi.service.ts getDashboardKpi must accept from_date and to_date'
+    );
+
+    // Task 2.2: Date range filter inputs on AdminDashboardView & RevenueDrilldownModal and API query params
+    assert.ok(
+      dashboardContent.includes('data-testid="dashboard-from-date-input"') &&
+        dashboardContent.includes('data-testid="dashboard-to-date-input"') &&
+        dashboardContent.includes('data-testid="drilldown-from-date-input"') &&
+        dashboardContent.includes('data-testid="drilldown-to-date-input"'),
+      'AdminDashboardView and RevenueDrilldownModal must render Từ ngày (fromDate) and Đến ngày (toDate) inputs'
+    );
+    assert.ok(
+      dashboardContent.includes('from_date: fromDate') &&
+        dashboardContent.includes('to_date: toDate'),
+      'DashboardPage must pass from_date and to_date to kpiService.getDashboardKpi'
+    );
+
+    // Task 2.3: Export Excel buttons on AdminDashboardView and RevenueDrilldownModal
+    assert.ok(
+      dashboardContent.includes('data-testid="admin-export-excel-btn"') &&
+        dashboardContent.includes('data-testid="drilldown-export-excel-btn"') &&
+        dashboardContent.includes('Xuất Excel'),
+      'AdminDashboardView and RevenueDrilldownModal must provide Excel export buttons'
+    );
+
+    // Runtime verification of buildRevenueExcelWorkbook & formatOrderStatusForReport
+    assert.equal(formatOrderStatusForReport('inspecting'), 'Đang kiểm tra');
+    assert.equal(formatOrderStatusForReport('in_repair'), 'Đang sửa chữa');
+    assert.equal(formatOrderStatusForReport('completed'), 'Đã giao máy');
+
+    const sampleOrders = [
+      {
+        id: 101,
+        order_code: 'RO-261022-001',
+        customer_name: 'Nguyễn Văn An',
+        customer_phone: '0901234567',
+        device_name: 'AirPods Pro 2',
+        status: 'inspecting',
+        total_price: 400000,
+        collected_amount: 0,
+        uncollected_amount: 400000,
+        created_at: '2026-10-22T09:15:00+07:00',
+      },
+      {
+        id: 102,
+        order_code: 'RO-261022-002',
+        customer_name: 'Trần Thị Bình',
+        customer_phone: '0909888777',
+        device_name: 'AirPods 3',
+        status: 'in_repair',
+        total_price: 600000,
+        collected_amount: 200000,
+        uncollected_amount: 400000,
+        created_at: '2026-10-22T11:30:00+07:00',
+      },
+      {
+        id: 103,
+        order_code: 'RO-261022-003',
+        customer_name: 'Lê Hoàng Cường',
+        customer_phone: '0912333444',
+        device_name: 'AirPods Max',
+        status: 'completed',
+        total_price: 500000,
+        collected_amount: 500000,
+        uncollected_amount: 0,
+        created_at: '2026-10-22T15:45:00+07:00',
+      },
+    ];
+
+    const workbook = buildRevenueExcelWorkbook({
+      items: sampleOrders,
+      periodLabel: '22/10/2026',
+      fromDate: '2026-10-22',
+      toDate: '2026-10-22',
+      branchName: 'Chi nhánh Quận 1',
+    });
+
+    assert.equal(workbook.rowCount, 3, 'Workbook must contain 3 rows');
+    assert.equal(workbook.totalAmount, 1500000, 'Workbook totalAmount must equal 1,500,000');
+    assert.equal(
+      workbook.fileName,
+      'bao-cao-doanh-thu-podscare-2026-10-22.xls',
+      'Workbook file name must reflect selected date'
+    );
+    assert.ok(workbook.content.startsWith('\uFEFF'), 'Workbook content must start with UTF-8 BOM');
+    assert.ok(workbook.content.includes('>STT<'), 'Workbook must contain column STT');
+    assert.ok(workbook.content.includes('>Họ tên<'), 'Workbook must contain column Họ tên');
+    assert.ok(workbook.content.includes('>Mã máy<'), 'Workbook must contain column Mã máy');
+    assert.ok(workbook.content.includes('>Tiền<'), 'Workbook must contain column Tiền');
+    assert.ok(
+      workbook.content.includes('RO-261022-001 - AirPods Pro 2'),
+      'Workbook must format Mã máy as <order_code> - <device_name>'
+    );
+    assert.ok(
+      workbook.content.includes('TỔNG TIỀN') && workbook.content.includes('data-value="1500000"'),
+      'Workbook footer must contain TỔNG TIỀN with exact total sum 1500000'
     );
   });
 });

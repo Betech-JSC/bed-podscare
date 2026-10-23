@@ -4,31 +4,31 @@ module.exports = {
     extend: {
       colors: {
         brand: {
-          primary: '#176b58', // Calm Jade primary
-          DEFAULT: '#176b58',
-          hover: '#125945',
-          light: '#e7f3ee',
+          primary: '#176b51', // Calm Jade primary
+          DEFAULT: '#176b51',
+          hover: '#10583f',
+          light: '#e9f4ef',
           mark: '#196d52',
           accent: '#c8eadb',
         },
         surface: {
-          canvas: '#f4f7f5', // Warm Ivory canvas
+          canvas: '#f6f8f6', // Warm Ivory canvas
           card: '#ffffff',
           panel: '#fafbfa',
         },
         ink: {
-          primary: '#1c302b',
-          DEFAULT: '#1c302b',
-          muted: '#758780',
+          primary: '#17231f',
+          DEFAULT: '#17231f',
+          muted: '#81908a',
           subtle: '#9aa59f',
         },
         line: {
-          DEFAULT: '#e5ece8',
+          DEFAULT: '#e9eeeb',
           subtle: '#f0f3f1',
         },
         status: {
-          wait: { text: '#a4722f', bg: '#faf3e7', DEFAULT: '#a4722f' },
-          progress: { text: '#437a9d', bg: '#edf4f8', DEFAULT: '#437a9d' },
+          wait: { text: '#b77a21', bg: '#faf3e7', DEFAULT: '#b77a21' },
+          progress: { text: '#4778a4', bg: '#edf4f8', DEFAULT: '#4778a4' },
           ready: { text: '#28805e', bg: '#eaf5ef', DEFAULT: '#28805e' },
           danger: { text: '#bc5b52', bg: '#fbefed', DEFAULT: '#bc5b52' },
           new: { text: '#7e729c', bg: '#f2eff8', DEFAULT: '#7e729c' },
@@ -36,8 +36,9 @@ module.exports = {
         }
       },
       fontFamily: {
-        sans: ['Inter', 'var(--font-inter)', '-apple-system', 'BlinkMacSystemFont', 'sans-serif'],
-        heading: ['Inter', 'var(--font-inter)', '-apple-system', 'BlinkMacSystemFont', 'sans-serif'],
+        sans: ['var(--font-dm-sans)', 'DM Sans', '-apple-system', 'BlinkMacSystemFont', 'Segoe UI', 'Roboto', 'sans-serif'],
+        heading: ['var(--font-manrope)', 'Manrope', 'DM Sans', 'sans-serif'],
+        mono: ['ui-monospace', 'SFMono-Regular', 'Menlo', 'Monaco', 'Consolas', 'monospace'],
       },
       boxShadow: {
         card: '0 2px 5px rgba(36, 60, 41, 0.03)',
@@ -52,3 +53,4 @@ module.exports = {
     }
   }
 };
+

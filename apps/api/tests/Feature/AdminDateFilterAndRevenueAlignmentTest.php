@@ -200,6 +200,7 @@ class AdminDateFilterAndRevenueAlignmentTest extends TestCase
             'status'         => 'completed',
             'total_price'    => 750000,
             'handed_over_at' => null,
+            'created_at'     => Carbon::parse($targetDateStr . ' 08:30:00', $this->tz),
             'updated_at'     => Carbon::parse($targetDateStr . ' 10:00:00', $this->tz),
         ]);
 
@@ -208,6 +209,8 @@ class AdminDateFilterAndRevenueAlignmentTest extends TestCase
             'status'         => 'completed',
             'total_price'    => 250000,
             'handed_over_at' => Carbon::parse($targetDateStr . ' 15:00:00', $this->tz),
+            'created_at'     => Carbon::parse($targetDateStr . ' 09:00:00', $this->tz),
+            'updated_at'     => Carbon::parse($targetDateStr . ' 15:00:00', $this->tz),
         ]);
 
         // 1 đơn hoàn tất hôm nay với handed_over_at = null, updated_at = today

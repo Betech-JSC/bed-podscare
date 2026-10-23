@@ -13,10 +13,12 @@ use App\Models\Tenant;
 use App\Models\User;
 use App\Models\WorkShift;
 use Carbon\Carbon;
+use Illuminate\Foundation\Testing\DatabaseTransactions;
 use Tests\TestCase;
 
 class GoodsReceiptProcessingTest extends TestCase
 {
+    use DatabaseTransactions;
     protected Tenant $tenant;
     protected Branch $branch;
     protected User $adminUser;

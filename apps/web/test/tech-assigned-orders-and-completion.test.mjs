@@ -18,7 +18,11 @@ describe('OpenSpec: tech-assigned-orders-and-completion Test Suite', () => {
 
   test('Test 1: Dashboard Kỹ thuật viên (apps/web/app/dashboard/page.tsx) - Tab Navigation & Clickable KPI Filters', () => {
     assert.ok(fs.existsSync(dashboardPath), 'dashboard/page.tsx phải tồn tại');
-    const content = fs.readFileSync(dashboardPath, 'utf-8');
+    const techViewPath = path.resolve(webDir, 'app/dashboard/components/TechDashboardView.tsx');
+    const content = [
+      fs.readFileSync(dashboardPath, 'utf-8'),
+      fs.existsSync(techViewPath) ? fs.readFileSync(techViewPath, 'utf-8') : '',
+    ].join('\n');
 
     // 1.1 State techTab
     assert.ok(
@@ -41,7 +45,7 @@ describe('OpenSpec: tech-assigned-orders-and-completion Test Suite', () => {
     );
     assert.ok(
       content.includes("techTab === 'my_orders'") &&
-        content.includes('border-[#176b58] ring-2 ring-[#176b58]/20 bg-[#f7faf8]'),
+        content.includes('border-[#176b51] ring-2 ring-[#176b51]/20'),
       'Thẻ KPI phải có highlight visual feedback khi tab tương ứng đang active'
     );
 
@@ -131,7 +135,7 @@ describe('OpenSpec: tech-assigned-orders-and-completion Test Suite', () => {
     assert.ok(content.includes('finalCheck'), 'Phải có trường finalCheck');
     assert.ok(content.includes('consentCheck'), 'Phải có checkbox cam kết chất lượng consentCheck');
     assert.ok(content.includes('HOÀN THÀNH SỬA CHỮA'), 'Phải có nút bấm hoàn thành sửa chữa');
-    assert.ok(content.includes('#176b58'), 'Nút hoàn thành phải dùng màu Calm Jade #176b58');
+    assert.ok(content.includes('#176b51'), 'Nút hoàn thành phải dùng màu Calm Jade #176b51');
 
     // 3.3 Form Validation
     assert.ok(
@@ -143,10 +147,10 @@ describe('OpenSpec: tech-assigned-orders-and-completion Test Suite', () => {
       'Phải validate bắt buộc consentCheck'
     );
 
-    // 3.4 API transition payload
+    // 3.4 API transition payload (Gói 2 Task 4.2: chuyển sang waiting_qc)
     assert.ok(
-      content.includes("transition: 'ready_for_return'"),
-      'Phải gọi transition ready_for_return khi hoàn thành'
+      content.includes("transition: 'waiting_qc'"),
+      'Phải gọi transition waiting_qc khi hoàn thành sửa chữa'
     );
     assert.ok(
       content.includes('repair_note: repairNote.trim()'),

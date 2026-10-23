@@ -16,7 +16,11 @@ const a4BuilderPath = path.join(webDir, 'app/components/print/a4ReceiptHtmlBuild
 
 test('Warranty Intake Shipping Address - Comprehensive Verification Test Suite', async (t) => {
   const wizardSource = fs.readFileSync(wizardPath, 'utf8');
-  const repairsSource = fs.readFileSync(repairsPagePath, 'utf8');
+  const repairsCompDir = path.join(path.dirname(repairsPagePath), 'components');
+  const repairsCompFiles = fs.existsSync(repairsCompDir)
+    ? fs.readdirSync(repairsCompDir).filter((f) => f.endsWith('.tsx')).map((f) => fs.readFileSync(path.join(repairsCompDir, f), 'utf8'))
+    : [];
+  const repairsSource = [fs.readFileSync(repairsPagePath, 'utf8'), ...repairsCompFiles].join('\n');
   const k80Source = fs.readFileSync(k80BuilderPath, 'utf8');
   const a4Source = fs.readFileSync(a4BuilderPath, 'utf8');
 
@@ -87,7 +91,8 @@ test('Warranty Intake Shipping Address - Comprehensive Verification Test Suite',
   await t.test('4. Order Detail Drawer: Card Condition, Contextual Title & Inline Edit for Warranty', () => {
     // 4.1 Điều kiện hiển thị card trong Drawer cho đơn COD, Warranty hoặc đơn có tồn tại shipping_address
     assert.ok(
-      repairsSource.includes("const isWarrantyOrder = selectedOrder.order_type === 'warranty' || selectedOrder.orderType === 'warranty';"),
+      repairsSource.includes("selectedOrder.order_type === 'warranty' || selectedOrder.orderType === 'warranty'") ||
+        repairsSource.includes("(selectedOrder as any).order_type === 'warranty' || selectedOrder.orderType === 'warranty'"),
       'repairs page must identify warranty order'
     );
     assert.ok(
@@ -115,13 +120,15 @@ test('Warranty Intake Shipping Address - Comprehensive Verification Test Suite',
 
     // 4.3 Tiêu đề card theo ngữ cảnh đơn bảo hành vs COD
     assert.ok(
-      repairsSource.includes("isWarrantyOrder\n                          ? 'ĐỊA CHỈ GỬI TRẢ MÁY BẢO HÀNH (KHÁCH TỈNH)'\n                          : 'ĐỊA CHỈ GIAO HÀNG COD (KHÁCH TỈNH)'"),
+      repairsSource.includes("'ĐỊA CHỈ GỬI TRẢ MÁY BẢO HÀNH (KHÁCH TỈNH)'") &&
+        repairsSource.includes("'ĐỊA CHỈ GIAO HÀNG COD (KHÁCH TỈNH)'"),
       'repairs page drawer must display contextual header for warranty vs cod'
     );
 
     // 4.4 Nội dung thông báo khi chưa có địa chỉ
     assert.ok(
-      repairsSource.includes("isWarrantyOrder\n                                ? 'Chưa cập nhật địa chỉ gửi trả (CSKH ghi chú sau khi liên hệ khách)'\n                                : 'Chưa cập nhật địa chỉ giao hàng (CSKH ghi chú sau khi liên hệ khách)'"),
+      repairsSource.includes("'Chưa cập nhật địa chỉ gửi trả (CSKH ghi chú sau khi liên hệ khách)'") &&
+        repairsSource.includes("'Chưa cập nhật địa chỉ giao hàng (CSKH ghi chú sau khi liên hệ khách)'"),
       'repairs page drawer must display contextual empty message'
     );
 

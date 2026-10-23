@@ -10,9 +10,12 @@ export * from './atoms/Textarea';
 export * from './atoms/Checkbox';
 export * from './atoms/Radio';
 export * from './atoms/Icons';
+export * from './atoms/SegmentedControl';
+export * from './atoms/HardwarePartSelector';
 
 // Utils
 export * from './utils/currency';
+export * from './utils/statusMap';
 export * from './utils/text';
 export * from './utils/phoneSearch';
 
@@ -22,6 +25,7 @@ export * from './molecules/DynamicTestRow';
 export * from './molecules/PhotoDropzone';
 export * from './molecules/StepperWidget';
 export * from './molecules/FilterBar';
+export * from './molecules/PaginationBar';
 export * from './molecules/Modal';
 export * from './molecules/ConfirmModal';
 export * from './molecules/ConfirmProvider';

@@ -22,7 +22,7 @@ export const LandingNavbar: React.FC<LandingNavbarProps> = ({ isAuthenticated = 
   };
 
   return (
-    <header className="sticky top-0 z-50 h-[76px] bg-white/95 backdrop-blur-md border-b border-[#e6ebe8] transition-all">
+    <header className="sticky top-0 z-50 h-[76px] bg-white border-b border-[#e6ebe8] transition-all">
       <div className="max-w-[1280px] h-full mx-auto px-4 sm:px-6 lg:px-8 flex items-center justify-between gap-4">
         {/* Brand Logo */}
         <Link

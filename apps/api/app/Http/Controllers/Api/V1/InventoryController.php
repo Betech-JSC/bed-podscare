@@ -28,7 +28,10 @@ class InventoryController extends Controller
                 $targetBranchId = (int) $user->branch_id;
             }
         } else {
-            $targetBranchId = (int) ($user?->branch_id ?? 1);
+            if (empty($user?->branch_id)) {
+                return $this->failure('Tài khoản nhân sự chưa được phân công chi nhánh làm việc.', 422);
+            }
+            $targetBranchId = (int) $user->branch_id;
         }
 
         $query = Part::where('parts.is_active', true);
@@ -276,7 +279,7 @@ class InventoryController extends Controller
                 'ip_address'     => $request->ip(),
             ]);
 
-            $loadedTx = $tx->load(['part', 'branch']);
+            $loadedTx = $tx->setRelation('part', $part)->load('branch');
             if (! $isAdmin) {
                 $loadedTx->makeHidden('unit_cost');
                 if ($loadedTx->part) {

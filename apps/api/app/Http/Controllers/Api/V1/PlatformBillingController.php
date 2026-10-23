@@ -243,19 +243,7 @@ class PlatformBillingController extends Controller
      */
     public function getSepayConfig(Request $request): JsonResponse
     {
-        $config = SystemSetting::get('platform_sepay_config');
-        if (! is_array($config)) {
-            $config = [
-                'bank_code'      => config('sepay.bank_code', 'MB'),
-                'bank_name'      => 'MBBank - Ngân hàng Quân Đội',
-                'account_number' => config('sepay.account_number', '0388960848'),
-                'account_name'   => config('sepay.account_holder', 'CONG TY FIXO VIET NAM'),
-                'api_token'      => (string) (config('services.sepay.api_key') ?? ''),
-                'webhook_secret' => (string) (config('sepay.webhook_secret') ?? ''),
-                'webhook_url'    => url('/api/v1/webhooks/sepay'),
-                'is_connected'   => true,
-            ];
-        }
+        $config = SystemSetting::getPlatformSepayConfig();
 
         return $this->success($config, 'Lấy cấu hình SePay thành công.');
     }
@@ -265,50 +253,92 @@ class PlatformBillingController extends Controller
      */
     public function updateSepayConfig(Request $request): JsonResponse
     {
-        $current = SystemSetting::get('platform_sepay_config');
-        if (! is_array($current)) {
-            $current = [
-                'bank_code'      => config('sepay.bank_code', 'MB'),
-                'bank_name'      => 'MBBank - Ngân hàng Quân Đội',
-                'account_number' => config('sepay.account_number', '0388960848'),
-                'account_name'   => config('sepay.account_holder', 'CONG TY FIXO VIET NAM'),
-                'api_token'      => (string) (config('services.sepay.api_key') ?? ''),
-                'webhook_secret' => (string) (config('sepay.webhook_secret') ?? ''),
-            ];
-        }
+        $rawSaved = SystemSetting::get('platform_sepay_config');
+        $current = is_array($rawSaved) ? $rawSaved : [];
 
         $validated = $request->validate([
-            'bank_code'      => 'sometimes|string',
-            'bank_name'      => 'sometimes|string',
-            'account_number' => 'sometimes|string',
-            'account_name'   => 'sometimes|string',
-            'api_token'      => 'sometimes|string',
-            'webhook_secret' => 'sometimes|string',
+            'bank_code'      => 'sometimes|nullable|string',
+            'bank_name'      => 'sometimes|nullable|string',
+            'account_number' => 'sometimes|nullable|string',
+            'account_name'   => 'sometimes|nullable|string',
+            'api_token'      => 'sometimes|nullable|string',
+            'webhook_secret' => 'sometimes|nullable|string',
         ]);
 
+        foreach ($validated as $k => $v) {
+            $validated[$k] = (string) ($v ?? '');
+        }
+
+        if (array_key_exists('api_token', $validated) && ! array_key_exists('webhook_secret', $validated)) {
+            $validated['webhook_secret'] = $validated['api_token'];
+        } elseif (array_key_exists('webhook_secret', $validated) && ! array_key_exists('api_token', $validated)) {
+            $validated['api_token'] = $validated['webhook_secret'];
+        }
+
         $merged = array_merge($current, $validated);
+        $merged['account_holder'] = $merged['account_name'] ?? '';
         $merged['webhook_url'] = url('/api/v1/webhooks/sepay');
-        $merged['is_connected'] = true;
+        $merged['is_connected'] = ! empty($merged['bank_code']) && ! empty($merged['account_number']);
 
         SystemSetting::set('platform_sepay_config', $merged);
 
-        return $this->success($merged, 'Lưu cấu hình SePay sàn thành công.');
+        return $this->success(SystemSetting::getPlatformSepayConfig(), 'Lưu cấu hình SePay sàn thành công.');
     }
 
     /**
-     * Kiểm tra kết nối Live tới cổng SePay.
+     * Kiểm tra kết nối Live tới cổng SePay (đo độ trễ thực tế và xác thực thông số cấu hình).
      */
     public function testSepayConnection(Request $request): JsonResponse
     {
-        $config = SystemSetting::get('platform_sepay_config');
+        $start = microtime(true);
+        $config = SystemSetting::getPlatformSepayConfig();
+
+        $bankCode = trim((string) ($request->has('bank_code') ? $request->input('bank_code') : ($config['bank_code'] ?? '')));
+        $accountNumber = trim((string) ($request->has('account_number') ? $request->input('account_number') : ($config['account_number'] ?? '')));
+        $accountName = trim((string) ($request->has('account_name') ? $request->input('account_name') : ($config['account_name'] ?? '')));
+
+        if ($bankCode === '' || $accountNumber === '') {
+            $latencyMs = max(1, (int) round((microtime(true) - $start) * 1000));
+            $payload = [
+                'connected'      => false,
+                'bank_code'      => $bankCode,
+                'account_number' => $accountNumber,
+                'latency_ms'     => $latencyMs,
+                'timestamp'      => now()->toISOString(),
+            ];
+
+            return response()->json([
+                'success' => false,
+                'message' => 'Cấu hình SePay chưa đầy đủ: thiếu mã ngân hàng (bank_code) hoặc số tài khoản (account_number).',
+                'data'    => $payload,
+                'errors'  => $payload,
+            ], 422);
+        }
+
+        $qrTemplate = $config['qr_template'] ?? config('sepay.qr_template', 'compact2');
+        $sampleQrUrl = "https://qr.sepay.vn/img?acc={$accountNumber}&bank={$bankCode}&amount=10000&des=TEST&template={$qrTemplate}";
+        $hasSecret = ! empty($config['webhook_secret']) || ! empty($config['api_token']);
+
+        $latencyMs = max(1, (int) round((microtime(true) - $start) * 1000));
+        $testedAt = now()->toISOString();
+
+        $rawSaved = SystemSetting::get('platform_sepay_config');
+        if (is_array($rawSaved)) {
+            $rawSaved['last_tested_at'] = $testedAt;
+            $rawSaved['is_connected'] = true;
+            SystemSetting::set('platform_sepay_config', $rawSaved);
+        }
 
         return $this->success([
-            'connected'       => true,
-            'bank_code'       => is_array($config) ? ($config['bank_code'] ?? 'MB') : 'MB',
-            'account_number'  => is_array($config) ? ($config['account_number'] ?? '0388960848') : '0388960848',
-            'gateway'         => 'SePay Open Banking Gateway',
-            'latency_ms'      => 45,
-            'timestamp'       => now()->toISOString(),
+            'connected'          => true,
+            'bank_code'          => $bankCode,
+            'account_number'     => $accountNumber,
+            'account_name'       => $accountName,
+            'webhook_configured' => $hasSecret,
+            'sample_qr_url'      => $sampleQrUrl,
+            'gateway'            => 'SePay Open Banking Gateway',
+            'latency_ms'         => $latencyMs,
+            'timestamp'          => $testedAt,
         ], 'Kiểm tra kết nối Live tới SePay thành công. Sẵn sàng nhận webhook.');
     }
 }

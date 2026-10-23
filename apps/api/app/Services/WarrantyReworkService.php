@@ -45,8 +45,15 @@ class WarrantyReworkService
             }
 
             $originalOrder = $warranty->repairOrder;
-            $branchId = (int) ($params['branch_id'] ?? $originalOrder?->branch_id ?? $actor->branch_id ?? 1);
-            $tenantId = $originalOrder?->tenant_id ?? $actor->tenant_id ?? 1;
+            $branchId = $params['branch_id'] ?? $originalOrder?->branch_id ?? $actor->branch_id;
+            $tenantId = $originalOrder?->tenant_id ?? $actor->tenant_id;
+
+            if (! $tenantId || ! $branchId) {
+                throw new DomainException('Không xác định được cửa hàng (tenant_id) hoặc chi nhánh (branch_id) để khởi tạo đơn bảo hành.');
+            }
+
+            $branchId = (int) $branchId;
+            $tenantId = (int) $tenantId;
 
             // 2. Tự động sinh mã đơn định danh
             $orderCode = $this->orderCodeService->generate($branchId);
@@ -98,9 +105,7 @@ class WarrantyReworkService
                 ]
             );
 
-            DB::afterCommit(function () use ($reworkOrder) {
-                app(\App\Services\TelegramNotificationService::class)->notifyNewOrder($reworkOrder);
-            });
+            \App\Jobs\SendTelegramNewOrderNotificationJob::dispatch($reworkOrder->id);
 
             return $reworkOrder;
         });

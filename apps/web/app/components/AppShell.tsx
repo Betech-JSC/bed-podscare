@@ -215,7 +215,7 @@ export const AppShell: React.FC<AppShellProps> = ({ children, crumbName = 'Tổn
           // Fallback an toàn khi chưa nạp được dữ liệu
         });
     }
-  }, [isAuthenticated, currentUser?.role, pathname]);
+  }, [isAuthenticated, currentUser?.role]);
 
   // Auth & Role Guard: redirect if unauthenticated or accessing unauthorized portal
   useEffect(() => {
@@ -235,14 +235,36 @@ export const AppShell: React.FC<AppShellProps> = ({ children, crumbName = 'Tổn
           return;
         }
 
-        // Hidden & Streamlined Route Guard for direct URL access
-        const hiddenRouteMap: Record<string, string> = {
+        // Full Role & Streamlined Route Guard for direct URL access
+        const routeModuleMap: Record<string, string> = {
+          '/dashboard': 'dashboard',
+          '/repairs': 'repairs',
+          '/customers': 'customers',
+          '/timeline': 'timeline',
+          '/tech': 'tech',
+          '/qc': 'qc',
+          '/warranty': 'warranty',
+          '/branches': 'branches',
+          '/branding': 'branding',
+          '/users': 'users',
+          '/payments': 'payments',
+          '/shifts': 'shifts',
+          '/subscription': 'subscription',
+          '/kpi': 'kpi',
+          '/audit': 'audit',
           '/quotes': 'quotes',
           '/inventory': 'inventory',
           '/shipments': 'shipments',
           '/partners': 'partners',
           '/devices': 'devices',
+          '/suppliers': 'suppliers',
+          '/outsource': 'outsource',
+          '/analytics': 'analytics',
+          '/settings': 'settings',
+          '/pricing': 'pricing',
+          '/super-admin': 'super-admin',
         };
+        const hiddenRouteMap = routeModuleMap;
 
         const matchingPrefix = Object.keys(hiddenRouteMap).find(
           (prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`)
@@ -267,7 +289,12 @@ export const AppShell: React.FC<AppShellProps> = ({ children, crumbName = 'Tổn
           const allowedModules = rolePermissions[normalizedRole] || [];
           if (!allowedModules.includes(moduleKey)) {
             toast('Tính năng này đã được tinh gọn hoặc bạn không có quyền truy cập.', 'error');
-            router.replace('/dashboard');
+            const defaultRoute = normalizedRole === 'tech' ? '/tech' : '/dashboard';
+            if (defaultRoute === '/tech') {
+              router.replace('/tech');
+            } else {
+              router.replace('/dashboard');
+            }
             return;
           }
         }

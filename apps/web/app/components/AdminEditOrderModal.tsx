@@ -344,7 +344,8 @@ export const AdminEditOrderModal: React.FC<AdminEditOrderModalProps> = ({
             />
             {isOrderCompleted && (
               <p className="mt-1 text-[11px] text-[#b45309] font-medium flex items-center gap-1">
-                <span>🔒 Đơn hàng đã hoàn tất, giá tiền đã được khóa cố định để bảo toàn sổ quỹ.</span>
+                <Icon name="lock" size={12} className="flex-shrink-0" />
+                <span>Đơn hàng đã hoàn tất, giá tiền đã được khóa cố định để bảo toàn sổ quỹ.</span>
               </p>
             )}
           </div>

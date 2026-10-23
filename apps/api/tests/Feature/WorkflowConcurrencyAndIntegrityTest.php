@@ -15,10 +15,12 @@ use App\Models\User;
 use App\Models\Warranty;
 use App\Models\WarrantyClaim;
 use Carbon\Carbon;
+use Illuminate\Foundation\Testing\DatabaseTransactions;
 use Tests\TestCase;
 
 class WorkflowConcurrencyAndIntegrityTest extends TestCase
 {
+    use DatabaseTransactions;
     private function getAuthenticatedUser(): User
     {
         $user = User::where('email', 'admin@fixo.com.vn')->first()
@@ -289,6 +291,15 @@ class WorkflowConcurrencyAndIntegrityTest extends TestCase
     {
         $user = $this->getAuthenticatedUser();
         $order = $this->createTestOrder('ready_for_return', 90);
+        \App\Models\Payment::create([
+            'payment_code'        => 'PAY-WF-' . uniqid(),
+            'repair_order_id'     => $order->id,
+            'amount'              => $order->total_price,
+            'payment_method'      => 'cash',
+            'status'              => 'paid',
+            'paid_at'             => now(),
+            'received_by_user_id' => $user->id,
+        ]);
         $customer = $order->customer;
         $initialSpent = (float) $customer->total_spent;
         $initialOrdersCount = $customer->orders_count;

@@ -6,10 +6,12 @@ use App\Models\Branch;
 use App\Models\Supplier;
 use App\Models\Tenant;
 use App\Models\User;
+use Illuminate\Foundation\Testing\DatabaseTransactions;
 use Tests\TestCase;
 
 class SupplierManagementTest extends TestCase
 {
+    use DatabaseTransactions;
     protected Tenant $tenantA;
     protected Tenant $tenantB;
     protected Branch $branchA;

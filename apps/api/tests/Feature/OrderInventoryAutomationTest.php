@@ -15,10 +15,12 @@ use App\Models\Tenant;
 use App\Models\User;
 use App\Services\OrderWorkflowService;
 use Carbon\Carbon;
+use Illuminate\Foundation\Testing\DatabaseTransactions;
 use Tests\TestCase;
 
 class OrderInventoryAutomationTest extends TestCase
 {
+    use DatabaseTransactions;
     protected Tenant $tenant;
     protected Branch $branch;
     protected User $adminUser;
@@ -137,6 +139,16 @@ class OrderInventoryAutomationTest extends TestCase
             'amount'      => 350000 * $partQty,
         ]);
 
+        \App\Models\Payment::create([
+            'payment_code'        => 'PAY-INV-' . uniqid(),
+            'repair_order_id'     => $order->id,
+            'amount'              => 350000 * $partQty,
+            'payment_method'      => 'cash',
+            'status'              => 'paid',
+            'paid_at'             => now(),
+            'received_by_user_id' => $this->adminUser->id,
+        ]);
+
         return $order;
     }
 
@@ -253,6 +265,16 @@ class OrderInventoryAutomationTest extends TestCase
             'total_price'         => 100000,
             'warranty_terms_days' => 30,
             'created_by_user_id'  => $this->adminUser->id,
+        ]);
+
+        \App\Models\Payment::create([
+            'payment_code'        => 'PAY-NOPART-' . uniqid(),
+            'repair_order_id'     => $order->id,
+            'amount'              => 100000,
+            'payment_method'      => 'cash',
+            'status'              => 'paid',
+            'paid_at'             => now(),
+            'received_by_user_id' => $this->adminUser->id,
         ]);
 
         $workflowService = app(OrderWorkflowService::class);

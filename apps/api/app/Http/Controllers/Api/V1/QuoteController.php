@@ -182,14 +182,24 @@ class QuoteController extends Controller
         }
 
         return DB::transaction(function () use ($quote, $request) {
-            $quote->update([
+            $lockedQuote = RepairQuote::with('repairOrder')->lockForUpdate()->find($quote->id) ?? $quote;
+            $order = $lockedQuote->repairOrder;
+
+            if (in_array($lockedQuote->status, ['approved', 'declined', 'rejected'], true)) {
+                return $this->failure('Báo giá này đã được xử lý phản hồi trước đó.', 422);
+            }
+
+            if ($order && in_array($order->status, ['completed', 'cancelled'], true)) {
+                return $this->failure('Không thể duyệt báo giá của đơn hàng đã hoàn tất hoặc đã hủy.', 422);
+            }
+
+            $lockedQuote->update([
                 'status'       => 'approved',
                 'responded_at' => Carbon::now(),
             ]);
 
-            $order = $quote->repairOrder;
             if ($order) {
-                $normalizedQuoteAmount = RepairOrder::normalizeVndAmount($quote->total_amount);
+                $normalizedQuoteAmount = RepairOrder::normalizeVndAmount($lockedQuote->total_amount);
                 $orderUpdates = [
                     'status'               => 'waiting_tech',
                     'customer_approved_at' => Carbon::now(),
@@ -205,8 +215,8 @@ class QuoteController extends Controller
                     'user_name'      => $request->user()->name,
                     'action'         => 'Duyệt báo giá',
                     'auditable_type' => 'RepairQuote',
-                    'auditable_id'   => $quote->id,
-                    'details'        => "Khách đã duyệt báo giá {$quote->quote_number} trị giá " . number_format($quote->total_amount) . " ₫",
+                    'auditable_id'   => $lockedQuote->id,
+                    'details'        => "Khách đã duyệt báo giá {$lockedQuote->quote_number} trị giá " . number_format($lockedQuote->total_amount) . " ₫",
                 ]);
 
                 // Tạo thông báo vận hành khi duyệt báo giá
@@ -215,7 +225,7 @@ class QuoteController extends Controller
                     'order_id'   => $order->id,
                     'type'       => 'quote_action',
                     'title'      => 'Khách hàng duyệt báo giá',
-                    'message'    => "Báo giá {$quote->quote_number} của đơn {$order->order_code} (" . number_format($quote->total_amount) . " ₫) đã được phê duyệt.",
+                    'message'    => "Báo giá {$lockedQuote->quote_number} của đơn {$order->order_code} (" . number_format($lockedQuote->total_amount) . " ₫) đã được phê duyệt.",
                     'severity'   => 'success',
                     'action_url' => "/repairs?id={$order->id}",
                 ]);
@@ -240,7 +250,7 @@ class QuoteController extends Controller
                 });
             }
 
-            return $this->success($quote, 'Đã phê duyệt báo giá.');
+            return $this->success($lockedQuote, 'Đã phê duyệt báo giá.');
         });
     }
 
@@ -260,18 +270,32 @@ class QuoteController extends Controller
             return $this->failure('Bạn không có quyền từ chối báo giá của chi nhánh khác.', 403);
         }
 
+        if (! $request->filled('reason') && $request->filled('decline_reason')) {
+            $request->merge(['reason' => $request->input('decline_reason')]);
+        }
+
         $validated = $request->validate([
             'reason' => 'required|string|max:500',
         ]);
 
         return DB::transaction(function () use ($quote, $validated, $request) {
-            $quote->update([
+            $lockedQuote = RepairQuote::with('repairOrder')->lockForUpdate()->find($quote->id) ?? $quote;
+            $order = $lockedQuote->repairOrder;
+
+            if (in_array($lockedQuote->status, ['approved', 'declined', 'rejected'], true)) {
+                return $this->failure('Báo giá này đã được xử lý phản hồi trước đó.', 422);
+            }
+
+            if ($order && in_array($order->status, ['completed', 'cancelled'], true)) {
+                return $this->failure('Không thể từ chối báo giá của đơn hàng đã hoàn tất hoặc đã hủy.', 422);
+            }
+
+            $lockedQuote->update([
                 'status'         => 'declined',
                 'responded_at'   => Carbon::now(),
                 'decline_reason' => $validated['reason'],
             ]);
 
-            $order = $quote->repairOrder;
             if ($order) {
                 $order->update([
                     'status'               => 'rejected',
@@ -319,7 +343,7 @@ class QuoteController extends Controller
                 });
             }
 
-            return $this->success($quote, 'Đã ghi nhận từ chối báo giá.');
+            return $this->success($lockedQuote, 'Đã ghi nhận từ chối báo giá.');
         });
     }
 }

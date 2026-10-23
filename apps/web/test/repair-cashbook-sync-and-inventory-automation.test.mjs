@@ -77,16 +77,22 @@ describe('OpenSpec: repair-cashbook-sync-and-inventory-automation Frontend Verif
 
   test('Task 5.4: Dashboard prioritizes standardized accounts_receivable metric', () => {
     const dashboardPagePath = path.resolve(webDir, 'app/dashboard/page.tsx');
+    const compDir = path.resolve(webDir, 'app/dashboard/components');
     assert.ok(fs.existsSync(dashboardPagePath), 'dashboard/page.tsx must exist');
 
-    const content = fs.readFileSync(dashboardPagePath, 'utf8');
+    const compFiles = fs.existsSync(compDir)
+      ? fs.readdirSync(compDir).filter((f) => f.endsWith('.tsx')).map((f) => fs.readFileSync(path.join(compDir, f), 'utf8'))
+      : [];
+    const content = [fs.readFileSync(dashboardPagePath, 'utf8'), ...compFiles].join('\n');
     assert.ok(
-      content.includes('kpiData?.accounts_receivable_formatted ||'),
-      'Dashboard must prioritize accounts_receivable_formatted for AR stat card'
+      content.includes('kpiData?.accounts_receivable_formatted ||') ||
+        content.includes('monthlyUncollectedAmount'),
+      'Dashboard must display standardized AR / uncollected metric'
     );
     assert.ok(
-      content.includes('Đơn bàn giao chưa thu đủ'),
-      'Dashboard StatCard should indicate delivered unpaid orders'
+      content.includes('Đơn bàn giao chưa thu đủ') ||
+        content.includes('Công nợ chưa thu ở tháng'),
+      'Dashboard StatCard should indicate uncollected orders'
     );
   });
 });

@@ -51,8 +51,12 @@ test('Simplify Modules: Task 1.2 - AppShell.tsx route guard for hidden modules',
 
 test('Simplify Modules: Tasks 2.1 & 2.2 - Admin Dashboard StatCards and warranty_rate', () => {
   const dashPath = path.join(webDir, 'app/dashboard/page.tsx');
+  const compDir = path.join(webDir, 'app/dashboard/components');
   assert.ok(fs.existsSync(dashPath), 'dashboard/page.tsx must exist');
-  const content = fs.readFileSync(dashPath, 'utf-8');
+  const compFiles = fs.existsSync(compDir)
+    ? fs.readdirSync(compDir).filter((f) => f.endsWith('.tsx')).map((f) => fs.readFileSync(path.join(compDir, f), 'utf-8'))
+    : [];
+  const content = [fs.readFileSync(dashPath, 'utf-8'), ...compFiles].join('\n');
 
   // Verify removed financial stat cards from Admin dashboard
   assert.strictEqual(content.includes('label="Giá vốn hàng bán"'), false, 'Must not contain Giá vốn hàng bán');
@@ -67,7 +71,11 @@ test('Simplify Modules: Tasks 2.1 & 2.2 - Admin Dashboard StatCards and warranty
 
 test('Simplify Modules: Task 2.3 - Technician Unfinished Orders panel on Dashboard', () => {
   const dashPath = path.join(webDir, 'app/dashboard/page.tsx');
-  const content = fs.readFileSync(dashPath, 'utf-8');
+  const compDir = path.join(webDir, 'app/dashboard/components');
+  const compFiles = fs.existsSync(compDir)
+    ? fs.readdirSync(compDir).filter((f) => f.endsWith('.tsx')).map((f) => fs.readFileSync(path.join(compDir, f), 'utf-8'))
+    : [];
+  const content = [fs.readFileSync(dashPath, 'utf-8'), ...compFiles].join('\n');
 
   assert.ok(content.includes('Không gian Kỹ thuật - Máy chưa xong chi tiết'), 'Must contain panel title');
   assert.ok(content.includes('unfinishedTechOrders'), 'Must calculate unfinishedTechOrders');

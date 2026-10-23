@@ -4,7 +4,7 @@ import React, { useState, useEffect } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { useQuery } from '@tanstack/react-query';
 import { repairService } from '@podscare/api-client';
-import { Button, Icon } from '@podscare/ui';
+import { Button, Icon, resolveOrderStatus } from '@podscare/ui';
 import { usePodsCare } from '../../providers';
 import type { RepairOrder } from '@podscare/types';
 import {
@@ -78,26 +78,7 @@ export default function PrintReceiptPage() {
       const o = res?.data || res;
       if (!o) return null;
 
-      const statusMap: Record<string, { label: string; type: any }> = {
-        inspecting: { label: 'Đang kiểm tra', type: 'progress' },
-        waiting_approval: { label: 'Chờ khách duyệt', type: 'wait' },
-        waiting_tech: { label: 'Chờ kỹ thuật', type: 'new' },
-        assigned: { label: 'Đã nhận đơn', type: 'wait' },
-        in_repair: { label: 'Đang sửa', type: 'progress' },
-        waiting_parts: { label: 'Chờ linh kiện', type: 'wait' },
-        rework_needed: { label: 'Cần sửa lại', type: 'danger' },
-        waiting_qc: { label: 'Chờ QC', type: 'ready' },
-        ready_for_return: { label: 'Sẵn sàng trả', type: 'ready' },
-        waiting_pickup: { label: 'Chờ khách nhận', type: 'ready' },
-        completed: { label: 'Hoàn tất', type: 'gray' },
-        rejected: { label: 'Từ chối sửa', type: 'danger' },
-        cancelled: { label: 'Đã hủy', type: 'gray' },
-      };
-
-      const mappedStatus = statusMap[o.status] || {
-        label: o.status || 'Tiếp nhận mới',
-        type: 'wait',
-      };
+      const mappedStatus = resolveOrderStatus(o.status);
 
       const mappedChecks = Array.isArray(o.intake_checklists)
         ? o.intake_checklists.map((c: any) => ({

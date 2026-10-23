@@ -487,8 +487,8 @@ export const AppSidebar: React.FC<AppSidebarProps> = ({
                             <span className="truncate">{b.name}</span>
                           </div>
                           {isSelected && (
-                            <span className="text-[#176b58] text-xs font-bold ml-1.5 flex-none">
-                              ✓
+                            <span className="text-[#176b51] text-xs font-bold ml-1.5 flex-none flex items-center">
+                              <Icon name="check" size={14} />
                             </span>
                           )}
                         </button>
@@ -503,7 +503,7 @@ export const AppSidebar: React.FC<AppSidebarProps> = ({
                         onNavigate('branches');
                         onClose?.();
                       }}
-                      className="w-full flex items-center justify-center gap-1.5 py-1.5 px-3 rounded-[6px] text-xs font-bold text-[#176b58] hover:bg-[#eaf4ef] transition-colors"
+                      className="w-full flex items-center justify-center gap-1.5 py-1.5 px-3 rounded-[6px] text-xs font-bold text-[#176b51] hover:bg-[#e9f4ef] transition-colors"
                     >
                       <span className="text-sm font-bold leading-none">+</span>
                       <span>Thêm chi nhánh mới</span>
@@ -518,14 +518,14 @@ export const AppSidebar: React.FC<AppSidebarProps> = ({
             <div
               className="w-full flex items-center gap-2.5 p-2.5 bg-[#f7f9f7] border border-[#edf1ee] rounded-[10px] cursor-default select-none pointer-events-none text-left"
             >
-              <div className="w-8 h-8 rounded-[8px] bg-[#e4eee8] text-[#176b58] grid place-items-center flex-none">
+              <div className="w-8 h-8 rounded-[8px] bg-[#e9f4ef] text-[#176b51] grid place-items-center flex-none">
                 <Icon name="building" size={16} />
               </div>
               <div className="min-w-0 flex-1">
                 <small className="block text-xs tracking-[0.5px] text-[#7f8f87] font-bold uppercase">
                   CHI NHÁNH CỦA BẠN
                 </small>
-                <strong className="block text-sm text-[#1c302b] truncate font-semibold">
+                <strong className="block text-sm text-[#17231f] truncate font-semibold">
                   {branchName}
                 </strong>
               </div>
@@ -567,10 +567,10 @@ export const AppSidebar: React.FC<AppSidebarProps> = ({
 
         {/* Sidebar Bottom: Help & Profile */}
         <div className="pt-2 border-t border-[#f0f3f1] mt-auto flex-none">
-          <div className="border border-[#e5ece8] rounded-[10px] p-3 mb-2.5 bg-[#fbfcfb]">
-            <div className="text-[#bd8738] text-base mb-1">✳</div>
-            <strong className="text-sm font-bold text-[#1c302b] block">Cần trợ giúp?</strong>
-            <p className="text-xs text-[#798880] leading-normal my-1">
+          <div className="border border-[#e9eeeb] rounded-[10px] p-3 mb-2.5 bg-[#fafbfa]">
+            <div className="text-[10px] font-bold uppercase tracking-[1px] text-[#b77a21] mb-1">HỖ TRỢ VẬN HÀNH</div>
+            <strong className="text-sm font-bold text-[#17231f] block">Cần trợ giúp?</strong>
+            <p className="text-xs text-[#81908a] leading-normal my-1">
               Xem tài liệu và quy trình chuẩn FIXO Repair OS.
             </p>
             <button

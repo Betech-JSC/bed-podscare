@@ -15,10 +15,10 @@ export const LandingHero: React.FC<LandingHeroProps> = ({
   onOpenVideo,
 }) => {
   return (
-    <section className="relative pt-10 sm:pt-14 pb-12 sm:pb-16 overflow-hidden bg-gradient-to-b from-[#f6faf8] via-[#f9fbf9] to-white border-b border-[#e6ebe8]">
+    <section className="relative pt-10 sm:pt-14 pb-12 sm:pb-16 overflow-hidden bg-[#f6f8f6] border-b border-[#e6ebe8]">
       {/* Background Radial Glow */}
       <div
-        className="absolute top-0 right-1/4 w-[500px] h-[500px] bg-[#176b58]/5 rounded-full blur-3xl pointer-events-none"
+        className="absolute top-0 right-1/4 w-[500px] h-[500px] bg-[#176b58]/5 rounded-full pointer-events-none"
         aria-hidden="true"
       />
 
@@ -66,7 +66,7 @@ export const LandingHero: React.FC<LandingHeroProps> = ({
                 onClick={onOpenVideo}
                 className="w-full sm:w-auto inline-flex items-center justify-center gap-2 h-[48px] px-5 rounded-[9px] border border-[#ccd5d1] bg-white text-[#263631] text-[14px] font-bold hover:bg-[#f6f8f6] hover:border-[#176b58] transition-all shadow-xs"
               >
-                <svg className="w-3.5 h-3.5 fill-[#176b58]" viewBox="0 0 24 24"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+                <Icon name="play" size={14} className="text-[#176b58]" />
                 <span>Xem video giới thiệu</span>
               </button>
             </div>

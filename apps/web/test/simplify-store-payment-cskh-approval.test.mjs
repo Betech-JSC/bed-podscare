@@ -120,14 +120,10 @@ test('Task 2.4: VietQrPaymentModal CSKH Confirmation & No-Polling Verification',
   assert.ok(fs.existsSync(modalPath), 'VietQrPaymentModal.tsx phải tồn tại');
   const content = fs.readFileSync(modalPath, 'utf-8');
 
-  // Loại bỏ polling lặp 2.5s SePay
+  // Gói 2 Task 5.1: Bổ sung cơ chế polling định kỳ và dọn dẹp clearInterval khi đóng modal
   assert.ok(
-    !content.includes('setInterval'),
-    'VietQrPaymentModal TUYỆT ĐỐI KHÔNG chứa setInterval polling lặp'
-  );
-  assert.ok(
-    !content.includes('usePaymentPolling'),
-    'VietQrPaymentModal đã loại bỏ hook usePaymentPolling lặp 2.5s'
+    content.includes('setInterval') && content.includes('clearInterval'),
+    'VietQrPaymentModal phải có cơ chế polling định kỳ kèm dọn dẹp clearInterval'
   );
 
   // Hiển thị STK, Tên chủ TK, Ngân hàng, mã VietQR

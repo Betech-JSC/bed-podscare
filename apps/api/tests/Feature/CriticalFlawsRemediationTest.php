@@ -218,6 +218,7 @@ class CriticalFlawsRemediationTest extends TestCase
             'device_model_id'    => $device->id,
             'issue_description'  => 'Thay pin',
             'status'             => 'ready_for_return',
+            'total_price'        => 350000,
             'created_by_user_id' => $admin->id,
         ]);
 

@@ -178,7 +178,7 @@ export const ConfirmModal: React.FC<ConfirmModalProps> = ({
       aria-modal="true"
       aria-labelledby="confirm-modal-title"
       onKeyDown={handleKeyDown}
-      className="fixed inset-0 z-[100] bg-[#17251f]/60 backdrop-blur-sm flex items-center justify-center p-4 sm:p-6 overflow-hidden overscroll-contain animate-in fade-in duration-150"
+      className="fixed inset-0 z-[100] bg-[#17231f]/60 flex items-center justify-center p-4 sm:p-6 overflow-hidden overscroll-contain animate-in fade-in duration-150"
       onClick={(e) => {
         if (!loading && e.target === e.currentTarget) {
           onClose();
@@ -188,7 +188,7 @@ export const ConfirmModal: React.FC<ConfirmModalProps> = ({
       <div
         ref={modalBoxRef}
         tabIndex={-1}
-        className="w-full max-w-[480px] bg-white rounded-[16px] shadow-[0_24px_90px_rgba(18,37,27,0.22)] border border-[#e5ece8] overflow-hidden my-auto animate-in zoom-in-95 duration-150"
+        className="w-full max-w-[480px] bg-white rounded-[16px] shadow-[0_24px_90px_rgba(18,37,27,0.22)] border border-[#e9eeeb] overflow-hidden my-auto animate-in zoom-in-95 duration-150"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="p-6 sm:p-7">

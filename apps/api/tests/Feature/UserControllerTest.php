@@ -4,12 +4,14 @@ namespace Tests\Feature;
 
 use App\Models\Branch;
 use App\Models\User;
+use Illuminate\Foundation\Testing\DatabaseTransactions;
 use Illuminate\Foundation\Testing\WithFaker;
 use Illuminate\Support\Facades\Hash;
 use Tests\TestCase;
 
 class UserControllerTest extends TestCase
 {
+    use DatabaseTransactions;
     private function getAdminToken(): array
     {
         $admin = User::where('email', 'admin@fixo.com.vn')->first()

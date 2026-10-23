@@ -217,24 +217,15 @@ export const PrintButtonDropdown: React.FC<PrintButtonDropdownProps> = ({
         }`}
         title="Tùy chọn khổ in"
       >
-        <svg
-          xmlns="http://www.w3.org/2000/svg"
-          width="13"
-          height="13"
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
-          strokeWidth="2.5"
-          strokeLinecap="round"
-          strokeLinejoin="round"
+        <Icon
+          name="chevronDown"
+          size={13}
           className={`transition-transform duration-150 ${
             direction === 'up'
               ? dropdownOpen ? '' : 'rotate-180'
               : dropdownOpen ? 'rotate-180' : ''
           }`}
-        >
-          <polyline points="6 9 12 15 18 9" />
-        </svg>
+        />
       </button>
 
       {/* Menu dropdown */}

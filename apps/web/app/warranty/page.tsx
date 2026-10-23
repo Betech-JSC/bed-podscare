@@ -1,12 +1,13 @@
 'use client';
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
-import { warrantyService, type WarrantyItem } from '@podscare/api-client';
+import { warrantyService, type WarrantyItem, type WarrantySummaryCounts } from '@podscare/api-client';
 import {
   Button,
   StatusTag,
   FilterBar,
+  PaginationBar,
   EmptyState,
   Modal,
   useToast,
@@ -45,10 +46,26 @@ export default function WarrantyPage() {
   const [warranties, setWarranties] = useState<FormattedWarranty[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [search, setSearch] = useState('');
+  const [page, setPage] = useState<number>(1);
+  const [perPage, setPerPage] = useState<number | 'all'>(15);
+  const [warrantiesTotal, setWarrantiesTotal] = useState<number>(0);
+  const [warrantiesCurrentPage, setWarrantiesCurrentPage] = useState<number>(1);
+  const [warrantiesLastPage, setWarrantiesLastPage] = useState<number>(1);
+  const [warrantiesFrom, setWarrantiesFrom] = useState<number | null>(null);
+  const [warrantiesTo, setWarrantiesTo] = useState<number | null>(null);
+  const [summary, setSummary] = useState<WarrantySummaryCounts | null>(null);
 
   // Warranty Claims state
   const [claims, setClaims] = useState<any[]>([]);
   const [claimsLoading, setClaimsLoading] = useState(false);
+  const [claimsSearch, setClaimsSearch] = useState('');
+  const [claimsPage, setClaimsPage] = useState<number>(1);
+  const [claimsPerPage, setClaimsPerPage] = useState<number | 'all'>(15);
+  const [claimsTotal, setClaimsTotal] = useState<number>(0);
+  const [claimsCurrentPage, setClaimsCurrentPage] = useState<number>(1);
+  const [claimsLastPage, setClaimsLastPage] = useState<number>(1);
+  const [claimsFrom, setClaimsFrom] = useState<number | null>(null);
+  const [claimsTo, setClaimsTo] = useState<number | null>(null);
   const [claimModalOpen, setClaimModalOpen] = useState(false);
   const [claimWarrantyId, setClaimWarrantyId] = useState<string | number>('');
   const [claimIssue, setClaimIssue] = useState('');
@@ -99,88 +116,174 @@ export default function WarrantyPage() {
     return { label: 'Còn hạn', type: 'ready' };
   };
 
-  const loadWarranties = useCallback(async (queryStr?: string) => {
-    setIsLoading(true);
-    try {
-      const params: any = { per_page: 50 };
-      const cleanQuery = sanitizeSearchQuery(queryStr);
-      if (cleanQuery) {
-        params.q = cleanQuery;
-      }
-      const res = await warrantyService.getWarranties(params);
-      const raw = res?.data;
-      const list: WarrantyItem[] = Array.isArray(raw) ? raw : (raw?.data || []);
-
-      if (Array.isArray(list) && list.length > 0) {
-        const mapped: FormattedWarranty[] = list.map((w: any) => {
-          const startDateRaw = w.start_date ?? w.starts_at;
-          const endDateRaw = w.end_date ?? w.expires_at;
-          const periodDays = Number(w.duration_days ?? w.warranty_period_days) || 90;
-          const remDays = calculateRemainingDays(endDateRaw);
-          const st = mapStatus(w.status, remDays);
-          return {
-            id: w.id,
-            code: w.warranty_code,
-            orderCode: w.repair_order?.order_code || `PC26-${w.repair_order_id || ''}`,
-            customerId: w.customer_id || w.customer?.id,
-            customerName: w.customer?.name || w.repair_order?.customer?.name || 'Khách lẻ',
-            phone: w.customer?.phone || w.repair_order?.customer?.phone || '',
-            device: w.device_model?.name || w.repair_order?.device_model?.name || 'AirPods',
-            serial: w.serial_number || w.repair_order?.serial_number || 'Chưa cập nhật',
-            periodDays,
-            startsAt: startDateRaw
-              ? new Intl.DateTimeFormat('vi-VN').format(new Date(startDateRaw))
-              : 'Hôm nay',
-            expiresAt: endDateRaw
-              ? new Intl.DateTimeFormat('vi-VN').format(new Date(endDateRaw))
-              : '—',
-            status: st.label,
-            statusType: st.type,
-            remainingDays: remDays,
-            raw: w,
-            revokedAt: w.revoked_at ? new Intl.DateTimeFormat('vi-VN').format(new Date(w.revoked_at)) : null,
-            revokedReason: w.revoked_reason || null,
-          };
+  const loadWarranties = useCallback(
+    async (
+      queryStr: string = search,
+      targetPage: number = page,
+      targetPerPage: number | 'all' = perPage
+    ) => {
+      setIsLoading(true);
+      try {
+        const cleanQuery = sanitizeSearchQuery(queryStr);
+        const res = await warrantyService.getWarranties({
+          q: cleanQuery || undefined,
+          page: targetPerPage === 'all' ? 1 : targetPage,
+          per_page: targetPerPage,
+          all: targetPerPage === 'all' ? true : undefined,
         });
-        setWarranties(mapped);
-      } else {
-        setWarranties([]);
-      }
-    } catch (err) {
-      console.warn('Could not fetch warranties from API:', err);
-      setWarranties([]);
-    } finally {
-      setIsLoading(false);
-    }
-  }, []);
+        const raw = res?.data ?? res;
+        const list: WarrantyItem[] = Array.isArray(raw) ? raw : (raw?.data || []);
 
-  const loadClaims = useCallback(async () => {
-    setClaimsLoading(true);
-    try {
-      const res = await warrantyService.getClaims({ per_page: 50 });
-      const raw = res?.data;
-      const list = Array.isArray(raw) ? raw : (raw?.data || []);
-      setClaims(list);
-    } catch (err) {
-      console.warn('Could not fetch warranty claims:', err);
-      setClaims([]);
-    } finally {
-      setClaimsLoading(false);
-    }
-  }, []);
+        const mapped: FormattedWarranty[] = Array.isArray(list)
+          ? list.map((w: any) => {
+              const startDateRaw = w.start_date ?? w.starts_at;
+              const endDateRaw = w.end_date ?? w.expires_at;
+              const periodDays = Number(w.duration_days ?? w.warranty_period_days) || 90;
+              const remDays = calculateRemainingDays(endDateRaw);
+              const st = mapStatus(w.status, remDays);
+              return {
+                id: w.id,
+                code: w.warranty_code,
+                orderCode: w.repair_order?.order_code || `PC26-${w.repair_order_id || ''}`,
+                customerId: w.customer_id || w.customer?.id,
+                customerName: w.customer?.name || w.repair_order?.customer?.name || 'Khách lẻ',
+                phone: w.customer?.phone || w.repair_order?.customer?.phone || '',
+                device: w.device_model?.name || w.repair_order?.device_model?.name || 'AirPods',
+                serial: w.serial_number || w.repair_order?.serial_number || 'Chưa cập nhật',
+                periodDays,
+                startsAt: startDateRaw
+                  ? new Intl.DateTimeFormat('vi-VN').format(new Date(startDateRaw))
+                  : 'Hôm nay',
+                expiresAt: endDateRaw
+                  ? new Intl.DateTimeFormat('vi-VN').format(new Date(endDateRaw))
+                  : '—',
+                status: st.label,
+                statusType: st.type,
+                remainingDays: remDays,
+                raw: w,
+                revokedAt: w.revoked_at ? new Intl.DateTimeFormat('vi-VN').format(new Date(w.revoked_at)) : null,
+                revokedReason: w.revoked_reason || null,
+              };
+            })
+          : [];
+
+        setWarranties(mapped);
+
+        if (raw && !Array.isArray(raw)) {
+          setWarrantiesTotal(typeof raw.total === 'number' ? raw.total : mapped.length);
+          setWarrantiesCurrentPage(
+            typeof raw.current_page === 'number'
+              ? raw.current_page
+              : targetPerPage === 'all'
+              ? 1
+              : targetPage
+          );
+          setWarrantiesLastPage(typeof raw.last_page === 'number' ? Math.max(1, raw.last_page) : 1);
+          setWarrantiesFrom(typeof raw.from === 'number' ? raw.from : mapped.length > 0 ? 1 : 0);
+          setWarrantiesTo(typeof raw.to === 'number' ? raw.to : mapped.length);
+
+          const rawSummary = raw.summary ?? res?.summary;
+          if (rawSummary && typeof rawSummary === 'object') {
+            setSummary({
+              total: Number(rawSummary.total ?? rawSummary.total_warranties ?? raw.total ?? mapped.length) || 0,
+              active: Number(rawSummary.active ?? rawSummary.active_count ?? 0) || 0,
+              expiring_soon: Number(rawSummary.expiring_soon ?? rawSummary.expiring_soon_count ?? 0) || 0,
+              expired: Number(rawSummary.expired ?? rawSummary.expired_or_revoked_count ?? 0) || 0,
+            });
+          } else {
+            setSummary(null);
+          }
+        } else {
+          setWarrantiesTotal(mapped.length);
+          setWarrantiesCurrentPage(1);
+          setWarrantiesLastPage(1);
+          setWarrantiesFrom(mapped.length > 0 ? 1 : 0);
+          setWarrantiesTo(mapped.length);
+          setSummary(null);
+        }
+      } catch (err) {
+        console.warn('Could not fetch warranties from API:', err);
+        setWarranties([]);
+        setWarrantiesTotal(0);
+        setWarrantiesCurrentPage(1);
+        setWarrantiesLastPage(1);
+        setWarrantiesFrom(0);
+        setWarrantiesTo(0);
+        setSummary(null);
+      } finally {
+        setIsLoading(false);
+      }
+    },
+    [search, page, perPage]
+  );
+
+  const loadClaims = useCallback(
+    async (
+      queryStr: string = claimsSearch,
+      targetPage: number = claimsPage,
+      targetPerPage: number | 'all' = claimsPerPage
+    ) => {
+      setClaimsLoading(true);
+      try {
+        const cleanQuery = sanitizeSearchQuery(queryStr);
+        const res = await warrantyService.getClaims({
+          q: cleanQuery || undefined,
+          page: targetPerPage === 'all' ? 1 : targetPage,
+          per_page: targetPerPage,
+          all: targetPerPage === 'all' ? true : undefined,
+        });
+        const raw = res?.data ?? res;
+        const list = Array.isArray(raw) ? raw : (raw?.data || []);
+        const safeList = Array.isArray(list) ? list : [];
+        setClaims(safeList);
+
+        if (raw && !Array.isArray(raw)) {
+          setClaimsTotal(typeof raw.total === 'number' ? raw.total : safeList.length);
+          setClaimsCurrentPage(
+            typeof raw.current_page === 'number'
+              ? raw.current_page
+              : targetPerPage === 'all'
+              ? 1
+              : targetPage
+          );
+          setClaimsLastPage(typeof raw.last_page === 'number' ? Math.max(1, raw.last_page) : 1);
+          setClaimsFrom(typeof raw.from === 'number' ? raw.from : safeList.length > 0 ? 1 : 0);
+          setClaimsTo(typeof raw.to === 'number' ? raw.to : safeList.length);
+        } else {
+          setClaimsTotal(safeList.length);
+          setClaimsCurrentPage(1);
+          setClaimsLastPage(1);
+          setClaimsFrom(safeList.length > 0 ? 1 : 0);
+          setClaimsTo(safeList.length);
+        }
+      } catch (err) {
+        console.warn('Could not fetch warranty claims:', err);
+        setClaims([]);
+        setClaimsTotal(0);
+        setClaimsCurrentPage(1);
+        setClaimsLastPage(1);
+        setClaimsFrom(0);
+        setClaimsTo(0);
+      } finally {
+        setClaimsLoading(false);
+      }
+    },
+    [claimsSearch, claimsPage, claimsPerPage]
+  );
 
   useEffect(() => {
     const timer = setTimeout(() => {
-      loadWarranties(search);
-    }, 300);
+      loadWarranties(search, page, perPage);
+    }, 250);
     return () => clearTimeout(timer);
-  }, [search, loadWarranties]);
+  }, [search, page, perPage, loadWarranties]);
 
   useEffect(() => {
-    if (activeTab === 'claims') {
-      loadClaims();
-    }
-  }, [activeTab, loadClaims]);
+    const timer = setTimeout(() => {
+      loadClaims(claimsSearch, claimsPage, claimsPerPage);
+    }, 250);
+    return () => clearTimeout(timer);
+  }, [claimsSearch, claimsPage, claimsPerPage, loadClaims]);
 
   const handleCreateClaim = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
@@ -306,19 +409,22 @@ export default function WarrantyPage() {
     }
   };
 
-  const filtered = warranties.filter((w) => {
-    const q = sanitizeSearchQuery(search).toLowerCase();
-    if (!q) return true;
-    return (
-      w.code.toLowerCase().includes(q) ||
-      w.orderCode.toLowerCase().includes(q) ||
-      w.customerName.toLowerCase().includes(q) ||
-      w.phone.toLowerCase().includes(q) ||
-      matchesPhoneFlexible(w.phone, q) ||
-      w.serial.toLowerCase().includes(q) ||
-      w.device.toLowerCase().includes(q)
-    );
-  });
+  const kpiSummary = useMemo<WarrantySummaryCounts>(() => {
+    if (summary) {
+      return summary;
+    }
+    const activeCount = warranties.filter((w) => w.status === 'Còn hạn' && w.remainingDays > 0).length;
+    const expiringSoonCount = warranties.filter(
+      (w) => w.status === 'Còn hạn' && w.remainingDays > 0 && w.remainingDays <= 7
+    ).length;
+    const expiredCount = warranties.filter((w) => w.status !== 'Còn hạn' || w.remainingDays <= 0).length;
+    return {
+      total: warrantiesTotal || warranties.length,
+      active: activeCount,
+      expiring_soon: expiringSoonCount,
+      expired: expiredCount,
+    };
+  }, [summary, warranties, warrantiesTotal]);
 
   return (
     <AppShell crumbName="Bảo hành">
@@ -342,7 +448,8 @@ export default function WarrantyPage() {
               size="md"
               icon="clock"
               onClick={() => {
-                loadWarranties(search);
+                loadWarranties(search, page, perPage);
+                loadClaims(claimsSearch, claimsPage, claimsPerPage);
                 toast('Đã cập nhật danh sách bảo hành', 'info');
               }}
             >
@@ -356,6 +463,72 @@ export default function WarrantyPage() {
             >
               Tra cứu sổ điện tử
             </Button>
+          </div>
+        </div>
+
+        {/* 4 Thẻ thống kê KPI toàn cục từ summary của Server */}
+        <div
+          data-testid="warranty-kpi-grid"
+          className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3.5"
+        >
+          <div
+            data-testid="warranty-kpi-total"
+            className="bg-white border border-[#e5ece8] rounded-[10px] p-4 shadow-xs flex flex-col justify-between"
+          >
+            <span className="text-xs font-bold text-[#687871] uppercase tracking-wider">
+              Tổng sổ bảo hành
+            </span>
+            <div className="font-heading font-bold font-mono tabular-nums text-2xl text-[#1c302b] my-1.5">
+              {kpiSummary.total}
+            </div>
+            <span className="text-xs text-[#83918a]">
+              Toàn bộ sổ bảo hành điện tử thuộc phạm vi
+            </span>
+          </div>
+
+          <div
+            data-testid="warranty-kpi-active"
+            className="bg-white border border-[#d2e8dc] rounded-[10px] p-4 shadow-xs flex flex-col justify-between"
+          >
+            <span className="text-xs font-bold text-[#176b58] uppercase tracking-wider">
+              Đang còn hạn
+            </span>
+            <div className="font-heading font-bold font-mono tabular-nums text-2xl text-[#176b58] my-1.5">
+              {kpiSummary.active}
+            </div>
+            <span className="text-xs text-[#557564]">
+              Đang trong thời gian cam kết bảo hành
+            </span>
+          </div>
+
+          <div
+            data-testid="warranty-kpi-expiring-soon"
+            className="bg-white border border-[#ebd9bd] rounded-[10px] p-4 shadow-xs flex flex-col justify-between"
+          >
+            <span className="text-xs font-bold text-[#b77a21] uppercase tracking-wider">
+              Sắp hết hạn (≤ 7 ngày)
+            </span>
+            <div className="font-heading font-bold font-mono tabular-nums text-2xl text-[#b77a21] my-1.5">
+              {kpiSummary.expiring_soon}
+            </div>
+            <span className="text-xs text-[#83918a]">
+              Cần lưu ý khi tiếp nhận kiểm tra
+            </span>
+          </div>
+
+          <div
+            data-testid="warranty-kpi-expired"
+            className="bg-white border border-[#e5ece8] rounded-[10px] p-4 shadow-xs flex flex-col justify-between"
+          >
+            <span className="text-xs font-bold text-[#77847e] uppercase tracking-wider">
+              Đã hết hạn / Thu hồi
+            </span>
+            <div className="font-heading font-bold font-mono tabular-nums text-2xl text-[#4b5b53] my-1.5">
+              {kpiSummary.expired}
+            </div>
+            <span className="text-xs text-[#83918a]">
+              Hết hiệu lực, hủy hoặc đã hoàn tiền
+            </span>
           </div>
         </div>
 
@@ -407,13 +580,14 @@ export default function WarrantyPage() {
           >
             <span>Sổ bảo hành điện tử</span>
             <span
-              className={`px-2 py-0.5 rounded-full text-xs font-bold ${
+              data-testid="warranty-tab-list-badge"
+              className={`px-2 py-0.5 rounded-full text-xs font-bold font-mono tabular-nums ${
                 activeTab === 'warranties'
                   ? 'bg-white/20 text-white'
                   : 'bg-[#eaf4ef] text-[#176b58]'
               }`}
             >
-              {warranties.length}
+              {warrantiesTotal}
             </span>
           </button>
 
@@ -429,13 +603,14 @@ export default function WarrantyPage() {
           >
             <span>Khiếu nại & Làm lại (Rework)</span>
             <span
-              className={`px-2 py-0.5 rounded-full text-xs font-bold ${
+              data-testid="warranty-tab-claims-badge"
+              className={`px-2 py-0.5 rounded-full text-xs font-bold font-mono tabular-nums ${
                 activeTab === 'claims'
                   ? 'bg-white/20 text-white'
                   : 'bg-[#eaf4ef] text-[#176b58]'
               }`}
             >
-              {claims.length}
+              {claimsTotal}
             </span>
           </button>
         </div>
@@ -446,7 +621,10 @@ export default function WarrantyPage() {
             <div className="mb-4">
               <FilterBar
                 searchValue={search}
-                onSearchChange={(val) => setSearch(sanitizeInputLive(val))}
+                onSearchChange={(val) => {
+                  setSearch(sanitizeInputLive(val));
+                  setPage(1);
+                }}
                 searchPlaceholder="Nhập số điện thoại khách hàng, số serial hoặc mã BH..."
               />
             </div>
@@ -456,7 +634,7 @@ export default function WarrantyPage() {
                 <div className="w-8 h-8 rounded-full border-2 border-[#176b58]/20 border-t-[#176b58] animate-spin" />
                 <span className="text-xs font-medium text-[#7a8a81]">Đang tải dữ liệu sổ bảo hành...</span>
               </div>
-            ) : filtered.length === 0 ? (
+            ) : warranties.length === 0 ? (
               <EmptyState
                 title={search ? 'Không tìm thấy sổ bảo hành' : 'Chưa có sổ bảo hành điện tử'}
                 description={
@@ -467,80 +645,103 @@ export default function WarrantyPage() {
                 icon="shield"
                 actionLabel={search ? 'Xóa bộ lọc' : 'Làm mới'}
                 onAction={() => {
-                  if (search) setSearch('');
-                  else loadWarranties();
+                  if (search) {
+                    setSearch('');
+                    setPage(1);
+                  } else {
+                    loadWarranties(search, page, perPage);
+                  }
                 }}
               />
             ) : (
-              <div className="overflow-x-auto -mx-4 sm:mx-0">
-                <table className="w-full text-left border-collapse min-w-[900px]">
-                  <thead>
-                    <tr className="border-y border-[#f0f3f1] bg-[#fafbfa] text-xs font-bold text-[#809088] uppercase tracking-wider h-10">
-                      <th className="px-3">Mã sổ BH</th>
-                      <th className="px-3">Mã đơn sửa</th>
-                      <th className="px-3">Khách hàng</th>
-                      <th className="px-3">Thiết bị & Serial</th>
-                      <th className="px-3">Gói bảo hành</th>
-                      <th className="px-3">Ngày hết hạn</th>
-                      <th className="px-3">Trạng thái</th>
-                      <th className="px-3 text-right">Bệnh án</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-[#f1f3f2] text-sm">
-                    {filtered.map((w) => (
-                      <tr
-                        key={w.id}
-                        onClick={() => handleOpenMedicalHistory(w)}
-                        className="h-13 hover:bg-[#fafcfa] cursor-pointer transition-colors"
-                      >
-                        <td className="px-3 font-mono font-bold text-[#176b58]">{w.code}</td>
-                        <td className="px-3 font-mono font-medium text-[#2d3d35]">{w.orderCode}</td>
-                        <td className="px-3">
-                          <span className="font-semibold text-[#1c302b] block">{w.customerName}</span>
-                          <small className="text-xs font-medium text-[#176b58] block">{w.phone}</small>
-                        </td>
-                        <td className="px-3">
-                          <span className="font-medium text-[#2d3d35] block">{w.device}</span>
-                          <small className="text-xs font-mono text-[#8a9690]">{w.serial}</small>
-                        </td>
-                        <td className="px-3">
-                          <span className="font-semibold text-[#374941]">{w.periodDays} ngày</span>
-                          <small className="block text-xs text-[#8a9690]">Từ {w.startsAt}</small>
-                        </td>
-                        <td className="px-3 text-xs">
-                          <span className="font-semibold text-[#273931]">{w.expiresAt}</span>
-                          {w.remainingDays > 0 && (
-                            <small className="block text-xs text-[#176b58] font-bold">
-                              (Còn {w.remainingDays} ngày)
-                            </small>
-                          )}
-                        </td>
-                        <td className="px-3">
-                          <StatusTag label={w.status} type={w.statusType} />
-                          {w.status === 'Đã thu hồi' && (
-                            <small className="block text-[11px] text-[#b91c1c] font-medium mt-0.5">
-                              {w.revokedReason ? `(${w.revokedReason})` : '(Đã hoàn tiền)'}
-                            </small>
-                          )}
-                        </td>
-                        <td className="px-3 text-right">
-                          <button
-                            type="button"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              handleOpenMedicalHistory(w);
-                            }}
-                            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-[8px] text-xs font-bold bg-[#eaf4ef] text-[#176b58] hover:bg-[#d5ebdf] border border-[#c2ded0] transition-all cursor-pointer shadow-2xs"
-                          >
-                            <Icon name="search" size={13} />
-                            <span>Xem bệnh án máy</span>
-                          </button>
-                        </td>
+              <>
+                <div className="overflow-x-auto -mx-4 sm:mx-0">
+                  <table className="w-full text-left border-collapse min-w-[900px]">
+                    <thead>
+                      <tr className="border-y border-[#f0f3f1] bg-[#fafbfa] text-xs font-bold text-[#809088] uppercase tracking-wider h-10">
+                        <th className="px-3">Mã sổ BH</th>
+                        <th className="px-3">Mã đơn sửa</th>
+                        <th className="px-3">Khách hàng</th>
+                        <th className="px-3">Thiết bị & Serial</th>
+                        <th className="px-3">Gói bảo hành</th>
+                        <th className="px-3">Ngày hết hạn</th>
+                        <th className="px-3">Trạng thái</th>
+                        <th className="px-3 text-right">Bệnh án</th>
                       </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
+                    </thead>
+                    <tbody className="divide-y divide-[#f1f3f2] text-sm">
+                      {warranties.map((w) => (
+                        <tr
+                          key={w.id}
+                          onClick={() => handleOpenMedicalHistory(w)}
+                          className="h-13 hover:bg-[#fafcfa] cursor-pointer transition-colors"
+                        >
+                          <td className="px-3 font-mono font-bold text-[#176b58]">{w.code}</td>
+                          <td className="px-3 font-mono font-medium text-[#2d3d35]">{w.orderCode}</td>
+                          <td className="px-3">
+                            <span className="font-semibold text-[#1c302b] block">{w.customerName}</span>
+                            <small className="text-xs font-medium text-[#176b58] block">{w.phone}</small>
+                          </td>
+                          <td className="px-3">
+                            <span className="font-medium text-[#2d3d35] block">{w.device}</span>
+                            <small className="text-xs font-mono text-[#8a9690]">{w.serial}</small>
+                          </td>
+                          <td className="px-3">
+                            <span className="font-semibold text-[#374941] tabular-nums">{w.periodDays} ngày</span>
+                            <small className="block text-xs text-[#8a9690]">Từ {w.startsAt}</small>
+                          </td>
+                          <td className="px-3 text-xs">
+                            <span className="font-semibold text-[#273931] tabular-nums">{w.expiresAt}</span>
+                            {w.remainingDays > 0 && (
+                              <small className="block text-xs text-[#176b58] font-bold tabular-nums">
+                                (Còn {w.remainingDays} ngày)
+                              </small>
+                            )}
+                          </td>
+                          <td className="px-3">
+                            <StatusTag label={w.status} type={w.statusType} />
+                            {w.status === 'Đã thu hồi' && (
+                              <small className="block text-[11px] text-[#b91c1c] font-medium mt-0.5">
+                                {w.revokedReason ? `(${w.revokedReason})` : '(Đã hoàn tiền)'}
+                              </small>
+                            )}
+                          </td>
+                          <td className="px-3 text-right">
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleOpenMedicalHistory(w);
+                              }}
+                              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-[8px] text-xs font-bold bg-[#eaf4ef] text-[#176b58] hover:bg-[#d5ebdf] border border-[#c2ded0] transition-all cursor-pointer shadow-2xs"
+                            >
+                              <Icon name="search" size={13} />
+                              <span>Xem bệnh án máy</span>
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+
+                <PaginationBar
+                  testIdPrefix="warranties"
+                  currentPage={warrantiesCurrentPage}
+                  lastPage={warrantiesLastPage}
+                  total={warrantiesTotal}
+                  from={warrantiesFrom}
+                  to={warrantiesTo}
+                  perPage={perPage}
+                  onPageChange={(nextPage) => setPage(nextPage)}
+                  onPerPageChange={(nextPerPage) => {
+                    setPerPage(nextPerPage);
+                    setPage(1);
+                  }}
+                  itemLabel="sổ bảo hành"
+                  isLoading={isLoading}
+                />
+              </>
             )}
           </div>
         )}
@@ -569,6 +770,17 @@ export default function WarrantyPage() {
               </Button>
             </div>
 
+            <div className="mb-4">
+              <FilterBar
+                searchValue={claimsSearch}
+                onSearchChange={(val) => {
+                  setClaimsSearch(sanitizeInputLive(val));
+                  setClaimsPage(1);
+                }}
+                searchPlaceholder="Tìm theo mã khiếu nại, mã sổ BH, mã đơn Rework hoặc SĐT khách hàng..."
+              />
+            </div>
+
             {claimsLoading ? (
               <div className="py-12 flex flex-col items-center justify-center gap-3">
                 <div className="w-8 h-8 rounded-full border-2 border-[#176b58]/20 border-t-[#176b58] animate-spin" />
@@ -576,116 +788,146 @@ export default function WarrantyPage() {
               </div>
             ) : claims.length === 0 ? (
               <EmptyState
-                title="Chưa có yêu cầu khiếu nại bảo hành"
-                description="Hệ thống chưa ghi nhận bất kỳ trường hợp khiếu nại hoặc yêu cầu làm lại nào."
+                title={claimsSearch ? 'Không tìm thấy yêu cầu khiếu nại' : 'Chưa có yêu cầu khiếu nại bảo hành'}
+                description={
+                  claimsSearch
+                    ? 'Không có yêu cầu khiếu nại nào khớp với từ khóa tra cứu.'
+                    : 'Hệ thống chưa ghi nhận bất kỳ trường hợp khiếu nại hoặc yêu cầu làm lại nào.'
+                }
                 icon="shield"
-                actionLabel="Tiếp nhận khiếu nại"
-                onAction={() => setClaimModalOpen(true)}
+                actionLabel={claimsSearch ? 'Xóa bộ lọc' : 'Tiếp nhận khiếu nại'}
+                onAction={() => {
+                  if (claimsSearch) {
+                    setClaimsSearch('');
+                    setClaimsPage(1);
+                  } else {
+                    setClaimModalOpen(true);
+                  }
+                }}
               />
             ) : (
-              <div className="overflow-x-auto -mx-4 sm:mx-0">
-                <table className="w-full text-left border-collapse min-w-[900px]">
-                  <thead>
-                    <tr className="border-y border-[#f0f3f1] bg-[#fafbfa] text-xs font-bold text-[#809088] uppercase tracking-wider h-10">
-                      <th className="px-3">Mã khiếu nại</th>
-                      <th className="px-3">Sổ bảo hành</th>
-                      <th className="px-3">Khách hàng</th>
-                      <th className="px-3">Mô tả lỗi phát sinh</th>
-                      <th className="px-3">Hướng xử lý</th>
-                      <th className="px-3">Đơn sửa lại (Rework)</th>
-                      <th className="px-3">Thời gian</th>
-                      <th className="px-3">Trạng thái</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-[#f1f3f2] text-sm">
-                    {claims.map((c) => {
-                      const rework = c.rework_order || c.reworkOrder;
-                      const dateStr = c.created_at
-                        ? new Intl.DateTimeFormat('vi-VN', {
-                            hour: '2-digit',
-                            minute: '2-digit',
-                            day: '2-digit',
-                            month: '2-digit',
-                            year: 'numeric',
-                          }).format(new Date(c.created_at))
-                        : '—';
+              <>
+                <div className="overflow-x-auto -mx-4 sm:mx-0">
+                  <table className="w-full text-left border-collapse min-w-[900px]">
+                    <thead>
+                      <tr className="border-y border-[#f0f3f1] bg-[#fafbfa] text-xs font-bold text-[#809088] uppercase tracking-wider h-10">
+                        <th className="px-3">Mã khiếu nại</th>
+                        <th className="px-3">Sổ bảo hành</th>
+                        <th className="px-3">Khách hàng</th>
+                        <th className="px-3">Mô tả lỗi phát sinh</th>
+                        <th className="px-3">Hướng xử lý</th>
+                        <th className="px-3">Đơn sửa lại (Rework)</th>
+                        <th className="px-3">Thời gian</th>
+                        <th className="px-3">Trạng thái</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-[#f1f3f2] text-sm">
+                      {claims.map((c) => {
+                        const rework = c.rework_order || c.reworkOrder;
+                        const dateStr = c.created_at
+                          ? new Intl.DateTimeFormat('vi-VN', {
+                              hour: '2-digit',
+                              minute: '2-digit',
+                              day: '2-digit',
+                              month: '2-digit',
+                              year: 'numeric',
+                            }).format(new Date(c.created_at))
+                          : '—';
 
-                      const resolutionLabels: Record<string, string> = {
-                        store_check: 'Kiểm tra tại quầy',
-                        send_tech: 'Gửi KTV kiểm tra',
-                        replace_part: 'Thay thế linh kiện',
-                        rejected: 'Từ chối bảo hành',
-                      };
+                        const resolutionLabels: Record<string, string> = {
+                          store_check: 'Kiểm tra tại quầy',
+                          send_tech: 'Gửi KTV kiểm tra',
+                          replace_part: 'Thay thế linh kiện',
+                          rejected: 'Từ chối bảo hành',
+                        };
 
-                      return (
-                        <tr key={c.id} className="h-13 hover:bg-[#fafcfa] transition-colors">
-                          <td className="px-3 font-mono font-bold text-[#176b58]">{c.claim_code}</td>
-                          <td className="px-3 font-mono text-xs font-semibold text-[#2d3d35]">
-                            {c.warranty?.warranty_code || `#${c.warranty_id}`}
-                          </td>
-                          <td className="px-3">
-                            <span className="font-semibold text-[#1c302b] block">
-                              {c.warranty?.customer?.name || 'Khách hàng'}
-                            </span>
-                            <small className="text-xs text-[#6e7e76] block">
-                              {c.warranty?.customer?.phone}
-                            </small>
-                          </td>
-                          <td className="px-3 text-xs text-[#33443c] max-w-[220px]">
-                            <p className="line-clamp-2 m-0" title={c.issue_description}>
-                              {c.issue_description}
-                            </p>
-                          </td>
-                          <td className="px-3 text-xs">
-                            <span className="font-medium text-[#1c302b]">
-                              {resolutionLabels[c.resolution_mode] || c.resolution_mode}
-                            </span>
-                          </td>
-                          <td className="px-3">
-                            {rework ? (
-                              <button
-                                type="button"
-                                data-testid={`rework-link-${rework.order_code}`}
-                                onClick={() => router.push(`/repairs?search=${rework.order_code}`)}
-                                className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-[6px] font-mono text-xs font-bold text-[#176b58] bg-[#eaf4ef] border border-[#c2ded0] hover:bg-[#d5ebdf] cursor-pointer shadow-2xs"
-                                title="Chuyển đến đơn sửa chữa làm lại (Rework)"
-                              >
-                                <Icon name="wrench" size={12} />
-                                <span>{rework.order_code}</span>
-                              </button>
-                            ) : (
-                              <span className="text-[#8a9690] text-xs font-mono">—</span>
-                            )}
-                          </td>
-                          <td className="px-3 text-xs text-[#8a9690] whitespace-nowrap">{dateStr}</td>
-                          <td className="px-3">
-                            <StatusTag
-                              label={
-                                c.status === 'received'
-                                  ? 'Đã tiếp nhận'
-                                  : c.status === 'in_progress'
-                                  ? 'Đang xử lý'
-                                  : c.status === 'resolved'
-                                  ? 'Đã xử lý'
-                                  : c.status === 'rejected'
-                                  ? 'Từ chối'
-                                  : c.status
-                              }
-                              type={
-                                c.status === 'resolved'
-                                  ? 'ready'
-                                  : c.status === 'rejected'
-                                  ? 'danger'
-                                  : 'wait'
-                              }
-                            />
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
+                        return (
+                          <tr key={c.id} className="h-13 hover:bg-[#fafcfa] transition-colors">
+                            <td className="px-3 font-mono font-bold text-[#176b58]">{c.claim_code}</td>
+                            <td className="px-3 font-mono text-xs font-semibold text-[#2d3d35]">
+                              {c.warranty?.warranty_code || `#${c.warranty_id}`}
+                            </td>
+                            <td className="px-3">
+                              <span className="font-semibold text-[#1c302b] block">
+                                {c.warranty?.customer?.name || 'Khách hàng'}
+                              </span>
+                              <small className="text-xs text-[#6e7e76] block">
+                                {c.warranty?.customer?.phone}
+                              </small>
+                            </td>
+                            <td className="px-3 text-xs text-[#33443c] max-w-[220px]">
+                              <p className="line-clamp-2 m-0" title={c.issue_description}>
+                                {c.issue_description}
+                              </p>
+                            </td>
+                            <td className="px-3 text-xs">
+                              <span className="font-medium text-[#1c302b]">
+                                {resolutionLabels[c.resolution_mode] || c.resolution_mode}
+                              </span>
+                            </td>
+                            <td className="px-3">
+                              {rework ? (
+                                <button
+                                  type="button"
+                                  data-testid={`rework-link-${rework.order_code}`}
+                                  onClick={() => router.push(`/repairs?search=${rework.order_code}`)}
+                                  className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-[6px] font-mono text-xs font-bold text-[#176b58] bg-[#eaf4ef] border border-[#c2ded0] hover:bg-[#d5ebdf] cursor-pointer shadow-2xs"
+                                  title="Chuyển đến đơn sửa chữa làm lại (Rework)"
+                                >
+                                  <Icon name="wrench" size={12} />
+                                  <span>{rework.order_code}</span>
+                                </button>
+                              ) : (
+                                <span className="text-[#8a9690] text-xs font-mono">—</span>
+                              )}
+                            </td>
+                            <td className="px-3 text-xs text-[#8a9690] whitespace-nowrap tabular-nums">{dateStr}</td>
+                            <td className="px-3">
+                              <StatusTag
+                                label={
+                                  c.status === 'received'
+                                    ? 'Đã tiếp nhận'
+                                    : c.status === 'in_progress'
+                                    ? 'Đang xử lý'
+                                    : c.status === 'resolved'
+                                    ? 'Đã xử lý'
+                                    : c.status === 'rejected'
+                                    ? 'Từ chối'
+                                    : c.status
+                                }
+                                type={
+                                  c.status === 'resolved'
+                                    ? 'ready'
+                                    : c.status === 'rejected'
+                                    ? 'danger'
+                                    : 'wait'
+                                }
+                              />
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+
+                <PaginationBar
+                  testIdPrefix="claims"
+                  currentPage={claimsCurrentPage}
+                  lastPage={claimsLastPage}
+                  total={claimsTotal}
+                  from={claimsFrom}
+                  to={claimsTo}
+                  perPage={claimsPerPage}
+                  onPageChange={(nextPage) => setClaimsPage(nextPage)}
+                  onPerPageChange={(nextPerPage) => {
+                    setClaimsPerPage(nextPerPage);
+                    setClaimsPage(1);
+                  }}
+                  itemLabel="khiếu nại"
+                  isLoading={claimsLoading}
+                />
+              </>
             )}
           </div>
         )}

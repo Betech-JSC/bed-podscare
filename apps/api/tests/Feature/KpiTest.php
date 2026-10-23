@@ -8,10 +8,12 @@ use App\Models\DeviceModel;
 use App\Models\RepairOrder;
 use App\Models\User;
 use Carbon\Carbon;
+use Illuminate\Foundation\Testing\DatabaseTransactions;
 use Tests\TestCase;
 
 class KpiTest extends TestCase
 {
+    use DatabaseTransactions;
     private function getAuthenticatedUser(): User
     {
         $user = User::where('email', 'admin@fixo.com.vn')->first()

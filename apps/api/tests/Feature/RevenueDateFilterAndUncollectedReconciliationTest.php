@@ -76,7 +76,11 @@ class RevenueDateFilterAndUncollectedReconciliationTest extends TestCase
         $year = date('y');
         $randomNum = str_pad((string) random_int(1000, 99999), 5, '0', STR_PAD_LEFT);
 
-        return RepairOrder::create(array_merge([
+        $createdAt = $attributes['created_at'] ?? null;
+        $updatedAt = $attributes['updated_at'] ?? null;
+        unset($attributes['created_at'], $attributes['updated_at']);
+
+        $order = RepairOrder::create(array_merge([
             'tenant_id'          => $this->tenant->id,
             'branch_id'          => $this->branch->id,
             'customer_id'        => $this->customer->id,
@@ -89,8 +93,19 @@ class RevenueDateFilterAndUncollectedReconciliationTest extends TestCase
             'initial_price'      => 500000,
             'warranty_terms_days'=> 90,
             'created_by_user_id' => $this->adminUser->id,
-            'created_at'         => Carbon::now($this->tz),
         ], $attributes));
+
+        if ($createdAt || $updatedAt) {
+            if ($createdAt) {
+                $order->created_at = $createdAt;
+            }
+            if ($updatedAt) {
+                $order->updated_at = $updatedAt;
+            }
+            $order->saveQuietly();
+        }
+
+        return $order;
     }
 
     /**
@@ -106,12 +121,14 @@ class RevenueDateFilterAndUncollectedReconciliationTest extends TestCase
             'status'         => 'completed',
             'total_price'    => 450000,
             'handed_over_at' => Carbon::parse($targetDateStr . ' 10:30:00', $this->tz),
+            'created_at'     => Carbon::parse($targetDateStr . ' 08:30:00', $this->tz),
         ]);
 
         $this->createOrder([
             'status'         => 'completed',
             'total_price'    => 650000,
             'handed_over_at' => Carbon::parse($targetDateStr . ' 14:15:00', $this->tz),
+            'created_at'     => Carbon::parse($targetDateStr . ' 09:15:00', $this->tz),
         ]);
 
         // 2. Tạo 1 đơn completed hôm nay (không được tính vào selected_date của ngày trước)
@@ -120,6 +137,7 @@ class RevenueDateFilterAndUncollectedReconciliationTest extends TestCase
             'status'         => 'completed',
             'total_price'    => 300000,
             'handed_over_at' => Carbon::parse($todayStr . ' 09:00:00', $this->tz),
+            'created_at'     => Carbon::parse($todayStr . ' 08:00:00', $this->tz),
         ]);
 
         // Gọi API với param date
@@ -158,6 +176,7 @@ class RevenueDateFilterAndUncollectedReconciliationTest extends TestCase
             'status'         => 'completed',
             'total_price'    => 500000,
             'handed_over_at' => Carbon::parse($todayStr . ' 11:00:00', $this->tz),
+            'created_at'     => Carbon::parse($todayStr . ' 09:00:00', $this->tz),
         ]);
 
         // 2. Tạo đơn hoàn tất ngày trong quá khứ với doanh thu 800.000
@@ -165,6 +184,7 @@ class RevenueDateFilterAndUncollectedReconciliationTest extends TestCase
             'status'         => 'completed',
             'total_price'    => 800000,
             'handed_over_at' => Carbon::parse($pastDateStr . ' 16:00:00', $this->tz),
+            'created_at'     => Carbon::parse($pastDateStr . ' 10:00:00', $this->tz),
         ]);
 
         // Gọi API với date của ngày quá khứ

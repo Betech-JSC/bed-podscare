@@ -142,7 +142,7 @@ export const VideoModal: React.FC<VideoModalProps> = ({ isOpen, onClose }) => {
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-5 bg-black/80 backdrop-blur-md animate-in fade-in duration-200"
+      className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-5 bg-black/80 animate-in fade-in duration-200"
       onClick={onClose}
       role="dialog"
       aria-modal="true"
@@ -585,7 +585,7 @@ export const VideoModal: React.FC<VideoModalProps> = ({ isOpen, onClose }) => {
           </div>
 
           {/* Bottom Player Video Controls & Timeline Bar */}
-          <div className="relative z-10 px-5 pb-4 bg-gradient-to-t from-black/90 via-black/50 to-transparent pt-4 flex-none">
+          <div className="relative z-10 px-5 pb-4 bg-[#10231c] border-t border-white/10 pt-4 flex-none">
             {/* Clickable Timeline Bar */}
             <div
               className="w-full h-2 bg-white/20 hover:h-2.5 rounded-full mb-3 overflow-hidden cursor-pointer transition-all relative"

@@ -90,6 +90,12 @@ class PaymentController extends Controller
      */
     public function store(Request $request): JsonResponse
     {
+        $user = $request->user();
+        $allowedRoles = ['admin', 'super_admin', 'cskh', 'receptionist', 'cashier'];
+        if (! $user || ! in_array($user->role, $allowedRoles, true)) {
+            return $this->failure('Bạn không có quyền lập phiếu thu thanh toán.', 403);
+        }
+
         $orderIdentifier = $request->input('repair_order_id') ?? $request->input('order_code');
         if ($orderIdentifier !== null) {
             if (is_numeric($orderIdentifier)) {
@@ -119,10 +125,9 @@ class PaymentController extends Controller
 
         $validated['amount'] = RepairOrder::normalizeVndAmount($validated['amount']);
 
-        return DB::transaction(function () use ($request, $validated) {
+        return DB::transaction(function () use ($request, $validated, $user) {
             $order = RepairOrder::with(['customer', 'warranties'])->lockForUpdate()->findOrFail($validated['repair_order_id']);
 
-            $user = $request->user();
             if ($user && ! in_array($user->role, ['admin', 'super_admin'], true) && ! empty($user->branch_id) && (int) $order->branch_id !== (int) $user->branch_id) {
                 return $this->failure('Bạn không có quyền tạo phiếu thanh toán cho đơn hàng thuộc chi nhánh khác.', 403);
             }
@@ -131,12 +136,8 @@ class PaymentController extends Controller
                 return $this->failure('Đơn hàng đã hoàn tất hoặc đã được thanh toán.', 422);
             }
 
-            if ($order->payments()->where('status', 'paid')->lockForUpdate()->exists()) {
-                return $this->failure('Đơn hàng đã hoàn tất hoặc đã có phiếu thanh toán thành công.', 422);
-            }
-
-            if (! in_array($order->status, ['ready_for_return', 'waiting_pickup', 'in_repair'], true)) {
-                return $this->failure('Chỉ có thể tạo phiếu thanh toán cho đơn hàng đang sửa chữa, sẵn sàng giao trả hoặc chờ khách nhận.', 422);
+            if (! in_array($order->status, ['ready_for_return', 'waiting_pickup', 'in_repair', 'waiting_qc', 'qc_pending', 'qc_inspecting'], true)) {
+                return $this->failure('Chỉ có thể tạo phiếu thanh toán cho đơn hàng đang sửa chữa, chờ QC, sẵn sàng giao trả hoặc chờ khách nhận.', 422);
             }
 
             if ($request->has('service_price')) {
@@ -154,6 +155,36 @@ class PaymentController extends Controller
                 $order->recalculateTotalPrice();
             }
 
+            // Xử lý thông tin chiết khấu / giảm giá
+            $discountAmount = isset($validated['discount_amount']) ? RepairOrder::normalizeVndAmount($validated['discount_amount']) : 0.0;
+            $discountType = $validated['discount_type'] ?? null;
+            $discountValue = $validated['discount_value'] ?? null;
+
+            $paidPaymentsQuery = $order->payments()->where('status', 'paid')->lockForUpdate();
+            $hasPaidPayment = (clone $paidPaymentsQuery)->exists();
+            $paidSum = RepairOrder::normalizeVndAmount($paidPaymentsQuery->sum('amount'));
+            $orderTotal = RepairOrder::normalizeVndAmount($order->total_price ?? 0);
+            $effectiveTotal = max(0.0, $orderTotal - $discountAmount);
+            $remaining = max(0.0, $effectiveTotal - $paidSum);
+
+            if (($effectiveTotal > 0 && $paidSum >= $effectiveTotal) || ($effectiveTotal <= 0 && $hasPaidPayment)) {
+                return $this->failure('Đơn hàng đã hoàn tất hoặc đã có phiếu thanh toán thành công.', 422);
+            }
+
+            if ($validated['amount'] > $remaining) {
+                return $this->failure('Số tiền thu vượt quá số tiền còn phải thanh toán của đơn hàng.', 422);
+            }
+
+            if (! empty($validated['transaction_ref'])) {
+                $duplicateRefExists = Payment::where('transaction_ref', $validated['transaction_ref'])
+                    ->whereHas('repairOrder', fn ($q) => $q->withoutGlobalScopes()->where('tenant_id', $order->tenant_id))
+                    ->exists();
+
+                if ($duplicateRefExists) {
+                    return $this->failure('Mã giao dịch tham chiếu (transaction_ref) đã được sử dụng cho một phiếu thu khác trong cửa hàng.', 422);
+                }
+            }
+
             $year = date('y');
             do {
                 $randomNum = str_pad((string) random_int(100, 999999), 6, '0', STR_PAD_LEFT);
@@ -164,11 +195,6 @@ class PaymentController extends Controller
             $isAutoConfirm = $request->boolean('auto_confirm') || $request->input('status') === 'paid';
             $status = ($isBankTransfer && ! $isAutoConfirm) ? 'pending' : 'paid';
             $paidAt = $status === 'paid' ? Carbon::now() : null;
-
-            // Xử lý thông tin chiết khấu / giảm giá
-            $discountAmount = isset($validated['discount_amount']) ? (float) $validated['discount_amount'] : 0;
-            $discountType = $validated['discount_type'] ?? null;
-            $discountValue = $validated['discount_value'] ?? null;
 
             $paymentNotes = $validated['notes'] ?? null;
             if ($discountAmount > 0) {
@@ -200,7 +226,7 @@ class PaymentController extends Controller
                 'notes'               => $paymentNotes,
             ]);
 
-            // Tự động hoàn tất đơn hàng, kích hoạt bảo hành điện tử và tích lũy doanh số khi thu tiền trực tiếp
+            // Tự động hoàn tất đơn hàng, kích hoạt bảo hành điện tử và tích lũy doanh số khi thu đủ tiền trực tiếp
             if ($status === 'paid' && ($isAutoConfirm || $validated['payment_method'] === 'cash')) {
                 // Đồng bộ vào sổ quỹ và két ca trực khi thu tiền mặt
                 if ($validated['payment_method'] === 'cash') {
@@ -213,106 +239,15 @@ class PaymentController extends Controller
                     );
                 }
 
-                $now = Carbon::now();
-                $isWarrantyOrder = ($order->order_type === 'warranty') || ! empty($order->claim_id);
-
-                // Đảm bảo có bản ghi QcInspection (result = 'pass') trước khi hoàn tất
-                $hasPassedQc = \App\Models\QcInspection::where('repair_order_id', $order->id)
-                    ->where('result', 'pass')
-                    ->exists();
-
-                if (! $hasPassedQc) {
-                    $inspectorId = $order->technician_id ?? $request->user()->id;
-                    $defaultNote = $isWarrantyOrder
-                        ? 'Nghiệm thu hoàn tất đơn bảo hành'
-                        : 'Nghiệm thu hoàn tất đơn sửa chữa';
-
-                    \App\Models\QcInspection::create([
-                        'tenant_id'       => $order->tenant_id,
-                        'repair_order_id' => $order->id,
-                        'inspector_id'    => $inspectorId,
-                        'result'          => 'pass',
-                        'notes'           => $order->repair_note ?? $defaultNote,
+                if (($paidSum + $validated['amount']) >= $effectiveTotal) {
+                    app(\App\Services\OrderWorkflowService::class)->completeOrderLifecycle($order, [
+                        'actor_id'       => (int) $request->user()->id,
+                        'user'           => $request->user(),
+                        'revenue_amount' => (float) ($paidSum + $validated['amount']),
+                        'warranty_days'  => (int) $warrantyDays,
                     ]);
-                }
-
-                $order->status = 'completed';
-                if (! $order->repair_started_at) {
-                    $order->repair_started_at = $order->tech_accepted_at ?? $order->customer_approved_at ?? $order->created_at ?? $now;
-                }
-                if (! $order->repair_completed_at) {
-                    $order->repair_completed_at = $order->qc_passed_at ?? $now;
-                }
-                if (! $order->qc_passed_at) {
-                    $order->qc_passed_at = $now;
-                }
-                if (! $order->handed_over_at) {
-                    $order->handed_over_at = $now;
-                }
-                if (! $order->handed_over_by_user_id) {
-                    $order->handed_over_by_user_id = $request->user()->id;
-                }
-                $order->save();
-
-                // Tự động trừ kho linh kiện đã dùng cho đơn hàng
-                app(\App\Services\OrderWorkflowService::class)->deductInventoryForOrder($order, (int) $request->user()->id);
-
-                if ($isWarrantyOrder) {
-                    // Đồng bộ đóng WarrantyClaim liên kết sang resolved
-                    $claimQuery = \App\Models\WarrantyClaim::query()->where('rework_order_id', $order->id);
-                    if (! empty($order->claim_id)) {
-                        $claimQuery->orWhere('id', $order->claim_id);
-                    }
-                    $claimQuery->update(['status' => 'resolved']);
-
-                    // Đơn bảo hành: không tạo chồng sổ bảo hành mới và không cộng trùng orders_count
-                    $customer = $order->customer;
-                    if ($customer && (float) $validated['amount'] > 0) {
-                        $customer->increment('total_spent', $validated['amount']);
-                    }
                 } else {
-                    // Kích hoạt bảo hành điện tử tự động cho đơn thường (khử N+1 bằng collection đã eager-load)
-                    $existingWarranties = $order->warranties;
-                    if ($warrantyDays > 0 && $existingWarranties->isEmpty()) {
-                        do {
-                            $randomWr = str_pad((string) random_int(100, 999999), 6, '0', STR_PAD_LEFT);
-                            $wrCode = "FX{$year}-WR-{$randomWr}";
-                        } while (\App\Models\Warranty::withoutGlobalScopes()->where('warranty_code', $wrCode)->exists());
-
-                        \App\Models\Warranty::create([
-                            'warranty_code'   => $wrCode,
-                            'repair_order_id' => $order->id,
-                            'customer_id'     => $order->customer_id,
-                            'device_model_id' => $order->device_model_id,
-                            'coverage_item'   => $order->price_note ?? 'Dịch vụ sửa chữa',
-                            'start_date'      => $now->toDateString(),
-                            'duration_days'   => $warrantyDays,
-                            'end_date'        => $now->copy()->addDays($warrantyDays)->toDateString(),
-                            'status'          => 'active',
-                        ]);
-                    } elseif ($existingWarranties->isNotEmpty()) {
-                        foreach ($existingWarranties as $warranty) {
-                            $warranty->update([
-                                'status'        => 'active',
-                                'start_date'    => $now->toDateString(),
-                                'duration_days' => $warrantyDays,
-                                'end_date'      => $now->copy()->addDays($warrantyDays)->toDateString(),
-                            ]);
-                        }
-                    }
-
-                    // Tích lũy doanh số khách hàng theo số tiền thực thu (1 câu lệnh UPDATE nguyên tử)
-                    $customer = $order->customer;
-                    if ($customer) {
-                        $amountDelta = (float) $validated['amount'];
-                        \App\Models\Customer::whereKey($customer->id)->update([
-                            'orders_count' => DB::raw('COALESCE(orders_count, 0) + 1'),
-                            'total_spent'  => DB::raw('COALESCE(total_spent, 0) + ' . $amountDelta),
-                            'updated_at'   => $now,
-                        ]);
-                        $customer->orders_count = (int) ($customer->orders_count ?? 0) + 1;
-                        $customer->total_spent = (float) ($customer->total_spent ?? 0) + $amountDelta;
-                    }
+                    $order->save();
                 }
             } else {
                 $order->save();
@@ -410,7 +345,7 @@ class PaymentController extends Controller
             return $this->failure('Chưa xác thực danh tính.', 401);
         }
 
-        $allowedRoles = ['admin', 'super_admin', 'cskh', 'cashier'];
+        $allowedRoles = ['admin', 'super_admin', 'cskh', 'receptionist', 'cashier'];
         if (! in_array($user->role, $allowedRoles, true)) {
             return $this->failure('Bạn không có quyền duyệt thanh toán này.', 403);
         }
@@ -436,6 +371,39 @@ class PaymentController extends Controller
                 ? RepairOrder::with(['customer', 'warranties'])->lockForUpdate()->find($payment->repair_order_id)
                 : $payment->repairOrder;
             $order?->loadMissing(['customer', 'warranties']);
+
+            $effectiveRef = ! empty($validated['transaction_ref'])
+                ? $validated['transaction_ref']
+                : $payment->transaction_ref;
+            $tenantId = $order?->tenant_id ?? $user->tenant_id;
+
+            if (! empty($effectiveRef) && $tenantId) {
+                $duplicateRefExists = Payment::where('id', '!=', $payment->id)
+                    ->where('transaction_ref', $effectiveRef)
+                    ->whereHas('repairOrder', fn ($q) => $q->withoutGlobalScopes()->where('tenant_id', $tenantId))
+                    ->exists();
+
+                if ($duplicateRefExists) {
+                    return $this->failure('Mã giao dịch tham chiếu (transaction_ref) đã được sử dụng cho một phiếu thu khác trong cửa hàng.', 422);
+                }
+            }
+
+            if ($order) {
+                $paidSum = RepairOrder::normalizeVndAmount(
+                    $order->payments()
+                        ->where('status', 'paid')
+                        ->where('id', '!=', $payment->id)
+                        ->lockForUpdate()
+                        ->sum('amount')
+                );
+                $orderTotal = RepairOrder::normalizeVndAmount($order->total_price ?? 0);
+                $remaining = max(0.0, $orderTotal - $paidSum);
+                $paymentAmount = RepairOrder::normalizeVndAmount($payment->amount ?? 0);
+
+                if (($orderTotal > 0 && $paidSum >= $orderTotal) || $paymentAmount > $remaining) {
+                    return $this->failure('Số tiền thu vượt quá số tiền còn phải thanh toán của đơn hàng.', 422);
+                }
+            }
 
             $now = Carbon::now();
             $payment->status = 'paid';
@@ -463,108 +431,12 @@ class PaymentController extends Controller
                     );
                 }
 
-                $isWarrantyOrder = ($order->order_type === 'warranty') || ! empty($order->claim_id);
-
-                // Đảm bảo có bản ghi QcInspection (result = 'pass') trước khi hoàn tất
-                $hasPassedQc = \App\Models\QcInspection::where('repair_order_id', $order->id)
-                    ->where('result', 'pass')
-                    ->exists();
-
-                if (! $hasPassedQc) {
-                    $inspectorId = $order->technician_id ?? $user->id;
-                    $defaultNote = $isWarrantyOrder
-                        ? 'Nghiệm thu hoàn tất đơn bảo hành'
-                        : 'Nghiệm thu hoàn tất đơn sửa chữa';
-
-                    \App\Models\QcInspection::create([
-                        'tenant_id'       => $order->tenant_id,
-                        'repair_order_id' => $order->id,
-                        'inspector_id'    => $inspectorId,
-                        'result'          => 'pass',
-                        'notes'           => $order->repair_note ?? $defaultNote,
-                    ]);
-                }
-
-                $order->status = 'completed';
-                if (! $order->repair_started_at) {
-                    $order->repair_started_at = $order->tech_accepted_at ?? $order->customer_approved_at ?? $order->created_at ?? $now;
-                }
-                if (! $order->repair_completed_at) {
-                    $order->repair_completed_at = $order->qc_passed_at ?? $now;
-                }
-                if (! $order->qc_passed_at) {
-                    $order->qc_passed_at = $now;
-                }
-                if (! $order->handed_over_at) {
-                    $order->handed_over_at = $now;
-                }
-                if (! $order->handed_over_by_user_id) {
-                    $order->handed_over_by_user_id = $user->id;
-                }
-                $order->save();
-
-                // Tự động trừ kho linh kiện đã dùng cho đơn hàng
-                app(\App\Services\OrderWorkflowService::class)->deductInventoryForOrder($order, (int) $user->id);
-
-                if ($isWarrantyOrder) {
-                    // Đồng bộ đóng WarrantyClaim liên kết sang resolved
-                    $claimQuery = \App\Models\WarrantyClaim::query()->where('rework_order_id', $order->id);
-                    if (! empty($order->claim_id)) {
-                        $claimQuery->orWhere('id', $order->claim_id);
-                    }
-                    $claimQuery->update(['status' => 'resolved']);
-
-                    // Đơn bảo hành: không tạo chồng sổ bảo hành mới và không cộng trùng orders_count
-                    $customer = $order->customer;
-                    if ($customer && (float) $payment->amount > 0) {
-                        $customer->increment('total_spent', $payment->amount);
-                    }
-                } else {
-                    // Kích hoạt bảo hành điện tử tự động nếu chưa có (khử N+1 bằng collection đã eager-load)
-                    $warrantyDays = $order->warranty_terms_days ?: 90;
-                    $year = date('y');
-                    $existingWarranties = $order->warranties;
-                    if ($warrantyDays > 0 && $existingWarranties->isEmpty()) {
-                        do {
-                            $randomWr = str_pad((string) random_int(100, 999999), 6, '0', STR_PAD_LEFT);
-                            $wrCode = "FX{$year}-WR-{$randomWr}";
-                        } while (\App\Models\Warranty::withoutGlobalScopes()->where('warranty_code', $wrCode)->exists());
-
-                        \App\Models\Warranty::create([
-                            'warranty_code'   => $wrCode,
-                            'repair_order_id' => $order->id,
-                            'customer_id'     => $order->customer_id,
-                            'device_model_id' => $order->device_model_id,
-                            'coverage_item'   => $order->price_note ?? 'Dịch vụ sửa chữa',
-                            'start_date'      => $now->toDateString(),
-                            'duration_days'   => $warrantyDays,
-                            'end_date'        => $now->copy()->addDays($warrantyDays)->toDateString(),
-                            'status'          => 'active',
-                        ]);
-                    } elseif ($existingWarranties->isNotEmpty()) {
-                        foreach ($existingWarranties as $warranty) {
-                            $warranty->update([
-                                'status'        => 'active',
-                                'start_date'    => $now->toDateString(),
-                                'duration_days' => $warrantyDays,
-                                'end_date'      => $now->copy()->addDays($warrantyDays)->toDateString(),
-                            ]);
-                        }
-                    }
-
-                    // Tích lũy doanh số khách hàng theo số tiền thực thu (1 câu lệnh UPDATE nguyên tử)
-                    $customer = $order->customer;
-                    if ($customer) {
-                        $amountDelta = (float) $payment->amount;
-                        \App\Models\Customer::whereKey($customer->id)->update([
-                            'orders_count' => DB::raw('COALESCE(orders_count, 0) + 1'),
-                            'total_spent'  => DB::raw('COALESCE(total_spent, 0) + ' . $amountDelta),
-                            'updated_at'   => $now,
-                        ]);
-                        $customer->orders_count = (int) ($customer->orders_count ?? 0) + 1;
-                        $customer->total_spent = (float) ($customer->total_spent ?? 0) + $amountDelta;
-                    }
-                }
+                app(\App\Services\OrderWorkflowService::class)->completeOrderLifecycle($order, [
+                    'actor_id'              => (int) $user->id,
+                    'user'                  => $user,
+                    'revenue_amount'        => (float) $payment->amount,
+                    'default_warranty_days' => 90,
+                ]);
             }
 
             AuditLog::create([

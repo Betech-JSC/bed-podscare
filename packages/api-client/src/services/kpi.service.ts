@@ -55,6 +55,8 @@ export interface DashboardStats {
   daily_revenue?: number;
   daily_revenue_formatted?: string;
   selected_date?: string;
+  from_date?: string;
+  to_date?: string;
   selected_date_revenue?: number;
   selected_date_revenue_formatted?: string;
   selected_date_completed_orders?: number;
@@ -114,6 +116,8 @@ export class KpiService {
     branch_id?: string | number;
     period?: string;
     date?: string;
+    from_date?: string;
+    to_date?: string;
   }): Promise<any> {
     return this.http.get('/api/v1/kpi/dashboard', { params });
   }

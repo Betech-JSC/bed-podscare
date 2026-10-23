@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, useRef } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import {
   Modal,
   Button,
@@ -13,6 +14,9 @@ import {
   DynamicTestRow,
   PhotoDropzone,
   StepperWidget,
+  HardwarePartSelector,
+  parseHardwarePartsFromText,
+  formatHardwarePartsToText,
   useToast,
   sanitizeInputLive,
   sanitizeSearchQuery,
@@ -34,6 +38,7 @@ import {
 } from '@podscare/api-client';
 import { usePodsCare } from '../providers';
 import { useSilentPrint, PrintFormatModal } from './print';
+import { IntakeQuickConsole } from './IntakeQuickConsole';
 
 export interface IntakeDeviceItem {
   id: string;
@@ -299,6 +304,8 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
     }
   };
 
+  const [quickConsoleMode, setQuickConsoleMode] = useState(false);
+
   const handleModalClose = () => {
     resetForm();
     onClose();
@@ -309,37 +316,47 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
       resetForm();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isOpen, currentUser, branchId, deviceProfiles, deviceList]);
+  }, [isOpen, currentUser, branchId, deviceProfiles]);
+
+  // 1. React Query cache cho danh sách thiết bị (staleTime: 5 phút)
+  const { data: cachedDevices } = useQuery({
+    queryKey: ['intake-devices'],
+    queryFn: async () => {
+      const res: any = await deviceService.getDevices();
+      const items = res?.data || res;
+      if (Array.isArray(items) && items.length > 0) {
+        return items.map((d: any) => ({ id: d.id, name: d.name, category: d.category }));
+      }
+      return [];
+    },
+    enabled: isOpen,
+    staleTime: 5 * 60 * 1000,
+  });
 
   useEffect(() => {
-    deviceService
-      .getDevices()
-      .then((res: any) => {
-        const items = res?.data || res;
-        if (Array.isArray(items) && items.length > 0) {
-          setDeviceList(items.map((d: any) => ({ id: d.id, name: d.name })));
-        }
-      })
-      .catch(() => {});
-  }, []);
+    if (Array.isArray(cachedDevices) && cachedDevices.length > 0) {
+      setDeviceList(cachedDevices);
+    }
+  }, [cachedDevices]);
 
-  // Fetch active CSKH staff list when modal opens or component mounts
+  // 2. React Query cache cho danh sách nhân viên CSKH đang hoạt động (staleTime: 5 phút)
+  const { data: cachedCskhUsers } = useQuery({
+    queryKey: ['intake-cskh-users'],
+    queryFn: async () => {
+      const res: any = await userService.getUsers({ role: 'cskh', is_active: true, per_page: 100 });
+      const raw = res?.data;
+      const list: UserRecord[] = Array.isArray(raw) ? raw : (raw?.data || []);
+      return Array.isArray(list) ? list : [];
+    },
+    enabled: isOpen,
+    staleTime: 5 * 60 * 1000,
+  });
+
   useEffect(() => {
-    if (!isOpen) return;
-
-    userService
-      .getUsers({ role: 'cskh', is_active: true, per_page: 100 })
-      .then((res: any) => {
-        const raw = res?.data;
-        const list: UserRecord[] = Array.isArray(raw) ? raw : (raw?.data || []);
-        if (Array.isArray(list)) {
-          setCskhUsers(list);
-        }
-      })
-      .catch((err) => {
-        console.error('Failed to load CSKH staff list:', err);
-      });
-  }, [isOpen]);
+    if (Array.isArray(cachedCskhUsers)) {
+      setCskhUsers(cachedCskhUsers);
+    }
+  }, [cachedCskhUsers]);
 
   // Smart auto-select CSKH
   useEffect(() => {
@@ -400,73 +417,83 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
     return options;
   }, [cskhUsers, currentUser]);
 
-  // Fetch dynamic common issues for categories
-  useEffect(() => {
-    if (!isOpen) return;
-
-    categories.forEach((cat) => {
-      serviceService
-        .getCommonIssues({ category: cat })
-        .then((res: any) => {
+  // 3. React Query cache cho lỗi thường gặp theo danh mục (staleTime: 5 phút)
+  const { data: cachedCategoryIssues } = useQuery({
+    queryKey: ['intake-common-issues', categories.join('|')],
+    queryFn: async () => {
+      const results = await Promise.allSettled(
+        categories.map(async (cat) => {
+          const res: any = await serviceService.getCommonIssues({ category: cat });
           const raw = res?.data || res;
           const list = Array.isArray(raw) ? raw : (raw?.data || []);
-          if (Array.isArray(list) && list.length > 0) {
-            setCategoryIssues((prev) => ({ ...prev, [cat]: list }));
-            if (cat === selectedCategory) {
-              setCommonIssues(list);
-            }
-          } else {
-            setCategoryIssues((prev) => ({ ...prev, [cat]: DEFAULT_COMMON_ISSUES[cat] || [] }));
-            if (cat === selectedCategory) {
-              setCommonIssues(DEFAULT_COMMON_ISSUES[cat] || []);
-            }
-          }
+          return {
+            cat,
+            list: Array.isArray(list) && list.length > 0 ? list : (DEFAULT_COMMON_ISSUES[cat] || []),
+          };
         })
-        .catch(() => {
-          setCategoryIssues((prev) => ({ ...prev, [cat]: DEFAULT_COMMON_ISSUES[cat] || [] }));
-          if (cat === selectedCategory) {
-            setCommonIssues(DEFAULT_COMMON_ISSUES[cat] || []);
-          }
-        });
-    });
-  }, [isOpen, categories, selectedCategory]);
+      );
+      const map: Record<string, CommonIssueItem[]> = {};
+      results.forEach((r, idx) => {
+        const cat = categories[idx];
+        if (r.status === 'fulfilled') {
+          map[r.value.cat] = r.value.list;
+        } else if (cat) {
+          map[cat] = DEFAULT_COMMON_ISSUES[cat] || [];
+        }
+      });
+      return map;
+    },
+    enabled: isOpen && categories.length > 0,
+    staleTime: 5 * 60 * 1000,
+  });
 
-  // Fetch dynamic checklist template based on active device in Step 3
+  useEffect(() => {
+    if (cachedCategoryIssues) {
+      setCategoryIssues(cachedCategoryIssues);
+      setCommonIssues(cachedCategoryIssues[selectedCategory] || DEFAULT_COMMON_ISSUES[selectedCategory] || []);
+    } else if (isOpen) {
+      setCommonIssues(DEFAULT_COMMON_ISSUES[selectedCategory] || []);
+    }
+  }, [cachedCategoryIssues, selectedCategory, isOpen]);
+
+  // 4. React Query cache cho checklist template theo thiết bị đang chọn ở Bước 3 (staleTime: 5 phút)
   const activeDeviceStep3 = devices[activeDeviceIndexStep3] || devices[0];
   const step3Category = activeDeviceStep3?.category || selectedCategory;
   const step3Device = activeDeviceStep3?.device || selectedDevice;
+  const matchedStep3Model =
+    deviceList.find((d) => d.name === step3Device) ||
+    deviceProfiles.find((p) => p.name === step3Device);
+  const modelId = matchedStep3Model?.id;
 
-  useEffect(() => {
-    if (!isOpen) return;
-
-    const matchedDevice =
-      deviceList.find((d) => d.name === step3Device) ||
-      deviceProfiles.find((p) => p.name === step3Device);
-    const modelId = matchedDevice?.id;
-
-    deviceService
-      .getChecklistTemplate({
+  const { data: cachedChecklistTemplate } = useQuery({
+    queryKey: ['intake-checklist-template', step3Category, modelId ?? 'default'],
+    queryFn: async () => {
+      const res: any = await deviceService.getChecklistTemplate({
         category: step3Category,
         ...(modelId ? { device_model_id: modelId } : {}),
-      })
-      .then((res: any) => {
-        const raw = res?.data || res;
-        const list = Array.isArray(raw) ? raw : (raw?.data || []);
-        if (Array.isArray(list) && list.length > 0) {
-          const checks = Array.from(
-            new Set(
-              list
-                .map((item: any) => (item.item_name || item.name || String(item)).trim())
-                .filter(Boolean)
-            )
-          );
-          setChecklistTemplate(checks);
-        } else {
-          setChecklistTemplate([]);
-        }
-      })
-      .catch(() => setChecklistTemplate([]));
-  }, [isOpen, step3Category, step3Device, deviceList, deviceProfiles]);
+      });
+      const raw = res?.data || res;
+      const list = Array.isArray(raw) ? raw : (raw?.data || []);
+      if (Array.isArray(list) && list.length > 0) {
+        return Array.from(
+          new Set(
+            list
+              .map((item: any) => (item.item_name || item.name || String(item)).trim())
+              .filter(Boolean)
+          )
+        );
+      }
+      return [];
+    },
+    enabled: isOpen,
+    staleTime: 5 * 60 * 1000,
+  });
+
+  useEffect(() => {
+    if (Array.isArray(cachedChecklistTemplate)) {
+      setChecklistTemplate(cachedChecklistTemplate);
+    }
+  }, [cachedChecklistTemplate]);
 
   const getEffectiveChecksForDevice = (dev: IntakeDeviceItem): string[] => {
     const profile =
@@ -1007,25 +1034,60 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
         onClose={handleModalClose}
         maxWidth="xl"
         eyebrow="CSKH · TIẾP NHẬN THIẾT BỊ"
-        title="Phiếu tiếp nhận sửa chữa (Intake Wizard)"
-        subtitle="Thu thập thông tin 5 bước: Khách hàng, Thiết bị, Test tại quầy, Ngoại hình và Giá dự kiến."
+        title="Phiếu tiếp nhận sửa chữa (Intake Workstation)"
+        subtitle="Thu thập thông tin nhanh qua POS Quick Console (1 màn hình) hoặc Quy trình 5 bước."
         headerExtra={
-          <StepperWidget
-            steps={[
-              { id: 1, label: 'Khách hàng' },
-              { id: 2, label: 'Thiết bị' },
-              { id: 3, label: 'Test quầy' },
-              { id: 4, label: 'Ngoại hình' },
-              { id: 5, label: 'Cam kết' },
-            ]}
-            currentStepIndex={currentStepIndex}
-            completedStepIndices={Array.from(completedSteps)}
-            onStepClick={handleStepClick}
-          />
+          <div className="space-y-2.5">
+            <div className="flex items-center justify-between gap-2">
+              <span className="text-[11px] font-bold text-[#81908a] uppercase tracking-wider">
+                Chế độ giao diện tiếp nhận:
+              </span>
+              <div className="inline-flex rounded-[8px] bg-[#f6f8f6] p-0.5 border border-[#e9eeeb]">
+                <button
+                  type="button"
+                  data-testid="intake-mode-wizard-btn"
+                  onClick={() => setQuickConsoleMode(false)}
+                  className={`px-2.5 py-1 rounded-[6px] text-xs font-bold transition-colors cursor-pointer ${
+                    !quickConsoleMode
+                      ? 'bg-[#176b51] text-white'
+                      : 'text-[#5c6964] hover:text-[#17231f]'
+                  }`}
+                >
+                  Wizard 5 bước
+                </button>
+                <button
+                  type="button"
+                  data-testid="intake-mode-quick-btn"
+                  onClick={() => setQuickConsoleMode(true)}
+                  className={`px-2.5 py-1 rounded-[6px] text-xs font-bold transition-colors cursor-pointer ${
+                    quickConsoleMode
+                      ? 'bg-[#176b51] text-white'
+                      : 'text-[#5c6964] hover:text-[#17231f]'
+                  }`}
+                >
+                  POS Quick Console (1 màn hình)
+                </button>
+              </div>
+            </div>
+            {!quickConsoleMode && (
+              <StepperWidget
+                steps={[
+                  { id: 1, label: 'Khách hàng' },
+                  { id: 2, label: 'Thiết bị' },
+                  { id: 3, label: 'Test quầy' },
+                  { id: 4, label: 'Ngoại hình' },
+                  { id: 5, label: 'Cam kết' },
+                ]}
+                currentStepIndex={currentStepIndex}
+                completedStepIndices={Array.from(completedSteps)}
+                onStepClick={handleStepClick}
+              />
+            )}
+          </div>
         }
         footer={
           <div className="flex items-center justify-between gap-2.5 sm:gap-3 w-full">
-            {currentStepIndex === 0 ? (
+            {currentStepIndex === 0 || quickConsoleMode ? (
               <Button
                 variant="ghost"
                 size="md"
@@ -1047,7 +1109,7 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
               </Button>
             )}
 
-            {currentStepIndex < 4 ? (
+            {currentStepIndex < 4 && !quickConsoleMode ? (
               <Button
                 variant="primary"
                 size="md"
@@ -1099,8 +1161,54 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
         <div className="space-y-4 sm:space-y-6">
           <div ref={contentTopRef} className="h-0" />
 
+          {quickConsoleMode ? (
+            <IntakeQuickConsole
+              name={name}
+              onNameChange={(val) => {
+                setName(val);
+                if (errors.name) {
+                  setErrors((prev) => {
+                    const next = { ...prev };
+                    delete next.name;
+                    return next;
+                  });
+                }
+              }}
+              phone={phone}
+              onPhoneChange={(val) => {
+                setPhone(val);
+                if (errors.phone) {
+                  setErrors((prev) => {
+                    const next = { ...prev };
+                    delete next.phone;
+                    return next;
+                  });
+                }
+              }}
+              orderType={orderType}
+              onOrderTypeChange={handleSelectOrderType}
+              shippingAddress={shippingAddress}
+              onShippingAddressChange={setShippingAddress}
+              cskhOptions={cskhOptions}
+              selectedCskhId={selectedCskhId}
+              onCskhChange={setSelectedCskhId}
+              categories={categories}
+              availableModels={deviceProfiles.filter((p) => p.category === (devices[0]?.category || selectedCategory))}
+              device={devices[0] || createDefaultDevice('dev-1')}
+              onUpdateDevice={(updater) => updateDevice(0, updater)}
+              onCategoryChange={(cat) => handleCategoryChangeForDevice(cat, 0)}
+              commonIssues={commonIssues}
+              onChipClick={handleChipClick}
+              effectiveChecks={effectiveChecks}
+              warrantyMonths={warrantyMonths}
+              onWarrantyMonthsChange={setWarrantyMonths}
+              errors={errors}
+              onSubmitAndPrint={() => handleSave(true)}
+            />
+          ) : null}
+
           {/* 01. Customer Info & Intake Branch */}
-          {currentStepIndex === 0 && (
+          {!quickConsoleMode && currentStepIndex === 0 && (
             <section className="bg-white p-5 rounded-[10px] border border-[#e5ece8]">
               <h3 className="font-heading font-bold text-sm text-[#1c302b] flex items-center gap-2 mb-3.5">
                 <span className="w-6 h-6 rounded-[7px] bg-[#eaf4ef] text-[#176b58] text-xs font-bold grid place-items-center">
@@ -1316,7 +1424,7 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
           )}
 
           {/* 02. Device Info (Multi-Device Support) */}
-          {currentStepIndex === 1 && (
+          {!quickConsoleMode && currentStepIndex === 1 && (
             <div className="space-y-4">
               {devices.map((dev, devIdx) => {
                 const availableModelsForDev = deviceProfiles.filter((p) => p.category === dev.category);
@@ -1467,6 +1575,20 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
                       />
 
                       <div className="sm:col-span-2">
+                        <label className="block text-xs font-bold text-[#17231f] mb-1.5">
+                          Chọn nhanh thành phần bàn giao (L / R / Case):
+                        </label>
+                        <HardwarePartSelector
+                          selectedParts={parseHardwarePartsFromText(dev.accessories)}
+                          onChange={(parts) => {
+                            const formatted = formatHardwarePartsToText(parts);
+                            updateDevice(devIdx, { accessories: formatted });
+                            if (devIdx === 0) setAccessories(formatted);
+                          }}
+                        />
+                      </div>
+
+                      <div className="sm:col-span-2">
                         <Textarea
                           label="Tình trạng lỗi khách báo *"
                           value={dev.issue}
@@ -1558,7 +1680,7 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
           )}
 
           {/* 03. Checklist Test (Per-Device Tabs) */}
-          {currentStepIndex === 2 && (
+          {!quickConsoleMode && currentStepIndex === 2 && (
             <section className="bg-white p-5 rounded-[10px] border border-[#e5ece8]">
               {/* Multi-Device Tabs */}
               {devices.length > 1 && (
@@ -1631,7 +1753,7 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
           )}
 
           {/* 04. Appearance & Photos (Per-Device Tabs) */}
-          {currentStepIndex === 3 && (
+          {!quickConsoleMode && currentStepIndex === 3 && (
             <section className="bg-white p-5 rounded-[10px] border border-[#e5ece8]">
               {/* Multi-Device Tabs */}
               {devices.length > 1 && (
@@ -1690,7 +1812,7 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
           )}
 
           {/* 05. Pricing & Terms (Per-Device Pricing with Mandatory > 0 and Cumulative Total) */}
-          {currentStepIndex === 4 && (
+          {!quickConsoleMode && currentStepIndex === 4 && (
             <section className="bg-white p-5 rounded-[10px] border border-[#e5ece8]">
               <h3 className="font-heading font-bold text-sm text-[#1c302b] flex items-center gap-2 mb-3.5">
                 <span className="w-6 h-6 rounded-[7px] bg-[#eaf4ef] text-[#176b58] text-xs font-bold grid place-items-center">

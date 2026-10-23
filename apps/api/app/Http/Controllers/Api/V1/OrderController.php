@@ -205,9 +205,13 @@ class OrderController extends Controller
         }
 
         if (! $hasSpecificDate) {
+            $isQcQueueFilter = in_array($status, ['waiting_qc', 'qc_pending', 'qc_inspecting'], true)
+                || in_array($filter, ['waiting_qc', 'qc_pending', 'qc_inspecting'], true);
+
             $hasSpecialPartsFilter = $request->has('special_parts_status')
                 || $request->boolean('special_parts')
                 || $request->input('special_parts') === 'true'
+                || $isQcQueueFilter
                 || in_array($status, ['special_parts', 'open', 'in_workshop', 'waiting_pickup', 'ready_for_return', 'waiting_parts', 'overdue'], true)
                 || in_array($filter, ['open', 'in_workshop', 'waiting_pickup', 'ready_for_return', 'waiting_parts', 'overdue'], true);
 
@@ -252,7 +256,7 @@ class OrderController extends Controller
             } elseif ($dateFilter === '30_days') {
                 $filterDateFrom($query, Carbon::now($tz)->subDays(30)->startOfDay());
             } elseif ($dateFilter === 'all') {
-                if ($isTechnician && ! $isCompletedDate && $search === '') {
+                if ($isTechnician && ! $isCompletedDate && ! $isQcQueueFilter && $search === '') {
                     $query->where('created_at', '>=', Carbon::today($tz)->subDays(6)->startOfDay());
                 }
             }
@@ -270,13 +274,17 @@ class OrderController extends Controller
     {
         $rule = Rule::exists($table, 'id');
         if ($user && $user->role !== 'super_admin') {
-            $tenantId = (int) ($user->tenant_id ?? 1);
-            $rule->where(function ($q) use ($tenantId) {
-                $q->where('tenant_id', $tenantId);
-                if ($tenantId === 1) {
-                    $q->orWhereNull('tenant_id');
-                }
-            });
+            if (empty($user->tenant_id)) {
+                $rule->whereRaw('1 = 0');
+            } else {
+                $tenantId = (int) $user->tenant_id;
+                $rule->where(function ($q) use ($tenantId) {
+                    $q->where('tenant_id', $tenantId);
+                    if ($tenantId === 1) {
+                        $q->orWhereNull('tenant_id');
+                    }
+                });
+            }
         }
 
         return $rule;
@@ -290,12 +298,10 @@ class OrderController extends Controller
         $user = $request->user();
         $user?->loadMissing('tenant');
         $isStaff = $user && ! in_array($user->role, ['admin', 'super_admin'], true);
-
         $tenant = $user?->tenant;
+
         if ($tenant) {
-            $quotaService = app(\App\Services\QuotaService::class);
-            $quotaService->checkSubscriptionActive($tenant);
-            $quotaService->checkOrderQuota($tenant);
+            app(\App\Services\QuotaService::class)->checkSubscriptionActive($tenant);
         }
 
         if ($request->has('customer_name') && is_string($request->input('customer_name'))) {
@@ -355,7 +361,13 @@ class OrderController extends Controller
             $creatorId = $user->id;
         }
 
-        return DB::transaction(function () use ($request, $validated, $creatorId) {
+        return DB::transaction(function () use ($request, $validated, $creatorId, $tenant) {
+            if ($tenant) {
+                $quotaService = app(\App\Services\QuotaService::class);
+                $quotaService->checkSubscriptionActive($tenant);
+                $quotaService->checkOrderQuota($tenant);
+            }
+
             // 1. Tìm hoặc tạo khách hàng
             $customerId = $validated['customer_id'] ?? null;
             if (! $customerId && ! empty($validated['customer_phone'])) {
@@ -474,9 +486,9 @@ class OrderController extends Controller
                     'order_created',
                     'order.created'
                 );
-
-                app(\App\Services\TelegramNotificationService::class)->notifyNewOrder($order);
             });
+
+            \App\Jobs\SendTelegramNewOrderNotificationJob::dispatch($order->id);
 
             return $this->success(
                 $order->load([
@@ -642,120 +654,145 @@ class OrderController extends Controller
                 'warranty_terms_days'   => 'nullable|integer|min:0',
             ]);
 
-            return DB::transaction(function () use ($order, $validated, $user, $request) {
-                // Cập nhật thông tin khách hàng nếu có
-                if (! empty($validated['customer_name']) || ! empty($validated['customer_phone'])) {
-                    $cleanName = ! empty($validated['customer_name'])
-                        ? PhoneHelper::sanitizeText($validated['customer_name'])
-                        : null;
-                    $normalizedPhone = ! empty($validated['customer_phone'])
-                        ? PhoneHelper::normalizeForStorage($validated['customer_phone'])
-                        : null;
+            try {
+                return DB::transaction(function () use ($order, $validated, $user, $request) {
+                    // Cập nhật thông tin khách hàng nếu có
+                    if (! empty($validated['customer_name']) || ! empty($validated['customer_phone'])) {
+                        $cleanName = ! empty($validated['customer_name'])
+                            ? PhoneHelper::sanitizeText($validated['customer_name'])
+                            : null;
+                        $normalizedPhone = ! empty($validated['customer_phone'])
+                            ? PhoneHelper::normalizeForStorage($validated['customer_phone'])
+                            : null;
 
-                    $order->loadMissing('customer');
-                    if ($order->customer) {
-                        $customerUpdates = [];
-                        if ($cleanName !== null && $cleanName !== '') {
-                            $customerUpdates['name'] = $cleanName;
-                        }
-                        if ($normalizedPhone !== null && $normalizedPhone !== '') {
-                            $customerUpdates['phone'] = $normalizedPhone;
-                        }
-                        if (! empty($customerUpdates)) {
-                            $order->customer->update($customerUpdates);
-                        }
-                    } else {
-                        $newCustomer = Customer::create([
-                            'tenant_id' => $order->tenant_id,
-                            'name'      => $cleanName ?: 'Khách lẻ',
-                            'phone'     => $normalizedPhone ?: '0900000000',
-                        ]);
-                        $order->customer_id = $newCustomer->id;
-                        $order->save();
-                    }
-                }
-
-                $orderUpdates = array_filter($validated, function ($k) {
-                    return ! in_array($k, ['customer_name', 'customer_phone'], true);
-                }, ARRAY_FILTER_USE_KEY);
-
-                foreach (['estimated_price', 'total_price', 'initial_price'] as $priceKey) {
-                    if (array_key_exists($priceKey, $orderUpdates) && $orderUpdates[$priceKey] !== null) {
-                        $orderUpdates[$priceKey] = RepairOrder::normalizeVndAmount($orderUpdates[$priceKey]);
-                    }
-                }
-
-                if (isset($orderUpdates['estimated_price'])) {
-                    if (! isset($orderUpdates['total_price'])) {
-                        $orderUpdates['total_price'] = $orderUpdates['estimated_price'];
-                    }
-                    unset($orderUpdates['estimated_price']);
-                }
-
-                if (isset($orderUpdates['total_price']) && ! isset($orderUpdates['initial_price'])) {
-                    if ($order->initial_price === null || (float) $order->initial_price <= 1) {
-                        if (empty($order->additional_services)) {
-                            $orderUpdates['initial_price'] = $orderUpdates['total_price'];
+                        $order->loadMissing('customer');
+                        if ($order->customer) {
+                            $customerUpdates = [];
+                            if ($cleanName !== null && $cleanName !== '') {
+                                $customerUpdates['name'] = $cleanName;
+                            }
+                            if ($normalizedPhone !== null && $normalizedPhone !== '') {
+                                $customerUpdates['phone'] = $normalizedPhone;
+                            }
+                            if (! empty($customerUpdates)) {
+                                $order->customer->update($customerUpdates);
+                            }
                         } else {
-                            $orderUpdates['initial_price'] = 0.0;
+                            $newCustomer = Customer::create([
+                                'tenant_id' => $order->tenant_id,
+                                'name'      => $cleanName ?: 'Khách lẻ',
+                                'phone'     => $normalizedPhone ?: '0900000000',
+                            ]);
+                            $order->customer_id = $newCustomer->id;
+                            $order->save();
                         }
                     }
-                }
 
-                $oldPrice = (float) ($order->total_price ?? 0);
-                $isPriceModified = isset($orderUpdates['total_price']) && (float) $orderUpdates['total_price'] !== $oldPrice;
-                $newPrice = isset($orderUpdates['total_price']) ? (float) $orderUpdates['total_price'] : $oldPrice;
-                $priceDiff = $newPrice - $oldPrice;
+                    $orderUpdates = array_filter($validated, function ($k) {
+                        return ! in_array($k, ['customer_name', 'customer_phone'], true);
+                    }, ARRAY_FILTER_USE_KEY);
 
-                $oldValues = $order->only(array_keys($orderUpdates));
+                    $requestedStatus = $orderUpdates['status'] ?? null;
+                    unset($orderUpdates['status']);
 
-                if (! empty($orderUpdates)) {
-                    $order->update($orderUpdates);
-                }
+                    foreach (['estimated_price', 'total_price', 'initial_price'] as $priceKey) {
+                        if (array_key_exists($priceKey, $orderUpdates) && $orderUpdates[$priceKey] !== null) {
+                            $orderUpdates[$priceKey] = RepairOrder::normalizeVndAmount($orderUpdates[$priceKey]);
+                        }
+                    }
 
-                app(\App\Services\AuditLogService::class)->logFieldDiff(
-                    $order->tenant_id,
-                    $user,
-                    'Cập nhật toàn diện đơn hàng',
-                    $order,
-                    $oldValues,
-                    $orderUpdates,
-                    "Admin {$user->name} cập nhật thông tin đơn {$order->order_code}"
-                );
+                    if (isset($orderUpdates['estimated_price'])) {
+                        if (! isset($orderUpdates['total_price'])) {
+                            $orderUpdates['total_price'] = $orderUpdates['estimated_price'];
+                        }
+                        unset($orderUpdates['estimated_price']);
+                    }
 
-                if ($isPriceModified) {
-                    $reason = $orderUpdates['price_note'] ?? ($request->input('reason') ?? 'Điều chỉnh giá đơn hàng');
+                    if (isset($orderUpdates['total_price']) && ! isset($orderUpdates['initial_price'])) {
+                        if ($order->initial_price === null || (float) $order->initial_price <= 1) {
+                            if (empty($order->additional_services)) {
+                                $orderUpdates['initial_price'] = $orderUpdates['total_price'];
+                            } else {
+                                $orderUpdates['initial_price'] = 0.0;
+                            }
+                        }
+                    }
+
+                    $oldPrice = (float) ($order->total_price ?? 0);
+                    $isPriceModified = isset($orderUpdates['total_price']) && (float) $orderUpdates['total_price'] !== $oldPrice;
+                    $newPrice = isset($orderUpdates['total_price']) ? (float) $orderUpdates['total_price'] : $oldPrice;
+                    $priceDiff = $newPrice - $oldPrice;
+
+                    $oldValues = $order->only(array_keys($orderUpdates));
+
+                    if (! empty($orderUpdates)) {
+                        $order->update($orderUpdates);
+                    }
+
+                    if ($requestedStatus !== null) {
+                        $normalizedRequested = $this->normalizeStatus((string) $requestedStatus);
+                        $normalizedCurrent = $this->normalizeStatus((string) $order->status);
+                        if ($normalizedRequested !== $normalizedCurrent) {
+                            $this->workflowService->transition($order, $normalizedRequested, [
+                                'user'          => $user,
+                                'admin_id'      => $user->id,
+                                'admin_name'    => $user->name,
+                                'technician_id' => $orderUpdates['technician_id'] ?? $order->technician_id,
+                                'reason'        => $request->input('reason') ?? 'Cập nhật trạng thái từ biểu mẫu chỉnh sửa đơn',
+                                'ip'            => $request->ip(),
+                                'user_agent'    => $request->userAgent(),
+                            ]);
+                        }
+                    }
+
                     app(\App\Services\AuditLogService::class)->logFieldDiff(
                         $order->tenant_id,
                         $user,
-                        'Sửa giá đơn hàng',
+                        'Cập nhật toàn diện đơn hàng',
                         $order,
-                        ['total_price' => $oldPrice],
-                        ['total_price' => $newPrice],
-                        "Điều chỉnh giá đơn {$order->order_code}: " . number_format($oldPrice) . " ₫ -> " . number_format($newPrice) . " ₫ (chênh lệch: " . number_format($priceDiff) . " ₫). Lý do: {$reason}",
-                        [
-                            'old_price'  => $oldPrice,
-                            'new_price'  => $newPrice,
-                            'difference' => $priceDiff,
-                            'reason'     => $reason,
-                            'order_id'   => $order->id,
-                            'order_code' => $order->order_code,
-                        ]
+                        $oldValues,
+                        $orderUpdates,
+                        "Admin {$user->name} cập nhật thông tin đơn {$order->order_code}"
                     );
-                }
 
-                return $this->success(
-                    $order->fresh([
-                        'customer',
-                        'deviceModel',
-                        'branch',
-                        'technician',
-                        'createdByUser:id,name,role',
-                        'tenant:id,name,code,logo_url,hotline,receipt_footer_note',
-                    ]),
-                    'Admin cập nhật thông tin đơn sửa chữa thành công.'
-                );
-            });
+                    if ($isPriceModified) {
+                        $reason = $orderUpdates['price_note'] ?? ($request->input('reason') ?? 'Điều chỉnh giá đơn hàng');
+                        app(\App\Services\AuditLogService::class)->logFieldDiff(
+                            $order->tenant_id,
+                            $user,
+                            'Sửa giá đơn hàng',
+                            $order,
+                            ['total_price' => $oldPrice],
+                            ['total_price' => $newPrice],
+                            "Điều chỉnh giá đơn {$order->order_code}: " . number_format($oldPrice) . " ₫ -> " . number_format($newPrice) . " ₫ (chênh lệch: " . number_format($priceDiff) . " ₫). Lý do: {$reason}",
+                            [
+                                'old_price'  => $oldPrice,
+                                'new_price'  => $newPrice,
+                                'difference' => $priceDiff,
+                                'reason'     => $reason,
+                                'order_id'   => $order->id,
+                                'order_code' => $order->order_code,
+                            ]
+                        );
+                    }
+
+                    return $this->success(
+                        $order->fresh([
+                            'customer',
+                            'deviceModel',
+                            'branch',
+                            'technician',
+                            'createdByUser:id,name,role',
+                            'tenant:id,name,code,logo_url,hotline,receipt_footer_note',
+                        ]),
+                        'Admin cập nhật thông tin đơn sửa chữa thành công.'
+                    );
+                });
+            } catch (\DomainException $e) {
+                return $this->failure($e->getMessage(), 422);
+            } catch (\Symfony\Component\HttpKernel\Exception\ConflictHttpException $e) {
+                return $this->failure($e->getMessage(), 409);
+            }
         }
 
         if ($request->has('shipping_address') && (! $user || ! in_array($user->role, ['cskh', 'admin', 'super_admin'], true))) {
@@ -1421,22 +1458,39 @@ class OrderController extends Controller
             ->get()
             ->keyBy('item_name');
 
+        $now = now();
+        $newRows = [];
+
         foreach ($validated['items'] as $item) {
-            $existing = $existingItems->get($item['item_name']);
+            $itemName = $item['item_name'];
+            $itemStatus = $item['status'];
+            $itemNote = $item['note'] ?? null;
+
+            $existing = $existingItems->get($itemName);
             if ($existing) {
-                $existing->update([
-                    'status' => $item['status'],
-                    'note'   => $item['note'] ?? null,
-                ]);
+                if ($existing->status !== $itemStatus || $existing->note !== $itemNote) {
+                    $existing->update([
+                        'status' => $itemStatus,
+                        'note'   => $itemNote,
+                    ]);
+                }
+            } elseif (isset($newRows[$itemName])) {
+                $newRows[$itemName]['status'] = $itemStatus;
+                $newRows[$itemName]['note'] = $itemNote;
             } else {
-                $created = IntakeChecklist::create([
+                $newRows[$itemName] = [
                     'repair_order_id' => $order->id,
-                    'item_name'       => $item['item_name'],
-                    'status'          => $item['status'],
-                    'note'            => $item['note'] ?? null,
-                ]);
-                $existingItems->put($item['item_name'], $created);
+                    'item_name'       => $itemName,
+                    'status'          => $itemStatus,
+                    'note'            => $itemNote,
+                    'created_at'      => $now,
+                    'updated_at'      => $now,
+                ];
             }
+        }
+
+        if (! empty($newRows)) {
+            IntakeChecklist::insert(array_values($newRows));
         }
 
         return $this->success(

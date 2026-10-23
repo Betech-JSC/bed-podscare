@@ -12,10 +12,12 @@ use App\Models\Tenant;
 use App\Models\User;
 use App\Models\WorkShift;
 use Carbon\Carbon;
+use Illuminate\Foundation\Testing\DatabaseTransactions;
 use Tests\TestCase;
 
 class PaymentCashShiftSyncTest extends TestCase
 {
+    use DatabaseTransactions;
     protected Tenant $tenant;
     protected Branch $branch;
     protected User $cashierUser;
@@ -43,22 +45,24 @@ class PaymentCashShiftSyncTest extends TestCase
             'is_active' => true,
         ]);
 
-        $this->cashierUser = User::where('tenant_id', $this->tenant->id)->where('role', 'cashier')->first() ?? User::create([
+        $this->cashierUser = User::where('tenant_id', $this->tenant->id)->where('branch_id', $this->branch->id)->where('role', 'cashier')->first() ?? User::forceCreate([
             'tenant_id' => $this->tenant->id,
             'branch_id' => $this->branch->id,
             'name'      => 'Thu Ngân Test',
             'email'     => 'cashier_test_' . uniqid() . '@fixo.vn',
             'password'  => bcrypt('secret123'),
             'role'      => 'cashier',
+            'is_active' => true,
         ]);
 
-        $this->adminUser = User::where('tenant_id', $this->tenant->id)->where('role', 'admin')->first() ?? User::create([
+        $this->adminUser = User::where('tenant_id', $this->tenant->id)->where('branch_id', $this->branch->id)->where('role', 'admin')->first() ?? User::forceCreate([
             'tenant_id' => $this->tenant->id,
             'branch_id' => $this->branch->id,
             'name'      => 'Admin Test',
             'email'     => 'admin_sync_' . uniqid() . '@fixo.vn',
             'password'  => bcrypt('secret123'),
             'role'      => 'admin',
+            'is_active' => true,
         ]);
 
         $this->customer = Customer::create([

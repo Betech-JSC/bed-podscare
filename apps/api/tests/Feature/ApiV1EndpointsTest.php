@@ -7,11 +7,13 @@ use App\Models\Customer;
 use App\Models\DeviceModel;
 use App\Models\RepairOrder;
 use App\Models\User;
+use Illuminate\Foundation\Testing\DatabaseTransactions;
 use Illuminate\Support\Facades\Hash;
 use Tests\TestCase;
 
 class ApiV1EndpointsTest extends TestCase
 {
+    use DatabaseTransactions;
     /**
      * Test public tracking endpoint.
      */

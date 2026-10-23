@@ -11,11 +11,28 @@ const __dirname = path.dirname(__filename);
 const webRoot = path.resolve(__dirname, '..');
 
 test('OpenSpec: role-by-role-audit-and-subscreen-fixes Test Suite', async (t) => {
+  const readDashboardAll = () => {
+    const dashboardPath = path.join(webRoot, 'app/dashboard/page.tsx');
+    const compDir = path.join(webRoot, 'app/dashboard/components');
+    const compFiles = fs.existsSync(compDir)
+      ? fs.readdirSync(compDir).filter((f) => f.endsWith('.tsx')).map((f) => fs.readFileSync(path.join(compDir, f), 'utf-8'))
+      : [];
+    return [fs.readFileSync(dashboardPath, 'utf-8'), ...compFiles].join('\n');
+  };
+
+  const readRepairsAll = () => {
+    const repairsPath = path.join(webRoot, 'app/repairs/page.tsx');
+    const compDir = path.join(webRoot, 'app/repairs/components');
+    const compFiles = fs.existsSync(compDir)
+      ? fs.readdirSync(compDir).filter((f) => f.endsWith('.tsx')).map((f) => fs.readFileSync(path.join(compDir, f), 'utf-8'))
+      : [];
+    return [fs.readFileSync(repairsPath, 'utf-8'), ...compFiles].join('\n');
+  };
+
   await t.test('Task 1.1: CheckoutHandoverModal & Dashboard CSKH - VietQR, refreshShift() & nút Thu tiền & Trả máy trực tiếp', () => {
     const checkoutPath = path.join(webRoot, 'app/components/CheckoutHandoverModal.tsx');
-    const dashboardPath = path.join(webRoot, 'app/dashboard/page.tsx');
     const checkoutContent = fs.readFileSync(checkoutPath, 'utf-8');
-    const dashboardContent = fs.readFileSync(dashboardPath, 'utf-8');
+    const dashboardContent = readDashboardAll();
 
     // CheckoutHandoverModal imports useShift and calls refreshShift() + renders checkout-vietqr-box
     assert.ok(checkoutContent.includes('useShift'), 'CheckoutHandoverModal phải import useShift');
@@ -45,12 +62,10 @@ test('OpenSpec: role-by-role-audit-and-subscreen-fixes Test Suite', async (t) =>
   });
 
   await t.test('Task 1.2: Dọn dẹp triệt để tàn dư Chờ khách duyệt / báo giá trên Dashboard, FSM, Repairs và IntakeWizardModal', () => {
-    const dashboardPath = path.join(webRoot, 'app/dashboard/page.tsx');
-    const repairsPath = path.join(webRoot, 'app/repairs/page.tsx');
     const intakePath = path.join(webRoot, 'app/components/IntakeWizardModal.tsx');
 
-    const dashboardContent = fs.readFileSync(dashboardPath, 'utf-8');
-    const repairsContent = fs.readFileSync(repairsPath, 'utf-8');
+    const dashboardContent = readDashboardAll();
+    const repairsContent = readRepairsAll();
     const intakeContent = fs.readFileSync(intakePath, 'utf-8');
 
     assert.ok(
@@ -169,12 +184,12 @@ test('OpenSpec: role-by-role-audit-and-subscreen-fixes Test Suite', async (t) =>
   });
 
   await t.test('Task 2.2: Đồng bộ mở Drawer chi tiết đơn tại bảng Đơn sửa chữa gần đây trên Dashboard', () => {
-    const dashboardPath = path.join(webRoot, 'app/dashboard/page.tsx');
-    const dashboardContent = fs.readFileSync(dashboardPath, 'utf-8');
+    const dashboardContent = readDashboardAll();
 
     assert.ok(
-      dashboardContent.includes('onClick={() => handleOpenOrderDetail(o.id)}'),
-      'Bảng Đơn sửa chữa gần đây trên Dashboard phải gọi handleOpenOrderDetail(o.id) để mở Drawer chi tiết ngay tại chỗ'
+      dashboardContent.includes('onClick={() => handleOpenOrderDetail(o.id)}') ||
+        dashboardContent.includes('onClick={() => onOpenOrderDetail(o.id)}'),
+      'Bảng Đơn sửa chữa gần đây trên Dashboard phải gọi handleOpenOrderDetail(o.id) / onOpenOrderDetail(o.id) để mở Drawer chi tiết ngay tại chỗ'
     );
     assert.ok(
       dashboardContent.includes('warranty_terms_days') && dashboardContent.includes('special_parts_needed'),
@@ -184,10 +199,9 @@ test('OpenSpec: role-by-role-audit-and-subscreen-fixes Test Suite', async (t) =>
 
   await t.test('Task 2.3: Sửa 2 nút bị lỗi trong Drawer Hồ sơ bệnh án tại trang Bảo hành (/warranty) & hỗ trợ ?intake=warranty tại /repairs', () => {
     const warrantyPath = path.join(webRoot, 'app/warranty/page.tsx');
-    const repairsPath = path.join(webRoot, 'app/repairs/page.tsx');
 
     const warrantyContent = fs.readFileSync(warrantyPath, 'utf-8');
-    const repairsContent = fs.readFileSync(repairsPath, 'utf-8');
+    const repairsContent = readRepairsAll();
 
     assert.ok(
       warrantyContent.includes('router.push(`/print/${encodeURIComponent(selectedWarranty.orderCode)}`)'),
@@ -207,11 +221,10 @@ test('OpenSpec: role-by-role-audit-and-subscreen-fixes Test Suite', async (t) =>
   await t.test('Task 3.1 & 3.2: Bảo toàn special_parts_status trong providers.tsx & Cảnh báo đỏ nổi bật tại /tech và /repairs', () => {
     const providersPath = path.join(webRoot, 'app/providers.tsx');
     const techPath = path.join(webRoot, 'app/tech/page.tsx');
-    const repairsPath = path.join(webRoot, 'app/repairs/page.tsx');
 
     const providersContent = fs.readFileSync(providersPath, 'utf-8');
     const techContent = fs.readFileSync(techPath, 'utf-8');
-    const repairsContent = fs.readFileSync(repairsPath, 'utf-8');
+    const repairsContent = readRepairsAll();
 
     assert.ok(
       providersContent.includes('special_parts_needed: o.special_parts_needed') &&

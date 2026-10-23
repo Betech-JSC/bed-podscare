@@ -11,6 +11,7 @@ class Payment extends Model
     use HasFactory;
 
     protected $fillable = [
+        'tenant_id',
         'payment_code',
         'repair_order_id',
         'amount',

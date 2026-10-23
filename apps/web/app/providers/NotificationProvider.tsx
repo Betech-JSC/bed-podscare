@@ -351,10 +351,13 @@ export const NotificationProvider: React.FC<NotificationProviderProps> = ({
 
     refreshNotifications();
 
-    // Chu kỳ polling thông minh mỗi 15 giây để tự động đồng bộ thông báo mới từ database
-    const interval = setInterval(() => {
-      refreshNotifications();
-    }, 15000);
+    // Chỉ bật chu kỳ polling 15 giây khi WebSocket/EventBus chưa kết nối (!isConnected)
+    let interval: ReturnType<typeof setInterval> | null = null;
+    if (!isConnected) {
+      interval = setInterval(() => {
+        refreshNotifications();
+      }, 15000);
+    }
 
     // Tự động tải lại khi người dùng quay lại tab trình duyệt
     const handleFocus = () => {
@@ -365,12 +368,14 @@ export const NotificationProvider: React.FC<NotificationProviderProps> = ({
     }
 
     return () => {
-      clearInterval(interval);
+      if (interval) {
+        clearInterval(interval);
+      }
       if (typeof window !== 'undefined') {
         window.removeEventListener('focus', handleFocus);
       }
     };
-  }, [enabled, refreshNotifications]);
+  }, [enabled, isConnected, refreshNotifications]);
 
   // Đánh dấu đã đọc một thông báo (Optimistic update + Sync REST API)
   const markAsRead = useCallback(async (id: string | number) => {

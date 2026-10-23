@@ -10,6 +10,7 @@ import {
   useToast,
   EmptyState,
   Icon,
+  resolveOrderStatus,
 } from '@podscare/ui';
 import { AppShell } from '../components/AppShell';
 import { TechOrderDetailModal } from '../components/TechOrderDetailModal';
@@ -80,28 +81,8 @@ export default function TechnicianQueuePage() {
     if (!Array.isArray(raw)) {
       return orders || [];
     }
-    const statusMap: Record<string, { label: string; type: any }> = {
-      inspecting: { label: 'Đang kiểm tra', type: 'progress' },
-      waiting_approval: { label: 'Chờ khách duyệt', type: 'wait' },
-      waiting_tech: { label: 'Chờ kỹ thuật', type: 'new' },
-      assigned: { label: 'Đã nhận đơn', type: 'wait' },
-      in_repair: { label: 'Đang sửa', type: 'progress' },
-      waiting_parts: { label: 'Chờ linh kiện', type: 'wait' },
-      rework_needed: { label: 'Cần sửa lại', type: 'danger' },
-      waiting_qc: { label: 'Chờ QC', type: 'ready' },
-      qc_pending: { label: 'Chờ QC', type: 'ready' },
-      ready_for_return: { label: 'Sẵn sàng trả', type: 'ready' },
-      waiting_pickup: { label: 'Chờ khách nhận', type: 'ready' },
-      completed: { label: 'Hoàn tất', type: 'gray' },
-      rejected: { label: 'Từ chối sửa', type: 'danger' },
-      cancelled: { label: 'Đã hủy', type: 'gray' },
-    };
     return raw.map((o: any) => {
-      const rawStatus = o.status === 'qc_pending' ? 'waiting_qc' : o.status;
-      const mappedStatus = statusMap[rawStatus] || statusMap[o.status] || {
-        label: o.status || 'Tiếp nhận mới',
-        type: 'wait',
-      };
+      const mappedStatus = resolveOrderStatus(o.status);
       return {
         id: o.order_code || String(o.id),
         order_type: o.order_type || o.orderType || 'in_store',
@@ -257,18 +238,13 @@ export default function TechnicianQueuePage() {
       refetch();
       toast(`Bạn đã nhận máy ${order.id} thành công! Đơn chuyển vào Đơn của tôi.`, 'success');
       setActiveTab('my_orders');
-    } catch {
-      const updated: RepairOrder = {
-        ...order,
-        tech: currentUser?.name || 'Kỹ thuật viên',
-        technicianId: currentUser?.id ? Number(currentUser.id) : undefined,
-        technician_id: currentUser?.id ? Number(currentUser.id) : undefined,
-        status: 'Đang sửa',
-        statusType: 'progress',
-      };
-      updateOrder(updated);
-      toast(`Bạn đã nhận máy ${order.id} thành công! Đơn chuyển vào Đơn của tôi.`, 'success');
-      setActiveTab('my_orders');
+    } catch (err: any) {
+      const errMsg =
+        err?.response?.data?.message ||
+        err?.data?.message ||
+        err?.message ||
+        'Không thể nhận máy. Đơn có thể đã được kỹ thuật viên khác tiếp nhận.';
+      toast(errMsg, 'error');
     } finally {
       setIsSubmitting(false);
     }
@@ -287,9 +263,13 @@ export default function TechnicianQueuePage() {
       await invalidateOrders();
       refetch();
       toast(`Đã bắt đầu sửa chữa đơn ${order.id}`, 'success');
-    } catch {
-      updateOrder({ ...order, status: 'Đang sửa', statusType: 'progress' });
-      toast(`Đã bắt đầu sửa chữa đơn ${order.id}`, 'success');
+    } catch (err: any) {
+      const errMsg =
+        err?.response?.data?.message ||
+        err?.data?.message ||
+        err?.message ||
+        `Không thể bắt đầu sửa chữa đơn ${order.id}.`;
+      toast(errMsg, 'error');
     }
   };
 
@@ -300,9 +280,13 @@ export default function TechnicianQueuePage() {
       await invalidateOrders();
       refetch();
       toast(`Đã tạm dừng đơn ${order.id} chờ linh kiện`, 'info');
-    } catch {
-      updateOrder({ ...order, status: 'Chờ linh kiện', statusType: 'wait' });
-      toast(`Đã tạm dừng đơn ${order.id} chờ linh kiện`, 'info');
+    } catch (err: any) {
+      const errMsg =
+        err?.response?.data?.message ||
+        err?.data?.message ||
+        err?.message ||
+        `Không thể tạm dừng đơn ${order.id}.`;
+      toast(errMsg, 'error');
     }
   };
 
@@ -313,9 +297,13 @@ export default function TechnicianQueuePage() {
       await invalidateOrders();
       refetch();
       toast(`Đã tiếp tục sửa chữa đơn ${order.id}`, 'success');
-    } catch {
-      updateOrder({ ...order, status: 'Đang sửa', statusType: 'progress' });
-      toast(`Đã tiếp tục sửa chữa đơn ${order.id}`, 'success');
+    } catch (err: any) {
+      const errMsg =
+        err?.response?.data?.message ||
+        err?.data?.message ||
+        err?.message ||
+        `Không thể tiếp tục sửa chữa đơn ${order.id}.`;
+      toast(errMsg, 'error');
     }
   };
 
@@ -327,8 +315,8 @@ export default function TechnicianQueuePage() {
           <div>
             <div className="text-xs font-bold text-[#819089] uppercase tracking-[1.05px] mb-1 flex items-center gap-2">
               <span>TECHNICIAN WORKSPACE</span>
-              <span className="w-1.5 h-1.5 rounded-full bg-[#176b58]" />
-              <span className="text-[#176b58] font-bold">
+              <span className="w-1.5 h-1.5 rounded-full bg-[#176b51]" />
+              <span className="text-[#176b51] font-bold">
                 {branchId === 'all' ? 'Toàn bộ chi nhánh' : branchString}
               </span>
             </div>
@@ -362,7 +350,7 @@ export default function TechnicianQueuePage() {
             </div>
           ) : (
             <div className="flex items-center gap-2">
-              <div className="h-9 border border-[#d6dfda] rounded-[8px] px-3 text-xs text-[#176b58] bg-[#eaf4ef] font-semibold flex items-center gap-1.5 cursor-default select-none pointer-events-none">
+              <div className="h-9 border border-[#d6dfda] rounded-[8px] px-3 text-xs text-[#176b51] bg-[#eaf4ef] font-semibold flex items-center gap-1.5 cursor-default select-none pointer-events-none">
                 <span>
                   Chi nhánh trực: {displayBranchText}
                 </span>
@@ -416,7 +404,7 @@ export default function TechnicianQueuePage() {
             onClick={() => setActiveTab('my_orders')}
             className={`cursor-pointer transition-all ${
               activeTab === 'my_orders'
-                ? 'border-[#176b58] ring-2 ring-[#176b58]/20 bg-[#f7faf8]'
+                ? 'border-[#176b51] ring-2 ring-[#176b51]/20 bg-[#f7faf8]'
                 : 'hover:border-[#b4d6c4]'
             }`}
           />
@@ -429,7 +417,7 @@ export default function TechnicianQueuePage() {
             onClick={() => setActiveTab('available')}
             className={`cursor-pointer transition-all ${
               activeTab === 'available'
-                ? 'border-[#176b58] ring-2 ring-[#176b58]/20 bg-[#f7faf8]'
+                ? 'border-[#176b51] ring-2 ring-[#176b51]/20 bg-[#f7faf8]'
                 : 'hover:border-[#b4d6c4]'
             }`}
           />
@@ -442,7 +430,7 @@ export default function TechnicianQueuePage() {
             onClick={() => setActiveTab('my_orders')}
             className={`cursor-pointer transition-all ${
               activeTab === 'my_orders'
-                ? 'border-[#176b58] ring-2 ring-[#176b58]/20 bg-[#f7faf8]'
+                ? 'border-[#176b51] ring-2 ring-[#176b51]/20 bg-[#f7faf8]'
                 : 'hover:border-[#b4d6c4]'
             }`}
           />
@@ -461,7 +449,7 @@ export default function TechnicianQueuePage() {
             onClick={() => setActiveTab('completed')}
             className={`cursor-pointer transition-all ${
               activeTab === 'completed'
-                ? 'border-[#176b58] ring-2 ring-[#176b58]/20 bg-[#f7faf8]'
+                ? 'border-[#176b51] ring-2 ring-[#176b51]/20 bg-[#f7faf8]'
                 : 'hover:border-[#b4d6c4]'
             }`}
           />
@@ -480,7 +468,7 @@ export default function TechnicianQueuePage() {
                 onClick={() => setDateFilter('today')}
                 className={`px-3 py-1.5 rounded-[8px] text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
                   dateFilter === 'today'
-                    ? 'bg-[#176b58] text-white shadow-xs'
+                    ? 'bg-[#176b51] text-white shadow-xs'
                     : 'bg-[#f4f7f5] text-[#556960] hover:bg-[#eaf0ec]'
                 }`}
               >
@@ -492,7 +480,7 @@ export default function TechnicianQueuePage() {
                 onClick={() => setDateFilter('3_days')}
                 className={`px-3 py-1.5 rounded-[8px] text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
                   dateFilter === '3_days'
-                    ? 'bg-[#176b58] text-white shadow-xs'
+                    ? 'bg-[#176b51] text-white shadow-xs'
                     : 'bg-[#f4f7f5] text-[#556960] hover:bg-[#eaf0ec]'
                 }`}
               >
@@ -504,7 +492,7 @@ export default function TechnicianQueuePage() {
                 onClick={() => setDateFilter('7_days')}
                 className={`px-3 py-1.5 rounded-[8px] text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
                   dateFilter === '7_days'
-                    ? 'bg-[#176b58] text-white shadow-xs'
+                    ? 'bg-[#176b51] text-white shadow-xs'
                     : 'bg-[#f4f7f5] text-[#556960] hover:bg-[#eaf0ec]'
                 }`}
               >
@@ -514,18 +502,18 @@ export default function TechnicianQueuePage() {
           </div>
           <div className="text-[11px] text-[#6b7d74] flex items-center gap-1.5">
             {dateFilter === 'today' ? (
-              <span className="text-[#176b58] bg-[#eaf4ef] px-2 py-0.5 rounded font-medium flex items-center gap-1">
-                <span className="w-1.5 h-1.5 rounded-full bg-[#176b58] animate-pulse" />
+              <span className="text-[#176b51] bg-[#eaf4ef] px-2 py-0.5 rounded font-medium flex items-center gap-1">
+                <span className="w-1.5 h-1.5 rounded-full bg-[#176b51] animate-pulse" />
                 Đơn ca hôm nay & các đơn dở dang tồn lại
               </span>
             ) : dateFilter === '3_days' ? (
-              <span className="text-[#176b58] bg-[#eaf4ef] px-2.5 py-1 rounded font-medium flex items-center gap-1.5 border border-[#cbe3d6]">
-                <Icon name="alert" size={14} className="text-[#176b58]" />
+              <span className="text-[#176b51] bg-[#eaf4ef] px-2.5 py-1 rounded font-medium flex items-center gap-1.5 border border-[#cbe3d6]">
+                <Icon name="alert" size={14} className="text-[#176b51]" />
                 <span>Hiển thị các máy nhận trong 3 ngày qua để theo dõi và hoàn tất sửa chữa.</span>
               </span>
             ) : (
-              <span className="text-[#176b58] bg-[#eaf4ef] px-2.5 py-1 rounded font-medium flex items-center gap-1.5 border border-[#cbe3d6]">
-                <Icon name="alert" size={14} className="text-[#176b58]" />
+              <span className="text-[#176b51] bg-[#eaf4ef] px-2.5 py-1 rounded font-medium flex items-center gap-1.5 border border-[#cbe3d6]">
+                <Icon name="alert" size={14} className="text-[#176b51]" />
                 <span>Mở rộng phạm vi 7 ngày qua: Theo dõi toàn bộ máy dở dang và hoàn thành trong tuần.</span>
               </span>
             )}
@@ -539,7 +527,7 @@ export default function TechnicianQueuePage() {
             onClick={() => setActiveTab('my_orders')}
             className={`px-4 py-2.5 rounded-[8px] font-semibold text-sm transition-all flex items-center gap-2 cursor-pointer ${
               activeTab === 'my_orders'
-                ? 'bg-[#176b58] text-white shadow-xs'
+                ? 'bg-[#176b51] text-white shadow-xs'
                 : 'bg-white text-[#52635a] hover:bg-[#f0f4f2] border border-[#e5ece8]'
             }`}
           >
@@ -548,7 +536,7 @@ export default function TechnicianQueuePage() {
               className={`px-2 py-0.5 rounded-full text-xs font-bold ${
                 activeTab === 'my_orders'
                   ? 'bg-white/20 text-white'
-                  : 'bg-[#eaf4ef] text-[#176b58]'
+                  : 'bg-[#eaf4ef] text-[#176b51]'
               }`}
             >
               {myActiveOrders.length}
@@ -560,7 +548,7 @@ export default function TechnicianQueuePage() {
             onClick={() => setActiveTab('available')}
             className={`px-4 py-2.5 rounded-[8px] font-semibold text-sm transition-all flex items-center gap-2 cursor-pointer ${
               activeTab === 'available'
-                ? 'bg-[#176b58] text-white shadow-xs'
+                ? 'bg-[#176b51] text-white shadow-xs'
                 : 'bg-white text-[#52635a] hover:bg-[#f0f4f2] border border-[#e5ece8]'
             }`}
           >
@@ -569,7 +557,7 @@ export default function TechnicianQueuePage() {
               className={`px-2 py-0.5 rounded-full text-xs font-bold ${
                 activeTab === 'available'
                   ? 'bg-white/20 text-white'
-                  : 'bg-[#eaf4ef] text-[#176b58]'
+                  : 'bg-[#eaf4ef] text-[#176b51]'
               }`}
             >
               {availableOrders.length}
@@ -581,7 +569,7 @@ export default function TechnicianQueuePage() {
             onClick={() => setActiveTab('completed')}
             className={`px-4 py-2.5 rounded-[8px] font-semibold text-sm transition-all flex items-center gap-2 cursor-pointer ${
               activeTab === 'completed'
-                ? 'bg-[#176b58] text-white shadow-xs'
+                ? 'bg-[#176b51] text-white shadow-xs'
                 : 'bg-white text-[#52635a] hover:bg-[#f0f4f2] border border-[#e5ece8]'
             }`}
           >
@@ -596,7 +584,7 @@ export default function TechnicianQueuePage() {
               className={`px-2 py-0.5 rounded-full text-xs font-bold ${
                 activeTab === 'completed'
                   ? 'bg-white/20 text-white'
-                  : 'bg-[#eaf4ef] text-[#176b58]'
+                  : 'bg-[#eaf4ef] text-[#176b51]'
               }`}
             >
               {myCompletedTodayOrders.length}
@@ -609,7 +597,7 @@ export default function TechnicianQueuePage() {
             onClick={() => setActiveTab('special_parts')}
             className={`px-4 py-2.5 rounded-[8px] font-semibold text-sm transition-all flex items-center gap-2 cursor-pointer ${
               activeTab === 'special_parts'
-                ? 'bg-[#176b58] text-white shadow-xs'
+                ? 'bg-[#176b51] text-white shadow-xs'
                 : 'bg-white text-[#52635a] hover:bg-[#f0f4f2] border border-[#e5ece8]'
             }`}
           >
@@ -639,7 +627,7 @@ export default function TechnicianQueuePage() {
                   Các đơn máy bạn đang trực tiếp phụ trách. Bấm vào đơn hoặc nút [Hoàn tất] để mở biểu mẫu nghiệm thu bàn giao CSKH.
                 </p>
               </div>
-              <span className="text-xs font-bold text-[#176b58] bg-[#eaf4ef] px-3 py-1 rounded-[10px]">
+              <span className="text-xs font-bold text-[#176b51] bg-[#eaf4ef] px-3 py-1 rounded-[10px]">
                 {myActiveOrders.length} đơn đang sửa
               </span>
             </div>
@@ -658,14 +646,14 @@ export default function TechnicianQueuePage() {
                       className={`bg-white border rounded-[12px] p-5 flex flex-col justify-between shadow-2xs hover:shadow-xs transition-all cursor-pointer group ${
                         isSpecialPartsPending
                           ? 'border-red-400 ring-1 ring-red-400/20 bg-red-50/10'
-                          : 'border-[#e5ece8] hover:border-[#176b58]'
+                          : 'border-[#e5ece8] hover:border-[#176b51]'
                       }`}
                       onClick={() => handleOpenDetailModal(order)}
                     >
                       <div className="space-y-3">
                         <div className="flex items-center justify-between">
                           <div className="flex items-center gap-1.5">
-                            <span className="font-mono font-bold text-sm text-[#176b58] bg-[#eaf4ef] px-2.5 py-1 rounded-[6px]">
+                            <span className="font-mono font-bold text-sm text-[#176b51] bg-[#eaf4ef] px-2.5 py-1 rounded-[6px]">
                               {order.id}
                             </span>
                             {(order.order_type === 'warranty' || order.orderType === 'warranty') && (
@@ -681,7 +669,7 @@ export default function TechnicianQueuePage() {
                         </div>
 
                         <div>
-                          <h3 className="font-heading font-bold text-base text-[#1c302b] m-0 group-hover:text-[#176b58] transition-colors">
+                          <h3 className="font-heading font-bold text-base text-[#1c302b] m-0 group-hover:text-[#176b51] transition-colors">
                             {order.device}
                           </h3>
                           {order.serial && order.serial !== 'Chưa cập nhật' && (
@@ -745,7 +733,7 @@ export default function TechnicianQueuePage() {
                                   e.stopPropagation();
                                   handleResumeRepair(order);
                                 }}
-                                className="px-2 py-0.5 rounded text-[11px] font-bold bg-[#176b58] text-white hover:bg-[#125848] transition-colors cursor-pointer"
+                                className="px-2 py-0.5 rounded text-[11px] font-bold bg-[#176b51] text-white hover:bg-[#125848] transition-colors cursor-pointer"
                               >
                                 Tiếp tục sửa
                               </button>
@@ -764,7 +752,7 @@ export default function TechnicianQueuePage() {
                           icon="printer"
                           disabled={isSilentPrinting}
                           onClick={() => handlePrintRoutingSlip(order)}
-                          className="px-2.5 text-xs text-[#176b58] border-[#c4ded0] hover:bg-[#eef6f2]"
+                          className="px-2.5 text-xs text-[#176b51] border-[#c4ded0] hover:bg-[#eef6f2]"
                           title="In nhanh tem dán khay linh kiện khổ nhiệt K80"
                         >
                           Tem K80
@@ -775,7 +763,7 @@ export default function TechnicianQueuePage() {
                           size="sm"
                           icon="refresh"
                           onClick={() => handleOpenHandoverModal(order)}
-                          className="px-2.5 text-xs text-[#176b58] border-[#b8d0c5] hover:bg-[#eef6f2] font-semibold"
+                          className="px-2.5 text-xs text-[#176b51] border-[#b8d0c5] hover:bg-[#eef6f2] font-semibold"
                           title="Bàn giao đơn cho KTV khác hoặc trả về hàng đợi chung"
                         >
                           Bàn giao
@@ -797,7 +785,7 @@ export default function TechnicianQueuePage() {
                               size="sm"
                               icon="wrench"
                               onClick={() => handleStartRepair(order)}
-                              className="text-xs text-[#176b58] border-[#c4ded0] hover:bg-[#eef6f2] font-semibold"
+                              className="text-xs text-[#176b51] border-[#c4ded0] hover:bg-[#eef6f2] font-semibold"
                             >
                               Bắt đầu sửa
                             </Button>
@@ -806,7 +794,7 @@ export default function TechnicianQueuePage() {
                               size="sm"
                               icon="check"
                               onClick={() => handleOpenDetailModal(order)}
-                              className="flex-1 font-bold text-xs bg-[#176b58] hover:bg-[#125848] text-white shadow-xs cursor-pointer"
+                              className="flex-1 font-bold text-xs bg-[#176b51] hover:bg-[#125848] text-white shadow-xs cursor-pointer"
                             >
                               Hoàn tất
                             </Button>
@@ -827,7 +815,7 @@ export default function TechnicianQueuePage() {
                               size="sm"
                               icon="check"
                               onClick={() => handleOpenDetailModal(order)}
-                              className="flex-1 font-bold text-xs bg-[#176b58] hover:bg-[#125848] text-white shadow-xs cursor-pointer"
+                              className="flex-1 font-bold text-xs bg-[#176b51] hover:bg-[#125848] text-white shadow-xs cursor-pointer"
                             >
                               Hoàn tất sửa chữa
                             </Button>
@@ -867,8 +855,8 @@ export default function TechnicianQueuePage() {
             <div className="flex items-center justify-between mb-4">
               <div className="flex items-center gap-2.5">
                 <span className="relative flex h-3 w-3">
-                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-[#176b58] opacity-75" />
-                  <span className="relative inline-flex rounded-full h-3 w-3 bg-[#176b58]" />
+                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-[#176b51] opacity-75" />
+                  <span className="relative inline-flex rounded-full h-3 w-3 bg-[#176b51]" />
                 </span>
                 <div>
                   <h2 className="font-heading font-bold text-base text-[#1c302b] m-0 flex items-center gap-2">
@@ -879,7 +867,7 @@ export default function TechnicianQueuePage() {
                   </p>
                 </div>
               </div>
-              <span className="text-xs font-bold text-[#176b58] bg-[#eaf4ef] px-3 py-1 rounded-[10px] border border-[#d2e8dd]">
+              <span className="text-xs font-bold text-[#176b51] bg-[#eaf4ef] px-3 py-1 rounded-[10px] border border-[#d2e8dd]">
                 {availableOrders.length} máy chờ nhận
               </span>
             </div>
@@ -889,12 +877,12 @@ export default function TechnicianQueuePage() {
                 {availableOrders.map((order) => (
                   <article
                     key={order.id}
-                    className="bg-white border-2 border-[#176b58]/20 hover:border-[#176b58] rounded-[12px] p-5 flex flex-col justify-between shadow-2xs hover:shadow-xs transition-all"
+                    className="bg-white border-2 border-[#176b51]/20 hover:border-[#176b51] rounded-[12px] p-5 flex flex-col justify-between shadow-2xs hover:shadow-xs transition-all"
                   >
                     <div className="space-y-3">
                       <div className="flex items-center justify-between">
                         <div className="flex items-center gap-1.5">
-                          <span className="font-mono font-bold text-sm text-[#176b58] bg-[#eaf4ef] px-2.5 py-1 rounded-[6px]">
+                          <span className="font-mono font-bold text-sm text-[#176b51] bg-[#eaf4ef] px-2.5 py-1 rounded-[6px]">
                             {order.id}
                           </span>
                           {(order.order_type === 'warranty' || order.orderType === 'warranty') && (
@@ -921,7 +909,7 @@ export default function TechnicianQueuePage() {
                       </div>
 
                       <div className="bg-[#f8faf9] border border-[#e5ece8] rounded-[8px] p-3 text-xs text-[#3d4d45] leading-relaxed">
-                        <span className="font-bold text-[#176b58] block mb-1">Mô tả lỗi khách báo:</span>
+                        <span className="font-bold text-[#176b51] block mb-1">Mô tả lỗi khách báo:</span>
                         {order.issue}
                       </div>
 
@@ -968,7 +956,7 @@ export default function TechnicianQueuePage() {
                         size="md"
                         disabled={isSubmitting}
                         onClick={() => handleGrabOrder(order)}
-                        className="flex-1 h-10 font-bold text-sm bg-[#176b58] hover:bg-[#125848] text-white shadow-xs cursor-pointer active:scale-[0.98] transition-transform"
+                        className="flex-1 h-10 font-bold text-sm bg-[#176b51] hover:bg-[#125848] text-white shadow-xs cursor-pointer active:scale-[0.98] transition-transform"
                       >
                         Nhận máy ngay
                       </Button>
@@ -1015,7 +1003,7 @@ export default function TechnicianQueuePage() {
                     <div className="space-y-3">
                       <div className="flex items-center justify-between">
                         <div className="flex items-center gap-1.5">
-                          <span className="font-mono font-bold text-sm text-[#176b58] bg-[#eaf4ef] px-2.5 py-1 rounded-[6px]">
+                          <span className="font-mono font-bold text-sm text-[#176b51] bg-[#eaf4ef] px-2.5 py-1 rounded-[6px]">
                             {order.id}
                           </span>
                           {(order.order_type === 'warranty' || order.orderType === 'warranty') && (
@@ -1042,7 +1030,7 @@ export default function TechnicianQueuePage() {
                       </div>
 
                       <div className="bg-[#f2f8f5] border border-[#d2e8dd] rounded-[8px] p-3 text-xs text-[#1e583f] leading-relaxed">
-                        <span className="font-bold text-[#176b58] block mb-1">Nghiệm thu hoàn tất:</span>
+                        <span className="font-bold text-[#176b51] block mb-1">Nghiệm thu hoàn tất:</span>
                         {order.repairNote || 'Đã sửa chữa và kiểm tra hoàn chỉnh theo tiêu chuẩn xuất xưởng.'}
                       </div>
 
@@ -1061,7 +1049,7 @@ export default function TechnicianQueuePage() {
                         icon="printer"
                         disabled={isSilentPrinting}
                         onClick={() => handlePrintRoutingSlip(order)}
-                        className="px-2.5 text-xs text-[#176b58] border-[#c4ded0] hover:bg-[#eef6f2]"
+                        className="px-2.5 text-xs text-[#176b51] border-[#c4ded0] hover:bg-[#eef6f2]"
                       >
                         In tem K80
                       </Button>
@@ -1095,7 +1083,7 @@ export default function TechnicianQueuePage() {
             <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
               <div>
                 <h2 className="font-heading font-bold text-base text-[#1c302b] m-0 flex items-center gap-2">
-                  <Icon name="cart" size={18} className="text-[#176b58]" />
+                  <Icon name="cart" size={18} className="text-[#176b51]" />
                   <span>Danh sách máy cần mua linh kiện ngoài ({mySpecialPartsOrders.length})</span>
                 </h2>
                 <p className="text-xs text-[#809088] mt-0.5 mb-0">
@@ -1111,7 +1099,7 @@ export default function TechnicianQueuePage() {
                     setSpecialPartsOrderTarget(null);
                     setSpecialPartsModalOpen(true);
                   }}
-                  className="bg-[#176b58] hover:bg-[#125848] text-white font-bold text-xs flex items-center gap-1.5 shadow-xs"
+                  className="bg-[#176b51] hover:bg-[#125848] text-white font-bold text-xs flex items-center gap-1.5 shadow-xs"
                 >
                   <Icon name="plus" size={14} />
                   <span>+ Thêm yêu cầu mua ngoài</span>
@@ -1130,14 +1118,14 @@ export default function TechnicianQueuePage() {
                     <article
                       key={order.id}
                       className={`bg-white border rounded-[12px] p-5 flex flex-col justify-between shadow-2xs hover:shadow-xs transition-all cursor-pointer group ${
-                        isPurchased ? 'border-[#a7d9c0] hover:border-[#176b58]' : 'border-red-400 ring-1 ring-red-400/20 bg-red-50/10 hover:border-red-500'
+                        isPurchased ? 'border-[#a7d9c0] hover:border-[#176b51]' : 'border-red-400 ring-1 ring-red-400/20 bg-red-50/10 hover:border-red-500'
                       }`}
                       onClick={() => handleOpenDetailModal(order)}
                     >
                       <div className="space-y-3">
                         <div className="flex items-center justify-between">
                           <div className="flex items-center gap-1.5">
-                            <span className="font-mono font-bold text-sm text-[#176b58] bg-[#eaf4ef] px-2.5 py-1 rounded-[6px]">
+                            <span className="font-mono font-bold text-sm text-[#176b51] bg-[#eaf4ef] px-2.5 py-1 rounded-[6px]">
                               {order.id}
                             </span>
                             {(order.order_type === 'warranty' || order.orderType === 'warranty') && (
@@ -1171,7 +1159,7 @@ export default function TechnicianQueuePage() {
                         </div>
 
                         <div>
-                          <h3 className="font-heading font-bold text-base text-[#1c302b] m-0 group-hover:text-[#176b58] transition-colors">
+                          <h3 className="font-heading font-bold text-base text-[#1c302b] m-0 group-hover:text-[#176b51] transition-colors">
                             {order.device}
                           </h3>
                           {order.serial && order.serial !== 'Chưa cập nhật' && (
@@ -1229,7 +1217,7 @@ export default function TechnicianQueuePage() {
                             size="sm"
                             data-testid={`tech-resume-special-part-btn-${order.id}`}
                             onClick={() => handleResumeRepair(order)}
-                            className="flex-1 text-xs font-bold bg-[#176b58] hover:bg-[#125848] text-white"
+                            className="flex-1 text-xs font-bold bg-[#176b51] hover:bg-[#125848] text-white"
                           >
                             Tiếp tục sửa máy
                           </Button>

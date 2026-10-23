@@ -152,6 +152,42 @@ export const VietQrPaymentModal: React.FC<VietQrPaymentModalProps> = ({
     amount,
   ]);
 
+  // Auto-polling trạng thái thanh toán VietQR mỗi 3 giây khi modal đang mở và chờ thanh toán
+  useEffect(() => {
+    if (!isOpen || !paymentId || paidSuccess || isConfirming) {
+      return;
+    }
+
+    const pollInterval = setInterval(async () => {
+      try {
+        const res: any = await paymentService.getVietQr(paymentId);
+        const data = res?.data || res;
+        if (data && (data.status === 'paid' || data.status === 'completed')) {
+          clearInterval(pollInterval);
+          setPaidSuccess(true);
+          try {
+            playAudioChime();
+          } catch (audioErr) {
+            console.warn('Audio chime error:', audioErr);
+          }
+          toast('Hệ thống đã ghi nhận chuyển khoản VietQR tự động thành công!', 'success');
+          if (onSuccess) {
+            onSuccess(data);
+          }
+          autoCloseRef.current = setTimeout(() => {
+            onClose();
+          }, 1500);
+        }
+      } catch {
+        // Bỏ qua lỗi mạng tạm thời trong chu kỳ polling
+      }
+    }, 3000);
+
+    return () => {
+      clearInterval(pollInterval);
+    };
+  }, [isOpen, paymentId, paidSuccess, isConfirming, onClose, onSuccess, toast]);
+
   const copyToClipboard = async (text: string, label: string, key: string) => {
     try {
       await navigator.clipboard.writeText(text);

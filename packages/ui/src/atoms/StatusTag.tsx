@@ -9,12 +9,12 @@ export interface StatusTagProps {
 }
 
 const statusColorMap: Record<OrderStatusType, string> = {
-  wait: 'text-[#9a6b28] bg-[#fbf3e5]',
-  progress: 'text-[#477b98] bg-[#edf4f7]',
-  ready: 'text-[#28765a] bg-[#e9f4ed]',
-  danger: 'text-[#ad5148] bg-[#fbefed]',
-  new: 'text-[#78699b] bg-[#f2eff8]',
-  gray: 'text-[#687a72] bg-[#eef2ef]',
+  wait: 'text-[#b77a21] bg-[#faf3e7]',
+  progress: 'text-[#4778a4] bg-[#edf4f8]',
+  ready: 'text-[#28805e] bg-[#eaf5ef]',
+  danger: 'text-[#bc5b52] bg-[#fbefed]',
+  new: 'text-[#7e729c] bg-[#f2eff8]',
+  gray: 'text-[#77847e] bg-[#f0f3f1]',
 };
 
 export const StatusTag: React.FC<StatusTagProps> = ({

@@ -69,10 +69,14 @@ class QcController extends Controller
         ]);
 
         return DB::transaction(function () use ($request, $validated) {
-            $order = RepairOrder::findOrFail($validated['repair_order_id']);
+            $order = RepairOrder::lockForUpdate()->findOrFail($validated['repair_order_id']);
             $user = $request->user();
             if ($user && ! in_array($user->role, ['admin', 'super_admin'], true) && $user->branch_id && (int) $order->branch_id !== (int) $user->branch_id) {
                 return $this->failure('Bạn không có quyền nộp biên bản QC cho đơn hàng thuộc chi nhánh khác.', 403);
+            }
+
+            if (in_array($order->status, ['completed', 'cancelled'], true)) {
+                return $this->failure('Không thể nộp biên bản QC cho đơn hàng đã hoàn tất hoặc đã hủy.', 422);
             }
 
             $inspection = QcInspection::create([

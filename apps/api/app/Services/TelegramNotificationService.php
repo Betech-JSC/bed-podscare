@@ -450,7 +450,7 @@ class TelegramNotificationService
                 return $activeRecipient;
             }
 
-            app(TelegramAiAssistantService::class)->handleIncomingMessage($activeRecipient, $text, $update);
+            \App\Jobs\ProcessTelegramAiMessageJob::dispatch($activeRecipient->id, $text, $update);
             return $activeRecipient;
         }
 
@@ -553,7 +553,7 @@ class TelegramNotificationService
 
                         $activeRecipient = $activeQuery->orderByDesc('id')->first();
                         if ($activeRecipient) {
-                            app(TelegramAiAssistantService::class)->handleIncomingMessage($activeRecipient, $text, $update);
+                            \App\Jobs\ProcessTelegramAiMessageJob::dispatch($activeRecipient->id, $text, $update);
                             $syncedCount++;
                         }
                     }
@@ -578,21 +578,6 @@ class TelegramNotificationService
             $tenantId = $order->tenant_id ?? $order->branch?->tenant_id;
             if (! $tenantId) {
                 return 0;
-            }
-
-            if (! app()->isProduction()) {
-                $hasPending = TelegramRecipient::query()
-                    ->where('tenant_id', $tenantId)
-                    ->where('is_active', true)
-                    ->where(function ($q) {
-                        $q->whereNull('telegram_chat_id')
-                            ->orWhere('telegram_chat_id', '');
-                    })
-                    ->exists();
-
-                if ($hasPending) {
-                    $this->syncUpdates((int) $tenantId);
-                }
             }
 
             $recipients = TelegramRecipient::query()

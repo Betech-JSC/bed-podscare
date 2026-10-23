@@ -1,4 +1,5 @@
 import React, { createContext, useContext, useState, useCallback } from 'react';
+import { Icon } from '../atoms/Icons';
 
 export interface ToastMessage {
   id: string;
@@ -50,18 +51,18 @@ export const ToastProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         {toasts.map((t) => (
           <div
             key={t.id}
-            className="bg-[#1c302b] text-white rounded-[8px] py-3 px-4 shadow-[0_9px_24px_rgba(16,38,28,0.18)] text-sm font-medium flex items-center gap-2.5 pointer-events-auto animate-in fade-in slide-in-from-bottom-2 duration-200 border border-[#2b443c]"
+            className="bg-[#17231f] text-white rounded-[8px] py-3 px-4 shadow-[0_9px_24px_rgba(16,38,28,0.18)] text-sm font-medium flex items-center gap-2.5 pointer-events-auto animate-in fade-in slide-in-from-bottom-2 duration-200 border border-[#2b443c]"
           >
             <span
               className={
                 t.type === 'error'
-                  ? 'text-[#f28b82] font-bold'
+                  ? 'text-[#f28b82] font-bold flex items-center'
                   : t.type === 'info'
-                  ? 'text-[#8ab4f8] font-bold'
-                  : 'text-[#85d3a7] font-bold'
+                  ? 'text-[#8ab4f8] font-bold flex items-center'
+                  : 'text-[#85d3a7] font-bold flex items-center'
               }
             >
-              {t.type === 'error' ? '!' : '✓'}
+              <Icon name={t.type === 'error' ? 'alert' : 'check'} size={14} />
             </span>
             <span>{t.message}</span>
           </div>
@@ -70,3 +71,4 @@ export const ToastProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     </ToastContext.Provider>
   );
 };
+

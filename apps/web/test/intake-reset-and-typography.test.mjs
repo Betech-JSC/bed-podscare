@@ -178,12 +178,15 @@ test('2. K80 Thermal Print Typography: Anti-Thermal Bleeding Standards', async (
   });
 
   await t.test('2.4 generateBarcodeSVG: nhãn text có font-weight="600"', () => {
+    const barcodeUtilsPath = path.resolve(__dirname, '../app/components/print/BarcodeQRUtils.ts');
+    const barcodeUtilsContent = fs.readFileSync(barcodeUtilsPath, 'utf-8');
+    const combinedPrintSource = k80Content + '\n' + barcodeUtilsContent;
     assert.ok(
-      k80Content.includes('font-weight="600"'),
+      combinedPrintSource.includes('font-weight="600"'),
       'generateBarcodeSVG phải tạo thẻ text có font-weight="600"'
     );
     assert.strictEqual(
-      /font-weight="bold"/g.test(k80Content),
+      /font-weight="bold"/g.test(combinedPrintSource),
       false,
       'generateBarcodeSVG không được dùng font-weight="bold"'
     );

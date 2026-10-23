@@ -72,7 +72,10 @@ class RefundService
             $refundReason = $params['refund_reason'] ?? 'Hoàn tiền đơn hàng';
             $transactionRef = $params['transaction_ref'] ?? null;
 
-            $tenantId = $order->tenant_id ?? $actor->tenant_id ?? 1;
+            $tenantId = $order->tenant_id ?? $actor->tenant_id;
+            if (! $tenantId) {
+                throw new DomainException('Không xác định được cửa hàng (tenant_id) để thực hiện hoàn tiền.');
+            }
             $branchId = $order->branch_id;
 
             // Kiểm tra idempotency chống tạo trùng phiếu chi hoàn tiền

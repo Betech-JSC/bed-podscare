@@ -38,7 +38,10 @@ export interface RevenueOrderBreakdownItem {
   transfer_amount?: number;
   uncollected_amount: number;
   uncollected_amount_formatted?: string;
+  created_at?: string | null;
+  handed_over_at?: string | null;
   completed_at?: string | null;
+  updated_at?: string | null;
 }
 
 export interface DashboardSummary {
@@ -48,6 +51,8 @@ export interface DashboardSummary {
   daily_revenue?: number;
   daily_revenue_formatted?: string;
   selected_date?: string;
+  from_date?: string;
+  to_date?: string;
   selected_date_revenue?: number;
   selected_date_revenue_formatted?: string;
   selected_date_total_revenue?: number;
@@ -110,6 +115,8 @@ export interface DashboardKpiResponse {
   daily_revenue?: number;
   daily_revenue_formatted?: string;
   selected_date?: string;
+  from_date?: string;
+  to_date?: string;
   selected_date_revenue?: number;
   selected_date_revenue_formatted?: string;
   selected_date_total_revenue?: number;
