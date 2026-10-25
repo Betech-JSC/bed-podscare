@@ -20,6 +20,7 @@ import type { UserProfile } from '@podscare/types';
 import { saasService } from '@podscare/api-client';
 import { usePodsCare, useNotifications } from '../providers';
 import { ShiftControlWidget } from './ShiftControlWidget';
+import { HelpCenterModal } from './help-center/HelpCenterModal';
 
 export interface AppShellProps {
   children: React.ReactNode;
@@ -130,6 +131,7 @@ export const AppShell: React.FC<AppShellProps> = ({ children, crumbName = 'Tổn
   const [searchVal, setSearchVal] = useState('');
   const [logoutModalOpen, setLogoutModalOpen] = useState(false);
   const [logoutLoading, setLogoutLoading] = useState(false);
+  const [helpModalOpen, setHelpModalOpen] = useState(false);
 
   useEffect(() => {
     if (typeof window !== 'undefined') {
@@ -372,6 +374,11 @@ export const AppShell: React.FC<AppShellProps> = ({ children, crumbName = 'Tổn
         onBranchChange={(b) => setBranch(b.name, b.id)}
         repairsCount={repairsCount}
         qcCount={qcCount}
+        onHelpClick={
+          currentUser?.role !== 'super_admin'
+            ? () => setHelpModalOpen(true)
+            : undefined
+        }
         onLogout={() => setLogoutModalOpen(true)}
       />
 
@@ -464,6 +471,17 @@ export const AppShell: React.FC<AppShellProps> = ({ children, crumbName = 'Tổn
         branchName={branch}
         loading={logoutLoading}
       />
+
+      {/* In-App Role-Based Operations Help Center Modal (Store Roles Only) */}
+      {currentUser?.role !== 'super_admin' && (
+        <HelpCenterModal
+          isOpen={helpModalOpen}
+          onClose={() => setHelpModalOpen(false)}
+          user={currentUser}
+          branchName={branch}
+          onNavigate={handleNavigate}
+        />
+      )}
     </div>
   );
 };

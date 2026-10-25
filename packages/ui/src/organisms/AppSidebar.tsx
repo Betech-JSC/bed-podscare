@@ -567,28 +567,34 @@ export const AppSidebar: React.FC<AppSidebarProps> = ({
 
         {/* Sidebar Bottom: Help & Profile */}
         <div className="pt-2 border-t border-[#f0f3f1] mt-auto flex-none">
-          <div className="border border-[#e9eeeb] rounded-[10px] p-3 mb-2.5 bg-[#fafbfa]">
-            <div className="text-[10px] font-bold uppercase tracking-[1px] text-[#b77a21] mb-1">HỖ TRỢ VẬN HÀNH</div>
-            <strong className="text-sm font-bold text-[#17231f] block">Cần trợ giúp?</strong>
-            <p className="text-xs text-[#81908a] leading-normal my-1">
-              Xem tài liệu và quy trình chuẩn FIXO Repair OS.
-            </p>
-            <button
-              type="button"
-              onClick={() => {
-                if (onHelpClick) {
-                  onHelpClick();
-                } else {
-                  toast('Trung tâm trợ giúp: Hotline 1900 8888 hoặc fixo.com.vn/support', 'info');
-                }
-              }}
-              className="text-[#176b58] font-bold text-xs flex items-center gap-1 hover:underline cursor-pointer"
-            >
-              Mở trung tâm <span>↗</span>
-            </button>
-          </div>
+          {normalizedRole !== 'super_admin' && (
+            <div className="border border-[#e9eeeb] rounded-[10px] p-3 mb-2.5 bg-[#fafbfa]">
+              <div className="text-[10px] font-bold uppercase tracking-[1px] text-[#b77a21] mb-1">HỖ TRỢ VẬN HÀNH</div>
+              <strong className="text-sm font-bold text-[#17231f] block">Cần trợ giúp?</strong>
+              <p className="text-xs text-[#81908a] leading-normal my-1">
+                Xem tài liệu và quy trình chuẩn FIXO Repair OS.
+              </p>
+              <button
+                type="button"
+                onClick={() => {
+                  if (onHelpClick) {
+                    onHelpClick();
+                  } else {
+                    toast('Trung tâm trợ giúp: Hotline 1900 8888 hoặc fixo.com.vn/support', 'info');
+                  }
+                }}
+                className="text-[#176b58] font-bold text-xs flex items-center gap-1 hover:underline cursor-pointer"
+              >
+                Mở trung tâm <span>↗</span>
+              </button>
+            </div>
+          )}
 
-          <div className="flex items-center gap-3 pt-2.5 border-t border-[#f0f3f1]">
+          <div
+            className={`flex items-center gap-3 ${
+              normalizedRole !== 'super_admin' ? 'pt-2.5 border-t border-[#f0f3f1]' : 'pt-1'
+            }`}
+          >
             <Avatar initials={user.initials || 'NV'} variant="dark" size="md" />
             <div className="min-w-0 flex-1">
               <b className="block text-sm text-[#1c302b] font-bold truncate">{user.name}</b>
