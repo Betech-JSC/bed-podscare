@@ -75,12 +75,21 @@ export const useInvalidateOrders = () => {
   return invalidateOrders;
 };
 
+export const ORDER_QUERY_KEYS = [
+  'orders',
+  'repairs',
+  'tech-orders',
+  'qc-orders',
+  'qc-pending-orders',
+] as const;
+
 export const invalidateOrdersQuery = async (client: QueryClient) => {
   await Promise.all([
     client.invalidateQueries({ queryKey: ['orders'] }),
     client.invalidateQueries({ queryKey: ['repairs'] }),
     client.invalidateQueries({ queryKey: ['tech-orders'] }),
     client.invalidateQueries({ queryKey: ['qc-orders'] }),
+    client.invalidateQueries({ queryKey: ['qc-pending-orders'] }),
   ]);
 };
 
@@ -660,6 +669,7 @@ export const Providers: React.FC<{ children: React.ReactNode }> = ({ children })
         queryClient.invalidateQueries({ queryKey: ['repairs'] }),
         queryClient.invalidateQueries({ queryKey: ['tech-orders'] }),
         queryClient.invalidateQueries({ queryKey: ['qc-orders'] }),
+        queryClient.invalidateQueries({ queryKey: ['qc-pending-orders'] }),
       ]);
     } catch {
       // ignore

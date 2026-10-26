@@ -13,6 +13,7 @@ import type { RepairOrder } from '@podscare/types';
 import { ActionableTasksCenter } from './ActionableTasksCenter';
 import { StaffPerformanceWidget } from './StaffPerformanceWidget';
 import { ShiftCashbookSnapshot } from './ShiftCashbookSnapshot';
+import { StoreSetupChecklist } from '../../components/onboarding/StoreSetupChecklist';
 
 export interface AdminDashboardViewProps {
   role?: string;
@@ -263,6 +264,17 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
           </Button>
         </div>
       </div>
+
+      {/* Bảng kiểm Thiết lập Cửa hàng 5 Bước dành riêng cho Chủ cửa hàng (role === 'admin') */}
+      {(role === 'admin' || currentUser?.role === 'admin') && (
+        <StoreSetupChecklist
+          user={currentUser}
+          role={role || currentUser?.role}
+          tenantId={currentUser?.tenant_id ?? currentUser?.tenant?.id}
+          userId={currentUser?.id}
+          onNavigate={onNavigate}
+        />
+      )}
 
       {/* Thanh điều khiển chọn ngày / khoảng thời gian tra cứu */}
       <div className="flex flex-wrap items-center justify-between gap-3 bg-white rounded-[12px] border border-[#e9eeeb] p-3.5 sm:px-5 sm:py-3.5 shadow-xs">

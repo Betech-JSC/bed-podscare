@@ -717,8 +717,8 @@ class FallbackSchemaQueryToolTest extends TestCase
      */
     public function test_rejects_disallowed_entities_enforces_tenant_isolation_and_executes_e2e_webhook_via_9router(): void
     {
-        // 1) Từ chối các bảng nhạy cảm hoặc ngoài allow-list
-        foreach (['users', 'tenants', 'personal_access_tokens', 'repair_orders', 'payments', ''] as $disallowedEntity) {
+        // 1) Từ chối các bảng nhạy cảm hoặc ngoài allow-list 16 bảng
+        foreach (['tenants', 'personal_access_tokens', 'password_reset_tokens', 'migrations', 'jobs', ''] as $disallowedEntity) {
             $res = $this->tool->execute(['entity' => $disallowedEntity], $this->adminRecipientA1);
             $this->assertTrue($res['invalid_entity'] ?? false);
             $this->assertArrayHasKey('error', $res);

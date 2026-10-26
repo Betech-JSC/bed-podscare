@@ -380,7 +380,11 @@ class RevenueSummaryTool implements TelegramAiToolInterface
     ): array {
         $orderRelations = match ($groupBy) {
             'device_category' => ['deviceModel' => fn ($q) => $q->withoutGlobalScopes()->select(['id', 'name', 'category'])],
-            'technician'      => ['technician' => fn ($q) => $q->withoutGlobalScopes()->select(['id', 'name'])],
+            'technician'      => [
+                'technician'    => fn ($q) => $q->withoutGlobalScopes()->select(['id', 'name']),
+                'qcInspections' => fn ($q) => $q->withoutGlobalScopes()->select(['id', 'repair_order_id', 'result']),
+                'warranties'    => fn ($q) => $q->withoutGlobalScopes()->with(['claims']),
+            ],
             'branch'          => ['branch' => fn ($q) => $q->withoutGlobalScopes()->select(['id', 'name'])],
             'service'         => ['quotes' => fn ($q) => $q->withoutGlobalScopes()->with(['items.service'])],
             default           => [],
@@ -394,8 +398,14 @@ class RevenueSummaryTool implements TelegramAiToolInterface
             'device_model_id',
             'status',
             'order_type',
+            'claim_id',
+            'parent_order_id',
             'total_price',
             'issue_description',
+            'tech_accepted_at',
+            'repair_started_at',
+            'repair_completed_at',
+            'qc_passed_at',
             'created_at',
         ];
 
@@ -470,6 +480,12 @@ class RevenueSummaryTool implements TelegramAiToolInterface
                     'completed_orders'      => 0,
                     'estimated_revenue'     => 0.0,
                     'net_payment_collected' => 0.0,
+                    'warranty_count'        => 0,
+                    'rework_count'          => 0,
+                    'qc_total'              => 0,
+                    'qc_passed'             => 0,
+                    'duration_sum'          => 0.0,
+                    'duration_count'        => 0,
                 ];
             }
 
@@ -479,6 +495,49 @@ class RevenueSummaryTool implements TelegramAiToolInterface
             }
             $groups[$key]['estimated_revenue'] += $orderEst;
             $groups[$key]['net_payment_collected'] += $orderNetPay;
+
+            if ($groupBy === 'technician') {
+                $hasFailedQc = $order->relationLoaded('qcInspections')
+                    && $order->qcInspections->contains(
+                        static fn ($qc) => in_array(strtolower((string) $qc->result), ['fail', 'failed', 'rework'], true)
+                    );
+                $hasWarrantyClaim = $order->relationLoaded('warranties')
+                    && $order->warranties->contains(
+                        static fn ($w) => $w->relationLoaded('claims') && $w->claims->isNotEmpty()
+                    );
+
+                $isRework = ((string) $order->status === 'rework_needed') || $hasFailedQc;
+                $isWarranty = $isRework
+                    || strtolower((string) $order->order_type) === 'warranty'
+                    || $order->claim_id !== null
+                    || $order->parent_order_id !== null
+                    || $hasWarrantyClaim;
+
+                if ($isRework) {
+                    $groups[$key]['rework_count']++;
+                }
+                if ($isWarranty) {
+                    $groups[$key]['warranty_count']++;
+                }
+
+                if ($order->relationLoaded('qcInspections') && $order->qcInspections->isNotEmpty()) {
+                    foreach ($order->qcInspections as $qc) {
+                        $groups[$key]['qc_total']++;
+                        if (in_array(strtolower((string) $qc->result), ['pass', 'passed'], true)) {
+                            $groups[$key]['qc_passed']++;
+                        }
+                    }
+                }
+
+                if ($order->repair_completed_at !== null) {
+                    $startAt = $order->repair_started_at ?? $order->tech_accepted_at ?? $order->created_at;
+                    if ($startAt !== null) {
+                        $durMin = abs($order->repair_completed_at->diffInSeconds($startAt)) / 60.0;
+                        $groups[$key]['duration_sum'] += $durMin;
+                        $groups[$key]['duration_count']++;
+                    }
+                }
+            }
         }
 
         // Cộng thêm các khoản thanh toán của đơn cũ được thu tiền trong kỳ (nếu đơn gốc tạo trước kỳ báo cáo)
@@ -526,6 +585,12 @@ class RevenueSummaryTool implements TelegramAiToolInterface
                     'completed_orders'      => 0,
                     'estimated_revenue'     => 0.0,
                     'net_payment_collected' => 0.0,
+                    'warranty_count'        => 0,
+                    'rework_count'          => 0,
+                    'qc_total'              => 0,
+                    'qc_passed'             => 0,
+                    'duration_sum'          => 0.0,
+                    'duration_count'        => 0,
                 ];
             }
             $groups[$key]['net_payment_collected'] += $net;
@@ -552,7 +617,7 @@ class RevenueSummaryTool implements TelegramAiToolInterface
                 $share = 0.0;
             }
 
-            $breakdown[] = [
+            $entry = [
                 'group_key'                       => (string) $g['group_key'],
                 'group_label'                     => (string) $g['group_label'],
                 'label'                           => (string) $g['group_label'],
@@ -564,6 +629,43 @@ class RevenueSummaryTool implements TelegramAiToolInterface
                 'formatted_net_payment_collected' => $this->formatVnd($net),
                 'share_percent'                   => $share,
             ];
+
+            if ($groupBy === 'technician') {
+                $warrantyCount = (int) ($g['warranty_count'] ?? 0);
+                $reworkCount = (int) ($g['rework_count'] ?? 0);
+                $warrantyRate = $comp > 0
+                    ? round(($warrantyCount / $comp) * 100, 1)
+                    : ($ord > 0 ? round(($warrantyCount / $ord) * 100, 1) : 0.0);
+
+                $qcTotal = (int) ($g['qc_total'] ?? 0);
+                $qcPassed = (int) ($g['qc_passed'] ?? 0);
+                $qcPassRate = $qcTotal > 0
+                    ? round(($qcPassed / $qcTotal) * 100, 1)
+                    : ($comp > 0 ? round((max(0, $comp - $reworkCount) / $comp) * 100, 1) : null);
+
+                $durCount = (int) ($g['duration_count'] ?? 0);
+                $avgMinutes = $durCount > 0 ? round(((float) ($g['duration_sum'] ?? 0.0)) / $durCount, 1) : 0.0;
+                $hoursPart = (int) floor($avgMinutes / 60);
+                $minsPart = (int) round(fmod($avgMinutes, 60));
+                if ($minsPart === 60) {
+                    $hoursPart++;
+                    $minsPart = 0;
+                }
+                $avgFormatted = $avgMinutes > 0
+                    ? ($hoursPart > 0 ? "{$hoursPart}h {$minsPart}m" : "{$minsPart}m")
+                    : '0m';
+
+                $entry['warranty_count'] = $warrantyCount;
+                $entry['rework_count'] = $reworkCount;
+                $entry['rework_needed'] = $reworkCount;
+                $entry['warranty_rate'] = $warrantyRate;
+                $entry['warranty_rate_formatted'] = "{$warrantyRate}%";
+                $entry['qc_pass_rate'] = $qcPassRate;
+                $entry['avg_processing_time_minutes'] = $avgMinutes;
+                $entry['avg_processing_time_formatted'] = $avgFormatted;
+            }
+
+            $breakdown[] = $entry;
         }
 
         usort($breakdown, static function (array $a, array $b): int {
@@ -847,7 +949,16 @@ class RevenueSummaryTool implements TelegramAiToolInterface
                 $gNet = htmlspecialchars((string) ($item['formatted_net_payment_collected'] ?? '0 đ'), ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
                 $gShare = number_format((float) ($item['share_percent'] ?? 0), 1, ',', '.');
 
-                $lines[] = "- <b>{$gLabel}</b>: <b>{$gEst}</b> (Thực thu: {$gNet}) | Số đơn: <b>{$gOrders}</b> (Hoàn thành: {$gCompleted}) | Tỷ trọng: <b>{$gShare}%</b>";
+                $line = "- <b>{$gLabel}</b>: <b>{$gEst}</b> (Thực thu: {$gNet}) | Số đơn: <b>{$gOrders}</b> (Hoàn thành: {$gCompleted}) | Tỷ trọng: <b>{$gShare}%</b>";
+
+                if (array_key_exists('warranty_count', $item)) {
+                    $gWarrantyCount = (int) ($item['warranty_count'] ?? 0);
+                    $gReworkCount = (int) ($item['rework_count'] ?? $item['rework_needed'] ?? 0);
+                    $gWarrantyRate = number_format((float) ($item['warranty_rate'] ?? 0), 1, ',', '.');
+                    $line .= " | Bảo hành: <b>{$gWarrantyCount}</b> đơn (Làm lại: {$gReworkCount}, Tỷ lệ BH: <b>{$gWarrantyRate}%</b>)";
+                }
+
+                $lines[] = $line;
             }
         }
 

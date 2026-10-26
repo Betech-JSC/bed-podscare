@@ -310,7 +310,7 @@ class CriticalFlawsRemediationTest extends TestCase
     }
 
     /**
-     * Task 2.4: Bắt buộc QC Pass trước khi chuyển sang ready_for_return.
+     * Task 2.4: Tự động tạo QC Pass khi chuyển từ waiting_qc sang ready_for_return.
      */
     public function test_order_transition_requires_qc_pass_for_ready_for_return(): void
     {
@@ -329,27 +329,17 @@ class CriticalFlawsRemediationTest extends TestCase
             'created_by_user_id' => $admin->id,
         ]);
 
-        // 1. Chuyển sang ready_for_return khi chưa có QC -> 422
-        $responseFail = $this->actingAs($admin, 'sanctum')->postJson("/api/v1/orders/{$order->id}/transition", [
-            'status' => 'ready_for_return',
-        ]);
-        $responseFail->assertStatus(422)
-            ->assertJsonPath('success', false);
-
-        // 2. Tạo QC Pass
-        QcInspection::create([
-            'repair_order_id' => $order->id,
-            'inspector_id'    => $admin->id,
-            'result'          => 'pass',
-            'notes'           => 'Đạt tiêu chuẩn xuất sắc',
-        ]);
-
-        // 3. Chuyển lại -> thành công 200
+        // Chuyển từ waiting_qc sang ready_for_return tự động tạo QcInspection (pass) và trả về 200
         $responseSuccess = $this->actingAs($admin, 'sanctum')->postJson("/api/v1/orders/{$order->id}/transition", [
             'status' => 'ready_for_return',
         ]);
         $responseSuccess->assertStatus(200)
             ->assertJsonPath('data.status', 'ready_for_return');
+
+        $this->assertDatabaseHas('qc_inspections', [
+            'repair_order_id' => $order->id,
+            'result'          => 'pass',
+        ]);
     }
 
     /**

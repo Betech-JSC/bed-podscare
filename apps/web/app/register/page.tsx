@@ -25,6 +25,8 @@ function RegisterStoreForm() {
   const [phone, setPhone] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [websiteUrl, setWebsiteUrl] = useState('');
+  const [formStartedAt] = useState<number>(() => Date.now());
   const [loading, setLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
   const [successData, setSuccessData] = useState<{
@@ -58,9 +60,23 @@ function RegisterStoreForm() {
       .replace(/^-|-$/g, '');
   };
 
+  const normalizeVnPhone = (raw: string): string => {
+    const stripped = raw.trim().replace(/[\s.-]+/g, '');
+    if (stripped.startsWith('+84')) {
+      return '0' + stripped.slice(3);
+    }
+    return stripped;
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMessage('');
+
+    // Tầng 2: Honeypot Guard chặn bot tự động điền trường ẩn
+    if (websiteUrl.trim() !== '') {
+      setErrorMessage('Phát hiện yêu cầu đăng ký tự động không hợp lệ.');
+      return;
+    }
 
     if (!storeName.trim()) {
       setErrorMessage('Vui lòng nhập Tên gian hàng.');
@@ -78,10 +94,31 @@ function RegisterStoreForm() {
       setErrorMessage('Vui lòng nhập Số điện thoại.');
       return;
     }
+
+    // Tầng 3: Chuẩn hóa & Kiểm tra định dạng số điện thoại 10 số hợp lệ tại Việt Nam
+    const normalizedPhone = normalizeVnPhone(phone);
+    if (!/^0[235789][0-9]{8}$/.test(normalizedPhone)) {
+      setErrorMessage(
+        'Số điện thoại không đúng định dạng 10 số hợp lệ tại Việt Nam (ví dụ: 0901234567).'
+      );
+      return;
+    }
+
     if (!email.trim()) {
       setErrorMessage('Vui lòng nhập Địa chỉ email.');
       return;
     }
+
+    // Tầng 3: Chặn địa chỉ email sử dụng ký tự bí danh (+tag) ở phần local-part trước @
+    const cleanEmail = email.trim();
+    const emailLocalPart = cleanEmail.split('@')[0] || '';
+    if (emailLocalPart.includes('+')) {
+      setErrorMessage(
+        'Địa chỉ email không được chứa ký tự bí danh (+). Vui lòng sử dụng địa chỉ email chính thức của cửa hàng.'
+      );
+      return;
+    }
+
     if (!password || password.length < 6) {
       setErrorMessage('Mật khẩu phải có ít nhất 6 ký tự.');
       return;
@@ -100,14 +137,24 @@ function RegisterStoreForm() {
           store_name: storeName.trim(),
           store_code: storeCode.trim().toLowerCase(),
           owner_name: ownerName.trim(),
-          phone: phone.trim(),
-          email: email.trim(),
+          phone: normalizedPhone,
+          email: cleanEmail,
           password,
           plan: selectedPlan,
+          website_url: websiteUrl,
+          form_started_at: formStartedAt,
         }),
       });
 
       const json = await res.json().catch(() => null);
+
+      if (res.status === 429) {
+        setErrorMessage(
+          json?.message ||
+            'Hệ thống ghi nhận quá nhiều yêu cầu đăng ký từ địa chỉ mạng của bạn (429 Too Many Requests). Vui lòng thử lại sau ít phút.'
+        );
+        return;
+      }
 
       if (res.ok && json?.success) {
         const normalizedCode = storeCode.trim().toLowerCase();
@@ -321,6 +368,24 @@ function RegisterStoreForm() {
 
             {/* Registration Form */}
             <form onSubmit={handleSubmit} className="space-y-4">
+              {/* Honeypot anti-bot field (hidden from real users & screen readers) */}
+              <div
+                className="sr-only absolute -left-[9999px] top-auto w-px h-px overflow-hidden"
+                aria-hidden="true"
+              >
+                <label htmlFor="register_website_url">Website URL</label>
+                <input
+                  id="register_website_url"
+                  type="text"
+                  name="website_url"
+                  value={websiteUrl}
+                  onChange={(e) => setWebsiteUrl(e.target.value)}
+                  autoComplete="off"
+                  tabIndex={-1}
+                  aria-hidden="true"
+                />
+              </div>
+
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
                   <label className="block text-xs font-semibold text-[#52635a] mb-1.5">

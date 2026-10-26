@@ -200,15 +200,32 @@ class OrderWorkflowService extends BaseWorkflowService
                     ]);
                 }
             } else {
-                // Từ bước waiting_qc chuyển sang ready_for_return vẫn yêu cầu biên bản QC Pass
+                // Từ bước waiting_qc chuyển sang ready_for_return: tự động tạo biên bản QC Pass cho mọi vai trò (CSKH, KTV, Admin) nếu chưa có
                 $hasPassedQc = QcInspection::where('repair_order_id', $model->id)
                     ->where('result', 'pass')
                     ->exists();
 
                 if (! $hasPassedQc) {
-                    throw new \DomainException(
-                        'Đơn hàng chưa có biên bản kiểm định chất lượng đạt chuẩn (QC Pass). Không thể chuyển sang trạng thái sẵn sàng giao trả.'
-                    );
+                    $inspectorId = $user?->id
+                        ?? ($options['admin_id']
+                        ?? ($passedTechId
+                        ?? ($model->technician_id
+                        ?? ($model->created_by_user_id
+                        ?? auth()->id()))));
+
+                    if ($inspectorId) {
+                        $defaultNote = $model->order_type === 'warranty'
+                            ? 'Nghiệm thu hoàn thành sửa chữa bảo hành'
+                            : 'Nghiệm thu kiểm định chất lượng (QC Pass)';
+
+                        QcInspection::create([
+                            'tenant_id'       => $model->tenant_id,
+                            'repair_order_id' => $model->id,
+                            'inspector_id'    => $inspectorId,
+                            'result'          => 'pass',
+                            'notes'           => $options['repair_note'] ?? ($model->repair_note ?? $defaultNote),
+                        ]);
+                    }
                 }
             }
         }

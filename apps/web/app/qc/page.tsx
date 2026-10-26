@@ -1,6 +1,7 @@
 'use client';
 
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useRef, Suspense } from 'react';
+import { useSearchParams } from 'next/navigation';
 import { useQuery } from '@tanstack/react-query';
 import { qcService, repairService, deviceService } from '@podscare/api-client';
 import {
@@ -18,7 +19,10 @@ import { AppShell } from '../components/AppShell';
 import { usePodsCare } from '../providers';
 import type { RepairOrder } from '@podscare/types';
 
-export default function QCInspectionPage() {
+function QCInspectionPageContent() {
+  const searchParams = useSearchParams();
+  const targetOrderId = searchParams.get('id') || searchParams.get('order_id');
+  const autoOpenedOrderIdRef = useRef<string | null>(null);
   const { toast } = useToast();
   const { orders, branchId, invalidateOrders } = usePodsCare();
 
@@ -254,6 +258,18 @@ export default function QCInspectionPage() {
     }
   };
 
+  React.useEffect(() => {
+    if (!targetOrderId) return;
+    if (autoOpenedOrderIdRef.current === targetOrderId) return;
+    const matchedOrder =
+      qcOrders.find((o) => String(o.id) === String(targetOrderId)) ||
+      mergedOrders.find((o) => String(o.id) === String(targetOrderId));
+    if (matchedOrder) {
+      autoOpenedOrderIdRef.current = targetOrderId;
+      openInspectModal(matchedOrder);
+    }
+  }, [targetOrderId, qcOrders, mergedOrders]);
+
   const handleToggleCrit = (crit: string) => {
     setCheckedItems((prev) => ({
       ...prev,
@@ -278,14 +294,6 @@ export default function QCInspectionPage() {
         notes: qcNotes || undefined,
         criteria: criteriaData,
       });
-
-      try {
-        await repairService.transition(selectedOrder.id, {
-          transition: 'ready_for_return',
-        });
-      } catch {
-        // Backend store may have already transitioned status
-      }
 
       await invalidateOrders();
       refetchPendingQc();
@@ -320,15 +328,6 @@ export default function QCInspectionPage() {
         notes: qcNotes || undefined,
         criteria: criteriaData,
       });
-
-      try {
-        await repairService.transition(selectedOrder.id, {
-          transition: 'rework_needed',
-          rework_reason: reworkReason.trim(),
-        });
-      } catch {
-        // Backend store may have already transitioned status
-      }
 
       await invalidateOrders();
       refetchPendingQc();
@@ -621,5 +620,13 @@ export default function QCInspectionPage() {
         </Modal>
       )}
     </AppShell>
+  );
+}
+
+export default function QCInspectionPage() {
+  return (
+    <Suspense fallback={<div className="p-8 text-center text-[#81908a]">Đang tải danh sách kiểm định QC...</div>}>
+      <QCInspectionPageContent />
+    </Suspense>
   );
 }

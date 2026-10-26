@@ -25,6 +25,8 @@ import { techGuideData } from './techGuideData';
 import { qcGuideData } from './qcGuideData';
 import { inventoryGuideData } from './inventoryGuideData';
 import { adminGuideData } from './adminGuideData';
+import { resetOnboardingTour } from '../onboarding/onboardingStorage';
+import { resolveOnboardingTenantId } from '../onboarding/types';
 
 export interface HelpCenterModalProps {
   isOpen: boolean;
@@ -32,6 +34,7 @@ export interface HelpCenterModalProps {
   user?: UserProfile | null;
   branchName?: string;
   onNavigate: (path: string) => void;
+  onReplayOnboarding?: () => void;
   roleGuidesOverride?: Partial<Record<StoreRoleKey, RoleGuideConfig>>;
 }
 
@@ -49,6 +52,7 @@ export const HelpCenterModal: React.FC<HelpCenterModalProps> = ({
   user,
   branchName = 'FIXO · Quận 1',
   onNavigate,
+  onReplayOnboarding,
   roleGuidesOverride,
 }) => {
   const normalizedUserRoleRaw = normalizeStoreRole(user?.role);
@@ -84,6 +88,13 @@ export const HelpCenterModal: React.FC<HelpCenterModalProps> = ({
     }
     onClose();
     onNavigate(href);
+  };
+
+  const handleReplayOnboarding = () => {
+    const tenantId = resolveOnboardingTenantId(user);
+    resetOnboardingTour(tenantId, user?.id);
+    onClose();
+    onReplayOnboarding?.();
   };
 
   const activeRoleGuide =
@@ -171,7 +182,18 @@ export const HelpCenterModal: React.FC<HelpCenterModalProps> = ({
               )}
             </div>
 
-            <div className="flex items-center gap-2 flex-none">
+            <div className="flex flex-wrap items-center gap-2 flex-none">
+              <Button
+                variant="outline"
+                size="sm"
+                icon="spark"
+                onClick={handleReplayOnboarding}
+                data-testid="help-replay-onboarding-toolbar-btn"
+                className="text-xs font-bold bg-[#e9f4ef] text-[#176b51] border-[#cde2d6] hover:bg-[#dff0e8]"
+              >
+                Xem lại hướng dẫn bắt đầu
+              </Button>
+
               {activeTab !== 'overview' ? (
                 <Button
                   variant="secondary"
@@ -211,7 +233,16 @@ export const HelpCenterModal: React.FC<HelpCenterModalProps> = ({
             <span className="text-[#81908a]">{branchName}</span>
           </div>
 
-          <div className="flex items-center justify-end gap-2">
+          <div className="flex flex-wrap items-center justify-end gap-2">
+            <Button
+              variant="secondary"
+              size="sm"
+              icon="spark"
+              onClick={handleReplayOnboarding}
+              data-testid="help-replay-onboarding-footer-btn"
+            >
+              Xem lại hướng dẫn bắt đầu
+            </Button>
             {activeTab !== currentUserRole && (
               <Button
                 variant="secondary"

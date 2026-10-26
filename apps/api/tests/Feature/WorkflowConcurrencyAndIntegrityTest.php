@@ -113,30 +113,14 @@ class WorkflowConcurrencyAndIntegrityTest extends TestCase
     }
 
     /**
-     * 2.1: Hook beforeTransition chặn ready_for_return nếu chưa có QC Pass.
+     * 2.1: Hook beforeTransition tự động tạo QC Pass khi chuyển từ waiting_qc sang ready_for_return.
      */
     public function test_ready_for_return_requires_qc_pass_via_workflow_service(): void
     {
         $user = $this->getAuthenticatedUser();
         $order = $this->createTestOrder('waiting_qc');
 
-        // 1. Chuyển sang ready_for_return khi chưa có QC Pass -> 422
-        $responseFail = $this->actingAs($user, 'sanctum')->postJson("/api/v1/orders/{$order->id}/transition", [
-            'status' => 'ready_for_return',
-        ]);
-
-        $responseFail->assertStatus(422)
-            ->assertJsonPath('success', false);
-
-        // 2. Tạo biên bản QC Đạt
-        QcInspection::create([
-            'repair_order_id' => $order->id,
-            'inspector_id'    => $user->id,
-            'result'          => 'pass',
-            'notes'           => 'QC đạt chuẩn âm thanh',
-        ]);
-
-        // 3. Chuyển lại -> Thành công 200
+        // Chuyển sang ready_for_return tự động tạo biên bản QC Đạt và trả về 200
         $responseSuccess = $this->actingAs($user, 'sanctum')->postJson("/api/v1/orders/{$order->id}/transition", [
             'status' => 'ready_for_return',
         ]);
@@ -144,6 +128,11 @@ class WorkflowConcurrencyAndIntegrityTest extends TestCase
         $responseSuccess->assertStatus(200)
             ->assertJsonPath('success', true)
             ->assertJsonPath('data.status', 'ready_for_return');
+
+        $this->assertDatabaseHas('qc_inspections', [
+            'repair_order_id' => $order->id,
+            'result'          => 'pass',
+        ]);
     }
 
     /**

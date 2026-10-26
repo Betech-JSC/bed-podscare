@@ -2,6 +2,9 @@
 
 namespace App\Providers;
 
+use Illuminate\Cache\RateLimiting\Limit;
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Support\ServiceProvider;
 
 class AppServiceProvider extends ServiceProvider
@@ -38,6 +41,17 @@ class AppServiceProvider extends ServiceProvider
         \Laravel\Sanctum\Sanctum::usePersonalAccessTokenModel(\App\Models\PersonalAccessToken::class);
         \App\Models\Scopes\TenantScope::clearCache();
         \App\Models\SystemSetting::clearCache();
+
+        RateLimiter::for('tenant-registration', function (Request $request) {
+            return Limit::perMinutes(15, 5)
+                ->by($request->ip())
+                ->response(function (Request $request, array $headers) {
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'Bạn đã gửi quá nhiều yêu cầu đăng ký gian hàng từ địa chỉ mạng này. Vui lòng thử lại sau 15 phút.',
+                    ], 429, $headers);
+                });
+        });
 
         if ($this->app->runningUnitTests() && ! self::$testingTelegramMemoryColumnsEnsured) {
             try {

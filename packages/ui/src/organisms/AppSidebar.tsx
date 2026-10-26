@@ -84,6 +84,10 @@ export interface AppSidebarProps {
   repairsCount?: number;
   qcCount?: number;
   onHelpClick?: () => void;
+  appVersion?: string;
+  hasUnreadChangelog?: boolean;
+  hasUnseenChangelog?: boolean;
+  onChangelogClick?: () => void;
 }
 
 export const AppSidebar: React.FC<AppSidebarProps> = ({
@@ -100,6 +104,10 @@ export const AppSidebar: React.FC<AppSidebarProps> = ({
   onBranchChange,
   repairsCount = 12,
   qcCount = 4,
+  appVersion = 'v1.5.0',
+  hasUnreadChangelog = false,
+  hasUnseenChangelog = false,
+  onChangelogClick,
 }) => {
   const defaultUser: UserProfile = {
     id: '1',
@@ -565,10 +573,10 @@ export const AppSidebar: React.FC<AppSidebarProps> = ({
         </nav>
 
 
-        {/* Sidebar Bottom: Help & Profile */}
+        {/* Sidebar Bottom: Help, Version Changelog Badge & Profile */}
         <div className="pt-2 border-t border-[#f0f3f1] mt-auto flex-none">
           {normalizedRole !== 'super_admin' && (
-            <div className="border border-[#e9eeeb] rounded-[10px] p-3 mb-2.5 bg-[#fafbfa]">
+            <div className="border border-[#e9eeeb] rounded-[10px] p-3 mb-2 bg-[#fafbfa]">
               <div className="text-[10px] font-bold uppercase tracking-[1px] text-[#b77a21] mb-1">HỖ TRỢ VẬN HÀNH</div>
               <strong className="text-sm font-bold text-[#17231f] block">Cần trợ giúp?</strong>
               <p className="text-xs text-[#81908a] leading-normal my-1">
@@ -589,6 +597,38 @@ export const AppSidebar: React.FC<AppSidebarProps> = ({
               </button>
             </div>
           )}
+
+          <button
+            type="button"
+            data-testid="sidebar-changelog-badge"
+            aria-label={`${appVersion} · Nhật ký cập nhật`}
+            onClick={() => {
+              if (onChangelogClick) {
+                onChangelogClick();
+              } else {
+                onNavigate('/changelog');
+              }
+              onClose?.();
+            }}
+            className="w-full mb-2.5 px-2.5 py-1.5 rounded-[8px] bg-[#f6f8f6] hover:bg-[#e9f4ef] border border-[#e5ece8] hover:border-[#cde2d6] text-xs font-semibold text-[#4b5b54] hover:text-[#176b51] flex items-center justify-between transition-colors cursor-pointer"
+          >
+            <span className="inline-flex items-center gap-1.5 min-w-0">
+              <span className="font-mono font-bold text-[11px] text-[#176b51] bg-white px-1.5 py-0.5 rounded-[5px] border border-[#dce6e0]">
+                {appVersion}
+              </span>
+              <span className="truncate">{appVersion} · Nhật ký cập nhật</span>
+            </span>
+            <span className="inline-flex items-center gap-1.5 flex-none">
+              {(hasUnreadChangelog || hasUnseenChangelog) && (
+                <span
+                  data-testid="sidebar-changelog-unread-dot"
+                  title="Có bản cập nhật mới chưa xem"
+                  className="w-2 h-2 rounded-full bg-[#176b51]"
+                />
+              )}
+              <Icon name="chevronRight" size={14} className="text-[#76867f]" />
+            </span>
+          </button>
 
           <div
             className={`flex items-center gap-3 ${

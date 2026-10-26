@@ -23,6 +23,10 @@ class LookupOrderTool implements TelegramAiToolInterface
         'có', 'không', 'được', 'bị', 'lỗi', 'cần', 'đã', 'đang', 'sẽ', 'ở', 'tại', 'chi',
         'nhánh', 'cửa', 'shop', 'tiệm', 'gì', 'mấy', 'bao', 'nhiêu', 'kiểm', 'tra', 'xem',
         'giúp', 'anh', 'chị', 'em', 'nhé', 'ạ', 'vậy', 'thế', 'nơi', 'bên',
+        'doanh', 'thu', 'cao', 'nhất', 'thấp', 'đắt', 'rẻ', 'giá', 'tiền', 'tổng', 'top',
+        'xếp', 'hạng', 'lớn', 'nhỏ', 'ít', 'nhiều', 'trị', 'phí', 'hơn', 'kém', 'danh',
+        'sách', 'tất', 'cả', 'từ', 'đến', 'trong', 'các', 'những', 'tìm', 'cứu', 'hỏi',
+        'báo', 'cáo', 'thống', 'kê', 'so', 'sánh', 'về', 'theo',
     ];
 
     public function name(): string
@@ -32,7 +36,7 @@ class LookupOrderTool implements TelegramAiToolInterface
 
     public function description(): string
     {
-        return 'Tra cứu thông tin chi tiết một hoặc nhiều đơn sửa chữa đa chiều theo mã đơn (order_code), SĐT khách (customer_phone), tên khách (customer_name), từ khóa nội dung sửa chữa/linh kiện/hạng mục báo giá (keyword: ví dụ "vỏ thép đen", "thay pin"), khoảng ngày (date_from, date_to), dòng thiết bị (device_category: AirPods, Apple Watch...), tên kỹ thuật viên (technician_name), trạng thái đơn (status), hoặc phân loại đơn (order_type: in_store, cod, warranty).';
+        return 'Tra cứu thông tin chi tiết hoặc xếp hạng một/nhiều đơn sửa chữa theo mã đơn (order_code), SĐT khách (customer_phone), tên khách (customer_name), từ khóa nội dung sửa chữa/linh kiện/báo giá (keyword: ví dụ "vỏ thép đen", "thay pin"), khoảng ngày (date_from, date_to), dòng thiết bị (device_category: AirPods, Apple Watch...), tên kỹ thuật viên (technician_name), trạng thái đơn (status), phân loại đơn (order_type: in_store, cod, warranty), hoặc sắp xếp theo giá trị đơn (sort_by: price_desc cho đơn doanh thu/giá cao nhất, price_asc cho đơn giá thấp nhất, latest, oldest).';
     }
 
     public function parametersSchema(): array
@@ -54,7 +58,7 @@ class LookupOrderTool implements TelegramAiToolInterface
                 ],
                 'keyword' => [
                     'type'        => 'STRING',
-                    'description' => 'Từ khóa tìm kiếm theo dịch vụ sửa chữa, hạng mục báo giá, linh kiện thay thế, mô tả lỗi hoặc ghi chú kỹ thuật (ví dụ: "vỏ thép đen", "thay pin", "mất nguồn", "cảm ứng").',
+                    'description' => 'Từ khóa tìm kiếm theo dịch vụ sửa chữa, hạng mục báo giá, linh kiện thay thế, mô tả lỗi hoặc ghi chú kỹ thuật (ví dụ: "vỏ thép đen", "thay pin", "mất nguồn", "cảm ứng"). Không truyền các cụm từ chỉ thứ hạng như "doanh thu cao nhất" vào keyword.',
                 ],
                 'date_from' => [
                     'type'        => 'STRING',
@@ -79,6 +83,11 @@ class LookupOrderTool implements TelegramAiToolInterface
                 'order_type' => [
                     'type'        => 'STRING',
                     'description' => 'Phân loại đơn: in_store (Khách tại cửa hàng), cod (Đơn COD khách tỉnh), warranty (Tiếp nhận bảo hành).',
+                ],
+                'sort_by' => [
+                    'type'        => 'STRING',
+                    'description' => 'Tiêu chí sắp xếp đơn hàng: latest (mới nhất - mặc định), oldest (cũ nhất), price_desc (doanh thu/giá trị cao nhất trước), price_asc (doanh thu/giá trị thấp nhất trước).',
+                    'enum'        => ['latest', 'oldest', 'price_desc', 'price_asc'],
                 ],
                 'limit' => [
                     'type'        => 'INTEGER',
@@ -439,6 +448,13 @@ class LookupOrderTool implements TelegramAiToolInterface
         $technicianName = $this->scalarString($args['technician_name'] ?? '');
         $status = strtolower($this->scalarString($args['status'] ?? ''));
         $orderType = strtolower($this->scalarString($args['order_type'] ?? ''));
+        $rawSortBy = strtolower($this->scalarString($args['sort_by'] ?? 'latest', 'latest'));
+        $sortBy = match ($rawSortBy) {
+            'price_desc', 'revenue_desc', 'total_price_desc', 'amount_desc', 'highest', 'max', 'desc' => 'price_desc',
+            'price_asc', 'revenue_asc', 'total_price_asc', 'amount_asc', 'lowest', 'min', 'asc'       => 'price_asc',
+            'oldest'                                                                                  => 'oldest',
+            default                                                                                   => 'latest',
+        };
         $limit = max(1, min(10, (int) $this->scalarString($args['limit'] ?? null, '5')));
         $branchDisplay = TelegramAiAssistantService::resolveBranchDisplay($recipient);
 
@@ -560,7 +576,9 @@ class LookupOrderTool implements TelegramAiToolInterface
                     }
                 });
             } else {
-                $this->applySingleTokenCondition($query, $keyword);
+                // Nếu toàn bộ từ trong keyword chỉ là hư từ / từ để hỏi / từ chỉ thứ hạng (ví dụ "doanh thu cao nhất"),
+                // không áp dụng điều kiện LIKE để tránh lọc mất đơn hàng.
+                $keyword = '';
             }
         }
 
@@ -580,6 +598,8 @@ class LookupOrderTool implements TelegramAiToolInterface
             } else {
                 $query->where('status', $status);
             }
+        } elseif (in_array($sortBy, ['price_desc', 'price_asc'], true)) {
+            $query->whereNotIn('status', ['cancelled', 'rejected']);
         }
 
         if ($orderType !== '' && in_array($orderType, ['in_store', 'cod', 'warranty'], true)) {
@@ -587,7 +607,18 @@ class LookupOrderTool implements TelegramAiToolInterface
         }
 
         $totalMatched = (clone $query)->count();
-        $orders = $query->orderByDesc('id')->limit($limit)->get();
+
+        if ($sortBy === 'price_desc') {
+            $query->orderByDesc('total_price')->orderByDesc('id');
+        } elseif ($sortBy === 'price_asc') {
+            $query->orderBy('total_price', 'asc')->orderByDesc('id');
+        } elseif ($sortBy === 'oldest') {
+            $query->orderBy('created_at', 'asc')->orderBy('id', 'asc');
+        } else {
+            $query->orderByDesc('id');
+        }
+
+        $orders = $query->limit($limit)->get();
 
         $items = $orders->map(function (RepairOrder $order) use ($branchDisplay): array {
             $type = strtolower((string) ($order->order_type ?: 'in_store'));
@@ -689,6 +720,7 @@ class LookupOrderTool implements TelegramAiToolInterface
                 'technician_name' => $technicianName !== '' ? $technicianName : null,
                 'status'          => $status !== '' ? $status : null,
                 'order_type'      => in_array($orderType, ['in_store', 'cod', 'warranty'], true) ? $orderType : null,
+                'sort_by'         => $sortBy,
                 'limit'           => $limit,
             ],
             'total_matched'  => $totalMatched,

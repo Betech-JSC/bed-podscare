@@ -47,7 +47,9 @@ Route::prefix('v1')->group(function () {
         });
 
         // Tenant public registration
-        Route::post('/tenants/register', [TenantRegistrationController::class, 'register'])->name('api.v1.tenants.register');
+        Route::post('/tenants/register', [TenantRegistrationController::class, 'register'])
+            ->middleware('throttle:tenant-registration')
+            ->name('api.v1.tenants.register');
 
         // Public customer tracking portal
         Route::get('/tracking/{code}', [TrackingController::class, 'track'])->name('api.v1.tracking.show');

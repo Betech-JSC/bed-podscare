@@ -32,6 +32,7 @@ export function LandingPreview() {
             <a href="#industries">Ngành nghề</a>
             <a href="#pricing">Bảng giá</a>
             <a href="#customers">Khách hàng</a>
+            <Link href="/changelog">Cập nhật</Link>
             <a href="#docs">Tài liệu</a>
             <a href="#contact">Liên hệ</a>
           </nav>
@@ -785,6 +786,8 @@ export function LandingPreview() {
               <h4>Sản phẩm</h4>
               <a href="#features">Tính năng</a>
               <a href="#pricing">Bảng giá</a>
+              <Link href="/changelog">Nhật ký cập nhật</Link>
+              <Link href="/changelog?tab=roadmap">Lộ trình phát triển</Link>
               <Link href="/register?plan=trial">Dùng thử</Link>
               <Link href="/login">Đăng nhập</Link>
             </div>

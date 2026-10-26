@@ -242,7 +242,7 @@ class WarrantyClaimReworkFlowTest extends TestCase
             ->assertJsonPath('success', false)
             ->assertJsonPath('message', 'Vui lòng chọn kỹ thuật viên thực hiện trước khi hoàn thành sửa chữa.');
 
-        // 2. Nếu đơn ở bước waiting_qc và mới chỉ có biên bản QC rework_needed (chưa có pass) -> chặn 422
+        // 2. Nếu đơn ở bước waiting_qc chuyển sang ready_for_return -> tự động tạo biên bản QC Pass và thành công 200
         $reworkOrder->update(['status' => 'waiting_qc', 'technician_id' => $this->techUser->id]);
         QcInspection::forceCreate([
             'tenant_id'       => $this->tenant->id,
@@ -256,8 +256,14 @@ class WarrantyClaimReworkFlowTest extends TestCase
             'status' => 'ready_for_return',
         ]);
 
-        $transRes2->assertStatus(422)
-            ->assertJsonPath('success', false);
+        $transRes2->assertStatus(200)
+            ->assertJsonPath('success', true)
+            ->assertJsonPath('data.status', 'ready_for_return');
+
+        $this->assertDatabaseHas('qc_inspections', [
+            'repair_order_id' => $reworkOrder->id,
+            'result'          => 'pass',
+        ]);
     }
 
     /**

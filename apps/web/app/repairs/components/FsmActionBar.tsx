@@ -118,7 +118,7 @@ export const FsmActionBar: React.FC<FsmActionBarProps> = ({
         )}
 
         {/* Nút phụ điều hướng kiểm định QC khi đơn ở trạng thái Chờ QC */}
-        {isWaitingQc && (
+        {isWaitingQc && role !== 'cskh' && (
           <Button
             variant="outline"
             size="sm"
@@ -136,7 +136,7 @@ export const FsmActionBar: React.FC<FsmActionBarProps> = ({
         <div className="flex items-center gap-2 p-2.5 rounded-[8px] bg-[#e9f4ef] border border-[#cde4d8] text-xs text-[#176b51]">
           <span className="w-2 h-2 rounded-full bg-[#176b51] animate-pulse flex-none" />
           <span>
-            <strong>Lưu ý QC:</strong> Đơn hàng đang chờ kiểm định chất lượng. Kỹ thuật viên cần phối hợp với bộ phận QC để hoàn tất biên bản kiểm tra trước khi chuyển sang sẵn sàng giao trả.
+            <strong>Lưu ý QC:</strong> Đơn hàng đang chờ kiểm định chất lượng. Nhân sự có thể bấm <strong>&ldquo;Sẵn sàng trả&rdquo;</strong> để xác nhận đạt chuẩn nhanh{role !== 'cskh' ? ' hoặc mở phiếu kiểm định QC chi tiết để đánh giá từng tiêu chí.' : ' hoặc tiến hành thu tiền & bàn giao ngay.'}
           </span>
         </div>
       )}

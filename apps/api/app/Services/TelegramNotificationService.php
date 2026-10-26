@@ -365,7 +365,8 @@ class TelegramNotificationService
         if ($updateId !== '') {
             $lockedPrimary = Cache::add("tg_webhook_update:{$updateId}", true, $ttl);
             $lockedLegacy = Cache::add("telegram_processed_update_{$updateId}", true, $ttl);
-            if (! $lockedPrimary || ! $lockedLegacy) {
+            $lockedAiSync = Cache::add("telegram_ai_processed_update_{$updateId}", true, $ttl);
+            if (! $lockedPrimary || ! $lockedLegacy || ! $lockedAiSync) {
                 Log::info('Duplicate Telegram webhook update_id ignored.', [
                     'update_id'  => $updateId,
                     'chat_id'    => $chatId,
@@ -517,11 +518,9 @@ class TelegramNotificationService
                 }
             }
 
-            if ($maxUpdateId > 0) {
-                Cache::put('telegram_last_update_offset', $maxUpdateId + 1, now()->addDays(7));
-            }
-
             $syncedCount = 0;
+            $minAcceptableTimestamp = now()->subHours(24)->timestamp;
+
             foreach (array_reverse($updates) as $update) {
                 $text = trim((string) data_get($update, 'message.text', ''));
                 $chatId = trim((string) data_get($update, 'message.chat.id', ''));
@@ -541,7 +540,7 @@ class TelegramNotificationService
 
                 $updateId = data_get($update, 'update_id');
                 $messageDate = (int) data_get($update, 'message.date', 0);
-                if ($updateId !== null && $messageDate > 0 && $messageDate >= now()->subMinutes(2)->timestamp) {
+                if ($updateId !== null && ($messageDate <= 0 || $messageDate >= $minAcceptableTimestamp)) {
                     if ($this->acquireWebhookIdempotencyLock($update, 86400)) {
                         $activeQuery = TelegramRecipient::with(['tenant', 'branch'])
                             ->where('telegram_chat_id', $chatId)
@@ -558,6 +557,10 @@ class TelegramNotificationService
                         }
                     }
                 }
+            }
+
+            if ($maxUpdateId > 0) {
+                Cache::put('telegram_last_update_offset', $maxUpdateId + 1, now()->addDays(7));
             }
 
             return $syncedCount;

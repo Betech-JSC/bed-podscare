@@ -123,11 +123,34 @@ class TelegramAiToolRegistry
     }
 
     /**
+     * Chuẩn hóa tên định danh Tool (hỗ trợ cả các biến thể số ít/alias phổ biến mà LLM có thể gọi).
+     */
+    public function resolveToolName(string $name): string
+    {
+        $normalized = strtolower(trim($name));
+
+        return match ($normalized) {
+            'lookup_repair_order', 'lookup_order', 'lookup_orders' => 'lookup_repair_orders',
+            'check_inventory_part', 'check_inventory'              => 'check_inventory_parts',
+            'lookup_warranty'                                      => 'lookup_warranties',
+            'staff_kpi', 'get_technician_kpi'                      => 'get_staff_kpi',
+            'revenue_summary'                                      => 'get_revenue_summary',
+            default                                                => $name,
+        };
+    }
+
+    /**
      * Lấy một Tool theo tên định danh.
      */
     public function get(string $name): ?TelegramAiToolInterface
     {
-        return $this->tools[$name] ?? null;
+        if (isset($this->tools[$name])) {
+            return $this->tools[$name];
+        }
+
+        $resolved = $this->resolveToolName($name);
+
+        return $this->tools[$resolved] ?? null;
     }
 
     /**
@@ -255,6 +278,20 @@ class TelegramAiToolRegistry
     }
 
     /**
+     * Thứ tự ưu tiên chuẩn của các Tool chuyên biệt và Tool dự phòng.
+     *
+     * @var array<string, int>
+     */
+    public const PRIORITY_ORDER = [
+        'lookup_repair_orders'  => 10,
+        'get_revenue_summary'   => 20,
+        'get_staff_kpi'         => 25,
+        'check_inventory_parts' => 30,
+        'lookup_warranties'     => 40,
+        'fallback_schema_query' => 1000,
+    ];
+
+    /**
      * Xác định độ ưu tiên sắp xếp của một Tool (số nhỏ đứng trước, fallback_schema_query luôn đứng cuối cùng).
      */
     protected function resolveToolPriority(TelegramAiToolInterface $tool): int
@@ -267,11 +304,12 @@ class TelegramAiToolRegistry
         }
 
         return match ($name) {
-            'lookup_repair_orders', 'lookup_order'    => 10,
-            'get_revenue_summary'                     => 20,
+            'lookup_repair_orders', 'lookup_order'     => 10,
+            'get_revenue_summary'                      => 20,
+            'get_staff_kpi'                            => 25,
             'check_inventory_parts', 'check_inventory' => 30,
-            'lookup_warranties', 'lookup_warranty'    => 40,
-            default                                   => 100,
+            'lookup_warranties', 'lookup_warranty'     => 40,
+            default                                    => 100,
         };
     }
 

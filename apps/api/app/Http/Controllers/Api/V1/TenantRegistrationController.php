@@ -3,14 +3,18 @@
 namespace App\Http\Controllers\Api\V1;
 
 use App\Http\Controllers\Controller;
+use App\Mail\TenantWelcomeMail;
 use App\Models\Branch;
 use App\Models\Scopes\TenantScope;
 use App\Models\Tenant;
 use App\Models\User;
+use App\Rules\ValidRegistrationEmail;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Mail;
 
 class TenantRegistrationController extends Controller
 {
@@ -19,12 +23,52 @@ class TenantRegistrationController extends Controller
      */
     public function register(Request $request): JsonResponse
     {
+        // Tầng 2a: Bẫy Honeypot chống Bot tự động điền toàn bộ input ẩn
+        if ($request->filled('website_url') || $request->filled('honeypot')) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Phát hiện yêu cầu đăng ký tự động không hợp lệ (Bot Honeypot).',
+                'errors'  => [
+                    'website_url' => ['Phát hiện yêu cầu đăng ký tự động không hợp lệ (Bot Honeypot).'],
+                ],
+            ], 422);
+        }
+
+        // Tầng 2b: Form Timing Guard chống script/bot submit biểu mẫu tức thì (< 1.5 giây)
+        if ($request->filled('form_started_at')) {
+            $startedAtMs = is_numeric($request->input('form_started_at'))
+                ? (int) $request->input('form_started_at')
+                : 0;
+            $elapsedMs = now()->getTimestampMs() - $startedAtMs;
+
+            if ($startedAtMs <= 0 || $elapsedMs < 1500) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Thao tác gửi biểu mẫu quá nhanh. Vui lòng kiểm tra lại thông tin và thử lại.',
+                    'errors'  => [
+                        'form_started_at' => ['Thao tác gửi biểu mẫu quá nhanh. Vui lòng kiểm tra lại thông tin và thử lại.'],
+                    ],
+                ], 422);
+            }
+        }
+
+        // Tầng 3: Chuẩn hóa số điện thoại (+84 -> 0, loại bỏ khoảng trắng, dấu chấm, gạch ngang) trước khi validate
+        if (is_string($request->input('phone'))) {
+            $normalizedPhone = preg_replace('/[\s\.\-\(\)]+/', '', trim($request->input('phone'))) ?? '';
+            if (str_starts_with($normalizedPhone, '+84')) {
+                $normalizedPhone = '0' . substr($normalizedPhone, 3);
+            } elseif (str_starts_with($normalizedPhone, '84') && strlen($normalizedPhone) === 11) {
+                $normalizedPhone = '0' . substr($normalizedPhone, 2);
+            }
+            $request->merge(['phone' => $normalizedPhone]);
+        }
+
         $validated = $request->validate([
             'store_code' => ['required', 'alpha_dash', 'unique:tenants,code'],
             'store_name' => ['required', 'string', 'max:255'],
             'owner_name' => ['required', 'string', 'max:255'],
-            'phone'      => ['required', 'string'],
-            'email'      => ['required', 'email', 'max:255', 'unique:users,email'],
+            'phone'      => ['required', 'string', 'regex:/^0[235789][0-9]{8}$/', 'unique:tenants,phone', 'unique:users,phone'],
+            'email'      => ['required', 'string', 'email', 'max:255', new ValidRegistrationEmail(), 'unique:users,email'],
             'password'   => ['required', 'string', 'min:6'],
             'plan'       => ['nullable', 'string', 'in:trial,standard,pro'],
         ], [
@@ -34,6 +78,8 @@ class TenantRegistrationController extends Controller
             'store_name.required'   => 'Vui lòng nhập tên cửa hàng.',
             'owner_name.required'   => 'Vui lòng nhập tên chủ cửa hàng.',
             'phone.required'        => 'Vui lòng nhập số điện thoại liên hệ.',
+            'phone.regex'           => 'Số điện thoại không đúng định dạng 10 số hợp lệ tại Việt Nam.',
+            'phone.unique'          => 'Số điện thoại này đã được sử dụng để đăng ký gian hàng trên hệ thống.',
             'email.required'        => 'Vui lòng nhập địa chỉ email.',
             'email.email'           => 'Địa chỉ email không đúng định dạng.',
             'email.unique'          => 'Địa chỉ email này đã được đăng ký trên hệ thống.',
@@ -162,6 +208,18 @@ class TenantRegistrationController extends Controller
             $createdTenant ?? $result['tenant'],
             $createdOwner ?? $result['user']
         );
+
+        if ($createdTenant instanceof Tenant && $createdOwner instanceof User) {
+            try {
+                Mail::to($createdOwner->email)->send(new TenantWelcomeMail($createdTenant, $createdOwner));
+            } catch (\Throwable $e) {
+                Log::warning('Failed to send tenant registration welcome email.', [
+                    'tenant_code' => $createdTenant->code,
+                    'email'       => $createdOwner->email,
+                    'error'       => $e->getMessage(),
+                ]);
+            }
+        }
 
         return $this->success(
             $result,

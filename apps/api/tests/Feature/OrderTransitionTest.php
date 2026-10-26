@@ -505,7 +505,7 @@ class OrderTransitionTest extends TestCase
     }
 
     /**
-     * Test 12 (Task 1.2): Chuyển sang Sẵn sàng trả khi chưa có QC Pass báo lỗi thân thiện.
+     * Test 12 (Task 1.2): Chuyển từ Chờ QC (waiting_qc) sang Sẵn sàng trả (ready_for_return) tự động tạo biên bản QC Pass nếu chưa có.
      */
     public function test_transition_to_ready_for_return_requires_qc_pass_friendly_message(): void
     {
@@ -516,12 +516,15 @@ class OrderTransitionTest extends TestCase
             'status' => 'ready_for_return',
         ]);
 
-        $response->assertStatus(422)
-            ->assertJsonPath('success', false)
-            ->assertJsonPath(
-                'message',
-                'Đơn hàng chưa có biên bản kiểm định chất lượng đạt chuẩn (QC Pass). Không thể chuyển sang trạng thái sẵn sàng giao trả.'
-            );
+        $response->assertStatus(200)
+            ->assertJsonPath('success', true)
+            ->assertJsonPath('data.status', 'ready_for_return');
+
+        $this->assertNotNull($order->fresh()->qc_passed_at);
+        $this->assertDatabaseHas('qc_inspections', [
+            'repair_order_id' => $order->id,
+            'result'          => 'pass',
+        ]);
     }
 
     /**
@@ -807,6 +810,68 @@ class OrderTransitionTest extends TestCase
             ->assertJsonPath('data.status', 'ready_for_return')
             ->assertJsonPath('data.technician_id', $tech->id);
         $this->assertNull($orderWaitingParts->fresh()->paused_at);
+    }
+
+    /**
+     * Test 20: Tài khoản CSKH gọi POST /api/v1/orders/{id}/transition với transition='ready_for_return' khi đơn đang ở waiting_qc
+     * (cả trường hợp đơn đã có technician_id và chưa có technician_id) đều trả về 200 OK và tự động tạo QcInspection (pass).
+     */
+    public function test_cskh_can_transition_from_waiting_qc_to_ready_for_return_with_or_without_technician_id(): void
+    {
+        $admin = $this->getAuthenticatedUser();
+        $orderWithTech = $this->createTestOrder('waiting_qc');
+        $tech = $this->getTechnicianUser((int) $orderWithTech->branch_id, (int) $orderWithTech->tenant_id);
+        $orderWithTech->update(['technician_id' => $tech->id]);
+
+        $cskh = User::forceCreate([
+            'tenant_id' => $orderWithTech->tenant_id ?? $admin->tenant_id ?? 1,
+            'branch_id' => $orderWithTech->branch_id,
+            'name'      => 'Lễ Tân CSKH QC',
+            'email'     => 'cskh_qc_' . uniqid() . '@podscare.vn',
+            'phone'     => '094' . random_int(1000000, 9999999),
+            'password'  => bcrypt('password'),
+            'role'      => 'cskh',
+            'is_active' => true,
+        ]);
+
+        // Kịch bản 1: Đơn ở waiting_qc ĐÃ CÓ technician_id -> CSKH bấm Sẵn sàng trả (transition = ready_for_return)
+        $resWithTech = $this->actingAs($cskh, 'sanctum')->postJson("/api/v1/orders/{$orderWithTech->id}/transition", [
+            'transition' => 'ready_for_return',
+        ]);
+
+        $resWithTech->assertStatus(200)
+            ->assertJsonPath('success', true)
+            ->assertJsonPath('data.status', 'ready_for_return');
+
+        $freshWithTech = $orderWithTech->fresh();
+        $this->assertEquals('ready_for_return', $freshWithTech->status);
+        $this->assertNotNull($freshWithTech->qc_passed_at);
+        $this->assertDatabaseHas('qc_inspections', [
+            'repair_order_id' => $orderWithTech->id,
+            'inspector_id'    => $cskh->id,
+            'result'          => 'pass',
+        ]);
+
+        // Kịch bản 2: Đơn ở waiting_qc CHƯA CÓ technician_id (technician_id = null) -> CSKH bấm Sẵn sàng trả (transition = ready_for_return)
+        $orderWithoutTech = $this->createTestOrder('waiting_qc');
+        $orderWithoutTech->update(['technician_id' => null]);
+
+        $resWithoutTech = $this->actingAs($cskh, 'sanctum')->postJson("/api/v1/orders/{$orderWithoutTech->id}/transition", [
+            'transition' => 'ready_for_return',
+        ]);
+
+        $resWithoutTech->assertStatus(200)
+            ->assertJsonPath('success', true)
+            ->assertJsonPath('data.status', 'ready_for_return');
+
+        $freshWithoutTech = $orderWithoutTech->fresh();
+        $this->assertEquals('ready_for_return', $freshWithoutTech->status);
+        $this->assertNotNull($freshWithoutTech->qc_passed_at);
+        $this->assertDatabaseHas('qc_inspections', [
+            'repair_order_id' => $orderWithoutTech->id,
+            'inspector_id'    => $cskh->id,
+            'result'          => 'pass',
+        ]);
     }
 }
 

@@ -21,6 +21,18 @@ import { saasService } from '@podscare/api-client';
 import { usePodsCare, useNotifications } from '../providers';
 import { ShiftControlWidget } from './ShiftControlWidget';
 import { HelpCenterModal } from './help-center/HelpCenterModal';
+import { OnboardingTourModal } from './onboarding/OnboardingTourModal';
+import {
+  ONBOARDING_UPDATED_EVENT,
+  getOnboardingState,
+  resetOnboardingTour,
+  shouldAutoOpenOnboarding,
+} from './onboarding/onboardingStorage';
+import {
+  normalizeOnboardingRole,
+  resolveOnboardingTenantId,
+} from './onboarding/types';
+import { CURRENT_APP_VERSION } from '../changelog/changelogData';
 
 export interface AppShellProps {
   children: React.ReactNode;
@@ -132,6 +144,55 @@ export const AppShell: React.FC<AppShellProps> = ({ children, crumbName = 'Tổn
   const [logoutModalOpen, setLogoutModalOpen] = useState(false);
   const [logoutLoading, setLogoutLoading] = useState(false);
   const [helpModalOpen, setHelpModalOpen] = useState(false);
+  const [onboardingModalOpen, setOnboardingModalOpen] = useState(false);
+  const [hasUnreadChangelog, setHasUnreadChangelog] = useState(false);
+
+  // Tự động kích hoạt Onboarding Tour cho 5 vai trò cấp cửa hàng khi chưa hoàn thành/chưa bỏ qua (loại trừ hoàn toàn super_admin)
+  useEffect(() => {
+    if (!isLoadingAuth && isAuthenticated && currentUser) {
+      const storeRole = normalizeOnboardingRole(currentUser.role);
+      if (storeRole && shouldAutoOpenOnboarding(currentUser)) {
+        setOnboardingModalOpen(true);
+      } else {
+        setOnboardingModalOpen(false);
+      }
+    }
+  }, [isLoadingAuth, isAuthenticated, currentUser]);
+
+  // Theo dõi trạng thái đã xem phiên bản Changelog mới nhất (CURRENT_APP_VERSION)
+  useEffect(() => {
+    if (isLoadingAuth || !isAuthenticated || !currentUser) {
+      return undefined;
+    }
+
+    const syncChangelogBadge = () => {
+      const tenantId = resolveOnboardingTenantId(currentUser);
+      const state = getOnboardingState(tenantId, currentUser.id);
+      const seenVersion =
+        state.lastSeenVersion ?? state.lastSeenChangelogVersion;
+      setHasUnreadChangelog(seenVersion !== CURRENT_APP_VERSION);
+    };
+
+    syncChangelogBadge();
+
+    if (typeof window !== 'undefined') {
+      window.addEventListener(ONBOARDING_UPDATED_EVENT, syncChangelogBadge);
+      window.addEventListener('storage', syncChangelogBadge);
+      return () => {
+        window.removeEventListener(ONBOARDING_UPDATED_EVENT, syncChangelogBadge);
+        window.removeEventListener('storage', syncChangelogBadge);
+      };
+    }
+
+    return undefined;
+  }, [isLoadingAuth, isAuthenticated, currentUser, pathname]);
+
+  const handleReplayOnboarding = () => {
+    const tenantId = resolveOnboardingTenantId(currentUser);
+    resetOnboardingTour(tenantId, currentUser?.id);
+    setHelpModalOpen(false);
+    setOnboardingModalOpen(true);
+  };
 
   useEffect(() => {
     if (typeof window !== 'undefined') {
@@ -379,6 +440,9 @@ export const AppShell: React.FC<AppShellProps> = ({ children, crumbName = 'Tổn
             ? () => setHelpModalOpen(true)
             : undefined
         }
+        appVersion={CURRENT_APP_VERSION}
+        hasUnreadChangelog={hasUnreadChangelog}
+        onChangelogClick={() => handleNavigate('/changelog')}
         onLogout={() => setLogoutModalOpen(true)}
       />
 
@@ -477,6 +541,18 @@ export const AppShell: React.FC<AppShellProps> = ({ children, crumbName = 'Tổn
         <HelpCenterModal
           isOpen={helpModalOpen}
           onClose={() => setHelpModalOpen(false)}
+          user={currentUser}
+          branchName={branch}
+          onNavigate={handleNavigate}
+          onReplayOnboarding={handleReplayOnboarding}
+        />
+      )}
+
+      {/* Role-Based Interactive Onboarding Step Tour Modal (Store Roles Only) */}
+      {currentUser?.role !== 'super_admin' && (
+        <OnboardingTourModal
+          isOpen={onboardingModalOpen}
+          onClose={() => setOnboardingModalOpen(false)}
           user={currentUser}
           branchName={branch}
           onNavigate={handleNavigate}

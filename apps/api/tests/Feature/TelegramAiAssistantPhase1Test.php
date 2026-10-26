@@ -1268,16 +1268,17 @@ class TelegramAiAssistantPhase1Test extends TestCase
 
         $registeredNames = array_keys($registry->all());
 
-        // 4 Tool cốt lõi phải tự động được phát hiện và xếp đầu theo đúng thứ tự ưu tiên
-        $this->assertGreaterThanOrEqual(4, count($registeredNames));
+        // 5 Tool cốt lõi phải tự động được phát hiện và xếp đầu theo đúng thứ tự ưu tiên
+        $this->assertGreaterThanOrEqual(5, count($registeredNames));
         $this->assertSame(
             [
                 'lookup_repair_orders',
                 'get_revenue_summary',
+                'get_staff_kpi',
                 'check_inventory_parts',
                 'lookup_warranties',
             ],
-            array_slice($registeredNames, 0, 4)
+            array_slice($registeredNames, 0, 5)
         );
 
         // Kiểm tra khi đăng ký fallback_schema_query trước một Tool chuyên biệt khác, fallback_schema_query vẫn luôn đứng cuối cùng

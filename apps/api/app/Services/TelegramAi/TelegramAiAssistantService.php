@@ -275,13 +275,87 @@ class TelegramAiAssistantService
         string $question,
         ?TelegramRecipient $recipient = null
     ): array {
+        $canonicalToolName = $this->toolRegistry->resolveToolName($toolName);
+
         if ($recipient !== null) {
-            $args = $this->memoryService->resolveToolArgsWithMemory($toolName, $args, $question, $recipient);
+            $args = $this->memoryService->resolveToolArgsWithMemory($canonicalToolName, $args, $question, $recipient);
         }
 
         $normalizedQ = mb_strtolower(trim($question), 'UTF-8');
 
-        if ($toolName === 'get_revenue_summary') {
+        if ($canonicalToolName === 'lookup_repair_orders') {
+            $currentSortBy = strtolower($this->scalarString($args['sort_by'] ?? ''));
+            if (! in_array($currentSortBy, ['price_desc', 'price_asc', 'oldest'], true)) {
+                if (
+                    str_contains($normalizedQ, 'doanh thu cao nhất')
+                    || str_contains($normalizedQ, 'giá cao nhất')
+                    || str_contains($normalizedQ, 'giá trị cao nhất')
+                    || str_contains($normalizedQ, 'đắt nhất')
+                    || str_contains($normalizedQ, 'nhiều tiền nhất')
+                    || str_contains($normalizedQ, 'chi phí cao nhất')
+                    || ((str_contains($normalizedQ, 'đơn') || str_contains($normalizedQ, 'phiếu')) && str_contains($normalizedQ, 'cao nhất'))
+                ) {
+                    $args['sort_by'] = 'price_desc';
+                } elseif (
+                    str_contains($normalizedQ, 'doanh thu thấp nhất')
+                    || str_contains($normalizedQ, 'giá thấp nhất')
+                    || str_contains($normalizedQ, 'giá trị thấp nhất')
+                    || str_contains($normalizedQ, 'rẻ nhất')
+                    || str_contains($normalizedQ, 'ít tiền nhất')
+                    || str_contains($normalizedQ, 'chi phí thấp nhất')
+                    || ((str_contains($normalizedQ, 'đơn') || str_contains($normalizedQ, 'phiếu')) && str_contains($normalizedQ, 'thấp nhất'))
+                ) {
+                    $args['sort_by'] = 'price_asc';
+                }
+            }
+
+            $rawKeyword = $this->scalarString($args['keyword'] ?? '');
+            if ($rawKeyword !== '') {
+                $lookupTool = new \App\Services\TelegramAi\Tools\LookupOrderTool();
+                $tokens = $lookupTool->extractSearchTokens($rawKeyword);
+                if (empty($tokens)) {
+                    $dateHints = $lookupTool->extractKeywordAndDateHints($rawKeyword);
+                    if ($dateHints['date_from'] !== null && $this->scalarString($args['date_from'] ?? '') === '') {
+                        $args['date_from'] = $dateHints['date_from'];
+                    }
+                    if ($dateHints['date_to'] !== null && $this->scalarString($args['date_to'] ?? '') === '') {
+                        $args['date_to'] = $dateHints['date_to'];
+                    }
+                    $args['keyword'] = '';
+                }
+            }
+        } elseif ($canonicalToolName === 'get_staff_kpi') {
+            $currentSortBy = strtolower($this->scalarString($args['sort_by'] ?? ''));
+            if (
+                str_contains($normalizedQ, 'bảo hành')
+                || str_contains($normalizedQ, 'làm lại')
+                || str_contains($normalizedQ, 'sửa lại')
+                || str_contains($normalizedQ, 'rework')
+                || str_contains($normalizedQ, 'hỏng lại')
+            ) {
+                if (! in_array($currentSortBy, ['warranty_rate_desc', 'warranty_count_desc'], true)) {
+                    $args['sort_by'] = 'warranty_rate_desc';
+                }
+            } elseif ($currentSortBy === '') {
+                if (
+                    str_contains($normalizedQ, 'nhanh nhất')
+                    || str_contains($normalizedQ, 'tốc độ')
+                    || str_contains($normalizedQ, 'thời gian xử lý')
+                ) {
+                    $args['sort_by'] = 'speed_asc';
+                } elseif (str_contains($normalizedQ, 'qc') || str_contains($normalizedQ, 'kiểm định')) {
+                    $args['sort_by'] = 'qc_rate_desc';
+                } elseif (str_contains($normalizedQ, 'doanh thu')) {
+                    $args['sort_by'] = 'revenue_desc';
+                } elseif (
+                    str_contains($normalizedQ, 'nhiều đơn')
+                    || str_contains($normalizedQ, 'sửa nhiều')
+                    || str_contains($normalizedQ, 'hoàn thành nhiều')
+                ) {
+                    $args['sort_by'] = 'completed_desc';
+                }
+            }
+        } elseif ($canonicalToolName === 'get_revenue_summary') {
             $detectedCategories = $this->detectMentionedDeviceCategories($normalizedQ);
             $hasExistingGroupBy = $this->scalarString($args['group_by'] ?? '') !== '';
 
@@ -298,8 +372,10 @@ class TelegramAiAssistantService
                     }
                 } elseif (
                     str_contains($normalizedQ, 'kỹ thuật nào')
-                    || str_contains($normalizedQ, 'kỹ thuật viên nào')
+                    || str_contains($normalizedQ, 'kỹ thuật viên')
                     || str_contains($normalizedQ, 'thợ nào')
+                    || str_contains($normalizedQ, 'tỷ lệ bảo hành')
+                    || str_contains($normalizedQ, 'tỉ lệ bảo hành')
                 ) {
                     $args['group_by'] = 'technician';
                 } elseif (str_contains($normalizedQ, 'chi nhánh nào')) {
@@ -313,11 +389,11 @@ class TelegramAiAssistantService
             ) {
                 unset($args['device_category']);
             }
-        } elseif ($toolName === 'fallback_schema_query') {
+        } elseif ($canonicalToolName === 'fallback_schema_query') {
             $entity = strtolower($this->scalarString($args['entity'] ?? ''));
-            $hasSortBy = $this->scalarString($args['sort_by'] ?? '') !== '';
+            $currentSortBy = strtolower($this->scalarString($args['sort_by'] ?? ''));
 
-            if (! $hasSortBy) {
+            if ($currentSortBy === '' || $currentSortBy === 'latest') {
                 if (
                     $entity === 'customers'
                     && (
@@ -348,6 +424,26 @@ class TelegramAiAssistantService
                     )
                 ) {
                     $args['sort_by'] = 'cash_diff_desc';
+                } elseif (
+                    in_array($entity, ['repair_orders', 'payments', 'cash_transactions', 'parts', 'repair_services'], true)
+                    && (str_contains($normalizedQ, 'cao nhất') || str_contains($normalizedQ, 'đắt nhất'))
+                ) {
+                    $args['sort_by'] = 'price_desc';
+                } elseif (
+                    in_array($entity, ['repair_orders', 'payments', 'cash_transactions', 'parts', 'repair_services'], true)
+                    && (str_contains($normalizedQ, 'thấp nhất') || str_contains($normalizedQ, 'rẻ nhất'))
+                ) {
+                    $args['sort_by'] = 'price_asc';
+                }
+            }
+
+            if ($entity === 'repair_orders') {
+                $rawKeyword = $this->scalarString($args['keyword'] ?? '');
+                if ($rawKeyword !== '') {
+                    $tokens = (new \App\Services\TelegramAi\Tools\LookupOrderTool())->extractSearchTokens($rawKeyword);
+                    if (empty($tokens)) {
+                        $args['keyword'] = '';
+                    }
                 }
             }
         }
@@ -430,9 +526,15 @@ class TelegramAiAssistantService
             return true;
         }
 
-        // Nếu kết quả công cụ có bảng phân rã đa chiều (breakdown) -> cần AI phân tích/so sánh
+        // Nếu kết quả công cụ có bảng phân rã đa chiều (breakdown), nhóm thống kê động (aggregation/groups) hoặc bảng xếp hạng KPI nhân sự -> cần AI phân tích/so sánh
         foreach ($executedTools as $item) {
             if (! empty($item['result']['breakdown']) && is_array($item['result']['breakdown'])) {
+                return true;
+            }
+            if (! empty($item['result']['aggregation']) && is_array($item['result']['aggregation'])) {
+                return true;
+            }
+            if (! empty($item['result']['groups']) && is_array($item['result']['groups'])) {
                 return true;
             }
         }
@@ -451,6 +553,10 @@ class TelegramAiAssistantService
             'ít nhất',
             'cao nhất',
             'thấp nhất',
+            'đắt nhất',
+            'rẻ nhất',
+            'tỷ lệ bảo hành',
+            'tỉ lệ bảo hành',
             'so sánh',
             'chênh lệch',
             'hơn kém',
@@ -513,11 +619,13 @@ class TelegramAiAssistantService
             "2. Định dạng HTML Telegram: Chỉ được phép sử dụng các thẻ <b>, <i>, <code>. Khi trình bày danh sách hoặc tách đoạn, hãy xuống dòng trực tiếp (ký tự xuống dòng thật) và dùng gạch đầu dòng '- '. TUYỆT ĐỐI KHÔNG viết chuỗi ký tự '\\n' dạng chữ vào nội dung trả lời.",
             "3. CẤM TUYỆT ĐỐI ICON & EMOJI: Không được sử dụng bất kỳ biểu tượng cảm xúc (emoji), icon đồ họa hay ký tự tượng hình nào trong câu trả lời.",
             "4. Trung thực dữ liệu 100%: Khi người dùng hỏi về dữ liệu nghiệp vụ cửa hàng, BẮT BUỘC gọi công cụ (Tool) tương ứng. Tuyệt đối không tự suy đoán hoặc bịa đặt số liệu ngoài kết quả do Tool trả về.",
-            "5. Quy tắc ưu tiên chọn Tool (4 Tool cốt lõi vs Tool dự phòng fallback_schema_query):",
-            "   - LUÔN ƯU TIÊN TUYỆT ĐỐI 4 Tool chuyên biệt cho các nghiệp vụ chính: 'lookup_repair_orders' (Đơn sửa chữa), 'get_revenue_summary' (Doanh thu & Sổ quỹ), 'check_inventory_parts' (Tồn kho linh kiện), và 'lookup_warranties' (Bảo hành).",
+            "5. Quy tắc ưu tiên chọn Tool (5 Tool cốt lõi vs Tool dự phòng & thống kê động fallback_schema_query):",
+            "   - LUÔN ƯU TIÊN TUYỆT ĐỐI 5 Tool chuyên biệt cho các nghiệp vụ chính: 'lookup_repair_orders' (Đơn sửa chữa & Xếp hạng giá trị đơn), 'get_revenue_summary' (Doanh thu & Sổ quỹ), 'get_staff_kpi' (KPI Kỹ thuật viên, Tỷ lệ bảo hành/làm lại, Tỷ lệ QC, Tốc độ sửa), 'check_inventory_parts' (Tồn kho linh kiện), và 'lookup_warranties' (Bảo hành).",
+            "   - Khi người dùng hỏi đơn sửa chữa nào doanh thu/giá trị cao nhất hoặc đắt nhất (ví dụ: 'Đơn sửa chữa nào doanh thu cao nhất?'), hãy gọi 'lookup_repair_orders' với sort_by='price_desc', limit=5 (không truyền từ khóa 'doanh thu cao nhất' vào keyword). Nếu hỏi đơn giá thấp nhất/rẻ nhất thì truyền sort_by='price_asc'.",
+            "   - Khi người dùng hỏi về hiệu suất kỹ thuật viên, ai có tỷ lệ bảo hành cao nhất, làm lại nhiều nhất, QC đạt cao nhất hoặc sửa nhanh nhất (ví dụ: 'Kỹ thuật viên nào có tỷ lệ bảo hành cao nhất?'), hãy gọi 'get_staff_kpi' với sort_by='warranty_rate_desc' (hoặc 'completed_desc', 'revenue_desc', 'qc_rate_desc', 'speed_asc').",
             "   - Khi người dùng hỏi ai sửa/thay linh kiện hoặc dịch vụ cụ thể vào ngày nào (ví dụ: 'Ai thay vỏ thép đen ngày 18/10?'), hãy gọi 'lookup_repair_orders' với keyword='thay vỏ thép đen', date_from='18/10', date_to='18/10'.",
             "   - Khi người dùng so sánh doanh thu giữa các dòng thiết bị (ví dụ: 'Doanh thu của AirPods và Apple Watch cái nào cao hơn?'), hãy gọi 'get_revenue_summary' với group_by='device_category'. Nếu hỏi theo kỹ thuật viên thì truyền group_by='technician', theo dịch vụ thì group_by='service', theo chi nhánh thì group_by='branch'.",
-            "   - CHỈ GỌI 'fallback_schema_query' khi câu hỏi nằm ngoài phạm vi 4 Tool cốt lõi trên và hỏi về 5 nhóm nghiệp vụ còn lại: Bảng giá dịch vụ niêm yết (entity='repair_services'), Lỗi thường gặp (entity='common_issues'), Nhà cung cấp/Phiếu nhập kho/Công nợ NCC (entity='suppliers' | 'goods_receipts' | 'supplier_debt_transactions'), Ca làm việc & đối soát két tiền (entity='work_shifts'), Khách hàng thân thiết sửa nhiều lần (entity='customers', sort_by='orders_desc'), hoặc Kiểm định QC & Vận đơn COD (entity='qc_inspections' | 'shipments').",
+            "   - GỌI 'fallback_schema_query' cho truy vấn chỉ đọc và thống kê động (Smart Aggregation Mode: aggregate_function='count'|'sum'|'avg'|'max'|'min', aggregate_field, group_by) trên 16 bảng nghiệp vụ cốt lõi: repair_orders, warranties, warranty_claims, payments (Admin), cash_transactions (Admin), parts, users, repair_services, common_issues, suppliers (Admin), goods_receipts (Admin), supplier_debt_transactions (Admin), work_shifts, customers, qc_inspections, shipments.",
             "6. Định dạng tiền tệ Việt Nam: Luôn trình bày số tiền có dấu chấm phân cách hàng nghìn kèm đơn vị 'đ' (ví dụ: 450.000 đ).",
             "7. Tên chi nhánh: Khi nhắc đến tên cửa hàng hoặc chi nhánh trong câu trả lời, BẮT BUỘC ưu tiên sử dụng đúng tên chi nhánh tại trường 'branch_name' hoặc 'branch_scope' trong kết quả Tool trả về (nếu không gọi Tool thì dùng '{$branchDisplay}'). TUYỆT ĐỐI KHÔNG dùng cụm từ 'FIXO Master System', 'Toàn cửa hàng' hay 'Cửa hàng PodsCare'.",
             "8. TUYỆT ĐỐI KHÔNG in lại chuỗi JSON thô của công cụ (như {\"..._response\": ...}) vào câu trả lời. Chỉ trả lời bằng văn bản tiếng Việt định dạng HTML.",
