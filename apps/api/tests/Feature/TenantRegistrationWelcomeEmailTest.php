@@ -280,7 +280,7 @@ class TenantRegistrationWelcomeEmailTest extends TestCase
             $this->assertStringContainsString($storeCode, $envelope->subject);
 
             $html = $mail->render();
-            $expectedTrialEndDate = $knownTime->copy()->addMonths(3)->timezone('Asia/Ho_Chi_Minh')->format('d/m/Y');
+            $expectedTrialEndDate = $knownTime->copy()->addYear()->timezone('Asia/Ho_Chi_Minh')->format('d/m/Y');
 
             // Kiểm tra đủ 6 thông tin định danh quan trọng của gian hàng
             $this->assertStringContainsString($ownerName, $html, 'Thiếu tên chủ cửa hàng trong email');
@@ -288,7 +288,7 @@ class TenantRegistrationWelcomeEmailTest extends TestCase
             $this->assertStringContainsString($storeCode, $html, 'Thiếu mã gian hàng (store_code) trong email');
             $this->assertStringContainsString($email, $html, 'Thiếu địa chỉ email đăng nhập trong email');
             $this->assertStringContainsString('Dùng thử (Trial)', $html, 'Thiếu tên gói cước kích hoạt trong email');
-            $this->assertStringContainsString($expectedTrialEndDate, $html, 'Thiếu ngày hết hạn dùng thử 3 tháng trong email');
+            $this->assertStringContainsString($expectedTrialEndDate, $html, 'Thiếu ngày hết hạn dùng thử 1 năm trong email');
             $this->assertStringContainsString($mail->dashboardUrl, $html, 'Thiếu liên kết điều hướng tới trang Quản trị POS');
 
             // Kiểm tra tuân thủ Design System: Calm Jade (#176b51) & Warm Ivory (#f6f8f6), không dùng gradient

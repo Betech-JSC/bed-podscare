@@ -13,7 +13,7 @@ class TenantRegistrationTrialTest extends TestCase
     use DatabaseTransactions;
 
     /**
-     * Case 1: Đăng ký tài khoản mới thành công nhận 3 tháng dùng thử (status active, expires_at = +3 months).
+     * Case 1: Đăng ký tài khoản mới thành công nhận 1 năm dùng thử (status active, expires_at = +1 year).
      */
     public function test_case_1_tenant_registration_creates_active_trial_with_3_months(): void
     {
@@ -24,7 +24,7 @@ class TenantRegistrationTrialTest extends TestCase
         $storeCode = 'tiem-trial-' . uniqid();
         $response = $this->postJson('/api/v1/tenants/register', [
             'store_code' => $storeCode,
-            'store_name' => 'Cửa Hàng Thử Nghiệm 3 Tháng',
+            'store_name' => 'Cửa Hàng Thử Nghiệm 1 Năm',
             'owner_name' => 'Trần Văn Chủ',
             'phone'      => '0981' . rand(100000, 999999),
             'email'      => "chu_{$storeCode}@tiemmoi.vn",
@@ -37,7 +37,7 @@ class TenantRegistrationTrialTest extends TestCase
             ->assertJsonPath('data.tenant.status', 'active')
             ->assertJsonPath('data.tenant.plan', 'trial');
 
-        $expectedExpiryCarbon = $knownDate->copy()->addMonths(3);
+        $expectedExpiryCarbon = $knownDate->copy()->addYear();
         $expectedExpiry = $expectedExpiryCarbon->toISOString();
         $expectedDaysRemaining = (int) $knownDate->diffInDays($expectedExpiryCarbon, false);
         $this->assertEquals($expectedExpiry, $response->json('data.tenant.expires_at'));
@@ -96,7 +96,7 @@ class TenantRegistrationTrialTest extends TestCase
             ->assertJsonPath('data.tenant.plan', 'standard')
             ->assertJsonPath('data.tenant.intended_plan', 'standard');
 
-        $expectedExpiry = $knownDate->copy()->addMonths(3)->toISOString();
+        $expectedExpiry = $knownDate->copy()->addYear()->toISOString();
         $this->assertEquals($expectedExpiry, $response->json('data.tenant.expires_at'));
 
         $this->assertDatabaseHas('tenants', [

@@ -28,7 +28,7 @@ class SubscriptionPlanSeeder extends Seeder
                     '1 chi nhánh hoạt động',
                     'Tối đa 2 nhân sự',
                     '50 đơn sửa chữa / tháng',
-                    'Thời hạn dùng thử 3 tháng',
+                    'Thời hạn dùng thử 1 năm',
                 ],
                 'is_active'            => true,
                 'sort_order'           => 1,

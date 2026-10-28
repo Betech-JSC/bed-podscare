@@ -27,7 +27,8 @@ test('SaaS Subscription: Registration Page receives ?plan= and submits plan', ()
   assert.ok(content.includes('CHUYÊN NGHIỆP (PRO)'), 'Must mention Pro badge');
   assert.ok(content.includes('299.000đ/tháng'), 'Must mention Standard pricing');
   assert.ok(content.includes('599.000đ/tháng'), 'Must mention Pro pricing');
-  assert.ok(content.includes('3 tháng'), 'Must mention 3 months trial duration');
+  assert.ok(content.includes('1 năm'), 'Must mention 1 year trial duration');
+  assert.strictEqual(content.includes('3 tháng'), false, 'Must not contain legacy 3-month trial text');
   assert.strictEqual(content.includes('14 ngày'), false, 'Must not contain legacy 14-day trial text');
 
   // Verify plan sent in fetch body
@@ -137,7 +138,7 @@ test('SaaS Subscription: @podscare/api-client exports saasService', () => {
   assert.ok(clientContent.includes('saas.service'), 'api-client must export saas.service');
 });
 
-test('SaaS Subscription: 3-Month Trial Duration Consistency across Landing, Subscription & Platform UI', () => {
+test('SaaS Subscription: 1-Year Trial Duration Consistency across Landing, Subscription & Platform UI', () => {
   const trialFiles = [
     'app/page.tsx',
     'app/LandingPreview.tsx',
@@ -158,7 +159,12 @@ test('SaaS Subscription: 3-Month Trial Duration Consistency across Landing, Subs
     const fullPath = path.join(webDir, relPath);
     assert.ok(fs.existsSync(fullPath), `${relPath} must exist`);
     const content = fs.readFileSync(fullPath, 'utf-8');
-    assert.ok(content.includes('3 tháng'), `${relPath} must mention 3 tháng trial duration`);
+    assert.ok(content.includes('1 năm'), `${relPath} must mention 1 năm trial duration`);
+    assert.strictEqual(
+      content.includes('3 tháng'),
+      false,
+      `${relPath} must not contain legacy 3 tháng trial duration`
+    );
     assert.strictEqual(
       content.includes('14 ngày'),
       false,
@@ -166,10 +172,10 @@ test('SaaS Subscription: 3-Month Trial Duration Consistency across Landing, Subs
     );
   }
 
-  // Verify AppShell & SubscriptionPage default daysRemaining fallback is 90 (not 14)
+  // Verify AppShell & SubscriptionPage default daysRemaining fallback is 365 (not 90 or 14)
   const appShellContent = fs.readFileSync(path.join(webDir, 'app/components/AppShell.tsx'), 'utf-8');
   const subPageContent = fs.readFileSync(path.join(webDir, 'app/subscription/page.tsx'), 'utf-8');
-  assert.ok(appShellContent.includes('?? 90'), 'AppShell.tsx must fallback daysRemaining to 90');
-  assert.ok(subPageContent.includes('?? 90'), 'subscription/page.tsx must fallback daysRemaining to 90');
+  assert.ok(appShellContent.includes('?? 365'), 'AppShell.tsx must fallback daysRemaining to 365');
+  assert.ok(subPageContent.includes('?? 365'), 'subscription/page.tsx must fallback daysRemaining to 365');
 });
 

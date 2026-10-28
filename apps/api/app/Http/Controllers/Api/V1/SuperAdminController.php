@@ -85,13 +85,13 @@ class SuperAdminController extends Controller
     }
 
     /**
-     * Phê duyệt gian hàng mới: kích hoạt tenant và user chủ tiệm, gia hạn 3 tháng.
+     * Phê duyệt gian hàng mới: kích hoạt tenant và user chủ tiệm, gia hạn 1 năm.
      */
     public function approveStore(Request $request, int|string $id): JsonResponse
     {
         $tenant = Tenant::findOrFail($id);
 
-        $expiresAt = $tenant->expires_at ?? now()->addMonths(3);
+        $expiresAt = $tenant->expires_at ?? now()->addYear();
         $tenant->update([
             'status'        => 'active',
             'trial_ends_at' => $tenant->trial_ends_at ?? $expiresAt,

@@ -136,11 +136,11 @@ class SuperAdminPlatformTest extends TestCase
             ->assertJsonPath('success', true)
             ->assertJsonPath('data.status', 'active');
 
-        // 2. Xác nhận tenant chuyển sang active và có hạn dùng 3 tháng
+        // 2. Xác nhận tenant chuyển sang active và có hạn dùng 1 năm
         $this->pendingTenant->refresh();
         $this->assertEquals('active', $this->pendingTenant->status);
         $this->assertNotNull($this->pendingTenant->expires_at);
-        $this->assertTrue($this->pendingTenant->expires_at->greaterThan(now()->addDays(85)));
+        $this->assertTrue($this->pendingTenant->expires_at->greaterThan(now()->addDays(360)));
 
         // 3. Xác nhận chủ tiệm được kích hoạt
         $this->pendingOwner->refresh();

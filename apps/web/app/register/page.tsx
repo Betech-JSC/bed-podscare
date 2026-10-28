@@ -199,9 +199,9 @@ function RegisterStoreForm() {
   };
 
   const planTitles = {
-    trial: 'Gói Dùng thử Miễn phí 3 tháng (0đ)',
-    standard: 'Gói Tiêu chuẩn (299.000đ/tháng - Dùng thử 3 tháng)',
-    pro: 'Gói Chuyên nghiệp (599.000đ/tháng - Dùng thử 3 tháng)',
+    trial: 'Gói Dùng thử Miễn phí 1 năm (0đ)',
+    standard: 'Gói Tiêu chuẩn (299.000đ/tháng - Dùng thử 1 năm)',
+    pro: 'Gói Chuyên nghiệp (599.000đ/tháng - Dùng thử 1 năm)',
   };
 
   return (
@@ -299,11 +299,11 @@ function RegisterStoreForm() {
               </div>
               <p className="text-xs text-[#2e4d41] font-medium mt-0.5 mb-0">
                 {selectedPlan === 'trial' &&
-                  'Dùng thử 3 tháng miễn phí (1 chi nhánh, 2 nhân viên, 50 đơn/tháng). Không cần thẻ tín dụng.'}
+                  'Dùng thử 1 năm miễn phí (1 chi nhánh, 2 nhân viên, 50 đơn/tháng). Không cần thẻ tín dụng.'}
                 {selectedPlan === 'standard' &&
-                  '299.000đ/tháng · Dùng thử 3 tháng đầu miễn phí. Tối đa 2 chi nhánh, 5 nhân viên, 300 đơn/tháng.'}
+                  '299.000đ/tháng · Dùng thử 1 năm đầu miễn phí. Tối đa 2 chi nhánh, 5 nhân viên, 300 đơn/tháng.'}
                 {selectedPlan === 'pro' &&
-                  '599.000đ/tháng · Dùng thử 3 tháng đầu miễn phí. Không giới hạn chi nhánh, nhân sự & đơn sửa chữa.'}
+                  '599.000đ/tháng · Dùng thử 1 năm đầu miễn phí. Không giới hạn chi nhánh, nhân sự & đơn sửa chữa.'}
               </p>
             </div>
           </div>
@@ -319,7 +319,7 @@ function RegisterStoreForm() {
             </h3>
             <p className="text-xs text-[#52635a] leading-relaxed mb-4 max-w-[480px] mx-auto">
               Gian hàng <strong className="text-[#176b58]">{successData.store_name}</strong> (Mã:{' '}
-              <span className="font-mono font-bold text-[#1c302b]">{successData.store_code}</span>) đã được khởi tạo thành công với <strong>3 tháng dùng thử miễn phí</strong>.
+              <span className="font-mono font-bold text-[#1c302b]">{successData.store_code}</span>) đã được khởi tạo thành công với <strong>1 năm dùng thử miễn phí</strong>.
             </p>
             <div className="p-3 bg-white border border-[#e2ece6] rounded-[8px] text-xs text-[#6e7d75] mb-6 text-left space-y-1.5">
               <div className="flex justify-between">
@@ -340,7 +340,7 @@ function RegisterStoreForm() {
               </div>
               <div className="flex justify-between">
                 <span>Hạn dùng thử:</span>
-                <span className="font-semibold text-[#176b58]">3 tháng kể từ hôm nay</span>
+                <span className="font-semibold text-[#176b58]">1 năm kể từ hôm nay</span>
               </div>
             </div>
             <Link
@@ -481,7 +481,7 @@ function RegisterStoreForm() {
                 <span className="w-2 h-2 rounded-full bg-[#176b58] shrink-0" />
                 <span>
                   Sau khi đăng ký, gian hàng được <strong>phê duyệt & kích hoạt tự động ngay lập tức</strong> với{' '}
-                  <strong>3 tháng dùng thử miễn phí</strong>. Không cần chờ quản trị viên duyệt.
+                  <strong>1 năm dùng thử miễn phí</strong>. Không cần chờ quản trị viên duyệt.
                 </span>
               </div>
 

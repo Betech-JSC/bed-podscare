@@ -208,7 +208,7 @@ export const LandingNavbar: React.FC<LandingNavbarProps> = ({ isAuthenticated = 
                   onClick={() => setMobileMenuOpen(false)}
                   className="w-full flex items-center justify-center h-[46px] rounded-[9px] bg-[#176b58] text-white font-bold text-[14px] shadow-sm"
                 >
-                  Dùng thử miễn phí 3 tháng →
+                  Dùng thử miễn phí 1 năm →
                 </Link>
               </>
             )}

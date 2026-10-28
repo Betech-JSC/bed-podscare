@@ -57,7 +57,7 @@ export const LandingHero: React.FC<LandingHeroProps> = ({
                   href="/register?plan=trial"
                   className="w-full sm:w-auto inline-flex items-center justify-center gap-2 h-[48px] px-6 rounded-[9px] bg-[#176b58] hover:bg-[#10583f] text-white text-[14px] font-bold shadow-[0_8px_20px_rgba(23,107,88,0.2)] hover:shadow-none transition-all"
                 >
-                  <span>Dùng thử miễn phí 3 tháng →</span>
+                  <span>Dùng thử miễn phí 1 năm →</span>
                 </Link>
               )}
 

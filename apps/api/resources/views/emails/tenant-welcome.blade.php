@@ -29,7 +29,7 @@
                                 Xin chào <strong>{{ $ownerName }}</strong>,
                             </p>
                             <p style="margin: 0 0 24px 0; font-size: 15px; line-height: 1.6; color: #404944;">
-                                Chào mừng gian hàng <strong>{{ $storeName }}</strong> chính thức gia nhập nền tảng quản trị sửa chữa đa chi nhánh <strong>FIXO Repair OS</strong>. Gian hàng của bạn đã được phê duyệt tự động và kích hoạt ngay <strong>03 tháng dùng thử miễn phí</strong> toàn bộ tính năng.
+                                Chào mừng gian hàng <strong>{{ $storeName }}</strong> chính thức gia nhập nền tảng quản trị sửa chữa đa chi nhánh <strong>FIXO Repair OS</strong>. Gian hàng của bạn đã được phê duyệt tự động và kích hoạt ngay <strong>01 năm dùng thử miễn phí</strong> toàn bộ tính năng.
                             </p>
 
                             <!-- Store Identity Box -->
@@ -83,7 +83,7 @@
                                             </tr>
                                             <tr>
                                                 <td style="padding: 8px 0; color: #5c6660;">
-                                                    Hạn dùng thử miễn phí (3 tháng):
+                                                    Hạn dùng thử miễn phí (1 năm):
                                                 </td>
                                                 <td style="padding: 8px 0; font-weight: 700; color: #191c1b;">
                                                     Đến hết ngày {{ $trialEndsAtFormatted }}

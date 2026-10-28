@@ -19,7 +19,7 @@ use Illuminate\Support\Facades\Mail;
 class TenantRegistrationController extends Controller
 {
     /**
-     * Đăng ký gian hàng mới công khai, tự động phê duyệt & kích hoạt ngay 3 tháng dùng thử kèm token đăng nhập.
+     * Đăng ký gian hàng mới công khai, tự động phê duyệt & kích hoạt ngay 1 năm dùng thử kèm token đăng nhập.
      */
     public function register(Request $request): JsonResponse
     {
@@ -89,7 +89,7 @@ class TenantRegistrationController extends Controller
         ]);
 
         $selectedPlan = $validated['plan'] ?? 'trial';
-        $expiresAt = now()->addMonths(3);
+        $expiresAt = now()->addYear();
         $trialPeriodDays = max(0, (int) now()->diffInDays($expiresAt, false));
 
         $createdTenant = null;
@@ -223,7 +223,7 @@ class TenantRegistrationController extends Controller
 
         return $this->success(
             $result,
-            'Đăng ký gian hàng thành công. Gian hàng đã được tự động phê duyệt và kích hoạt 3 tháng dùng thử.',
+            'Đăng ký gian hàng thành công. Gian hàng đã được tự động phê duyệt và kích hoạt 1 năm dùng thử.',
             201
         );
     }

@@ -23,7 +23,7 @@ const TIERS: PricingTier[] = [
     name: 'Dùng thử',
     badge: 'Trải nghiệm',
     price: '0đ',
-    unit: '/ 3 tháng',
+    unit: '/ 1 năm',
     description:
       'Dành cho chủ cửa hàng muốn kiểm nghiệm thực tế mọi tính năng trước khi đưa vào vận hành chính thức.',
     features: [
@@ -33,7 +33,7 @@ const TIERS: PricingTier[] = [
       'In phiếu tiếp nhận & hóa đơn chuẩn',
       'Hướng dẫn thiết lập ban đầu qua Ultraview',
     ],
-    ctaText: 'Dùng thử miễn phí 3 tháng →',
+    ctaText: 'Dùng thử miễn phí 1 năm →',
     ctaHref: '/register?plan=trial',
   },
   {

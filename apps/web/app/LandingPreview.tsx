@@ -79,7 +79,7 @@ export function LandingPreview() {
             <div className="hero-actions">
 
               <Link href="/register?plan=trial" className="btn btn-primary">
-                Dùng thử miễn phí 3 tháng →
+                Dùng thử miễn phí 1 năm →
               </Link>
 
               <button className="btn video-btn" onClick={() => setIsVideoOpen(true)}>
@@ -697,7 +697,7 @@ export function LandingPreview() {
             </p>
 
             <div className="price">
-              0đ{' '}<small>/ 3 tháng</small>
+              0đ{' '}<small>/ 1 năm</small>
             </div>
 
             <div className="price-note">

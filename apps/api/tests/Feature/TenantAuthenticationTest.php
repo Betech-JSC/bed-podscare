@@ -137,7 +137,7 @@ class TenantAuthenticationTest extends TestCase
 
         $this->assertNotEmpty($response->json('data.token'));
         $this->assertNotEmpty($response->json('data.user.branch_id'));
-        $this->assertGreaterThanOrEqual(88, $response->json('data.user.tenant.days_remaining'));
+        $this->assertGreaterThanOrEqual(360, $response->json('data.user.tenant.days_remaining'));
     }
 
     public function test_login_rejected_for_suspended_tenant(): void

@@ -63,7 +63,7 @@ class TenantWelcomeMail extends Mailable
         $this->planKey = strtolower((string) ($tenant->plan ?: 'trial'));
         $this->planLabel = self::PLAN_LABELS[$this->planKey] ?? (string) $tenant->plan;
 
-        $rawTrialEndsAt = $tenant->trial_ends_at ?? $tenant->expires_at ?? now()->addMonths(3);
+        $rawTrialEndsAt = $tenant->trial_ends_at ?? $tenant->expires_at ?? now()->addYear();
         $trialCarbon = $rawTrialEndsAt instanceof CarbonInterface
             ? Carbon::instance($rawTrialEndsAt)->copy()
             : Carbon::parse((string) $rawTrialEndsAt);

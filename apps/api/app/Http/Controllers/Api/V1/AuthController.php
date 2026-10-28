@@ -155,7 +155,7 @@ class AuthController extends Controller
 
         // Tự động phê duyệt nếu tenant đang ở trạng thái pending (sau khi xác thực đúng mật khẩu)
         if ($tenant && $tenant->status === 'pending') {
-            $expiresAt = $tenant->expires_at ?? now()->addMonths(3);
+            $expiresAt = $tenant->expires_at ?? now()->addYear();
             $tenant->update([
                 'status'        => 'active',
                 'trial_ends_at' => $tenant->trial_ends_at ?? $expiresAt,

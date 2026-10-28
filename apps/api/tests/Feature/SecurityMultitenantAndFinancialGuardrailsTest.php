@@ -43,8 +43,8 @@ class SecurityMultitenantAndFinancialGuardrailsTest extends TestCase
             'name'          => 'Cửa Hàng Sửa Chữa A',
             'status'        => 'active',
             'plan'          => 'pro',
-            'trial_ends_at' => now()->addMonths(3),
-            'expires_at'    => now()->addMonths(3),
+            'trial_ends_at' => now()->addYear(),
+            'expires_at'    => now()->addYear(),
         ]);
 
         $this->tenantB = Tenant::create([
@@ -52,8 +52,8 @@ class SecurityMultitenantAndFinancialGuardrailsTest extends TestCase
             'name'          => 'Cửa Hàng Sửa Chữa B',
             'status'        => 'active',
             'plan'          => 'pro',
-            'trial_ends_at' => now()->addMonths(3),
-            'expires_at'    => now()->addMonths(3),
+            'trial_ends_at' => now()->addYear(),
+            'expires_at'    => now()->addYear(),
         ]);
 
         $this->branchA = Branch::withoutGlobalScopes()->create([
@@ -500,15 +500,15 @@ class SecurityMultitenantAndFinancialGuardrailsTest extends TestCase
     }
 
     /**
-     * Nhóm 4: Kiểm tra QuotaService trong transaction & bảo toàn 100% chính sách dùng thử miễn phí 3 tháng.
+     * Nhóm 4: Kiểm tra QuotaService trong transaction & bảo toàn 100% chính sách dùng thử miễn phí 1 năm.
      */
     public function test_quota_enforcement_in_transaction_and_three_months_free_trial_preserved(): void
     {
-        // 1. Kiểm tra đăng ký gian hàng mới được kích hoạt ngay 3 tháng dùng thử (~90 ngày)
+        // 1. Kiểm tra đăng ký gian hàng mới được kích hoạt ngay 1 năm dùng thử (~365 ngày)
         $storeCode = 'podstore_' . strtolower(substr(uniqid(), -5));
         $resReg = $this->postJson('/api/v1/tenants/register', [
             'store_code' => $storeCode,
-            'store_name' => 'Tiệm Tai Nghe Dùng Thử 3 Tháng',
+            'store_name' => 'Tiệm Tai Nghe Dùng Thử 1 Năm',
             'owner_name' => 'Chủ Tiệm Mới',
             'phone'      => '090' . rand(1000000, 9999999),
             'email'      => $storeCode . '@example.com',
@@ -520,7 +520,7 @@ class SecurityMultitenantAndFinancialGuardrailsTest extends TestCase
             ->assertJsonPath('data.tenant.status', 'active');
 
         $daysRemaining = (int) $resReg->json('data.tenant.days_remaining');
-        $this->assertGreaterThanOrEqual(88, $daysRemaining);
+        $this->assertGreaterThanOrEqual(360, $daysRemaining);
         $this->assertNotEmpty($resReg->json('data.token'));
 
         // 2. Kiểm tra chặn vượt hạn mức chi nhánh cho gói trial (tối đa 1 chi nhánh)
