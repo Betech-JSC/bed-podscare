@@ -112,17 +112,23 @@ class QcController extends Controller
                 ]);
 
                 $notif = Notification::create([
-                    'branch_id'  => $order->branch_id,
-                    'order_id'   => $order->id,
-                    'type'       => 'qc_action',
-                    'title'      => 'Đạt chuẩn kiểm định QC',
-                    'message'    => "Đơn {$order->order_code} đã vượt qua 6/6 tiêu chuẩn QC và sẵn sàng giao trả.",
-                    'severity'   => 'success',
-                    'action_url' => "/repairs?id={$order->id}",
+                    'tenant_id'   => $order->tenant_id,
+                    'branch_id'   => $order->branch_id,
+                    'order_id'    => $order->id,
+                    'target_role' => 'cskh',
+                    'type'        => 'qc_action',
+                    'title'       => 'Đạt chuẩn kiểm định QC',
+                    'message'     => "Đơn {$order->order_code} đã vượt qua 6/6 tiêu chuẩn QC và sẵn sàng giao trả.",
+                    'severity'    => 'success',
+                    'action_url'  => "/repairs?id={$order->id}",
                 ]);
 
                 $eventTimestamp = now()->toIso8601String();
                 DB::afterCommit(function () use ($notif, $order, $eventTimestamp) {
+                    $resolvedTenantId = $notif->tenant_id !== null
+                        ? (int) $notif->tenant_id
+                        : ($order->tenant_id !== null ? (int) $order->tenant_id : null);
+
                     OrderOperationalEvent::dispatch(
                         $notif->id,
                         $order->id,
@@ -132,11 +138,12 @@ class QcController extends Controller
                         'success',
                         $eventTimestamp,
                         "/repairs?id={$order->id}",
-                        $order->branch_id,
+                        $order->branch_id !== null ? (int) $order->branch_id : null,
                         'cskh',
                         null,
                         'qc_action',
-                        'qc.passed'
+                        'qc.passed',
+                        $resolvedTenantId
                     );
                 });
             } else {
@@ -147,17 +154,24 @@ class QcController extends Controller
                 ]);
 
                 $notif = Notification::create([
-                    'branch_id'  => $order->branch_id,
-                    'order_id'   => $order->id,
-                    'type'       => 'qc_action',
-                    'title'      => 'QC không đạt chuẩn - Cần sửa lại',
-                    'message'    => "Đơn {$order->order_code} không đạt kiểm định QC: " . ($validated['rework_reason'] ?? 'Cần kiểm tra và sửa lại.'),
-                    'severity'   => 'danger',
-                    'action_url' => "/repairs?id={$order->id}",
+                    'tenant_id'   => $order->tenant_id,
+                    'branch_id'   => $order->branch_id,
+                    'order_id'    => $order->id,
+                    'user_id'     => $order->technician_id,
+                    'target_role' => 'technician',
+                    'type'        => 'qc_action',
+                    'title'       => 'QC không đạt chuẩn - Cần sửa lại',
+                    'message'     => "Đơn {$order->order_code} không đạt kiểm định QC: " . ($validated['rework_reason'] ?? 'Cần kiểm tra và sửa lại.'),
+                    'severity'    => 'danger',
+                    'action_url'  => "/repairs?id={$order->id}",
                 ]);
 
                 $eventTimestamp = now()->toIso8601String();
                 DB::afterCommit(function () use ($notif, $order, $eventTimestamp) {
+                    $resolvedTenantId = $notif->tenant_id !== null
+                        ? (int) $notif->tenant_id
+                        : ($order->tenant_id !== null ? (int) $order->tenant_id : null);
+
                     OrderOperationalEvent::dispatch(
                         $notif->id,
                         $order->id,
@@ -167,11 +181,12 @@ class QcController extends Controller
                         'danger',
                         $eventTimestamp,
                         "/repairs?id={$order->id}",
-                        $order->branch_id,
+                        $order->branch_id !== null ? (int) $order->branch_id : null,
                         'technician',
-                        $order->technician_id,
+                        $order->technician_id !== null ? (int) $order->technician_id : null,
                         'qc_action',
-                        'qc.rework_needed'
+                        'qc.rework_needed',
+                        $resolvedTenantId
                     );
                 });
             }

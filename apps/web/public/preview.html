@@ -894,6 +894,51 @@
       font-size: 11px;
     }
 
+    .betech-brand-link {
+      color: #c8eadb;
+      font-weight: 700;
+      text-decoration: underline;
+      text-decoration-color: rgba(200, 234, 219, 0.45);
+      text-underline-offset: 3px;
+      transition: color 0.18s ease, text-decoration-color 0.18s ease;
+    }
+
+    .betech-brand-link:hover {
+      color: #ffffff;
+      text-decoration-color: #ffffff;
+    }
+
+    .betech-brand-link:focus-visible {
+      outline: 2px solid #c8eadb;
+      outline-offset: 3px;
+      border-radius: 3px;
+    }
+
+    .footer-contact-meta {
+      margin-top: 14px;
+      display: flex;
+      flex-direction: column;
+      gap: 5px;
+      font-size: 12.5px;
+      color: #8fa09b;
+    }
+
+    .footer-contact-meta strong {
+      color: #ffffff;
+      font-weight: 600;
+    }
+
+    .footer-contact-meta a {
+      color: #c8eadb;
+      transition: color 0.18s ease;
+    }
+
+    .footer-contact-meta a:hover {
+      color: #ffffff;
+      text-decoration: underline;
+      text-underline-offset: 3px;
+    }
+
     /* =========================
        RESPONSIVE
     ========================= */
@@ -1032,7 +1077,7 @@
   <header class="navbar">
     <div class="container nav-inner">
 
-      <a href="#" class="logo">
+      <a href="/" class="logo">
         <img src="/logo.png" alt="FIXO" class="h-9 w-auto rounded-lg object-contain" />
 
         <div class="logo-text">
@@ -1046,16 +1091,17 @@
         <a href="#industries">Ngành nghề</a>
         <a href="#pricing">Bảng giá</a>
         <a href="#customers">Khách hàng</a>
-        <a href="#docs">Tài liệu</a>
+        <a href="/changelog">Cập nhật</a>
+        <a href="/terms">Tài liệu</a>
         <a href="#contact">Liên hệ</a>
       </nav>
 
       <div class="nav-actions">
-        <a href="#" class="btn btn-outline">
+        <a href="/login" class="btn btn-outline">
           Đăng nhập
         </a>
 
-        <a href="#pricing" class="btn btn-primary">
+        <a href="/register?plan=trial" class="btn btn-primary">
           Dùng thử miễn phí →
         </a>
       </div>
@@ -1368,7 +1414,7 @@
 
     <div class="container">
 
-      <div class="trust-bar">
+      <div class="trust-bar" id="customers">
 
         <div class="trust-grid">
 
@@ -1452,7 +1498,7 @@
             gian và kiểm soát doanh thu.
           </p>
 
-          <a href="#" class="btn btn-primary">
+          <a href="/register?plan=trial" class="btn btn-primary">
             Xem tất cả tính năng →
           </a>
 
@@ -1713,7 +1759,7 @@
           Không cần thẻ tín dụng
         </div>
 
-        <a href="#" class="btn btn-primary">
+        <a href="/register?plan=trial" class="btn btn-primary">
           Tạo tài khoản miễn phí →
         </a>
 
@@ -1744,7 +1790,7 @@
           kho và doanh thu trên FIXO.
         </p>
 
-        <a href="#" class="btn btn-primary">
+        <a href="/register?plan=trial" class="btn btn-primary">
           Dùng thử FIXO miễn phí →
         </a>
 
@@ -1785,8 +1831,17 @@
           <p>
             Phần mềm quản lý cửa hàng sửa chữa
             thiết bị công nghệ hàng đầu Việt Nam —
-            Một sản phẩm được phát triển bởi Betech Digital.
+            Một sản phẩm được phát triển bởi <a href="https://betech-digital.com/" target="_blank" rel="noopener" class="betech-brand-link">Betech Digital</a>.
           </p>
+
+          <div class="footer-contact-meta">
+            <div>
+              <strong>Hotline / Zalo:</strong> <a href="tel:0775600351">0775 600 351</a>
+            </div>
+            <div>
+              <strong>Email:</strong> <a href="mailto:admin@betech-digital.com">admin@betech-digital.com</a>
+            </div>
+          </div>
 
         </div>
 
@@ -1795,33 +1850,36 @@
           <h4>Sản phẩm</h4>
           <a href="#features">Tính năng</a>
           <a href="#pricing">Bảng giá</a>
-          <a href="#">Dùng thử</a>
-          <a href="#">Đăng nhập</a>
+          <a href="/changelog">Nhật ký cập nhật</a>
+          <a href="/changelog?tab=roadmap">Lộ trình phát triển</a>
+          <a href="/register?plan=trial">Dùng thử</a>
+          <a href="/login">Đăng nhập</a>
         </div>
 
 
         <div class="footer-column">
           <h4>Hỗ trợ</h4>
-          <a href="#">Trung tâm trợ giúp</a>
-          <a href="#">Tài liệu</a>
-          <a href="#">Hướng dẫn sử dụng</a>
-          <a href="#">Liên hệ</a>
+          <a href="/track">Tra cứu đơn sửa chữa</a>
+          <a href="/sla">Cam kết vận hành &amp; Hỗ trợ</a>
+          <a href="tel:0775600351">Hotline / Zalo: 0775 600 351</a>
+          <a href="mailto:admin@betech-digital.com">Email: admin@betech-digital.com</a>
         </div>
 
 
         <div class="footer-column">
           <h4>Công ty</h4>
-          <a href="#">Về FIXO</a>
-          <a href="#">Khách hàng</a>
-          <a href="#">Điều khoản</a>
-          <a href="#">Chính sách bảo mật</a>
+          <a href="/terms">Điều khoản sử dụng</a>
+          <a href="/privacy">Chính sách bảo mật</a>
+          <a href="/billing-policy">Chính sách thanh toán</a>
+          <a href="/sla">Cam kết dịch vụ (SLA)</a>
+          <a href="https://betech-digital.com/" target="_blank" rel="noopener">Về Betech Digital</a>
         </div>
 
       </div>
 
 
       <div class="copyright">
-        © 2026 FIXO. Sản phẩm được phát triển bởi Betech Digital.
+        © 2026 FIXO. Sản phẩm được phát triển bởi <a href="https://betech-digital.com/" target="_blank" rel="noopener" class="betech-brand-link">Betech Digital</a> (CÔNG TY TNHH DỊCH VỤ GIẢI PHÁP SỐ BETECH · MST: 0318601210).
       </div>
 
     </div>

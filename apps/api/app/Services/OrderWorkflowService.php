@@ -1009,18 +1009,24 @@ class OrderWorkflowService extends BaseWorkflowService
         };
 
         $notif = Notification::create([
-            'branch_id'  => $model->branch_id,
-            'order_id'   => $model->id,
-            'user_id'    => ($newStatus === 'assigned' ? ($model->technician_id ?? null) : null),
-            'type'       => $notificationData['type'],
-            'title'      => $notificationData['title'],
-            'message'    => $notificationData['message'],
-            'severity'   => $notificationData['severity'],
-            'action_url' => "/repairs?id={$model->id}",
+            'tenant_id'   => $model->tenant_id,
+            'branch_id'   => $model->branch_id,
+            'order_id'    => $model->id,
+            'user_id'     => ($newStatus === 'assigned' ? ($model->technician_id ?? null) : null),
+            'target_role' => $notificationData['role'],
+            'type'        => $notificationData['type'],
+            'title'       => $notificationData['title'],
+            'message'     => $notificationData['message'],
+            'severity'    => $notificationData['severity'],
+            'action_url'  => "/repairs?id={$model->id}",
         ]);
 
         $eventTimestamp = now()->toIso8601String();
         DB::afterCommit(function () use ($notif, $model, $notificationData, $eventTimestamp) {
+            $resolvedTenantId = $notif->tenant_id !== null
+                ? (int) $notif->tenant_id
+                : ($model->tenant_id !== null ? (int) $model->tenant_id : null);
+
             OrderOperationalEvent::dispatch(
                 $notif->id,
                 $model->id,
@@ -1030,11 +1036,12 @@ class OrderWorkflowService extends BaseWorkflowService
                 $notificationData['severity'],
                 $eventTimestamp,
                 "/repairs?id={$model->id}",
-                $model->branch_id,
+                $model->branch_id !== null ? (int) $model->branch_id : null,
                 $notificationData['role'],
-                $notif->user_id,
+                $notif->user_id !== null ? (int) $notif->user_id : null,
                 $notificationData['type'],
-                $notificationData['event']
+                $notificationData['event'],
+                $resolvedTenantId
             );
         });
     }

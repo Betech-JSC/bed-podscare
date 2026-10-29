@@ -229,19 +229,25 @@ class QuoteController extends Controller
             }
             $order->update($orderUpdates);
 
-            // Tạo thông báo vận hành khi lập báo giá
+            // Tạo thông báo vận hành khi lập báo giá (chỉ dành cho quầy CSKH / Admin vì chứa giá tiền VNĐ)
             $notif = Notification::create([
-                'branch_id'  => $order->branch_id,
-                'order_id'   => $order->id,
-                'type'       => 'quote_action',
-                'title'      => 'Đã tạo báo giá mới',
-                'message'    => "Báo giá {$quoteNumber} cho đơn {$order->order_code} trị giá " . number_format($totalAmount) . " ₫ đã được tạo và chờ duyệt.",
-                'severity'   => 'info',
-                'action_url' => "/repairs?id={$order->id}",
+                'tenant_id'   => $order->tenant_id,
+                'branch_id'   => $order->branch_id,
+                'order_id'    => $order->id,
+                'target_role' => 'cskh',
+                'type'        => 'quote_action',
+                'title'       => 'Đã tạo báo giá mới',
+                'message'     => "Báo giá {$quoteNumber} cho đơn {$order->order_code} trị giá " . number_format($totalAmount) . " ₫ đã được tạo và chờ duyệt.",
+                'severity'    => 'info',
+                'action_url'  => "/repairs?id={$order->id}",
             ]);
 
             $eventTimestamp = now()->toIso8601String();
             DB::afterCommit(function () use ($notif, $order, $eventTimestamp) {
+                $resolvedTenantId = $notif->tenant_id !== null
+                    ? (int) $notif->tenant_id
+                    : ($order->tenant_id !== null ? (int) $order->tenant_id : null);
+
                 OrderOperationalEvent::dispatch(
                     $notif->id,
                     $order->id,
@@ -251,11 +257,12 @@ class QuoteController extends Controller
                     'info',
                     $eventTimestamp,
                     "/repairs?id={$order->id}",
-                    $order->branch_id,
+                    $order->branch_id !== null ? (int) $order->branch_id : null,
                     'cskh',
                     null,
                     'quote_action',
-                    'quote.created'
+                    'quote.created',
+                    $resolvedTenantId
                 );
             });
 
@@ -317,33 +324,71 @@ class QuoteController extends Controller
                     'details'        => "Khách đã duyệt báo giá {$lockedQuote->quote_number} trị giá " . number_format($lockedQuote->total_amount) . " ₫",
                 ]);
 
-                // Tạo thông báo vận hành khi duyệt báo giá
-                $notif = Notification::create([
-                    'branch_id'  => $order->branch_id,
-                    'order_id'   => $order->id,
-                    'type'       => 'quote_action',
-                    'title'      => 'Khách hàng duyệt báo giá',
-                    'message'    => "Báo giá {$lockedQuote->quote_number} của đơn {$order->order_code} (" . number_format($lockedQuote->total_amount) . " ₫) đã được phê duyệt.",
-                    'severity'   => 'success',
-                    'action_url' => "/repairs?id={$order->id}",
+                // 1. Thông báo tài chính cho quầy CSKH / Admin (có chứa số tiền báo giá VNĐ)
+                $cskhNotif = Notification::create([
+                    'tenant_id'   => $order->tenant_id,
+                    'branch_id'   => $order->branch_id,
+                    'order_id'    => $order->id,
+                    'target_role' => 'cskh',
+                    'type'        => 'quote_action',
+                    'title'       => 'Khách hàng duyệt báo giá',
+                    'message'     => "Báo giá {$lockedQuote->quote_number} của đơn {$order->order_code} (" . number_format($lockedQuote->total_amount) . " ₫) đã được phê duyệt.",
+                    'severity'    => 'success',
+                    'action_url'  => "/repairs?id={$order->id}",
+                ]);
+
+                // 2. Thông báo kỹ thuật độc lập cho xưởng (tuyệt đối không chứa số tiền VNĐ)
+                $techNotif = Notification::create([
+                    'tenant_id'   => $order->tenant_id,
+                    'branch_id'   => $order->branch_id,
+                    'order_id'    => $order->id,
+                    'target_role' => 'technician',
+                    'type'        => 'order_assigned',
+                    'title'       => 'Đơn chờ kỹ thuật viên tiếp nhận',
+                    'message'     => "Đơn {$order->order_code} đã được khách xác nhận phương án sửa chữa, sẵn sàng tiếp nhận xử lý.",
+                    'severity'    => 'info',
+                    'action_url'  => "/repairs?id={$order->id}",
                 ]);
 
                 $eventTimestamp = now()->toIso8601String();
-                DB::afterCommit(function () use ($notif, $order, $eventTimestamp) {
+                DB::afterCommit(function () use ($cskhNotif, $techNotif, $order, $eventTimestamp) {
+                    $resolvedTenantId = $cskhNotif->tenant_id !== null
+                        ? (int) $cskhNotif->tenant_id
+                        : ($order->tenant_id !== null ? (int) $order->tenant_id : null);
+                    $resolvedBranchId = $order->branch_id !== null ? (int) $order->branch_id : null;
+
                     OrderOperationalEvent::dispatch(
-                        $notif->id,
+                        $cskhNotif->id,
                         $order->id,
                         $order->order_code,
-                        $notif->title,
-                        $notif->message,
+                        $cskhNotif->title,
+                        $cskhNotif->message,
                         'success',
                         $eventTimestamp,
                         "/repairs?id={$order->id}",
-                        $order->branch_id,
-                        'technician',
+                        $resolvedBranchId,
+                        'cskh',
                         null,
                         'quote_action',
-                        'quote.approved'
+                        'quote.approved',
+                        $resolvedTenantId
+                    );
+
+                    OrderOperationalEvent::dispatch(
+                        $techNotif->id,
+                        $order->id,
+                        $order->order_code,
+                        $techNotif->title,
+                        $techNotif->message,
+                        'info',
+                        $eventTimestamp,
+                        "/repairs?id={$order->id}",
+                        $resolvedBranchId,
+                        'technician',
+                        null,
+                        'order_assigned',
+                        'order.waiting_tech',
+                        $resolvedTenantId
                     );
                 });
             }
@@ -412,17 +457,23 @@ class QuoteController extends Controller
 
                 // Tạo thông báo vận hành khi từ chối báo giá
                 $notif = Notification::create([
-                    'branch_id'  => $order->branch_id,
-                    'order_id'   => $order->id,
-                    'type'       => 'quote_action',
-                    'title'      => 'Khách hàng từ chối báo giá',
-                    'message'    => "Khách từ chối báo giá {$quote->quote_number} của đơn {$order->order_code}. Lý do: {$validated['reason']}",
-                    'severity'   => 'danger',
-                    'action_url' => "/repairs?id={$order->id}",
+                    'tenant_id'   => $order->tenant_id,
+                    'branch_id'   => $order->branch_id,
+                    'order_id'    => $order->id,
+                    'target_role' => 'cskh',
+                    'type'        => 'quote_action',
+                    'title'       => 'Khách hàng từ chối báo giá',
+                    'message'     => "Khách từ chối báo giá {$quote->quote_number} của đơn {$order->order_code}. Lý do: {$validated['reason']}",
+                    'severity'    => 'danger',
+                    'action_url'  => "/repairs?id={$order->id}",
                 ]);
 
                 $eventTimestamp = now()->toIso8601String();
                 DB::afterCommit(function () use ($notif, $order, $eventTimestamp) {
+                    $resolvedTenantId = $notif->tenant_id !== null
+                        ? (int) $notif->tenant_id
+                        : ($order->tenant_id !== null ? (int) $order->tenant_id : null);
+
                     OrderOperationalEvent::dispatch(
                         $notif->id,
                         $order->id,
@@ -432,11 +483,12 @@ class QuoteController extends Controller
                         'danger',
                         $eventTimestamp,
                         "/repairs?id={$order->id}",
-                        $order->branch_id,
+                        $order->branch_id !== null ? (int) $order->branch_id : null,
                         'cskh',
                         null,
                         'quote_action',
-                        'quote.rejected'
+                        'quote.rejected',
+                        $resolvedTenantId
                     );
                 });
             }

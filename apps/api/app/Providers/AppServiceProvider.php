@@ -2,10 +2,16 @@
 
 namespace App\Providers;
 
+use Illuminate\Broadcasting\Broadcasters\LogBroadcaster;
+use Illuminate\Broadcasting\Broadcasters\UsePusherChannelConventions;
+use Illuminate\Broadcasting\BroadcastManager;
 use Illuminate\Cache\RateLimiting\Limit;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Broadcast;
 use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Support\ServiceProvider;
+use Psr\Log\LoggerInterface;
+use Symfony\Component\HttpKernel\Exception\AccessDeniedHttpException;
 
 class AppServiceProvider extends ServiceProvider
 {
@@ -27,6 +33,8 @@ class AppServiceProvider extends ServiceProvider
                 $app->make(\App\Services\TelegramAi\GeminiFunctionCallingClient::class)
             )
         );
+
+        $this->registerBroadcastAuthDrivers();
     }
 
     /**
@@ -41,6 +49,13 @@ class AppServiceProvider extends ServiceProvider
         \Laravel\Sanctum\Sanctum::usePersonalAccessTokenModel(\App\Models\PersonalAccessToken::class);
         \App\Models\Scopes\TenantScope::clearCache();
         \App\Models\SystemSetting::clearCache();
+
+        // Đăng ký endpoint xác thực kênh private-* WebSocket tại /api/v1/broadcasting/auth với Sanctum Bearer Token
+        // (bổ sung song song với /broadcasting/auth đã cấu hình trong bootstrap/app.php)
+        Broadcast::routes([
+            'prefix'     => 'api/v1',
+            'middleware' => ['api', 'auth:sanctum'],
+        ]);
 
         RateLimiter::for('tenant-registration', function (Request $request) {
             return Limit::perMinutes(15, 5)
@@ -137,5 +152,99 @@ class AppServiceProvider extends ServiceProvider
             'Tenant'               => \App\Models\Tenant::class,
             'tenant'               => \App\Models\Tenant::class,
         ]);
+    }
+
+    /**
+     * Mở rộng Broadcast drivers ('log', 'null', và fallback 'reverb'/'pusher' khi chưa cài Pusher PHP SDK)
+     * để luôn thực thi đầy đủ kiểm tra phân quyền trong routes/channels.php và ký HMAC-SHA256 chuẩn Pusher v7 / Reverb.
+     */
+    protected function registerBroadcastAuthDrivers(): void
+    {
+        $this->app->resolving(BroadcastManager::class, function (BroadcastManager $broadcastManager): void {
+            $creator = function ($app, array $config = []) {
+                return new class($app->make(LoggerInterface::class), $config) extends LogBroadcaster
+                {
+                    use UsePusherChannelConventions;
+
+                    /** @var array<string, mixed> */
+                    protected array $driverConfig;
+
+                    /**
+                     * @param  array<string, mixed>  $driverConfig
+                     */
+                    public function __construct(LoggerInterface $logger, array $driverConfig = [])
+                    {
+                        parent::__construct($logger);
+                        $this->driverConfig = $driverConfig;
+                    }
+
+                    public function auth($request)
+                    {
+                        $rawChannelName = (string) ($request->channel_name ?? '');
+                        $channelName = $this->normalizeChannelName($rawChannelName);
+
+                        if ($rawChannelName === '' || ! $this->retrieveUser($request, $channelName)) {
+                            throw new AccessDeniedHttpException();
+                        }
+
+                        return parent::verifyUserCanAccessChannel($request, $channelName);
+                    }
+
+                    public function validAuthenticationResponse($request, $result)
+                    {
+                        $rawChannelName = (string) ($request->channel_name ?? '');
+                        $socketId = (string) ($request->socket_id ?? '');
+
+                        $key = (string) (
+                            ($this->driverConfig['key'] ?? null)
+                            ?: config('broadcasting.connections.reverb.key')
+                            ?: config('broadcasting.connections.pusher.key')
+                            ?: 'podscare_reverb_key'
+                        );
+
+                        $secret = (string) (
+                            ($this->driverConfig['secret'] ?? null)
+                            ?: config('broadcasting.connections.reverb.secret')
+                            ?: config('broadcasting.connections.pusher.secret')
+                            ?: 'podscare_reverb_secret'
+                        );
+
+                        if (str_starts_with($rawChannelName, 'presence-')) {
+                            $channelName = $this->normalizeChannelName($rawChannelName);
+                            $user = $this->retrieveUser($request, $channelName);
+                            $broadcastIdentifier = $user && method_exists($user, 'getAuthIdentifierForBroadcasting')
+                                ? $user->getAuthIdentifierForBroadcasting()
+                                : ($user ? $user->getAuthIdentifier() : null);
+
+                            $channelData = json_encode([
+                                'user_id'   => (string) $broadcastIdentifier,
+                                'user_info' => $result,
+                            ], JSON_UNESCAPED_UNICODE);
+
+                            $signature = hash_hmac('sha256', "{$socketId}:{$rawChannelName}:{$channelData}", $secret);
+
+                            return [
+                                'auth'         => "{$key}:{$signature}",
+                                'channel_data' => $channelData,
+                            ];
+                        }
+
+                        $signature = hash_hmac('sha256', "{$socketId}:{$rawChannelName}", $secret);
+
+                        return [
+                            'auth' => "{$key}:{$signature}",
+                        ];
+                    }
+                };
+            };
+
+            $broadcastManager->extend('log', $creator);
+            $broadcastManager->extend('null', $creator);
+
+            if (! class_exists(\Pusher\Pusher::class)) {
+                $broadcastManager->extend('reverb', $creator);
+                $broadcastManager->extend('pusher', $creator);
+            }
+        });
     }
 }

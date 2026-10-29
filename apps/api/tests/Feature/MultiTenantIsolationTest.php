@@ -367,43 +367,67 @@ class MultiTenantIsolationTest extends TestCase
         $channelsProp->setAccessible(true);
         $channels = $channelsProp->getValue($broadcaster);
 
-        $this->assertArrayHasKey('branch.{branchId}.orders', $channels);
-        $this->assertArrayHasKey('branch.{branchId}.{role}', $channels);
+        // Xác minh các kênh toàn cục cũ không có tenantId đã bị gỡ bỏ hoàn toàn
+        $this->assertArrayNotHasKey('orders.all', $channels);
+        $this->assertArrayNotHasKey('branch.{branchId}.orders', $channels);
+        $this->assertArrayNotHasKey('branch.{branchId}.{role}', $channels);
+        $this->assertArrayNotHasKey('role.{role}', $channels);
 
-        $ordersCallback = $channels['branch.{branchId}.orders'];
-        $roleCallback = $channels['branch.{branchId}.{role}'];
+        // Xác minh các kênh đa tầng mới có tenantId & platform.super_admin đã được đăng ký
+        $this->assertArrayHasKey('platform.super_admin', $channels);
+        $this->assertArrayHasKey('tenant.{tenantId}.orders', $channels);
+        $this->assertArrayHasKey('tenant.{tenantId}.role.{role}', $channels);
+        $this->assertArrayHasKey('tenant.{tenantId}.branch.{branchId}.orders', $channels);
+        $this->assertArrayHasKey('tenant.{tenantId}.branch.{branchId}.{role}', $channels);
 
-        // 1. Admin của Tenant A truy cập được các chi nhánh thuộc Tenant A (A1, A2) nhưng bị chặn (false) khi truy cập chi nhánh của Tenant B (B1)
+        $platformCallback = $channels['platform.super_admin'];
+        $tenantOrdersCallback = $channels['tenant.{tenantId}.orders'];
+        $branchOrdersCallback = $channels['tenant.{tenantId}.branch.{branchId}.orders'];
+        $branchRoleCallback = $channels['tenant.{tenantId}.branch.{branchId}.{role}'];
+
+        // 1. Admin của Tenant A truy cập được các kênh thuộc Tenant A (A1, A2) nhưng bị chặn (false) trên Tenant B hoặc chi nhánh B1 gán sai vào Tenant A
         $this->actingAs($ctx['adminA']);
-        $this->assertTrue($ordersCallback($ctx['adminA'], $ctx['branchA1']->id));
-        $this->assertTrue($ordersCallback($ctx['adminA'], $ctx['branchA2']->id));
-        $this->assertFalse($ordersCallback($ctx['adminA'], $ctx['branchB1']->id));
+        $this->assertFalse($platformCallback($ctx['adminA']));
+        $this->assertTrue($tenantOrdersCallback($ctx['adminA'], $ctx['tenantA']->id));
+        $this->assertFalse($tenantOrdersCallback($ctx['adminA'], $ctx['tenantB']->id));
 
-        $this->assertTrue($roleCallback($ctx['adminA'], $ctx['branchA1']->id, 'cskh'));
-        $this->assertFalse($roleCallback($ctx['adminA'], $ctx['branchB1']->id, 'cskh'));
+        $this->assertTrue($branchOrdersCallback($ctx['adminA'], $ctx['tenantA']->id, $ctx['branchA1']->id));
+        $this->assertTrue($branchOrdersCallback($ctx['adminA'], $ctx['tenantA']->id, $ctx['branchA2']->id));
+        $this->assertFalse($branchOrdersCallback($ctx['adminA'], $ctx['tenantB']->id, $ctx['branchB1']->id));
+        $this->assertFalse($branchOrdersCallback($ctx['adminA'], $ctx['tenantA']->id, $ctx['branchB1']->id));
 
-        // 2. Nhân sự chi nhánh (CSKH A1) chỉ truy cập được đúng chi nhánh A1 và đúng role 'cskh'
+        $this->assertTrue($branchRoleCallback($ctx['adminA'], $ctx['tenantA']->id, $ctx['branchA1']->id, 'cskh'));
+        $this->assertFalse($branchRoleCallback($ctx['adminA'], $ctx['tenantB']->id, $ctx['branchB1']->id, 'cskh'));
+
+        // 2. Nhân sự chi nhánh (CSKH A1) chỉ truy cập được đúng Tenant A, đúng chi nhánh A1 và đúng role 'cskh'
         $this->actingAs($ctx['cskhA1']);
-        $this->assertTrue($ordersCallback($ctx['cskhA1'], $ctx['branchA1']->id));
-        $this->assertFalse($ordersCallback($ctx['cskhA1'], $ctx['branchA2']->id));
-        $this->assertFalse($ordersCallback($ctx['cskhA1'], $ctx['branchB1']->id));
+        $this->assertFalse($tenantOrdersCallback($ctx['cskhA1'], $ctx['tenantA']->id));
+        $this->assertTrue($branchOrdersCallback($ctx['cskhA1'], $ctx['tenantA']->id, $ctx['branchA1']->id));
+        $this->assertFalse($branchOrdersCallback($ctx['cskhA1'], $ctx['tenantA']->id, $ctx['branchA2']->id));
+        $this->assertFalse($branchOrdersCallback($ctx['cskhA1'], $ctx['tenantB']->id, $ctx['branchB1']->id));
 
-        $this->assertTrue($roleCallback($ctx['cskhA1'], $ctx['branchA1']->id, 'cskh'));
-        $this->assertFalse($roleCallback($ctx['cskhA1'], $ctx['branchA1']->id, 'technician'));
-        $this->assertFalse($roleCallback($ctx['cskhA1'], $ctx['branchA2']->id, 'cskh'));
-        $this->assertFalse($roleCallback($ctx['cskhA1'], $ctx['branchB1']->id, 'cskh'));
+        $this->assertTrue($branchRoleCallback($ctx['cskhA1'], $ctx['tenantA']->id, $ctx['branchA1']->id, 'cskh'));
+        $this->assertFalse($branchRoleCallback($ctx['cskhA1'], $ctx['tenantA']->id, $ctx['branchA1']->id, 'technician'));
+        $this->assertFalse($branchRoleCallback($ctx['cskhA1'], $ctx['tenantA']->id, $ctx['branchA2']->id, 'cskh'));
+        $this->assertFalse($branchRoleCallback($ctx['cskhA1'], $ctx['tenantB']->id, $ctx['branchB1']->id, 'cskh'));
 
-        // 3. Super Admin có quyền lắng nghe trên mọi chi nhánh
+        // 3. Super Admin chỉ có quyền lắng nghe trên kênh Nền tảng platform.super_admin, bị chặn hoàn toàn trên mọi kênh đơn hàng cửa hàng
         $this->actingAs($ctx['superAdmin']);
-        $this->assertTrue($ordersCallback($ctx['superAdmin'], $ctx['branchA1']->id));
-        $this->assertTrue($ordersCallback($ctx['superAdmin'], $ctx['branchB1']->id));
+        $this->assertTrue($platformCallback($ctx['superAdmin']));
+        $this->assertFalse($tenantOrdersCallback($ctx['superAdmin'], $ctx['tenantA']->id));
+        $this->assertFalse($branchOrdersCallback($ctx['superAdmin'], $ctx['tenantA']->id, $ctx['branchA1']->id));
+        $this->assertFalse($branchOrdersCallback($ctx['superAdmin'], $ctx['tenantB']->id, $ctx['branchB1']->id));
+        $this->assertFalse($branchRoleCallback($ctx['superAdmin'], $ctx['tenantA']->id, $ctx['branchA1']->id, 'cskh'));
     }
 
     public function test_notifications_mark_all_as_read_is_isolated_by_tenant(): void
     {
         $ctx = $this->setupTwoTenants();
+        \App\Models\NotificationRead::query()->delete();
+        Notification::query()->delete();
 
         $notifA = Notification::create([
+            'tenant_id' => $ctx['tenantA']->id,
             'branch_id' => $ctx['branchA1']->id,
             'order_id'  => $ctx['orderA1']->id,
             'type'      => 'order_created',
@@ -413,6 +437,7 @@ class MultiTenantIsolationTest extends TestCase
         ]);
 
         $notifB = Notification::create([
+            'tenant_id' => $ctx['tenantB']->id,
             'branch_id' => $ctx['branchB1']->id,
             'order_id'  => $ctx['orderB1']->id,
             'type'      => 'order_created',
@@ -421,13 +446,38 @@ class MultiTenantIsolationTest extends TestCase
             'is_read'   => false,
         ]);
 
-        // Admin Tenant A đánh dấu đọc tất cả không làm ảnh hưởng Tenant B
+        // Admin Tenant A đánh dấu đọc tất cả: chỉ ghi nhận cho riêng Admin A trong notification_reads,
+        // không làm ảnh hưởng nhân sự khác trong cùng Tenant A (cskhA1) và tuyệt đối không ảnh hưởng Tenant B
         $this->actingAs($ctx['adminA'])
             ->postJson('/api/v1/notifications/read-all')
-            ->assertOk();
+            ->assertOk()
+            ->assertJsonPath('data.updated_count', 1);
 
-        $this->assertTrue((bool) $notifA->fresh()->is_read);
-        $this->assertFalse((bool) $notifB->fresh()->is_read);
+        $this->assertDatabaseHas('notification_reads', [
+            'notification_id' => $notifA->id,
+            'user_id'         => $ctx['adminA']->id,
+        ]);
+        $this->assertDatabaseMissing('notification_reads', [
+            'notification_id' => $notifB->id,
+        ]);
+
+        $this->actingAs($ctx['adminA'])
+            ->getJson('/api/v1/notifications')
+            ->assertOk()
+            ->assertJsonPath('data.unread_count', 0)
+            ->assertJsonPath('data.data.0.is_read', true);
+
+        $this->actingAs($ctx['cskhA1'])
+            ->getJson('/api/v1/notifications')
+            ->assertOk()
+            ->assertJsonPath('data.unread_count', 1)
+            ->assertJsonPath('data.data.0.is_read', false);
+
+        $this->actingAs($ctx['adminB'])
+            ->getJson('/api/v1/notifications')
+            ->assertOk()
+            ->assertJsonPath('data.unread_count', 1)
+            ->assertJsonPath('data.data.0.is_read', false);
 
         // Admin Tenant A không thể đánh dấu đã đọc thông báo của Tenant B
         $this->actingAs($ctx['adminA'])

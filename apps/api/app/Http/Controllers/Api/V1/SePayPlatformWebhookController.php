@@ -2,13 +2,17 @@
 
 namespace App\Http\Controllers\Api\V1;
 
+use App\Events\OrderOperationalEvent;
 use App\Http\Controllers\Controller;
 use App\Models\AuditLog;
+use App\Models\Notification;
 use App\Models\Payment;
 use App\Models\RepairOrder;
 use App\Models\SaasInvoice;
+use App\Models\Scopes\TenantScope;
 use App\Models\SepayTransaction;
 use App\Models\Tenant;
+use App\Models\User;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -153,6 +157,95 @@ class SePayPlatformWebhookController extends Controller
                         'status'          => 'active',
                     ]);
                 }
+
+                $planLabel = strtoupper((string) $invoice->plan_id);
+                $formattedAmount = number_format((float) $transferAmount, 0, ',', '.') . ' ₫';
+                $storeDisplayName = $tenant?->name ?? "Tenant #{$invoice->tenant_id}";
+                $storeCode = (string) ($tenant?->code ?? $invoice->reference_code);
+
+                // 1. Thông báo cấp Nền tảng cho FIXO Super Admin (tenant_id = null, target_role = 'super_admin')
+                $platformNotif = Notification::create([
+                    'tenant_id'   => null,
+                    'user_id'     => null,
+                    'branch_id'   => null,
+                    'target_role' => 'super_admin',
+                    'type'        => 'saas_payment_received',
+                    'title'       => 'Thanh toán gói cước SaaS thành công',
+                    'message'     => "Gian hàng {$storeDisplayName} vừa thanh toán hóa đơn {$invoice->reference_code} ({$formattedAmount}) cho gói {$planLabel}.",
+                    'severity'    => 'success',
+                    'is_read'     => false,
+                ]);
+
+                // 2. Thông báo xác nhận gia hạn gói cước cho Chủ tiệm của Gian hàng đích
+                $owner = $tenant
+                    ? User::withoutGlobalScope(TenantScope::class)
+                        ->where('tenant_id', $tenant->id)
+                        ->where('role', 'admin')
+                        ->orderBy('id')
+                        ->first()
+                    : null;
+
+                $ownerNotif = null;
+                if ($tenant) {
+                    $ownerNotif = Notification::create([
+                        'tenant_id'   => $tenant->id,
+                        'user_id'     => $owner?->id,
+                        'branch_id'   => $owner?->branch_id,
+                        'target_role' => 'admin',
+                        'type'        => 'saas_subscription_renewed',
+                        'title'       => 'Gia hạn gói cước thành công',
+                        'message'     => "Hóa đơn {$invoice->reference_code} ({$formattedAmount}) đã được xác nhận. Gian hàng {$tenant->name} đã được kích hoạt gói {$planLabel}.",
+                        'severity'    => 'success',
+                        'is_read'     => false,
+                    ]);
+                }
+
+                $eventTimestamp = now()->toIso8601String();
+                DB::afterCommit(function () use ($platformNotif, $ownerNotif, $tenant, $owner, $storeCode, $eventTimestamp) {
+                    try {
+                        OrderOperationalEvent::dispatch(
+                            $platformNotif->id,
+                            0,
+                            $storeCode,
+                            $platformNotif->title,
+                            $platformNotif->message,
+                            'success',
+                            $eventTimestamp,
+                            '/platform/billing',
+                            null,
+                            'super_admin',
+                            null,
+                            'saas_payment_received',
+                            'platform.saas_payment_received',
+                            null
+                        );
+
+                        if ($ownerNotif) {
+                            $resolvedOwnerTenantId = $ownerNotif->tenant_id !== null
+                                ? (int) $ownerNotif->tenant_id
+                                : ($tenant?->id !== null ? (int) $tenant->id : null);
+
+                            OrderOperationalEvent::dispatch(
+                                $ownerNotif->id,
+                                0,
+                                $storeCode,
+                                $ownerNotif->title,
+                                $ownerNotif->message,
+                                'success',
+                                $eventTimestamp,
+                                '/subscription',
+                                $owner?->branch_id !== null ? (int) $owner->branch_id : null,
+                                'admin',
+                                $owner?->id !== null ? (int) $owner->id : null,
+                                'saas_subscription_renewed',
+                                'tenant.saas_subscription_renewed',
+                                $resolvedOwnerTenantId
+                            );
+                        }
+                    } catch (\Throwable) {
+                        // Không làm ảnh hưởng phản hồi webhook SePay nếu tiến trình broadcast gặp sự cố
+                    }
+                });
 
                 return response()->json([
                     'success' => true,

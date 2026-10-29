@@ -2,6 +2,7 @@
 
 import React from 'react';
 import Link from 'next/link';
+import { BETECH_LEGAL_ENTITY } from '../policies/policyData';
 
 export const LandingFooter: React.FC = () => {
   const handleScrollTo = (e: React.MouseEvent<HTMLAnchorElement>, id: string) => {
@@ -45,20 +46,29 @@ export const LandingFooter: React.FC = () => {
             </Link>
 
             <p className="text-[#91a29d] text-[13px] leading-relaxed max-w-[360px] mb-6">
-              Phần mềm quản lý cửa hàng sửa chữa thiết bị công nghệ hàng đầu Việt Nam — Một sản phẩm được phát triển bởi Betech Digital.
+              Phần mềm quản lý cửa hàng sửa chữa thiết bị công nghệ hàng đầu Việt Nam — Một sản phẩm được phát triển bởi{' '}
+              <a
+                href="https://betech-digital.com/"
+                target="_blank"
+                rel="noopener"
+                className="font-bold text-[#c8eadb] hover:text-white underline underline-offset-2 transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#c8eadb]"
+              >
+                Betech Digital
+              </a>
+              .
             </p>
 
             <div className="text-[13px] text-[#8fa09b] space-y-1.5">
               <p>
-                <strong className="text-white">Email hỗ trợ:</strong>{' '}
-                <a href="mailto:support@fixo.com.vn" className="hover:text-white transition-colors">
-                  support@fixo.com.vn
+                <strong className="text-white">Email hỗ trợ &amp; pháp lý:</strong>{' '}
+                <a href="mailto:admin@betech-digital.com" className="text-[#c8eadb] hover:text-white transition-colors">
+                  {BETECH_LEGAL_ENTITY.email}
                 </a>
               </p>
               <p>
-                <strong className="text-white">Hotline kỹ thuật:</strong>{' '}
-                <a href="tel:02873001234" className="hover:text-white transition-colors">
-                  028 7300 1234
+                <strong className="text-white">Hotline / Zalo hỗ trợ:</strong>{' '}
+                <a href="tel:0775600351" className="text-[#c8eadb] hover:text-white transition-colors">
+                  {BETECH_LEGAL_ENTITY.hotline}
                 </a>
               </p>
             </div>
@@ -90,15 +100,6 @@ export const LandingFooter: React.FC = () => {
               </li>
               <li>
                 <a
-                  href="#workflow"
-                  onClick={(e) => handleScrollTo(e, 'workflow')}
-                  className="hover:text-white transition-colors"
-                >
-                  Quy trình 4 bước
-                </a>
-              </li>
-              <li>
-                <a
                   href="#pricing"
                   onClick={(e) => handleScrollTo(e, 'pricing')}
                   className="hover:text-white transition-colors"
@@ -107,7 +108,17 @@ export const LandingFooter: React.FC = () => {
                 </a>
               </li>
               <li>
-                <Link href="/register?plan=pro" className="hover:text-white transition-colors">
+                <Link href="/changelog" className="hover:text-white transition-colors">
+                  Nhật ký cập nhật
+                </Link>
+              </li>
+              <li>
+                <Link href="/changelog?tab=roadmap" className="hover:text-white transition-colors">
+                  Lộ trình phát triển
+                </Link>
+              </li>
+              <li>
+                <Link href="/register?plan=trial" className="hover:text-white transition-colors">
                   Dùng thử 1 năm
                 </Link>
               </li>
@@ -131,18 +142,18 @@ export const LandingFooter: React.FC = () => {
                 </Link>
               </li>
               <li>
-                <a href="#contact" className="hover:text-white transition-colors">
-                  Trung tâm trợ giúp
+                <Link href="/sla" className="hover:text-white transition-colors">
+                  Cam kết vận hành &amp; Hỗ trợ
+                </Link>
+              </li>
+              <li>
+                <a href="tel:0775600351" className="hover:text-white transition-colors">
+                  Hotline / Zalo: 0775 600 351
                 </a>
               </li>
               <li>
-                <a href="#contact" className="hover:text-white transition-colors">
-                  Hướng dẫn sử dụng
-                </a>
-              </li>
-              <li>
-                <a href="mailto:support@fixo.com.vn" className="hover:text-white transition-colors">
-                  Yêu cầu tư vấn triển khai
+                <a href="mailto:admin@betech-digital.com" className="hover:text-white transition-colors">
+                  Email: admin@betech-digital.com
                 </a>
               </li>
             </ul>
@@ -155,28 +166,33 @@ export const LandingFooter: React.FC = () => {
             </h4>
             <ul className="space-y-2.5 text-[13px] text-[#8fa09b]">
               <li>
-                <a href="#features" className="hover:text-white transition-colors">
-                  Giới thiệu FIXO
-                </a>
+                <Link href="/terms" className="hover:text-white transition-colors">
+                  Điều khoản sử dụng
+                </Link>
               </li>
               <li>
-                <a href="#contact" className="hover:text-white transition-colors">
-                  Bảo mật dữ liệu
-                </a>
-              </li>
-              <li>
-                <a href="#contact" className="hover:text-white transition-colors">
-                  Điều khoản dịch vụ
-                </a>
-              </li>
-              <li>
-                <a href="#contact" className="hover:text-white transition-colors">
+                <Link href="/privacy" className="hover:text-white transition-colors">
                   Chính sách bảo mật
-                </a>
+                </Link>
               </li>
               <li>
-                <a href="#contact" className="hover:text-white transition-colors">
+                <Link href="/billing-policy" className="hover:text-white transition-colors">
+                  Chính sách thanh toán
+                </Link>
+              </li>
+              <li>
+                <Link href="/sla" className="hover:text-white transition-colors">
                   Cam kết dịch vụ (SLA)
+                </Link>
+              </li>
+              <li>
+                <a
+                  href="https://betech-digital.com/"
+                  target="_blank"
+                  rel="noopener"
+                  className="hover:text-white transition-colors"
+                >
+                  Về Betech Digital
                 </a>
               </li>
             </ul>
@@ -185,7 +201,18 @@ export const LandingFooter: React.FC = () => {
 
         {/* Bottom copyright */}
         <div className="pt-8 border-t border-[#1a3832] flex flex-col sm:flex-row items-center justify-between gap-4 text-[12px] text-[#70817c]">
-          <p>© 2026 FIXO. Sản phẩm được phát triển bởi Betech Digital.</p>
+          <p>
+            © 2026 FIXO. Sản phẩm được phát triển bởi{' '}
+            <a
+              href="https://betech-digital.com/"
+              target="_blank"
+              rel="noopener"
+              className="font-bold text-[#c8eadb] hover:text-white underline underline-offset-2 transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#c8eadb]"
+            >
+              Betech Digital
+            </a>{' '}
+            (CÔNG TY TNHH DỊCH VỤ GIẢI PHÁP SỐ BETECH · MST: 0318601210).
+          </p>
           <p className="flex items-center gap-4">
             <span>Tiêu chuẩn vận hành cửa hàng công nghệ hiện đại</span>
           </p>

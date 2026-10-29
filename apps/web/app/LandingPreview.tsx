@@ -4,6 +4,7 @@ import React, { useState } from 'react';
 import Link from 'next/link';
 import { Icon } from '@podscare/ui';
 import { VideoModal } from './components/landing/VideoModal';
+import { BETECH_LEGAL_ENTITY } from './components/policies/policyData';
 import './landing-preview.css';
 
 export function LandingPreview() {
@@ -356,7 +357,7 @@ export function LandingPreview() {
 
         <div className="container">
 
-          <div className="trust-bar">
+          <div className="trust-bar" id="customers">
 
             <div className="trust-grid">
 
@@ -443,9 +444,9 @@ export function LandingPreview() {
                 gian và kiểm soát doanh thu.
               </p>
 
-              <a href="#" className="btn btn-primary">
+              <Link href="/register?plan=trial" className="btn btn-primary">
                 Xem tất cả tính năng →
-              </a>
+              </Link>
 
             </div>
 
@@ -716,6 +717,114 @@ export function LandingPreview() {
 
 
       {/*  =========================
+       DATA OWNERSHIP & LEGAL TRUST STRIP
+  ==========================  */}
+
+      <section className="data-trust-strip" id="docs">
+
+        <div className="container">
+
+          <div className="section-heading">
+
+            <div className="section-tag">
+              BẢO CHỨNG PHÁP LÝ &amp; AN TOÀN DỮ LIỆU
+            </div>
+
+            <h2>
+              Cam kết An toàn &amp; Quyền Sở hữu Dữ liệu Cửa hàng
+            </h2>
+
+            <p>
+              100% dữ liệu khách hàng, số điện thoại, đơn sửa chữa, tồn kho linh kiện và doanh thu thuộc quyền sở hữu độc quyền của Cửa hàng; hạ tầng đám mây được cô lập đa thuê bao nghiêm ngặt và vận hành bởi{' '}
+              <strong>{BETECH_LEGAL_ENTITY.companyName}</strong> (MST{' '}
+              <strong>{BETECH_LEGAL_ENTITY.taxId}</strong>).
+            </p>
+
+          </div>
+
+          <div className="data-trust-grid">
+
+            <article className="data-trust-card">
+              <div className="data-trust-card-head">
+                <span className="data-trust-card-eyebrow">
+                  NGHỊ ĐỊNH 13/2023/NĐ-CP
+                </span>
+                <h3>Quyền sở hữu dữ liệu 100% &amp; Cô lập Multi-Tenant</h3>
+              </div>
+              <p>
+                Tệp khách hàng, số điện thoại, tồn kho và sổ quỹ được cô lập tuyệt đối theo từng gian hàng, cam kết không khai thác thương mại chéo và tự động che dấu PII trên cổng tra cứu công khai.
+              </p>
+              <Link href="/privacy" className="data-trust-card-link">
+                Xem Chính sách bảo mật →
+              </Link>
+            </article>
+
+            <article className="data-trust-card">
+              <div className="data-trust-card-head">
+                <span className="data-trust-card-eyebrow">
+                  KHUNG PHÁP LÝ B2B SAAS
+                </span>
+                <h3>Phân định minh bạch trách nhiệm B2B SaaS</h3>
+              </div>
+              <p>
+                Betech Digital cung cấp nền tảng phần mềm quản trị vận hành, trong khi từng Cửa hàng chủ động phân quyền nhân sự và chịu trách nhiệm độc lập về linh kiện, kỹ thuật sửa chữa, bảo hành thiết bị và thuế.
+              </p>
+              <Link href="/terms" className="data-trust-card-link">
+                Xem Điều khoản sử dụng →
+              </Link>
+            </article>
+
+            <article className="data-trust-card">
+              <div className="data-trust-card-head">
+                <span className="data-trust-card-eyebrow">
+                  SEPAY VIETQR · BẢO TOÀN DỮ LIỆU
+                </span>
+                <h3>Biểu phí minh bạch &amp; Lưu giữ an toàn 30/90 ngày</h3>
+              </div>
+              <p>
+                Đồng bộ 3 gói cước minh bạch, đối soát chuyển khoản tự động qua SePay VietQR, hỗ trợ hóa đơn điện tử hợp lệ và bảo toàn dữ liệu 30 ngày chỉ xem/xuất dữ liệu cùng 90 ngày lưu trữ sau hết hạn.
+              </p>
+              <Link href="/billing-policy" className="data-trust-card-link">
+                Xem Chính sách thanh toán →
+              </Link>
+            </article>
+
+            <article className="data-trust-card">
+              <div className="data-trust-card-head">
+                <span className="data-trust-card-eyebrow">
+                  HẠ TẦNG ĐÁM MÂY · HỖ TRỢ 7 NGÀY
+                </span>
+                <h3>Cam kết Uptime 99.5% &amp; Sao lưu tự động hàng ngày</h3>
+              </div>
+              <p>
+                Độ sẵn sàng hệ thống đạt tối thiểu 99.5%, sao lưu cơ sở dữ liệu tự động hàng ngày, thông báo bảo trì định kỳ trước tối thiểu 24 giờ và trực hỗ trợ kỹ thuật {BETECH_LEGAL_ENTITY.supportHours}.
+              </p>
+              <Link href="/sla" className="data-trust-card-link">
+                Xem Cam kết dịch vụ (SLA) →
+              </Link>
+            </article>
+
+          </div>
+
+          <div className="data-trust-meta">
+            <span>
+              Đơn vị chủ quản &amp; vận hành:{' '}
+              <strong>{BETECH_LEGAL_ENTITY.companyName}</strong> · MST:{' '}
+              <strong>{BETECH_LEGAL_ENTITY.taxId}</strong>
+            </span>
+            <span>
+              Kênh hỗ trợ chính thức ({BETECH_LEGAL_ENTITY.supportHours}):{' '}
+              <a href="tel:0775600351">{BETECH_LEGAL_ENTITY.hotline}</a> ·{' '}
+              <a href="mailto:admin@betech-digital.com">{BETECH_LEGAL_ENTITY.email}</a>
+            </span>
+          </div>
+
+        </div>
+
+      </section>
+
+
+      {/*  =========================
        CTA
   ==========================  */}
 
@@ -776,8 +885,28 @@ export function LandingPreview() {
               <p>
                 Phần mềm quản lý cửa hàng sửa chữa
                 thiết bị công nghệ hàng đầu Việt Nam —
-                Một sản phẩm được phát triển bởi Betech Digital.
+                Một sản phẩm được phát triển bởi{' '}
+                <a
+                  href="https://betech-digital.com/"
+                  target="_blank"
+                  rel="noopener"
+                  className="betech-brand-link"
+                >
+                  Betech Digital
+                </a>
+                .
               </p>
+
+              <div className="footer-contact-meta">
+                <div>
+                  <strong>Hotline / Zalo:</strong>{' '}
+                  <a href="tel:0775600351">{BETECH_LEGAL_ENTITY.hotline}</a>
+                </div>
+                <div>
+                  <strong>Email:</strong>{' '}
+                  <a href="mailto:admin@betech-digital.com">{BETECH_LEGAL_ENTITY.email}</a>
+                </div>
+              </div>
 
             </div>
 
@@ -788,33 +917,45 @@ export function LandingPreview() {
               <a href="#pricing">Bảng giá</a>
               <Link href="/changelog">Nhật ký cập nhật</Link>
               <Link href="/changelog?tab=roadmap">Lộ trình phát triển</Link>
-              <Link href="/register?plan=pro">Dùng thử</Link>
+              <Link href="/register?plan=trial">Dùng thử</Link>
               <Link href="/login">Đăng nhập</Link>
             </div>
 
 
             <div className="footer-column">
               <h4>Hỗ trợ</h4>
-              <a href="#">Trung tâm trợ giúp</a>
-              <a href="#">Tài liệu</a>
-              <a href="#">Hướng dẫn sử dụng</a>
-              <a href="#">Liên hệ</a>
+              <Link href="/track">Tra cứu đơn sửa chữa</Link>
+              <Link href="/sla">Cam kết vận hành &amp; Hỗ trợ</Link>
+              <a href="tel:0775600351">Hotline / Zalo: 0775 600 351</a>
+              <a href="mailto:admin@betech-digital.com">Email: admin@betech-digital.com</a>
             </div>
 
 
             <div className="footer-column">
               <h4>Công ty</h4>
-              <a href="#">Về FIXO</a>
-              <a href="#">Khách hàng</a>
-              <a href="#">Điều khoản</a>
-              <a href="#">Chính sách bảo mật</a>
+              <Link href="/terms">Điều khoản sử dụng</Link>
+              <Link href="/privacy">Chính sách bảo mật</Link>
+              <Link href="/billing-policy">Chính sách thanh toán</Link>
+              <Link href="/sla">Cam kết dịch vụ (SLA)</Link>
+              <a href="https://betech-digital.com/" target="_blank" rel="noopener">
+                Về Betech Digital
+              </a>
             </div>
 
           </div>
 
 
           <div className="copyright">
-            © 2026 FIXO. Sản phẩm được phát triển bởi Betech Digital.
+            © 2026 FIXO. Sản phẩm được phát triển bởi{' '}
+            <a
+              href="https://betech-digital.com/"
+              target="_blank"
+              rel="noopener"
+              className="betech-brand-link"
+            >
+              Betech Digital
+            </a>{' '}
+            (CÔNG TY TNHH DỊCH VỤ GIẢI PHÁP SỐ BETECH · MST: 0318601210).
           </div>
 
         </div>

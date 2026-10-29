@@ -24,6 +24,7 @@ function RegisterStoreForm() {
   const [phone, setPhone] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [agreedToPolicies, setAgreedToPolicies] = useState(false);
   const [websiteUrl, setWebsiteUrl] = useState('');
   const [formStartedAt] = useState<number>(() => Date.now());
   const [loading, setLoading] = useState(false);
@@ -123,6 +124,13 @@ function RegisterStoreForm() {
       return;
     }
 
+    if (!agreedToPolicies) {
+      setErrorMessage(
+        'Vui lòng tích xác nhận đã đọc và đồng ý với Điều khoản sử dụng và Chính sách bảo mật trước khi khởi tạo gian hàng.'
+      );
+      return;
+    }
+
     setLoading(true);
 
     try {
@@ -199,7 +207,8 @@ function RegisterStoreForm() {
 
   const planTitles = {
     trial: 'Gói Chuyên nghiệp (Pro) - Miễn phí 1 năm đầu (Không giới hạn nhân sự & chi nhánh)',
-    standard: 'Gói Tiêu chuẩn (299.000đ/tháng - Miễn phí 1 năm đầu)',
+    standard:
+      'Gói Tiêu chuẩn (299.000đ/tháng · 2 chi nhánh, 5 nhân sự, 300 đơn/tháng - Miễn phí 1 năm đầu)',
     pro: 'Gói Chuyên nghiệp (Pro) - Miễn phí 1 năm đầu (Không giới hạn nhân sự & chi nhánh)',
   };
 
@@ -311,7 +320,11 @@ function RegisterStoreForm() {
           <>
             {/* Error Alert */}
             {errorMessage && (
-              <div className="mb-5 p-3 rounded-[8px] bg-[#fbefed] border border-[#f5c7c2] text-xs font-medium text-[#bc5b52] flex items-center gap-2">
+              <div
+                role="alert"
+                aria-live="assertive"
+                className="mb-5 p-3 rounded-[8px] bg-[#fbefed] border border-[#f5c7c2] text-xs font-medium text-[#bc5b52] flex items-center gap-2"
+              >
                 <Icon name="alert" size={16} />
                 <span>{errorMessage}</span>
               </div>
@@ -436,6 +449,48 @@ function RegisterStoreForm() {
                 </span>
               </div>
 
+              {/* Mandatory Legal Policy Consent Checkbox */}
+              <div className="bg-[#f6f8f6] border border-[#e5ece8] rounded-[8px] p-3">
+                <div className="flex items-start gap-2.5">
+                  <input
+                    id="register_agree_policies"
+                    name="agreed_to_policies"
+                    type="checkbox"
+                    checked={agreedToPolicies}
+                    onChange={(e) => {
+                      const checked = e.target.checked;
+                      setAgreedToPolicies(checked);
+                      if (checked && errorMessage.includes('Điều khoản sử dụng')) {
+                        setErrorMessage('');
+                      }
+                    }}
+                    className="mt-0.5 h-4 w-4 rounded-[4px] border border-[#b7ccc0] accent-[#176b51] cursor-pointer shrink-0 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#176b51]"
+                  />
+                  <label
+                    htmlFor="register_agree_policies"
+                    className="text-xs text-[#17231f] leading-relaxed cursor-pointer select-none"
+                  >
+                    Tôi xác nhận đã đọc, hiểu rõ và đồng ý với{' '}
+                    <Link
+                      href="/terms"
+                      target="_blank"
+                      className="font-bold text-[#176b51] underline hover:text-[#10583f]"
+                    >
+                      Điều khoản sử dụng
+                    </Link>{' '}
+                    và{' '}
+                    <Link
+                      href="/privacy"
+                      target="_blank"
+                      className="font-bold text-[#176b51] underline hover:text-[#10583f]"
+                    >
+                      Chính sách bảo mật dữ liệu
+                    </Link>{' '}
+                    của FIXO Repair OS.
+                  </label>
+                </div>
+              </div>
+
               <Button
                 type="submit"
                 variant="primary"
@@ -459,12 +514,64 @@ function RegisterStoreForm() {
           </>
         )}
 
-        {/* Security Footer Note */}
-        <p className="text-xs text-[#819089] text-center mt-7 mb-0 leading-relaxed">
-          <span className="inline-block whitespace-nowrap">FIXO Repair Operating System</span>
-          <span className="mx-1.5 text-[#b2c2ba]">·</span>
-          <span className="inline-block whitespace-nowrap">Hạ tầng bảo mật Multi-Tenant</span>
-        </p>
+        {/* Security & Policy Mini-Footer */}
+        <footer className="mt-7 pt-4 border-t border-[#f0f3f1] text-center space-y-2">
+          <p className="text-xs text-[#819089] m-0 leading-relaxed">
+            <span className="inline-block whitespace-nowrap">FIXO Repair Operating System</span>
+            <span className="mx-1.5 text-[#b2c2ba]">·</span>
+            <span className="inline-block whitespace-nowrap">Hạ tầng bảo mật Multi-Tenant</span>
+            <span className="mx-1.5 text-[#b2c2ba]">·</span>
+            <span className="inline-block whitespace-nowrap">
+              Phát triển bởi{' '}
+              <a
+                href="https://betech-digital.com/"
+                target="_blank"
+                rel="noopener"
+                className="font-semibold text-[#176b51] hover:underline"
+              >
+                Betech Digital
+              </a>
+            </span>
+          </p>
+          <nav
+            aria-label="Liên kết chính sách pháp lý"
+            className="flex flex-wrap items-center justify-center gap-x-3 gap-y-1 text-[11px] font-semibold text-[#52635a]"
+          >
+            <Link
+              href="/terms"
+              className="hover:text-[#176b51] hover:underline transition-colors"
+            >
+              Điều khoản sử dụng
+            </Link>
+            <span className="text-[#c5d1cb]" aria-hidden="true">
+              ·
+            </span>
+            <Link
+              href="/privacy"
+              className="hover:text-[#176b51] hover:underline transition-colors"
+            >
+              Chính sách bảo mật
+            </Link>
+            <span className="text-[#c5d1cb]" aria-hidden="true">
+              ·
+            </span>
+            <Link
+              href="/billing-policy"
+              className="hover:text-[#176b51] hover:underline transition-colors"
+            >
+              Chính sách thanh toán
+            </Link>
+            <span className="text-[#c5d1cb]" aria-hidden="true">
+              ·
+            </span>
+            <Link
+              href="/sla"
+              className="hover:text-[#176b51] hover:underline transition-colors"
+            >
+              Cam kết SLA
+            </Link>
+          </nav>
+        </footer>
       </div>
     </div>
   );

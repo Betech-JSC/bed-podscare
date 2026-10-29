@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers\Api\V1;
 
+use App\Events\OrderOperationalEvent;
 use App\Http\Controllers\Controller;
 use App\Mail\TenantWelcomeMail;
 use App\Models\Branch;
@@ -266,16 +267,70 @@ class TenantRegistrationController extends Controller
                     ->where('is_active', true)
                     ->get();
 
-                foreach ($superAdmins as $superAdmin) {
-                    Notification::create([
-                        'user_id'   => $superAdmin->id,
-                        'branch_id' => null,
-                        'type'      => 'tenant_registered',
-                        'title'     => "Gian hàng mới đăng ký: {$createdTenant->name}",
-                        'message'   => "Chủ tiệm {$createdOwner->name} ({$createdTenant->phone}) vừa đăng ký mã tiệm {$createdTenant->code} (Gói: " . strtoupper((string) $createdTenant->plan) . ').',
-                        'severity'  => 'info',
-                        'is_read'   => false,
+                $notifTitle = "Gian hàng mới đăng ký: {$createdTenant->name}";
+                $notifMessage = "Chủ tiệm {$createdOwner->name} ({$createdTenant->phone}) vừa đăng ký mã tiệm {$createdTenant->code} (Gói: " . strtoupper((string) $createdTenant->plan) . ').';
+                $eventTimestamp = now()->toIso8601String();
+
+                if ($superAdmins->isNotEmpty()) {
+                    foreach ($superAdmins as $superAdmin) {
+                        $notif = Notification::create([
+                            'tenant_id'   => null,
+                            'user_id'     => $superAdmin->id,
+                            'branch_id'   => null,
+                            'target_role' => 'super_admin',
+                            'type'        => 'tenant_registered',
+                            'title'       => $notifTitle,
+                            'message'     => $notifMessage,
+                            'severity'    => 'info',
+                            'is_read'     => false,
+                        ]);
+
+                        OrderOperationalEvent::dispatch(
+                            $notif->id,
+                            0,
+                            $createdTenant->code,
+                            $notif->title,
+                            $notif->message,
+                            'info',
+                            $eventTimestamp,
+                            '/platform/stores',
+                            null,
+                            'super_admin',
+                            (int) $superAdmin->id,
+                            'tenant_registered',
+                            'platform.tenant_registered',
+                            null
+                        );
+                    }
+                } else {
+                    $notif = Notification::create([
+                        'tenant_id'   => null,
+                        'user_id'     => null,
+                        'branch_id'   => null,
+                        'target_role' => 'super_admin',
+                        'type'        => 'tenant_registered',
+                        'title'       => $notifTitle,
+                        'message'     => $notifMessage,
+                        'severity'    => 'info',
+                        'is_read'     => false,
                     ]);
+
+                    OrderOperationalEvent::dispatch(
+                        $notif->id,
+                        0,
+                        $createdTenant->code,
+                        $notif->title,
+                        $notif->message,
+                        'info',
+                        $eventTimestamp,
+                        '/platform/stores',
+                        null,
+                        'super_admin',
+                        null,
+                        'tenant_registered',
+                        'platform.tenant_registered',
+                        null
+                    );
                 }
             } catch (\Throwable $e) {
                 Log::warning('Failed to record audit log or super admin notification for tenant registration.', [

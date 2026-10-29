@@ -207,7 +207,15 @@ export const Providers: React.FC<{ children: React.ReactNode }> = ({ children })
       setUserProfile((prev) => {
         if (!prev) return prev;
         const nextTenant = { ...(prev.tenant || {}), ...partial } as TenantInfo;
-        const nextProfile = { ...prev, tenant: nextTenant };
+        const resolvedTenantId =
+          prev.role === 'super_admin'
+            ? null
+            : prev.tenant_id ?? nextTenant?.id ?? null;
+        const nextProfile = {
+          ...prev,
+          tenant_id: resolvedTenantId,
+          tenant: nextTenant,
+        };
         try {
           if (typeof window !== 'undefined') {
             localStorage.setItem('podscare_user', JSON.stringify(nextProfile));
@@ -222,9 +230,14 @@ export const Providers: React.FC<{ children: React.ReactNode }> = ({ children })
           const rawUser = localStorage.getItem('podscare_user');
           if (rawUser) {
             const parsed = JSON.parse(rawUser);
+            const mergedTenant = { ...(parsed.tenant || {}), ...partial };
             const updatedUser = {
               ...parsed,
-              tenant: { ...(parsed.tenant || {}), ...partial },
+              tenant_id:
+                parsed.role === 'super_admin'
+                  ? null
+                  : parsed.tenant_id ?? mergedTenant?.id ?? null,
+              tenant: mergedTenant,
             };
             localStorage.setItem('podscare_user', JSON.stringify(updatedUser));
           }
@@ -241,6 +254,126 @@ export const Providers: React.FC<{ children: React.ReactNode }> = ({ children })
     },
     []
   );
+
+  // Đồng bộ lại thông tin định danh tài khoản, tenant_id & branch_id từ /api/v1/auth/me khi F5 reload trang
+  const syncCurrentUserFromMe = useCallback(async () => {
+    if (!isAuthenticated || !token) return;
+    try {
+      const res = await authService.getMe();
+      const me = res?.data ?? res;
+      if (!me || !me.id) return;
+
+      const rawMeRole = (me.role || 'admin') as string;
+      const normMeRole = (rawMeRole === 'technician' ? 'tech' : rawMeRole) as UserRole;
+      const isSuperAdminMe = normMeRole === 'super_admin';
+      const resolvedTenantId = isSuperAdminMe
+        ? null
+        : me.tenant_id ?? me.tenant?.id ?? null;
+      const hasExplicitBranchInMe =
+        Object.prototype.hasOwnProperty.call(me, 'branch_id') ||
+        Object.prototype.hasOwnProperty.call(me, 'branch');
+
+      let syncedBranchId: number | null = null;
+      let syncedBranchName = 'Nền tảng FIXO';
+
+      setUserProfile((prev) => {
+        const mergedBranchId = isSuperAdminMe
+          ? null
+          : hasExplicitBranchInMe
+          ? me.branch_id ?? me.branch?.id ?? null
+          : prev?.branch_id ?? null;
+        const mergedBranchName = isSuperAdminMe
+          ? 'Nền tảng FIXO'
+          : me.branch?.name ||
+            (typeof me.branch === 'string' && me.branch ? me.branch : null) ||
+            (mergedBranchId !== null ? prev?.branch || 'Chi nhánh FIXO' : 'Chưa phân công');
+
+        syncedBranchId = mergedBranchId;
+        syncedBranchName = mergedBranchName;
+
+        const nextProfile: UserProfile = {
+          ...(prev || ({} as UserProfile)),
+          id: me.id,
+          name: me.name || prev?.name || '',
+          role: normMeRole,
+          roleLabel:
+            normMeRole === 'super_admin'
+              ? 'Quản trị Nền tảng'
+              : normMeRole === 'admin'
+              ? 'Quản trị viên'
+              : normMeRole === 'cskh'
+              ? 'CSKH Tiếp nhận'
+              : normMeRole === 'tech'
+              ? 'Kỹ thuật viên'
+              : normMeRole === 'qc'
+              ? 'Kiểm định QC'
+              : 'Nhân viên kho',
+          branch: mergedBranchName,
+          branch_id: mergedBranchId,
+          initials:
+            prev?.initials ||
+            (me.name || 'SA')
+              .split(' ')
+              .map((w: string) => w[0])
+              .join('')
+              .slice(0, 2)
+              .toUpperCase(),
+          email: me.email ?? prev?.email,
+          phone: me.phone ?? prev?.phone,
+          avatar_url: me.avatar_url ?? prev?.avatar_url,
+          tenant_id: resolvedTenantId,
+          tenant: isSuperAdminMe ? null : me.tenant || prev?.tenant || null,
+        };
+
+        try {
+          if (typeof window !== 'undefined') {
+            localStorage.setItem('podscare_user', JSON.stringify(nextProfile));
+            localStorage.setItem('podscare_role', normMeRole);
+          }
+        } catch {
+          // ignore
+        }
+
+        return nextProfile;
+      });
+
+      setRoleState(normMeRole);
+      if (isSuperAdminMe) {
+        setTenantBranding(null);
+        setBranchState('Nền tảng FIXO');
+        setBranchIdState('all');
+      } else {
+        if (me.tenant) {
+          setTenantBranding((prev) => ({ ...(prev || {}), ...me.tenant }));
+        }
+        if (normMeRole !== 'admin') {
+          const effectiveMeBranchId = hasExplicitBranchInMe
+            ? me.branch_id ?? me.branch?.id ?? null
+            : syncedBranchId;
+          const effectiveMeBranchName =
+            me.branch?.name ||
+            (typeof me.branch === 'string' && me.branch ? me.branch : null) ||
+            (effectiveMeBranchId !== null ? syncedBranchName || 'Chi nhánh FIXO' : 'Chưa phân công');
+          setBranchState(effectiveMeBranchName);
+          setBranchIdState(effectiveMeBranchId ?? '');
+          try {
+            if (typeof window !== 'undefined') {
+              localStorage.setItem('podscare_branch', effectiveMeBranchName);
+              if (effectiveMeBranchId !== null) {
+                localStorage.setItem('podscare_branch_id', String(effectiveMeBranchId));
+              } else {
+                localStorage.removeItem('podscare_branch_id');
+              }
+            }
+          } catch {
+            // ignore
+          }
+        }
+      }
+    } catch {
+      // Giữ nguyên profile từ localStorage nếu tạm thời không gọi được /auth/me
+    }
+  }, [isAuthenticated, token]);
 
   const fetchTenantBranding = useCallback(async () => {
     if (!isAuthenticated || !token) return;
@@ -445,11 +578,22 @@ export const Providers: React.FC<{ children: React.ReactNode }> = ({ children })
           if (parsedUser?.role) {
             effectiveRole = parsedUser.role;
           }
+          if (parsedUser) {
+            parsedUser = {
+              ...parsedUser,
+              tenant_id:
+                effectiveRole === 'super_admin'
+                  ? null
+                  : parsedUser.tenant_id ?? parsedUser.tenant?.id ?? null,
+            };
+          }
           defaultHttpClient.setToken(savedToken);
           setToken(savedToken);
           setUserProfile(parsedUser);
-          if (parsedUser?.tenant) {
+          if (parsedUser?.tenant && effectiveRole !== 'super_admin') {
             setTenantBranding(parsedUser.tenant);
+          } else if (effectiveRole === 'super_admin') {
+            setTenantBranding(null);
           }
           setRoleState(effectiveRole);
           setIsAuthenticated(true);
@@ -470,18 +614,25 @@ export const Providers: React.FC<{ children: React.ReactNode }> = ({ children })
         }
       }
 
-      // Bảo vệ hydration: Nếu role !== 'admin' và !== 'super_admin', luôn luôn ép buộc branchId = user.branch_id và branch = user.branch
+      // Bảo vệ hydration: Nếu role !== 'admin' và !== 'super_admin', luôn luôn khóa branchId theo user.branch_id (không ép cứng về 1 của Master Tenant)
       if (effectiveRole === 'super_admin') {
         setBranchState('Nền tảng FIXO');
         setBranchIdState('all');
       } else if (effectiveRole !== 'admin') {
-        const enforcedBranch = parsedUser?.branch || 'FIXO · Quận 1';
-        const enforcedBranchId = parsedUser?.branch_id ?? 1;
+        const enforcedBranchId =
+          parsedUser?.branch_id ?? (parsedUser as any)?.branch?.id ?? null;
+        const enforcedBranch =
+          parsedUser?.branch ||
+          (enforcedBranchId !== null ? 'Chi nhánh FIXO' : 'Chưa phân công');
         setBranchState(enforcedBranch);
-        setBranchIdState(enforcedBranchId);
+        setBranchIdState(enforcedBranchId ?? '');
         try {
           localStorage.setItem('podscare_branch', enforcedBranch);
-          localStorage.setItem('podscare_branch_id', String(enforcedBranchId));
+          if (enforcedBranchId !== null) {
+            localStorage.setItem('podscare_branch_id', String(enforcedBranchId));
+          } else {
+            localStorage.removeItem('podscare_branch_id');
+          }
         } catch {
           // ignore
         }
@@ -509,14 +660,22 @@ export const Providers: React.FC<{ children: React.ReactNode }> = ({ children })
     }
   }, []);
 
-  // Kích hoạt nạp chi nhánh, cấu hình thương hiệu và danh mục thiết bị từ API khi đã đăng nhập
+  // Kích hoạt nạp định danh phiên (/auth/me), chi nhánh, cấu hình thương hiệu và danh mục thiết bị từ API khi đã đăng nhập
   useEffect(() => {
     if (isAuthenticated && token) {
+      syncCurrentUserFromMe();
       fetchBranches();
       fetchDeviceProfiles();
       fetchTenantBranding();
     }
-  }, [isAuthenticated, token, fetchBranches, fetchDeviceProfiles, fetchTenantBranding]);
+  }, [
+    isAuthenticated,
+    token,
+    syncCurrentUserFromMe,
+    fetchBranches,
+    fetchDeviceProfiles,
+    fetchTenantBranding,
+  ]);
 
   const tenantRef = React.useRef(userProfile?.tenant || tenantBranding || undefined);
   React.useEffect(() => {
@@ -715,18 +874,28 @@ export const Providers: React.FC<{ children: React.ReactNode }> = ({ children })
       setUserProfile(updatedProfile);
       localStorage.setItem('podscare_user', JSON.stringify(updatedProfile));
     }
-    if (newRole !== 'admin') {
-      const enforcedBranch = userProfile?.branch || 'FIXO · Quận 1';
-      const enforcedBranchId = userProfile?.branch_id ?? 1;
+    if (newRole === 'super_admin') {
+      setBranchState('Nền tảng FIXO');
+      setBranchIdState('all');
+    } else if (newRole !== 'admin') {
+      const enforcedBranchId =
+        userProfile?.branch_id ?? (userProfile as any)?.branch?.id ?? null;
+      const enforcedBranch =
+        userProfile?.branch ||
+        (enforcedBranchId !== null ? 'Chi nhánh FIXO' : 'Chưa phân công');
       setBranchState(enforcedBranch);
-      setBranchIdState(enforcedBranchId);
+      setBranchIdState(enforcedBranchId ?? '');
       try {
         localStorage.setItem('podscare_branch', enforcedBranch);
-        localStorage.setItem('podscare_branch_id', String(enforcedBranchId));
+        if (enforcedBranchId !== null) {
+          localStorage.setItem('podscare_branch_id', String(enforcedBranchId));
+        } else {
+          localStorage.removeItem('podscare_branch_id');
+        }
       } catch {
         // ignore
       }
-      fetchOrders(enforcedBranchId);
+      fetchOrders(enforcedBranchId ?? '');
     }
   };
 
@@ -735,12 +904,14 @@ export const Providers: React.FC<{ children: React.ReactNode }> = ({ children })
     const normRole = (rawRole === 'technician' ? 'tech' : rawRole) as UserRole;
     const isSuperAdmin = normRole === 'super_admin';
     const isAdmin = normRole === 'admin';
-    const userBranchName = isSuperAdmin
-      ? 'Nền tảng FIXO'
-      : data.user.branch?.name || data.user.branch || 'FIXO · Quận 1';
     const userBranchId = isSuperAdmin
       ? null
-      : data.user.branch_id || data.user.branch?.id || 1;
+      : data.user.branch_id ?? data.user.branch?.id ?? null;
+    const userBranchName = isSuperAdmin
+      ? 'Nền tảng FIXO'
+      : data.user.branch?.name ||
+        (typeof data.user.branch === 'string' && data.user.branch ? data.user.branch : null) ||
+        (userBranchId !== null ? 'Chi nhánh FIXO' : 'Chưa phân công');
 
     const profile: UserProfile = {
       id: data.user.id,
@@ -769,8 +940,8 @@ export const Providers: React.FC<{ children: React.ReactNode }> = ({ children })
       email: data.user.email,
       phone: data.user.phone,
       avatar_url: data.user.avatar_url,
-      tenant_id: data.user.tenant_id ?? (data.user.tenant?.id || null),
-      tenant: data.user.tenant || null,
+      tenant_id: isSuperAdmin ? null : data.user.tenant_id ?? (data.user.tenant?.id || null),
+      tenant: isSuperAdmin ? null : data.user.tenant || null,
     };
 
     localStorage.setItem('podscare_token', data.token);
@@ -804,14 +975,18 @@ export const Providers: React.FC<{ children: React.ReactNode }> = ({ children })
       fetchOrders('all');
     } else {
       setBranchState(userBranchName);
-      setBranchIdState(userBranchId ?? 1);
+      setBranchIdState(userBranchId ?? '');
       try {
         localStorage.setItem('podscare_branch', userBranchName);
-        localStorage.setItem('podscare_branch_id', String(userBranchId ?? 1));
+        if (userBranchId !== null) {
+          localStorage.setItem('podscare_branch_id', String(userBranchId));
+        } else {
+          localStorage.removeItem('podscare_branch_id');
+        }
       } catch {
         // ignore
       }
-      fetchOrders(userBranchId ?? 1);
+      fetchOrders(userBranchId ?? '');
     }
   };
 
@@ -821,13 +996,16 @@ export const Providers: React.FC<{ children: React.ReactNode }> = ({ children })
         console.warn('Backend logout API returned error (safe fallback ignored):', err);
       });
     } finally {
-      // Fail-safe teardown: xóa sạch LocalStorage, Cookie và React Query Cache
+      // Fail-safe teardown: xóa sạch LocalStorage (bao gồm cache chi nhánh/thiết bị của tenant cũ), Cookie và React Query Cache
       if (typeof window !== 'undefined') {
         localStorage.removeItem('podscare_token');
         localStorage.removeItem('podscare_user');
         localStorage.removeItem('podscare_role');
         localStorage.removeItem('podscare_branch');
         localStorage.removeItem('podscare_branch_id');
+        localStorage.removeItem('podscare_branches');
+        localStorage.removeItem('podscare_device_profiles');
+        localStorage.removeItem('podscare_categories');
         document.cookie = 'podscare_session_token=; path=/; max-age=0; SameSite=Lax';
       }
       queryClient.clear();
@@ -835,6 +1013,7 @@ export const Providers: React.FC<{ children: React.ReactNode }> = ({ children })
       setToken(null);
       setUserProfile(null);
       setTenantBranding(null);
+      setBranches(DEFAULT_MASTER_BRANCHES);
       setIsAuthenticated(false);
       setOrders([]);
     }
@@ -902,9 +1081,20 @@ export const Providers: React.FC<{ children: React.ReactNode }> = ({ children })
         }}
       >
         <NotificationProvider
-          branchId={branchId}
-          role={role}
-          userId={currentUser?.id}
+          tenantId={
+            (currentUser?.role || role) === 'super_admin'
+              ? null
+              : currentUser?.tenant_id ?? currentUser?.tenant?.id ?? tenantBranding?.id ?? null
+          }
+          branchId={
+            (currentUser?.role || role) === 'super_admin'
+              ? 'all'
+              : (currentUser?.role || role) === 'admin'
+              ? branchId
+              : currentUser?.branch_id ?? (currentUser as any)?.branch?.id ?? null
+          }
+          role={currentUser?.role || role}
+          userId={currentUser?.id ?? null}
           enabled={isAuthenticated}
         >
           <ToastProvider>

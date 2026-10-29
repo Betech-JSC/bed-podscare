@@ -115,9 +115,29 @@
                     </tr>
 
                     <!-- Footer -->
+                    @php
+                        $frontendBaseUrl = preg_replace('#/login/?$#', '', rtrim($dashboardUrl ?? 'https://fixo.com.vn', '/')) ?: 'https://fixo.com.vn';
+                    @endphp
                     <tr>
-                        <td style="background-color: #f6f8f6; border-top: 1px solid #d9e2ec; padding: 20px 32px; text-align: center; font-size: 12px; line-height: 1.5; color: #5c6660;">
-                            © {{ date('Y') }} FIXO Repair OS. Hệ thống điều hành xưởng sửa chữa thiết bị chuyên nghiệp.
+                        <td style="background-color: #f6f8f6; border-top: 1px solid #d9e2ec; padding: 20px 32px; text-align: center; font-size: 12px; line-height: 1.6; color: #5c6660;">
+                            <div style="margin: 0 0 6px 0; color: #5c6660;">
+                                © {{ date('Y') }} FIXO Repair OS. Hệ thống điều hành xưởng sửa chữa thiết bị chuyên nghiệp.
+                            </div>
+                            <div style="margin: 0 0 10px 0; color: #404944;">
+                                Sản phẩm được phát triển và vận hành bởi <a href="https://betech-digital.com/" target="_blank" rel="noopener" style="color: #176b51; font-weight: 600; text-decoration: underline;">Betech Digital</a> (CÔNG TY TNHH DỊCH VỤ GIẢI PHÁP SỐ BETECH · MST: 0318601210).
+                            </div>
+                            <div style="margin: 0 0 8px 0; color: #5c6660;">
+                                <a href="{{ $frontendBaseUrl }}/terms" target="_blank" rel="noopener" style="color: #176b51; text-decoration: underline;">Điều khoản sử dụng</a>
+                                <span style="color: #94a3b8; padding: 0 4px;">·</span>
+                                <a href="{{ $frontendBaseUrl }}/privacy" target="_blank" rel="noopener" style="color: #176b51; text-decoration: underline;">Chính sách bảo mật</a>
+                                <span style="color: #94a3b8; padding: 0 4px;">·</span>
+                                <a href="{{ $frontendBaseUrl }}/billing-policy" target="_blank" rel="noopener" style="color: #176b51; text-decoration: underline;">Chính sách thanh toán</a>
+                                <span style="color: #94a3b8; padding: 0 4px;">·</span>
+                                <a href="{{ $frontendBaseUrl }}/sla" target="_blank" rel="noopener" style="color: #176b51; text-decoration: underline;">Cam kết SLA</a>
+                            </div>
+                            <div style="margin: 0; color: #5c6660;">
+                                Hotline / Zalo hỗ trợ: 0775 600 351 · Email: <a href="mailto:admin@betech-digital.com" style="color: #176b51; text-decoration: underline;">admin@betech-digital.com</a>
+                            </div>
                         </td>
                     </tr>
                 </table>

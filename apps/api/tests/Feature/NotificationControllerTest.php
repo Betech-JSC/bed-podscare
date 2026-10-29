@@ -20,23 +20,45 @@ class NotificationControllerTest extends TestCase
     {
         parent::setUp();
 
-        $this->branch = Branch::first() ?? Branch::create([
-            'name' => 'Chi nhánh Test',
-            'code' => 'CN-TEST',
-            'address' => '123 Đường Test, Q1',
-            'phone' => '0901112222',
-            'is_active' => true,
+        $tenant = \App\Models\Tenant::query()->first() ?? \App\Models\Tenant::create([
+            'name'   => 'PodsCare Test Store',
+            'code'   => 'PODSCARE-TEST',
+            'status' => 'active',
+            'plan'   => 'pro',
         ]);
 
-        $this->user = User::where('email', 'admin@fixo.com.vn')->first()
-            ?? User::where('email', 'admin@podscare.vn')->first()
-            ?? User::where('role', 'admin')->first()
-            ?? User::factory()->create([
-                'email' => 'admin@fixo.com.vn',
-                'role' => 'admin',
-                'branch_id' => $this->branch->id,
+        $this->branch = Branch::withoutGlobalScopes()
+            ->where('tenant_id', $tenant->id)
+            ->first() ?? Branch::withoutGlobalScopes()->create([
+                'tenant_id' => $tenant->id,
+                'name'      => 'Chi nhánh Test',
+                'code'      => 'CN-TEST',
+                'address'   => '123 Đường Test, Q1',
+                'phone'     => '0901112222',
+                'is_active' => true,
             ]);
 
+        $foundAdmin = User::withoutGlobalScopes()
+            ->where('tenant_id', $tenant->id)
+            ->where('role', 'admin')
+            ->first();
+
+        if ($foundAdmin) {
+            $this->user = $foundAdmin;
+        } else {
+            $admin = User::factory()->make([
+                'email' => 'admin.notif.' . uniqid() . '@fixo.com.vn',
+            ]);
+            $admin->forceFill([
+                'tenant_id' => $tenant->id,
+                'branch_id' => $this->branch->id,
+                'role'      => 'admin',
+                'is_active' => true,
+            ])->saveQuietly();
+            $this->user = $admin;
+        }
+
+        \App\Models\NotificationRead::query()->delete();
         Notification::query()->delete();
     }
 
@@ -101,25 +123,49 @@ class NotificationControllerTest extends TestCase
     }
 
     /**
-     * Test filtering notifications by user_id.
+     * Test filtering notifications by user_id (3-Tier Isolation: Admin can filter own personal notifications,
+     * and querying another staff member's personal user_id fails closed with 0 results).
      */
     public function test_can_filter_notifications_by_user(): void
     {
-        $otherUser = User::factory()->create([
+        $otherUser = User::factory()->make([
             'email' => 'other_' . uniqid() . '@fixo.com.vn',
-            'role' => 'technician',
+        ]);
+        $otherUser->forceFill([
+            'tenant_id' => $this->user->tenant_id,
+            'branch_id' => $this->branch->id,
+            'role'      => 'technician',
+            'is_active' => true,
+        ])->saveQuietly();
+
+        Notification::factory()->count(3)->forTenant((int) $this->user->tenant_id)->create([
+            'user_id'   => $this->user->id,
+            'branch_id' => $this->branch->id,
+        ]);
+        Notification::factory()->count(2)->forTenant((int) $this->user->tenant_id)->create([
+            'user_id'   => null,
+            'branch_id' => $this->branch->id,
+        ]);
+        Notification::factory()->count(2)->forTenant((int) $this->user->tenant_id, 'technician')->create([
+            'user_id'   => $otherUser->id,
             'branch_id' => $this->branch->id,
         ]);
 
-        Notification::factory()->count(3)->create(['user_id' => $this->user->id]);
-        Notification::factory()->count(2)->create(['user_id' => $otherUser->id]);
+        // Lọc theo user_id của chính tài khoản đang đăng nhập -> Trả về đúng 3 thông báo cá nhân của mình
+        $ownResponse = $this->actingAs($this->user, 'sanctum')
+            ->getJson("/api/v1/notifications?user_id={$this->user->id}");
 
-        $response = $this->actingAs($this->user, 'sanctum')
+        $ownResponse->assertStatus(200)
+            ->assertJsonPath('success', true)
+            ->assertJsonPath('data.total', 3);
+
+        // Cố tình truyền user_id của nhân sự khác -> Bị khóa fail-closed trả về 0 để không xem trộm thông báo cá nhân đồng nghiệp
+        $otherResponse = $this->actingAs($this->user, 'sanctum')
             ->getJson("/api/v1/notifications?user_id={$otherUser->id}");
 
-        $response->assertStatus(200)
+        $otherResponse->assertStatus(200)
             ->assertJsonPath('success', true)
-            ->assertJsonPath('data.total', 2);
+            ->assertJsonPath('data.total', 0);
     }
 
     /**
@@ -127,16 +173,23 @@ class NotificationControllerTest extends TestCase
      */
     public function test_can_filter_notifications_by_branch(): void
     {
-        $branch2 = Branch::create([
-            'name' => 'Chi nhánh Thủ Đức',
-            'code' => 'CN-TD',
-            'address' => '456 Võ Văn Ngân, Thủ Đức',
-            'phone' => '0903334444',
+        $branch2 = Branch::withoutGlobalScopes()->create([
+            'tenant_id' => $this->user->tenant_id,
+            'name'      => 'Chi nhánh Thủ Đức',
+            'code'      => 'CN-TD-' . strtoupper(substr(uniqid(), -4)),
+            'address'   => '456 Võ Văn Ngân, Thủ Đức',
+            'phone'     => '0903334444',
             'is_active' => true,
         ]);
 
-        Notification::factory()->count(4)->create(['branch_id' => $this->branch->id]);
-        Notification::factory()->count(2)->create(['branch_id' => $branch2->id]);
+        Notification::factory()->count(4)->forTenant((int) $this->user->tenant_id)->create([
+            'branch_id' => $this->branch->id,
+            'user_id'   => null,
+        ]);
+        Notification::factory()->count(2)->forTenant((int) $this->user->tenant_id)->create([
+            'branch_id' => $branch2->id,
+            'user_id'   => null,
+        ]);
 
         $response = $this->actingAs($this->user, 'sanctum')
             ->getJson("/api/v1/notifications?branch_id={$branch2->id}");
@@ -147,24 +200,43 @@ class NotificationControllerTest extends TestCase
     }
 
     /**
-     * Test filtering notifications by is_read status.
+     * Test filtering notifications by per-user is_read status via notification_reads.
      */
     public function test_can_filter_notifications_by_is_read(): void
     {
-        Notification::factory()->count(3)->create(['is_read' => false]);
-        Notification::factory()->count(5)->create(['is_read' => true, 'read_at' => now()]);
+        Notification::factory()->count(3)->forTenant((int) $this->user->tenant_id)->create([
+            'branch_id' => $this->branch->id,
+            'user_id'   => null,
+            'is_read'   => false,
+        ]);
+
+        $readNotifications = Notification::factory()->count(5)->forTenant((int) $this->user->tenant_id)->create([
+            'branch_id' => $this->branch->id,
+            'user_id'   => null,
+            'is_read'   => false,
+        ]);
+
+        foreach ($readNotifications as $readNotif) {
+            \App\Models\NotificationRead::create([
+                'notification_id' => $readNotif->id,
+                'user_id'         => $this->user->id,
+                'read_at'         => now(),
+            ]);
+        }
 
         $responseUnread = $this->actingAs($this->user, 'sanctum')
             ->getJson('/api/v1/notifications?is_read=0');
 
         $responseUnread->assertStatus(200)
-            ->assertJsonPath('data.total', 3);
+            ->assertJsonPath('data.total', 3)
+            ->assertJsonPath('data.unread_count', 3);
 
         $responseRead = $this->actingAs($this->user, 'sanctum')
             ->getJson('/api/v1/notifications?is_read=1');
 
         $responseRead->assertStatus(200)
-            ->assertJsonPath('data.total', 5);
+            ->assertJsonPath('data.total', 5)
+            ->assertJsonPath('data.unread_count', 3);
     }
 
     /**
