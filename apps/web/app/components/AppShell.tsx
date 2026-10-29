@@ -515,6 +515,8 @@ export const AppShell: React.FC<AppShellProps> = ({ children, crumbName = 'Tổn
                 onNotificationClick={handleNotificationClick}
                 onMarkAllAsRead={markAllAsRead}
                 onMarkAsRead={markAsRead}
+                role={currentUser?.role}
+                mode={currentUser?.role === 'super_admin' ? 'platform' : 'store'}
               />
             </div>
           }

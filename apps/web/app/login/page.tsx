@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, Suspense } from 'react';
+import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { Button, Input, useToast, Icon, Checkbox } from '@podscare/ui';
 import { defaultHttpClient } from '@podscare/api-client';
@@ -323,11 +324,53 @@ function LoginFormContent() {
         </form>
 
         {/* Security Footer Note */}
-        <p className="text-xs text-[#819089] text-center mt-7 mb-0 leading-relaxed">
-          <span className="inline-block whitespace-nowrap">FIXO Repair Operating System</span>
-          <span className="mx-1.5 text-[#b2c2ba]">·</span>
-          <span className="inline-block whitespace-nowrap">Đồng bộ phiên làm việc bảo mật cao</span>
-        </p>
+        <footer className="mt-7 pt-4 border-t border-[#f0f3f1] text-center space-y-2">
+          <p className="text-xs text-[#819089] m-0 leading-relaxed">
+            <span className="inline-block whitespace-nowrap">FIXO Repair Operating System</span>
+            <span className="mx-1.5 text-[#b2c2ba]">·</span>
+            <span className="inline-block whitespace-nowrap">Đồng bộ phiên làm việc bảo mật cao</span>
+          </p>
+          <nav
+            aria-label="Liên kết chính sách pháp lý"
+            className="flex flex-wrap items-center justify-center gap-x-3 gap-y-1 text-[11px] font-semibold text-[#52635a]"
+          >
+            <Link
+              href="/terms"
+              className="hover:text-[#176b51] hover:underline transition-colors"
+            >
+              Điều khoản sử dụng
+            </Link>
+            <span className="text-[#c5d1cb]" aria-hidden="true">
+              ·
+            </span>
+            <Link
+              href="/privacy"
+              className="hover:text-[#176b51] hover:underline transition-colors"
+            >
+              Chính sách bảo mật
+            </Link>
+            <span className="text-[#c5d1cb]" aria-hidden="true">
+              ·
+            </span>
+            <Link
+              href="/sla"
+              className="hover:text-[#176b51] hover:underline transition-colors"
+            >
+              Cam kết SLA
+            </Link>
+          </nav>
+          <p className="text-[11px] text-[#819089] m-0">
+            Phát triển bởi{' '}
+            <a
+              href="https://betech-digital.com/"
+              target="_blank"
+              rel="noopener"
+              className="font-semibold text-[#176b51] hover:text-[#10583f] hover:underline"
+            >
+              Betech Digital
+            </a>
+          </p>
+        </footer>
       </div>
     </div>
   );

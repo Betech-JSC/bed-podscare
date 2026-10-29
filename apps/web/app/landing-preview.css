@@ -800,6 +800,173 @@ textarea {
 }
 
 /* =========================
+       DATA OWNERSHIP & LEGAL TRUST STRIP
+    ========================= */
+
+.data-trust-strip {
+  padding: 84px 0;
+  margin-bottom: 30px;
+  background: #f6f8f6;
+  border-top: 1px solid #e5ece8;
+  border-bottom: 1px solid #e5ece8;
+  scroll-margin-top: 84px;
+}
+
+.data-trust-strip .section-heading {
+  max-width: 860px;
+  margin: 0 auto 44px;
+}
+
+.data-trust-strip .section-tag {
+  background: #e9f4ef;
+  color: #176b51;
+  border: 1px solid #cde2d6;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.data-trust-strip .section-heading h2 {
+  font-family: var(--font-manrope), 'Manrope', 'DM Sans', sans-serif;
+  font-size: clamp(28px, 3.2vw, 38px);
+  font-weight: 800;
+  line-height: 1.18;
+  letter-spacing: -0.02em;
+  color: #17231f;
+  margin-bottom: 14px;
+}
+
+.data-trust-strip .section-heading p {
+  font-family: var(--font-dm-sans), 'DM Sans', sans-serif;
+  font-size: 15px;
+  line-height: 1.65;
+  color: #516059;
+}
+
+.data-trust-strip .section-heading p strong {
+  color: #17231f;
+  font-weight: 700;
+}
+
+.data-trust-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-auto-rows: auto 1fr auto;
+  gap: 16px;
+}
+
+.data-trust-card {
+  grid-row: span 3;
+  display: grid;
+  grid-template-rows: auto 1fr auto;
+  grid-template-rows: subgrid;
+  row-gap: 14px;
+  background: #ffffff;
+  border: 1px solid #e5ece8;
+  border-radius: 14px;
+  padding: 22px;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.data-trust-card:hover {
+  border-color: #b7ccc0;
+  box-shadow: 0 12px 30px rgba(23, 35, 31, 0.05);
+}
+
+.data-trust-card-eyebrow {
+  display: inline-block;
+  font-family: var(--font-manrope), 'Manrope', 'DM Sans', sans-serif;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: #176b51;
+  background: #e9f4ef;
+  border: 1px solid #cde2d6;
+  border-radius: 20px;
+  padding: 4px 10px;
+  margin-bottom: 10px;
+}
+
+.data-trust-card h3 {
+  font-family: var(--font-manrope), 'Manrope', 'DM Sans', sans-serif;
+  font-size: 16px;
+  font-weight: 800;
+  line-height: 1.35;
+  letter-spacing: -0.01em;
+  color: #17231f;
+}
+
+.data-trust-card p {
+  font-family: var(--font-dm-sans), 'DM Sans', sans-serif;
+  font-size: 13px;
+  line-height: 1.62;
+  color: #516059;
+}
+
+.data-trust-card-link {
+  display: inline-flex;
+  align-items: center;
+  min-block-size: 28px;
+  padding-top: 12px;
+  border-top: 1px solid #f0f3f1;
+  font-family: var(--font-manrope), 'Manrope', 'DM Sans', sans-serif;
+  font-size: 12.5px;
+  font-weight: 800;
+  color: #176b51;
+  transition: color 0.18s ease;
+}
+
+.data-trust-card-link:hover {
+  color: #10583f;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.data-trust-card-link:focus-visible {
+  outline: 2px solid #176b51;
+  outline-offset: 3px;
+  border-radius: 4px;
+}
+
+.data-trust-meta {
+  margin-top: 18px;
+  padding: 14px 20px;
+  background: #ffffff;
+  border: 1px solid #e5ece8;
+  border-radius: 12px;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px 20px;
+  font-family: var(--font-dm-sans), 'DM Sans', sans-serif;
+  font-size: 12.5px;
+  color: #516059;
+}
+
+.data-trust-meta strong {
+  color: #17231f;
+  font-weight: 700;
+}
+
+.data-trust-meta a {
+  color: #176b51;
+  font-weight: 700;
+}
+
+.data-trust-meta a:hover {
+  color: #10583f;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.data-trust-meta a:focus-visible {
+  outline: 2px solid #176b51;
+  outline-offset: 3px;
+  border-radius: 3px;
+}
+
+/* =========================
        CTA
     ========================= */
 
@@ -888,6 +1055,57 @@ textarea {
   font-size: 11px;
 }
 
+.betech-brand-link {
+  color: #c8eadb;
+  font-weight: 700;
+  text-decoration: underline;
+  text-decoration-color: rgba(200, 234, 219, 0.45);
+  text-underline-offset: 3px;
+  transition: color 0.18s ease, text-decoration-color 0.18s ease;
+}
+
+.betech-brand-link:hover {
+  color: #ffffff;
+  text-decoration-color: #ffffff;
+}
+
+.betech-brand-link:focus-visible {
+  outline: 2px solid #c8eadb;
+  outline-offset: 3px;
+  border-radius: 3px;
+}
+
+.footer-contact-meta {
+  margin-top: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  font-size: 12.5px;
+  color: #8fa09b;
+}
+
+.footer-contact-meta strong {
+  color: #ffffff;
+  font-weight: 600;
+}
+
+.footer-contact-meta a {
+  color: #c8eadb;
+  transition: color 0.18s ease;
+}
+
+.footer-contact-meta a:hover {
+  color: #ffffff;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.footer-contact-meta a:focus-visible {
+  outline: 2px solid #c8eadb;
+  outline-offset: 3px;
+  border-radius: 3px;
+}
+
 /* =========================
        RESPONSIVE
     ========================= */
@@ -917,6 +1135,30 @@ textarea {
 
   .steps {
     grid-template-columns: repeat(2, 1fr);
+  }
+
+  .data-trust-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media(max-width: 720px) {
+
+  .data-trust-strip {
+    padding: 64px 0;
+  }
+
+  .data-trust-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .data-trust-card {
+    padding: 18px;
+  }
+
+  .data-trust-meta {
+    flex-direction: column;
+    align-items: flex-start;
   }
 }
 

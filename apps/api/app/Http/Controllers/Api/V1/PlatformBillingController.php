@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers\Api\V1;
 
+use App\Events\OrderOperationalEvent;
 use App\Http\Controllers\Controller;
 use App\Models\Notification;
 use App\Models\SaasInvoice;
@@ -173,18 +174,41 @@ class PlatformBillingController extends Controller
         $owner = User::withoutGlobalScope(TenantScope::class)
             ->where('tenant_id', $tenant->id)
             ->where('role', 'admin')
-            ->first()
-            ?? User::withoutGlobalScope(TenantScope::class)->where('tenant_id', $tenant->id)->first();
+            ->orderBy('id')
+            ->first();
 
-        Notification::create([
-            'user_id'   => $owner?->id,
-            'branch_id' => $owner?->branch_id,
-            'title'     => 'Nhắc phí duy trì phần mềm',
-            'message'   => "Gian hàng {$tenant->name} sắp hết hạn dịch vụ. Vui lòng kiểm tra và thanh toán gia hạn gói cước.",
-            'type'      => 'fee_reminder',
-            'severity'  => 'warning',
-            'is_read'   => false,
+        $notif = Notification::create([
+            'tenant_id'   => $tenant->id,
+            'user_id'     => $owner?->id,
+            'branch_id'   => $owner?->branch_id,
+            'target_role' => 'admin',
+            'title'       => 'Nhắc phí duy trì phần mềm',
+            'message'     => "Gian hàng {$tenant->name} sắp hết hạn dịch vụ. Vui lòng kiểm tra và thanh toán gia hạn gói cước.",
+            'type'        => 'fee_reminder',
+            'severity'    => 'warning',
+            'is_read'     => false,
         ]);
+
+        try {
+            OrderOperationalEvent::dispatch(
+                $notif->id,
+                0,
+                (string) $tenant->code,
+                $notif->title,
+                $notif->message,
+                'warning',
+                now()->toIso8601String(),
+                '/subscription',
+                $owner?->branch_id !== null ? (int) $owner->branch_id : null,
+                'admin',
+                $owner?->id !== null ? (int) $owner->id : null,
+                'fee_reminder',
+                'tenant.fee_reminder',
+                (int) $tenant->id
+            );
+        } catch (\Throwable) {
+            // Không chặn luồng nhắc phí nếu tiến trình WebSocket chưa khởi chạy
+        }
 
         return $this->success(null, "Đã gửi thông báo nhắc phí tới gian hàng {$tenant->name}.");
     }

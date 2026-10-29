@@ -650,17 +650,23 @@ class OrderController extends Controller
             $branchName = $order->branch?->name ?? 'chi nhánh';
 
             $notification = Notification::create([
-                'branch_id'  => $order->branch_id,
-                'order_id'   => $order->id,
-                'type'       => 'order_created',
-                'title'      => 'Tiếp nhận đơn mới',
-                'message'    => "Đơn {$order->order_code} đã được tiếp nhận tại {$branchName}.",
-                'severity'   => 'info',
-                'action_url' => "/repairs?id={$order->id}",
+                'tenant_id'   => $order->tenant_id,
+                'branch_id'   => $order->branch_id,
+                'order_id'    => $order->id,
+                'target_role' => 'technician',
+                'type'        => 'order_created',
+                'title'       => 'Tiếp nhận đơn mới',
+                'message'     => "Đơn {$order->order_code} đã được tiếp nhận tại {$branchName}.",
+                'severity'    => 'info',
+                'action_url'  => "/repairs?id={$order->id}",
             ]);
 
             $eventTimestamp = now()->toIso8601String();
             DB::afterCommit(function () use ($notification, $order, $branchName, $eventTimestamp) {
+                $resolvedTenantId = $notification->tenant_id !== null
+                    ? (int) $notification->tenant_id
+                    : ($order->tenant_id !== null ? (int) $order->tenant_id : null);
+
                 OrderOperationalEvent::dispatch(
                     $notification->id,
                     $order->id,
@@ -670,11 +676,12 @@ class OrderController extends Controller
                     'info',
                     $eventTimestamp,
                     "/repairs?id={$order->id}",
-                    $order->branch_id,
+                    $order->branch_id !== null ? (int) $order->branch_id : null,
                     'technician',
                     null,
                     'order_created',
-                    'order.created'
+                    'order.created',
+                    $resolvedTenantId
                 );
             });
 
@@ -1286,18 +1293,25 @@ class OrderController extends Controller
         $notificationMsg = "Đơn {$order->order_code} cần mua ngoài linh kiện: {$note}";
 
         $notification = Notification::create([
-            'branch_id'  => $order->branch_id,
-            'order_id'   => $order->id,
-            'user_id'    => null,
-            'type'       => 'special_part_requested',
-            'title'      => $notificationTitle,
-            'message'    => $notificationMsg,
-            'severity'   => 'warning',
-            'action_url' => "/repairs?id={$order->id}",
+            'tenant_id'   => $order->tenant_id,
+            'branch_id'   => $order->branch_id,
+            'order_id'    => $order->id,
+            'user_id'     => null,
+            'target_role' => 'cskh',
+            'type'        => 'special_part_requested',
+            'title'       => $notificationTitle,
+            'message'     => $notificationMsg,
+            'severity'    => 'warning',
+            'action_url'  => "/repairs?id={$order->id}",
         ]);
 
         $eventTimestamp = $now->toIso8601String();
         DB::afterCommit(function () use ($notification, $order, $notificationTitle, $notificationMsg, $eventTimestamp) {
+            $resolvedTenantId = $notification->tenant_id !== null
+                ? (int) $notification->tenant_id
+                : ($order->tenant_id !== null ? (int) $order->tenant_id : null);
+            $resolvedBranchId = $order->branch_id !== null ? (int) $order->branch_id : null;
+
             OrderOperationalEvent::dispatch(
                 $notification->id,
                 $order->id,
@@ -1307,11 +1321,12 @@ class OrderController extends Controller
                 'warning',
                 $eventTimestamp,
                 "/repairs?id={$order->id}",
-                $order->branch_id,
+                $resolvedBranchId,
                 'cskh',
                 null,
                 'special_part_requested',
-                'order.special_part_requested'
+                'order.special_part_requested',
+                $resolvedTenantId
             );
 
             OrderOperationalEvent::dispatch(
@@ -1323,11 +1338,12 @@ class OrderController extends Controller
                 'warning',
                 $eventTimestamp,
                 "/repairs?id={$order->id}",
-                $order->branch_id,
+                $resolvedBranchId,
                 'admin',
                 null,
                 'special_part_requested',
-                'order.special_part_requested'
+                'order.special_part_requested',
+                $resolvedTenantId
             );
         });
 
@@ -1390,18 +1406,24 @@ class OrderController extends Controller
         $notificationMsg = "Quầy đã mua linh kiện ngoài cho đơn {$order->order_code}. KTV có thể tiếp tục xử lý.";
 
         $notification = Notification::create([
-            'branch_id'  => $order->branch_id,
-            'order_id'   => $order->id,
-            'user_id'    => $order->technician_id,
-            'type'       => 'special_part_fulfilled',
-            'title'      => $notificationTitle,
-            'message'    => $notificationMsg,
-            'severity'   => 'success',
-            'action_url' => "/repairs?id={$order->id}",
+            'tenant_id'   => $order->tenant_id,
+            'branch_id'   => $order->branch_id,
+            'order_id'    => $order->id,
+            'user_id'     => $order->technician_id,
+            'target_role' => 'technician',
+            'type'        => 'special_part_fulfilled',
+            'title'       => $notificationTitle,
+            'message'     => $notificationMsg,
+            'severity'    => 'success',
+            'action_url'  => "/repairs?id={$order->id}",
         ]);
 
         $eventTimestamp = $now->toIso8601String();
         DB::afterCommit(function () use ($notification, $order, $notificationTitle, $notificationMsg, $eventTimestamp) {
+            $resolvedTenantId = $notification->tenant_id !== null
+                ? (int) $notification->tenant_id
+                : ($order->tenant_id !== null ? (int) $order->tenant_id : null);
+
             OrderOperationalEvent::dispatch(
                 $notification->id,
                 $order->id,
@@ -1411,11 +1433,12 @@ class OrderController extends Controller
                 'success',
                 $eventTimestamp,
                 "/repairs?id={$order->id}",
-                $order->branch_id,
+                $order->branch_id !== null ? (int) $order->branch_id : null,
                 'technician',
-                $order->technician_id,
+                $order->technician_id !== null ? (int) $order->technician_id : null,
                 'special_part_fulfilled',
-                'order.special_part_fulfilled'
+                'order.special_part_fulfilled',
+                $resolvedTenantId
             );
         });
 
@@ -1550,17 +1573,23 @@ class OrderController extends Controller
                 : "KTV {$user->name} đã bàn giao đơn {$lockedOrder->order_code} cho {$targetName}: {$reasonLabel}";
 
             $notification = Notification::create([
-                'branch_id'  => $lockedOrder->branch_id,
-                'order_id'   => $lockedOrder->id,
-                'user_id'    => $newTechId,
-                'type'       => 'order_handover',
-                'title'      => $notificationTitle,
-                'message'    => $notificationMsg,
-                'severity'   => 'info',
+                'tenant_id'   => $lockedOrder->tenant_id,
+                'branch_id'   => $lockedOrder->branch_id,
+                'order_id'    => $lockedOrder->id,
+                'user_id'     => $newTechId,
+                'target_role' => 'technician',
+                'type'        => 'order_handover',
+                'title'       => $notificationTitle,
+                'message'     => $notificationMsg,
+                'severity'    => 'info',
             ]);
 
             $eventTimestamp = $now->toIso8601String();
             DB::afterCommit(function () use ($notification, $lockedOrder, $notificationTitle, $notificationMsg, $eventTimestamp, $newTechId) {
+                $resolvedTenantId = $notification->tenant_id !== null
+                    ? (int) $notification->tenant_id
+                    : ($lockedOrder->tenant_id !== null ? (int) $lockedOrder->tenant_id : null);
+
                 OrderOperationalEvent::dispatch(
                     $notification->id,
                     $lockedOrder->id,
@@ -1570,11 +1599,12 @@ class OrderController extends Controller
                     'info',
                     $eventTimestamp,
                     "/repairs?id={$lockedOrder->id}",
-                    $lockedOrder->branch_id,
+                    $lockedOrder->branch_id !== null ? (int) $lockedOrder->branch_id : null,
                     'technician',
-                    $newTechId,
+                    $newTechId !== null ? (int) $newTechId : null,
                     'order_handover',
-                    'order.handover'
+                    'order.handover',
+                    $resolvedTenantId
                 );
             });
 
@@ -1782,32 +1812,75 @@ class OrderController extends Controller
                 'ip_address'     => $request->ip(),
             ]);
 
-            $notification = Notification::create([
-                'branch_id'  => $lockedOrder->branch_id,
-                'order_id'   => $lockedOrder->id,
-                'type'       => 'additional_service_added',
-                'title'      => "Yêu cầu làm thêm dịch vụ: {$validated['name']}",
-                'message'    => "Khách hàng vừa bổ sung dịch vụ: {$validated['name']} (+" . number_format($validated['price']) . " đ) cho đơn {$lockedOrder->order_code}",
-                'severity'   => 'warning',
-                'action_url' => "/repairs?id={$lockedOrder->id}",
+            // 1. Thông báo tài chính cho quầy CSKH / Admin (có kèm đơn giá dịch vụ bổ sung VNĐ)
+            $cskhNotification = Notification::create([
+                'tenant_id'   => $lockedOrder->tenant_id,
+                'branch_id'   => $lockedOrder->branch_id,
+                'order_id'    => $lockedOrder->id,
+                'target_role' => 'cskh',
+                'type'        => 'additional_service_added',
+                'title'       => "Đã bổ sung dịch vụ: {$validated['name']}",
+                'message'     => "Khách hàng vừa bổ sung dịch vụ: {$validated['name']} (+" . number_format($validated['price']) . " ₫) cho đơn {$lockedOrder->order_code}.",
+                'severity'    => 'warning',
+                'action_url'  => "/repairs?id={$lockedOrder->id}",
+            ]);
+
+            // 2. Thông báo kỹ thuật độc lập cho xưởng (ẩn tuyệt đối số tiền VNĐ)
+            $techTitle = "Yêu cầu làm thêm hạng mục: {$validated['name']}";
+            $techMessage = "Khách hàng vừa bổ sung hạng mục kỹ thuật: {$validated['name']} cho đơn {$lockedOrder->order_code}.";
+
+            $techNotification = Notification::create([
+                'tenant_id'   => $lockedOrder->tenant_id,
+                'branch_id'   => $lockedOrder->branch_id,
+                'order_id'    => $lockedOrder->id,
+                'user_id'     => $lockedOrder->technician_id,
+                'target_role' => 'technician',
+                'type'        => 'additional_service_added',
+                'title'       => $techTitle,
+                'message'     => $techMessage,
+                'severity'    => 'warning',
+                'action_url'  => "/repairs?id={$lockedOrder->id}",
             ]);
 
             $eventTimestamp = now()->toIso8601String();
-            DB::afterCommit(function () use ($notification, $lockedOrder, $validated, $eventTimestamp) {
+            DB::afterCommit(function () use ($cskhNotification, $techNotification, $lockedOrder, $techTitle, $techMessage, $eventTimestamp) {
+                $resolvedTenantId = $cskhNotification->tenant_id !== null
+                    ? (int) $cskhNotification->tenant_id
+                    : ($lockedOrder->tenant_id !== null ? (int) $lockedOrder->tenant_id : null);
+                $resolvedBranchId = $lockedOrder->branch_id !== null ? (int) $lockedOrder->branch_id : null;
+
                 OrderOperationalEvent::dispatch(
-                    $notification->id,
+                    $cskhNotification->id,
                     $lockedOrder->id,
                     $lockedOrder->order_code ?? (string) $lockedOrder->id,
-                    "Yêu cầu làm thêm dịch vụ: {$validated['name']}",
-                    "Khách hàng vừa bổ sung dịch vụ: {$validated['name']} (+" . number_format($validated['price']) . " đ) cho đơn {$lockedOrder->order_code}",
+                    $cskhNotification->title,
+                    $cskhNotification->message,
                     'warning',
                     $eventTimestamp,
                     "/repairs?id={$lockedOrder->id}",
-                    $lockedOrder->branch_id,
-                    'technician',
+                    $resolvedBranchId,
+                    'cskh',
                     null,
                     'additional_service_added',
-                    'order.additional_service_added'
+                    'order.additional_service_added',
+                    $resolvedTenantId
+                );
+
+                OrderOperationalEvent::dispatch(
+                    $techNotification->id,
+                    $lockedOrder->id,
+                    $lockedOrder->order_code ?? (string) $lockedOrder->id,
+                    $techTitle,
+                    $techMessage,
+                    'warning',
+                    $eventTimestamp,
+                    "/repairs?id={$lockedOrder->id}",
+                    $resolvedBranchId,
+                    'technician',
+                    $lockedOrder->technician_id !== null ? (int) $lockedOrder->technician_id : null,
+                    'additional_service_added',
+                    'order.additional_service_added',
+                    $resolvedTenantId
                 );
             });
 
@@ -1877,18 +1950,25 @@ class OrderController extends Controller
                 ]);
 
                 $notification = Notification::create([
-                    'branch_id'  => $lockedOrder->branch_id,
-                    'order_id'   => $lockedOrder->id,
-                    'type'       => 'additional_service_deleted',
-                    'title'      => "Đã hủy dịch vụ bổ sung: {$removedItem['name']}",
-                    'message'    => "Dịch vụ {$removedItem['name']} đã được hủy cho đơn {$lockedOrder->order_code}",
-                    'severity'   => 'info',
-                    'action_url' => "/repairs?id={$lockedOrder->id}",
+                    'tenant_id'   => $lockedOrder->tenant_id,
+                    'branch_id'   => $lockedOrder->branch_id,
+                    'order_id'    => $lockedOrder->id,
+                    'user_id'     => $lockedOrder->technician_id,
+                    'target_role' => 'technician',
+                    'type'        => 'additional_service_deleted',
+                    'title'       => "Đã hủy dịch vụ bổ sung: {$removedItem['name']}",
+                    'message'     => "Dịch vụ {$removedItem['name']} đã được hủy cho đơn {$lockedOrder->order_code}",
+                    'severity'    => 'info',
+                    'action_url'  => "/repairs?id={$lockedOrder->id}",
                 ]);
 
                 $eventTimestamp = now()->toIso8601String();
                 $removedName = $removedItem['name'];
                 DB::afterCommit(function () use ($notification, $lockedOrder, $removedName, $eventTimestamp) {
+                    $resolvedTenantId = $notification->tenant_id !== null
+                        ? (int) $notification->tenant_id
+                        : ($lockedOrder->tenant_id !== null ? (int) $lockedOrder->tenant_id : null);
+
                     OrderOperationalEvent::dispatch(
                         $notification->id,
                         $lockedOrder->id,
@@ -1898,11 +1978,12 @@ class OrderController extends Controller
                         'info',
                         $eventTimestamp,
                         "/repairs?id={$lockedOrder->id}",
-                        $lockedOrder->branch_id,
+                        $lockedOrder->branch_id !== null ? (int) $lockedOrder->branch_id : null,
                         'technician',
-                        null,
+                        $lockedOrder->technician_id !== null ? (int) $lockedOrder->technician_id : null,
                         'additional_service_deleted',
-                        'order.additional_service_deleted'
+                        'order.additional_service_deleted',
+                        $resolvedTenantId
                     );
                 });
             }

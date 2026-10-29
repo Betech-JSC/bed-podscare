@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import {
   Button,
@@ -139,7 +140,7 @@ export const TrackingView: React.FC<{ initialId?: string }> = ({ initialId = '' 
             </div>
           </div>
           <Button variant="ghost" size="sm" onClick={() => router.push('/')}>
-            Dành cho nhân viên ↗
+            Dành cho nhân viên →
           </Button>
         </div>
 
@@ -343,6 +344,88 @@ export const TrackingView: React.FC<{ initialId?: string }> = ({ initialId = '' 
             </p>
           </div>
         ) : null}
+
+        {/* PII Protection & Store Warranty Liability Transparency Block */}
+        <section
+          aria-labelledby="tracking-pii-warranty-heading"
+          className="bg-white border border-[#e5ece8] rounded-[12px] p-4 sm:p-5 space-y-4"
+        >
+          <div className="space-y-1">
+            <span className="block text-[10px] font-bold uppercase tracking-[1px] text-[#176b51]">
+              CAM KẾT MINH BẠCH DỮ LIỆU &amp; BẢO HÀNH
+            </span>
+            <h2
+              id="tracking-pii-warranty-heading"
+              className="font-heading font-bold text-sm sm:text-[15px] text-[#17231f] m-0"
+            >
+              Minh bạch Bảo mật Thông tin Cá nhân (PII) &amp; Phân định Trách nhiệm Bảo hành
+            </h2>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs leading-relaxed">
+            <div className="p-3.5 rounded-[9px] bg-[#f6f8f6] border border-[#e5ece8] space-y-1">
+              <strong className="font-heading font-bold text-[#17231f] block">
+                Bảo vệ dữ liệu định danh cá nhân (PII Masking)
+              </strong>
+              <p className="text-[#516059] m-0">
+                Để bảo vệ quyền riêng tư trên cổng tra cứu công khai, hệ thống tự động che mờ họ tên,
+                số điện thoại và địa chỉ giao nhận (qua cơ chế bảo vệ PII{' '}
+                <span className="font-mono text-[11px] text-[#176b51]">PiiHelper</span>) khi chưa xác
+                thực đúng thông tin chủ đơn.
+              </p>
+            </div>
+
+            <div className="p-3.5 rounded-[9px] bg-[#f6f8f6] border border-[#e5ece8] space-y-1">
+              <strong className="font-heading font-bold text-[#17231f] block">
+                Phân định trách nhiệm sửa chữa &amp; bảo hành thiết bị
+              </strong>
+              <p className="text-[#516059] m-0">
+                Nghĩa vụ kỹ thuật sửa chữa, linh kiện thay thế và cam kết bảo hành thiết bị thực tế do{' '}
+                <strong className="text-[#17231f]">cửa hàng tiếp nhận máy</strong> trực tiếp đảm nhiệm
+                theo phiếu biên nhận. FIXO Repair OS là nền tảng phần mềm quản trị vận hành và tra cứu
+                điện tử.
+              </p>
+            </div>
+          </div>
+
+          <footer className="pt-3.5 border-t border-[#e9eeeb] flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2.5 text-xs text-[#516059]">
+            <nav
+              aria-label="Liên kết chính sách cổng tra cứu"
+              className="flex flex-wrap items-center gap-x-4 gap-y-1.5 font-semibold"
+            >
+              <Link
+                href="/privacy"
+                className="text-[#176b51] hover:text-[#10583f] hover:underline transition-colors"
+              >
+                Chính sách bảo mật
+              </Link>
+              <Link
+                href="/terms"
+                className="text-[#176b51] hover:text-[#10583f] hover:underline transition-colors"
+              >
+                Điều khoản sử dụng
+              </Link>
+              <Link
+                href="/"
+                className="hover:text-[#176b51] hover:underline transition-colors"
+              >
+                Trang chủ FIXO
+              </Link>
+            </nav>
+
+            <div className="text-[#758780]">
+              Đơn vị phát triển:{' '}
+              <a
+                href="https://betech-digital.com/"
+                target="_blank"
+                rel="noopener"
+                className="font-semibold text-[#176b51] hover:text-[#10583f] hover:underline"
+              >
+                Betech Digital
+              </a>
+            </div>
+          </footer>
+        </section>
       </div>
     </div>
   );

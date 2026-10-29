@@ -664,37 +664,78 @@ export const ChangelogView: React.FC<ChangelogViewProps> = ({
 
       {/* Public Footer */}
       <footer className="bg-white border-t border-[#e5ece8] mt-10">
-        <div className="max-w-[1280px] mx-auto px-4 sm:px-6 lg:px-8 py-5 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 text-xs text-[#54645d]">
-          <div>
-            <strong className="text-[#17231f]">FIXO Repair OS</strong> · Hệ điều
-            hành quản lý cửa hàng sửa chữa thiết bị công nghệ · Phiên bản{' '}
-            <span className="font-mono font-bold text-[#176b51]">
-              {CURRENT_APP_VERSION}
-            </span>
+        <div className="max-w-[1280px] mx-auto px-4 sm:px-6 lg:px-8 py-5 space-y-3 text-xs text-[#54645d]">
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+            <div>
+              <strong className="text-[#17231f]">FIXO Repair OS</strong> · Hệ điều
+              hành quản lý cửa hàng sửa chữa thiết bị công nghệ · Phiên bản{' '}
+              <span className="font-mono font-bold text-[#176b51]">
+                {CURRENT_APP_VERSION}
+              </span>{' '}
+              · Phát triển bởi{' '}
+              <a
+                href="https://betech-digital.com/"
+                target="_blank"
+                rel="noopener"
+                className="font-semibold text-[#176b51] hover:text-[#10583f] hover:underline"
+              >
+                Betech Digital
+              </a>
+            </div>
+            <div className="flex flex-wrap items-center gap-4 font-semibold">
+              <Link href="/" className="hover:text-[#176b51] transition-colors">
+                Trang chủ
+              </Link>
+              <Link
+                href="/track"
+                className="hover:text-[#176b51] transition-colors"
+              >
+                Tra cứu bảo hành
+              </Link>
+              <Link
+                href="/login"
+                className="hover:text-[#176b51] transition-colors"
+              >
+                Đăng nhập hệ thống
+              </Link>
+              <Link
+                href="/register?plan=pro"
+                className="text-[#176b51] hover:underline"
+              >
+                Đăng ký dùng thử
+              </Link>
+            </div>
           </div>
-          <div className="flex flex-wrap items-center gap-4 font-semibold">
-            <Link href="/" className="hover:text-[#176b51] transition-colors">
-              Trang chủ
+
+          <nav
+            aria-label="Liên kết chính sách pháp lý"
+            className="pt-3 border-t border-[#f0f3f1] flex flex-wrap items-center gap-x-4 gap-y-1.5 text-[11px] font-semibold text-[#54645d]"
+          >
+            <Link
+              href="/terms"
+              className="hover:text-[#176b51] hover:underline transition-colors"
+            >
+              Điều khoản
             </Link>
             <Link
-              href="/track"
-              className="hover:text-[#176b51] transition-colors"
+              href="/privacy"
+              className="hover:text-[#176b51] hover:underline transition-colors"
             >
-              Tra cứu bảo hành
+              Bảo mật
             </Link>
             <Link
-              href="/login"
-              className="hover:text-[#176b51] transition-colors"
+              href="/billing-policy"
+              className="hover:text-[#176b51] hover:underline transition-colors"
             >
-              Đăng nhập hệ thống
+              Thanh toán
             </Link>
             <Link
-              href="/register?plan=pro"
-              className="text-[#176b51] hover:underline"
+              href="/sla"
+              className="hover:text-[#176b51] hover:underline transition-colors"
             >
-              Đăng ký dùng thử
+              Cam kết SLA
             </Link>
-          </div>
+          </nav>
         </div>
       </footer>
     </div>
