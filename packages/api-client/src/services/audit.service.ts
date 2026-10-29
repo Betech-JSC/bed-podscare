@@ -4,6 +4,8 @@ export interface AuditLogItem {
   id?: number;
   time?: string;
   created_at?: string;
+  tenant_id?: number | null;
+  tenant?: { id: number; code: string; name: string } | null;
   user_id?: number | null;
   user?: any;
   user_name?: string;
@@ -12,7 +14,11 @@ export interface AuditLogItem {
   auditable_id?: number | null;
   old_values?: Record<string, any> | null;
   new_values?: Record<string, any> | null;
-  metadata?: Record<string, any> | null;
+  metadata?: {
+    device_summary?: string;
+    user_agent?: string;
+    [key: string]: any;
+  } | null;
   detail?: string;
   details?: string;
   source?: string;
@@ -21,6 +27,8 @@ export interface AuditLogItem {
 }
 
 export interface AuditLogFilterDTO {
+  tenant_id?: number | string;
+  action_group?: 'all' | 'auth' | 'orders' | 'finance_inventory' | string;
   action?: string;
   auditable_type?: string;
   auditable_id?: number | string;
@@ -35,6 +43,8 @@ export interface AuditLogFilterDTO {
   all?: boolean;
   [key: string]: any;
 }
+
+export type AuditLogListParams = AuditLogFilterDTO;
 
 export class AuditService {
   constructor(private http: HttpClient = defaultHttpClient) {}

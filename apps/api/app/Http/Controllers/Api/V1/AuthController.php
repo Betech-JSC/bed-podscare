@@ -7,6 +7,7 @@ use App\Models\Branch;
 use App\Models\Scopes\TenantScope;
 use App\Models\Tenant;
 use App\Models\User;
+use App\Services\AuditLogService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
@@ -63,6 +64,19 @@ class AuthController extends Controller
                 }
 
                 $token = $superAdmin->createToken('platform_token', ['platform:super_admin'])->plainTextToken;
+
+                app(AuditLogService::class)->log(
+                    null,
+                    $superAdmin,
+                    'user_login',
+                    $superAdmin,
+                    "Đăng nhập hệ thống thành công ({$superAdmin->email})",
+                    [
+                        'role'       => $superAdmin->role,
+                        'branch_id'  => null,
+                        'store_code' => null,
+                    ]
+                );
 
                 return $this->success([
                     'token'      => $token,
@@ -210,6 +224,19 @@ class AuthController extends Controller
         $tokenContext = $resolvedTenant ? "tenant:{$resolvedTenant->id}" : 'tenant:default';
         $token = $user->createToken('auth_token', [$tokenContext])->plainTextToken;
 
+        app(AuditLogService::class)->log(
+            $user->tenant_id ?? $resolvedTenant?->id,
+            $user,
+            'user_login',
+            $user,
+            "Đăng nhập hệ thống thành công ({$user->email})",
+            [
+                'role'       => $user->role,
+                'branch_id'  => $user->branch_id,
+                'store_code' => $resolvedTenant?->code,
+            ]
+        );
+
         $tenantData = null;
         if ($resolvedTenant) {
             $daysRemaining = $resolvedTenant->expires_at ? max(0, (int) now()->diffInDays($resolvedTenant->expires_at, false)) : null;
@@ -253,7 +280,21 @@ class AuthController extends Controller
      */
     public function logout(Request $request): JsonResponse
     {
-        $request->user()->currentAccessToken()?->delete();
+        $user = $request->user();
+        if ($user) {
+            app(AuditLogService::class)->log(
+                $user->tenant_id,
+                $user,
+                'user_logout',
+                $user,
+                "Đăng xuất khỏi hệ thống ({$user->email})",
+                [
+                    'role'      => $user->role,
+                    'branch_id' => $user->branch_id,
+                ]
+            );
+            $user->currentAccessToken()?->delete();
+        }
 
         return $this->success(null, 'Đăng xuất thành công.');
     }

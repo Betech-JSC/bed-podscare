@@ -61,7 +61,53 @@ class AuditLogController extends Controller
             abort(403, 'Chỉ quản trị viên mới có quyền truy cập nhật ký hệ thống.');
         }
 
-        $query = AuditLog::with(['user:id,name,email,role,avatar_url', 'auditable'])->latest('id');
+        $query = AuditLog::with(['user:id,name,email,role,avatar_url', 'tenant:id,code,name', 'auditable'])->latest('id');
+
+        // Cho phép Super Admin lọc trực tiếp theo tenant_id của gian hàng
+        if ($user->role === 'super_admin' && $request->filled('tenant_id')) {
+            $query->where('tenant_id', (int) $request->input('tenant_id'));
+        }
+
+        // Lọc theo nhóm hành động nghiệp vụ (action_group) phục vụ Drawer Xem Log
+        if ($actionGroup = $request->input('action_group')) {
+            if ($actionGroup === 'auth') {
+                $query->whereIn('action', [
+                    'tenant_registered',
+                    'user_login',
+                    'user_logout',
+                    'store_approved',
+                    'store_suspended',
+                    'store_activated',
+                ]);
+            } elseif ($actionGroup === 'orders') {
+                $query->where(function ($q) {
+                    $q->where('auditable_type', 'like', '%RepairOrder%')
+                      ->orWhere('auditable_type', 'like', '%Quote%')
+                      ->orWhere('auditable_type', 'like', '%Qc%')
+                      ->orWhere('auditable_type', 'like', '%Warranty%')
+                      ->orWhere('auditable_type', 'like', '%Shipment%')
+                      ->orWhere('action', 'like', '%order%')
+                      ->orWhere('action', 'like', '%quote%')
+                      ->orWhere('action', 'like', '%qc%')
+                      ->orWhere('action', 'like', '%warranty%');
+                });
+            } elseif ($actionGroup === 'finance_inventory') {
+                $query->where(function ($q) {
+                    $q->where('auditable_type', 'like', '%Payment%')
+                      ->orWhere('auditable_type', 'like', '%Refund%')
+                      ->orWhere('auditable_type', 'like', '%Inventory%')
+                      ->orWhere('auditable_type', 'like', '%Part%')
+                      ->orWhere('auditable_type', 'like', '%Cashbook%')
+                      ->orWhere('auditable_type', 'like', '%Shift%')
+                      ->orWhere('auditable_type', 'like', '%Supplier%')
+                      ->orWhere('action', 'like', '%payment%')
+                      ->orWhere('action', 'like', '%refund%')
+                      ->orWhere('action', 'like', '%stock%')
+                      ->orWhere('action', 'like', '%inventory%')
+                      ->orWhere('action', 'like', '%shift%');
+                });
+            }
+        }
 
         // Lọc theo module / auditable_type (ví dụ: RepairOrder, Payment, Warranty...)
         if ($module = $request->input('module', $request->input('auditable_type'))) {
@@ -117,7 +163,8 @@ class AuditLogController extends Controller
                   ->orWhere('action', 'like', "%{$search}%")
                   ->orWhere('user_name', 'like', "%{$search}%")
                   ->orWhere('auditable_type', 'like', "%{$search}%")
-                  ->orWhere('ip_address', 'like', "%{$search}%");
+                  ->orWhere('ip_address', 'like', "%{$search}%")
+                  ->orWhere('metadata', 'like', "%{$search}%");
             });
         }
 
@@ -160,7 +207,7 @@ class AuditLogController extends Controller
             abort(403, 'Chỉ quản trị viên mới có quyền truy cập nhật ký hệ thống.');
         }
 
-        $query = AuditLog::with(['user:id,name,email,role,avatar_url', 'auditable']);
+        $query = AuditLog::with(['user:id,name,email,role,avatar_url', 'tenant:id,code,name', 'auditable']);
         $this->applyTenantScope($query, $user);
 
         $log = $query->find($id);

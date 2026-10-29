@@ -28,7 +28,21 @@ class Notification extends Model
 
     public function getActionUrlAttribute(): string
     {
+        if ($this->type === 'tenant_registered') {
+            return '/platform/stores';
+        }
+
         return $this->order_id ? "/repairs?id={$this->order_id}" : '/repairs';
+    }
+
+    public function getBodyAttribute(): ?string
+    {
+        return $this->attributes['message'] ?? null;
+    }
+
+    public function setBodyAttribute(?string $value): void
+    {
+        $this->attributes['message'] = $value;
     }
 
     /**

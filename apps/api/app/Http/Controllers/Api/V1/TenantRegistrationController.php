@@ -5,10 +5,12 @@ namespace App\Http\Controllers\Api\V1;
 use App\Http\Controllers\Controller;
 use App\Mail\TenantWelcomeMail;
 use App\Models\Branch;
+use App\Models\Notification;
 use App\Models\Scopes\TenantScope;
 use App\Models\Tenant;
 use App\Models\User;
 use App\Rules\ValidRegistrationEmail;
+use App\Services\AuditLogService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -203,6 +205,53 @@ class TenantRegistrationController extends Controller
                 ],
             ];
         });
+
+        if ($createdTenant instanceof Tenant && $createdOwner instanceof User) {
+            try {
+                $registrationSnapshot = [
+                    'store_code' => $createdTenant->code,
+                    'store_name' => $createdTenant->name,
+                    'owner_name' => $createdOwner->name,
+                    'phone'      => $createdTenant->phone,
+                    'email'      => $createdTenant->email,
+                    'plan'       => $createdTenant->plan,
+                    'status'     => $createdTenant->status,
+                ];
+
+                app(AuditLogService::class)->log(
+                    $createdTenant->id,
+                    $createdOwner,
+                    'tenant_registered',
+                    $createdTenant,
+                    "Đăng ký gian hàng mới: {$createdTenant->name} ({$createdTenant->code}) - Gói: " . strtoupper((string) $createdTenant->plan),
+                    $registrationSnapshot,
+                    null,
+                    $registrationSnapshot
+                );
+
+                $superAdmins = User::withoutGlobalScope(TenantScope::class)
+                    ->where('role', 'super_admin')
+                    ->where('is_active', true)
+                    ->get();
+
+                foreach ($superAdmins as $superAdmin) {
+                    Notification::create([
+                        'user_id'   => $superAdmin->id,
+                        'branch_id' => null,
+                        'type'      => 'tenant_registered',
+                        'title'     => "Gian hàng mới đăng ký: {$createdTenant->name}",
+                        'message'   => "Chủ tiệm {$createdOwner->name} ({$createdTenant->phone}) vừa đăng ký mã tiệm {$createdTenant->code} (Gói: " . strtoupper((string) $createdTenant->plan) . ').',
+                        'severity'  => 'info',
+                        'is_read'   => false,
+                    ]);
+                }
+            } catch (\Throwable $e) {
+                Log::warning('Failed to record audit log or super admin notification for tenant registration.', [
+                    'tenant_code' => $createdTenant->code,
+                    'error'       => $e->getMessage(),
+                ]);
+            }
+        }
 
         app(\App\Services\DiscordNotificationService::class)->sendTenantRegistrationNotification(
             $createdTenant ?? $result['tenant'],
