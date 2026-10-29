@@ -236,7 +236,7 @@ class TenantRegistrationWelcomeEmailTest extends TestCase
             ->assertJsonPath('data.tenant.code', $storeCode)
             ->assertJsonPath('data.tenant.name', $storeName)
             ->assertJsonPath('data.tenant.status', 'active')
-            ->assertJsonPath('data.tenant.plan', 'trial')
+            ->assertJsonPath('data.tenant.plan', 'pro')
             ->assertJsonPath('data.user.email', $email);
 
         $tenantId = $response->json('data.tenant.id');
@@ -287,7 +287,7 @@ class TenantRegistrationWelcomeEmailTest extends TestCase
             $this->assertStringContainsString($storeName, $html, 'Thiếu tên gian hàng trong email');
             $this->assertStringContainsString($storeCode, $html, 'Thiếu mã gian hàng (store_code) trong email');
             $this->assertStringContainsString($email, $html, 'Thiếu địa chỉ email đăng nhập trong email');
-            $this->assertStringContainsString('Dùng thử (Trial)', $html, 'Thiếu tên gói cước kích hoạt trong email');
+            $this->assertStringContainsString('Chuyên nghiệp (Pro)', $html, 'Thiếu tên gói cước kích hoạt trong email');
             $this->assertStringContainsString($expectedTrialEndDate, $html, 'Thiếu ngày hết hạn dùng thử 1 năm trong email');
             $this->assertStringContainsString($mail->dashboardUrl, $html, 'Thiếu liên kết điều hướng tới trang Quản trị POS');
 

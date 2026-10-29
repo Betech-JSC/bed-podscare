@@ -107,7 +107,7 @@ export const LandingFooter: React.FC = () => {
                 </a>
               </li>
               <li>
-                <Link href="/register?plan=trial" className="hover:text-white transition-colors">
+                <Link href="/register?plan=pro" className="hover:text-white transition-colors">
                   Dùng thử 1 năm
                 </Link>
               </li>

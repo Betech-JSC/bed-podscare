@@ -115,7 +115,7 @@ export const LandingNavbar: React.FC<LandingNavbarProps> = ({ isAuthenticated = 
                 Đăng nhập
               </Link>
               <Link
-                href="/register?plan=trial"
+                href="/register?plan=pro"
                 className="inline-flex items-center justify-center gap-2 h-[44px] px-5 rounded-[9px] bg-[#176b58] hover:bg-[#10583f] text-white text-[13px] font-bold shadow-[0_8px_20px_rgba(23,107,88,0.2)] hover:shadow-none transition-all"
               >
                 <span>Dùng thử miễn phí →</span>
@@ -204,7 +204,7 @@ export const LandingNavbar: React.FC<LandingNavbarProps> = ({ isAuthenticated = 
                   Đăng nhập
                 </Link>
                 <Link
-                  href="/register?plan=trial"
+                  href="/register?plan=pro"
                   onClick={() => setMobileMenuOpen(false)}
                   className="w-full flex items-center justify-center h-[46px] rounded-[9px] bg-[#176b58] text-white font-bold text-[14px] shadow-sm"
                 >

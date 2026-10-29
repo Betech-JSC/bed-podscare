@@ -210,7 +210,7 @@ export const ChangelogView: React.FC<ChangelogViewProps> = ({
                   Đăng nhập
                 </Link>
                 <Link
-                  href="/register?plan=trial"
+                  href="/register?plan=pro"
                   className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-[8px] text-xs font-bold bg-[#176b51] text-white border border-[#176b51] hover:bg-[#10583f] transition-colors"
                 >
                   <span>Dùng thử miễn phí</span>
@@ -689,7 +689,7 @@ export const ChangelogView: React.FC<ChangelogViewProps> = ({
               Đăng nhập hệ thống
             </Link>
             <Link
-              href="/register?plan=trial"
+              href="/register?plan=pro"
               className="text-[#176b51] hover:underline"
             >
               Đăng ký dùng thử

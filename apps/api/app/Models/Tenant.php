@@ -12,7 +12,7 @@ class Tenant extends Model
 
     protected $attributes = [
         'status' => 'active',
-        'plan'   => 'trial',
+        'plan'   => 'pro',
     ];
 
     protected $fillable = [

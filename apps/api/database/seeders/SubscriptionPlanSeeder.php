@@ -43,11 +43,11 @@ class SubscriptionPlanSeeder extends Seeder
                 'billing_cycle'        => 'monthly',
                 'max_branches'         => 2,
                 'max_users'            => 5,
-                'max_orders_per_month' => 200,
+                'max_orders_per_month' => 300,
                 'features'             => [
                     'Tối đa 2 chi nhánh',
                     'Tối đa 5 nhân sự',
-                    '200 đơn sửa chữa / tháng',
+                    '300 đơn sửa chữa / tháng',
                     'In phiếu tiếp nhận & Báo giá QuickLink',
                     'Quản lý kho linh kiện cơ bản',
                     'Hỗ trợ kỹ thuật giờ hành chính',

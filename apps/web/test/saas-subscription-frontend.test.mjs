@@ -21,13 +21,25 @@ test('SaaS Subscription: Registration Page receives ?plan= and submits plan', ()
   assert.ok(content.includes('Suspense'), 'Must wrap in Suspense boundary for App Router');
   assert.ok(content.includes("searchParams?.get('plan')"), 'Must read plan parameter');
 
-  // Verify Plan Switcher / Selection banner
-  assert.ok(content.includes('DÙNG THỬ (TRIAL)'), 'Must mention Trial badge');
-  assert.ok(content.includes('TIÊU CHUẨN (STANDARD)'), 'Must mention Standard badge');
-  assert.ok(content.includes('CHUYÊN NGHIỆP (PRO)'), 'Must mention Pro badge');
-  assert.ok(content.includes('299.000đ/tháng'), 'Must mention Standard pricing');
-  assert.ok(content.includes('599.000đ/tháng'), 'Must mention Pro pricing');
-  assert.ok(content.includes('1 năm'), 'Must mention 1 year trial duration');
+  // Verify Pro-by-default Plan Benefit Banner (no legacy 2-staff trial switcher)
+  assert.ok(
+    content.includes('CHUYÊN NGHIỆP (PRO) — MIỄN PHÍ 1 NĂM ĐẦU (0đ)'),
+    'Must display Pro 1-year free badge on registration page'
+  );
+  assert.ok(
+    content.includes('Không giới hạn nhân viên, không giới hạn chi nhánh'),
+    'Must highlight unlimited staff and branches benefit'
+  );
+  assert.ok(
+    content.includes('Gói Chuyên nghiệp (Pro) - Miễn phí 1 năm đầu (Không giới hạn nhân sự & chi nhánh)'),
+    'Must include Pro 1-year free plan title for success screen'
+  );
+  assert.strictEqual(
+    content.includes('1 chi nhánh, 2 nhân sự, 50 đơn/tháng'),
+    false,
+    'Must not display legacy 2-staff trial restriction on registration page'
+  );
+  assert.ok(content.includes('1 năm'), 'Must mention 1 year free duration');
   assert.strictEqual(content.includes('3 tháng'), false, 'Must not contain legacy 3-month trial text');
   assert.strictEqual(content.includes('14 ngày'), false, 'Must not contain legacy 14-day trial text');
 

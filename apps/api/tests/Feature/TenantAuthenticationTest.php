@@ -205,16 +205,17 @@ class TenantAuthenticationTest extends TestCase
             ->assertJsonPath('success', true)
             ->assertJsonPath('data.tenant.code', $storeCode)
             ->assertJsonPath('data.tenant.status', 'active')
-            ->assertJsonPath('data.tenant.plan', 'trial');
+            ->assertJsonPath('data.tenant.plan', 'pro');
 
         $this->assertNotEmpty($response->json('data.token'));
         $this->assertNotEmpty($response->json('data.branch.id'));
         $this->assertEquals($response->json('data.branch.id'), $response->json('data.user.branch_id'));
 
         $this->assertDatabaseHas('tenants', [
-            'code'   => $storeCode,
-            'status' => 'active',
-            'plan'   => 'trial',
+            'code'            => $storeCode,
+            'status'          => 'active',
+            'plan'            => 'pro',
+            'current_plan_id' => 'pro',
         ]);
 
         $this->assertDatabaseHas('users', [

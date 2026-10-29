@@ -263,7 +263,7 @@ export const AppShell: React.FC<AppShellProps> = ({ children, crumbName = 'Tổn
           if (res?.success && res?.data) {
             const tenant = res.data.tenant;
             const usage = res.data.usage;
-            const plan = tenant?.plan || usage?.subscription?.plan_id || 'trial';
+            const plan = tenant?.plan || usage?.subscription?.plan_id || 'pro';
             const days = tenant?.days_remaining ?? usage?.subscription?.days_remaining ?? 365;
             const expired =
               usage?.subscription?.is_expired || (typeof days === 'number' && days <= 0);

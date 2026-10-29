@@ -93,7 +93,7 @@ export const FeatureGrid: React.FC = () => {
               FIXO được thiết kế chuyên biệt cho ngành sửa chữa thiết bị công nghệ, giúp bạn tiết kiệm thời gian, tối ưu hóa công thợ và kiểm soát doanh thu minh bạch.
             </p>
             <Link
-              href="/register?plan=trial"
+              href="/register?plan=pro"
               className="inline-flex items-center justify-center gap-2 w-full h-[46px] rounded-[9px] bg-[#176b58] hover:bg-[#10583f] text-white text-[13px] font-bold shadow-[0_8px_20px_rgba(23,107,88,0.2)] transition-all"
             >
               <span>Dùng thử miễn phí ngay →</span>

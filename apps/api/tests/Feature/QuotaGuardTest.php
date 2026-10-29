@@ -6,8 +6,11 @@ use App\Models\Branch;
 use App\Models\Customer;
 use App\Models\DeviceModel;
 use App\Models\RepairOrder;
+use App\Models\SubscriptionPlan;
 use App\Models\Tenant;
 use App\Models\User;
+use App\Services\QuotaService;
+use Database\Seeders\SubscriptionPlanSeeder;
 use Illuminate\Foundation\Testing\DatabaseTransactions;
 use Illuminate\Support\Facades\Hash;
 use Tests\TestCase;
@@ -21,6 +24,10 @@ class QuotaGuardTest extends TestCase
     protected function setUp(): void
     {
         parent::setUp();
+
+        // Nạp định nghĩa gói cước mới nhất từ SubscriptionPlanSeeder bên trong transaction của DatabaseTransactions
+        $this->seed(SubscriptionPlanSeeder::class);
+        QuotaService::clearCache();
 
         $this->deviceModel = DeviceModel::first() ?? DeviceModel::create([
             'name'       => 'iPhone 15 Pro Max',
@@ -177,10 +184,18 @@ class QuotaGuardTest extends TestCase
     }
 
     /**
-     * Case 6 (Standard Limits): Gói Standard tạo chi nhánh 2 thành công, branch 3 bị 422; tạo vượt 200 đơn bị 422.
+     * Case 6 (Standard Limits): Gói Standard chuẩn hóa 2 chi nhánh, 5 nhân sự, 300 đơn/tháng; tạo vượt 300 đơn bị 422.
      */
     public function test_case_6_standard_limits(): void
     {
+        $standardPlan = SubscriptionPlan::findOrFail('standard');
+        $this->assertSame(2, $standardPlan->max_branches);
+        $this->assertSame(5, $standardPlan->max_users);
+        $this->assertSame(300, $standardPlan->max_orders_per_month);
+        $this->assertContains('Tối đa 2 chi nhánh', $standardPlan->features);
+        $this->assertContains('Tối đa 5 nhân sự', $standardPlan->features);
+        $this->assertContains('300 đơn sửa chữa / tháng', $standardPlan->features);
+
         [$tenant, $owner] = $this->createTenantWithOwner('standard', now()->addDays(30));
 
         // Tạo chi nhánh 1: thành công (201)
@@ -209,14 +224,14 @@ class QuotaGuardTest extends TestCase
         $res3->assertStatus(422)
             ->assertJsonPath('error_code', 'QUOTA_EXCEEDED_BRANCHES');
 
-        // Tạo 200 đơn trong tháng
+        // Tạo 299 đơn trong tháng bằng Eloquent
         $customer = Customer::create([
             'tenant_id' => $tenant->id,
             'name'      => 'Khách Hàng Standard',
             'phone'     => '094' . rand(1000000, 9999999),
         ]);
 
-        for ($i = 1; $i <= 200; $i++) {
+        for ($i = 1; $i <= 299; $i++) {
             RepairOrder::create([
                 'tenant_id'          => $tenant->id,
                 'order_code'         => 'FX-STD-' . uniqid() . "-{$i}",
@@ -230,11 +245,21 @@ class QuotaGuardTest extends TestCase
             ]);
         }
 
-        // Tạo đơn thứ 201: bị chặn 422 (QUOTA_EXCEEDED_ORDERS)
+        // Tạo đơn thứ 300 qua API: vẫn trong hạn mức 300 đơn/tháng -> thành công (201)
+        $resOrder300 = $this->actingAs($owner, 'sanctum')->postJson('/api/v1/orders', [
+            'branch_id'         => $branch1Id,
+            'customer_phone'    => '0988000300',
+            'customer_name'     => 'Khách Hàng 300',
+            'device_model_id'   => $this->deviceModel->id,
+            'issue_description' => 'Vệ sinh tai nghe',
+        ]);
+        $resOrder300->assertStatus(201);
+
+        // Tạo đơn thứ 301 qua API: bị chặn 422 (QUOTA_EXCEEDED_ORDERS)
         $resOrder = $this->actingAs($owner, 'sanctum')->postJson('/api/v1/orders', [
             'branch_id'         => $branch1Id,
-            'customer_phone'    => '0988000201',
-            'customer_name'     => 'Khách Hàng 201',
+            'customer_phone'    => '0988000301',
+            'customer_name'     => 'Khách Hàng 301',
             'device_model_id'   => $this->deviceModel->id,
             'issue_description' => 'Hỏng màn hình',
         ]);

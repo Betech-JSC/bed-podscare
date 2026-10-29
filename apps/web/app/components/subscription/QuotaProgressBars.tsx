@@ -18,9 +18,9 @@ export interface QuotaProgressBarsProps {
 }
 
 export const QuotaProgressBars: React.FC<QuotaProgressBarsProps> = ({
-  branches = { used: 0, limit: 1, percentage: 0 },
-  users = { used: 0, limit: 2, percentage: 0 },
-  orders = { used: 0, limit: 50, percentage: 0 },
+  branches = { used: 0, limit: null, unlimited: true, percentage: 0 },
+  users = { used: 0, limit: null, unlimited: true, percentage: 0 },
+  orders = { used: 0, limit: null, unlimited: true, percentage: 0 },
   className = '',
 }) => {
   const renderMetricCard = (

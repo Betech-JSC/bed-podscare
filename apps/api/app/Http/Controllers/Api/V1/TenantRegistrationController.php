@@ -7,6 +7,7 @@ use App\Mail\TenantWelcomeMail;
 use App\Models\Branch;
 use App\Models\Notification;
 use App\Models\Scopes\TenantScope;
+use App\Models\SubscriptionPlan;
 use App\Models\Tenant;
 use App\Models\User;
 use App\Rules\ValidRegistrationEmail;
@@ -90,24 +91,54 @@ class TenantRegistrationController extends Controller
             'plan.in'               => 'Gói cước đăng ký không hợp lệ.',
         ]);
 
-        $selectedPlan = $validated['plan'] ?? 'trial';
+        $grantedPlan = 'pro';
+        $intendedPlan = (! empty($validated['plan']) && $validated['plan'] !== 'trial')
+            ? $validated['plan']
+            : 'pro';
         $expiresAt = now()->addYear();
         $trialPeriodDays = max(0, (int) now()->diffInDays($expiresAt, false));
 
         $createdTenant = null;
         $createdOwner = null;
 
-        $result = DB::transaction(function () use ($validated, $selectedPlan, $trialPeriodDays, $expiresAt, &$createdTenant, &$createdOwner) {
-            // 1. Tạo Tenant tự động phê duyệt (status = active) & kích hoạt gói dùng thử
+        $result = DB::transaction(function () use ($validated, $grantedPlan, $intendedPlan, $trialPeriodDays, $expiresAt, &$createdTenant, &$createdOwner) {
+            // Đảm bảo gói Chuyên nghiệp (pro) luôn tồn tại trong bảng subscription_plans để thỏa mãn khóa ngoại current_plan_id
+            SubscriptionPlan::firstOrCreate(
+                ['id' => 'pro'],
+                [
+                    'code'                 => 'pro',
+                    'name'                 => 'Gói Chuyên nghiệp',
+                    'price'                => 599000,
+                    'price_monthly'        => 599000,
+                    'price_yearly'         => 6589000,
+                    'billing_cycle'        => 'monthly',
+                    'max_branches'         => null,
+                    'max_users'            => null,
+                    'max_orders_per_month' => null,
+                    'features'             => [
+                        'Không giới hạn chi nhánh',
+                        'Không giới hạn nhân viên',
+                        'Không giới hạn đơn hàng',
+                        'Điều phối kho linh kiện liên chi nhánh',
+                        'Phân tích KPI nhân viên & Doanh số thời gian thực',
+                        'Cổng theo dõi bảo hành công khai VIP',
+                        'Hỗ trợ kỹ thuật ưu tiên 24/7',
+                    ],
+                    'is_active'            => true,
+                    'sort_order'           => 3,
+                ]
+            );
+
+            // 1. Tạo Tenant tự động phê duyệt (status = active) & cấp thẳng Gói Chuyên Nghiệp (pro) miễn phí 1 năm đầu
             $tenant = Tenant::create([
                 'code'            => strtolower($validated['store_code']),
                 'name'            => $validated['store_name'],
                 'phone'           => $validated['phone'],
                 'email'           => $validated['email'],
                 'status'          => 'active',
-                'plan'            => $selectedPlan,
-                'current_plan_id' => $selectedPlan,
-                'intended_plan'   => $selectedPlan,
+                'plan'            => $grantedPlan,
+                'current_plan_id' => $grantedPlan,
+                'intended_plan'   => $intendedPlan,
                 'trial_ends_at'   => $expiresAt,
                 'expires_at'      => $expiresAt,
                 'billing_cycle'   => 'monthly',
@@ -153,6 +184,7 @@ class TenantRegistrationController extends Controller
                 'name'                => $tenant->name,
                 'status'              => $tenant->status,
                 'plan'                => $tenant->plan,
+                'current_plan_id'     => $tenant->current_plan_id,
                 'intended_plan'       => $tenant->intended_plan,
                 'trial_ends_at'       => $tenant->trial_ends_at?->toISOString(),
                 'expires_at'          => $tenant->expires_at?->toISOString(),
@@ -272,7 +304,7 @@ class TenantRegistrationController extends Controller
 
         return $this->success(
             $result,
-            'Đăng ký gian hàng thành công. Gian hàng đã được tự động phê duyệt và kích hoạt 1 năm dùng thử.',
+            'Đăng ký gian hàng thành công. Gian hàng đã được tự động phê duyệt và kích hoạt Gói Chuyên Nghiệp miễn phí 1 năm đầu.',
             201
         );
     }

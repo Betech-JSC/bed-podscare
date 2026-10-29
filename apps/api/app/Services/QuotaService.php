@@ -44,13 +44,37 @@ class QuotaService
      */
     public function resolvePlan(Tenant $tenant): SubscriptionPlan
     {
-        $planId = (string) ($tenant->current_plan_id ?? $tenant->plan ?? 'trial');
+        $planId = (string) ($tenant->current_plan_id ?: $tenant->plan ?: 'trial');
 
         if (isset(self::$planCache[$planId])) {
             return self::$planCache[$planId];
         }
 
         $plan = SubscriptionPlan::find($planId);
+
+        // Fallback an toàn cho gói Pro (Unlimited) nếu bảng subscription_plans chưa seed
+        if (! $plan && $planId === 'pro') {
+            $plan = new SubscriptionPlan([
+                'id'                   => 'pro',
+                'code'                 => 'pro',
+                'name'                 => 'Gói Chuyên nghiệp',
+                'max_branches'         => null,
+                'max_users'            => null,
+                'max_orders_per_month' => null,
+            ]);
+        }
+
+        // Fallback an toàn cho gói Standard nếu bảng subscription_plans chưa seed
+        if (! $plan && $planId === 'standard') {
+            $plan = new SubscriptionPlan([
+                'id'                   => 'standard',
+                'code'                 => 'standard',
+                'name'                 => 'Gói Tiêu chuẩn',
+                'max_branches'         => 2,
+                'max_users'            => 5,
+                'max_orders_per_month' => 300,
+            ]);
+        }
 
         if (! $plan && $planId !== 'trial') {
             $plan = self::$planCache['trial'] ?? SubscriptionPlan::find('trial');

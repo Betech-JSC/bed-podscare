@@ -80,8 +80,8 @@ export default function SubscriptionPage() {
     }
   };
 
-  const currentPlanId = data?.tenant?.plan || data?.usage?.subscription?.plan_id || 'trial';
-  const planName = data?.current_plan?.name || data?.usage?.subscription?.plan_name || 'Gói Dùng thử';
+  const currentPlanId = data?.tenant?.plan || data?.usage?.subscription?.plan_id || 'pro';
+  const planName = data?.current_plan?.name || data?.usage?.subscription?.plan_name || 'Gói Chuyên nghiệp';
   const daysRemaining = data?.tenant?.days_remaining ?? data?.usage?.subscription?.days_remaining ?? 365;
   const expiresAt = data?.tenant?.expires_at || data?.usage?.subscription?.expires_at;
   const isExpired = data?.usage?.subscription?.is_expired || (typeof daysRemaining === 'number' && daysRemaining <= 0);
@@ -108,7 +108,7 @@ export default function SubscriptionPage() {
     },
   };
 
-  const badgeStyle = planBadges[currentPlanId] || planBadges.trial;
+  const badgeStyle = planBadges[currentPlanId] || planBadges.pro;
 
   return (
     <AppShell crumbName="Gói cước & Bản quyền">

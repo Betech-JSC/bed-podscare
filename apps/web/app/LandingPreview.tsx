@@ -42,7 +42,7 @@ export function LandingPreview() {
               Đăng nhập
             </Link>
 
-            <Link href="/register?plan=trial" className="btn btn-primary">
+            <Link href="/register?plan=pro" className="btn btn-primary">
               Dùng thử miễn phí →
             </Link>
           </div>
@@ -78,7 +78,7 @@ export function LandingPreview() {
 
             <div className="hero-actions">
 
-              <Link href="/register?plan=trial" className="btn btn-primary">
+              <Link href="/register?plan=pro" className="btn btn-primary">
                 Dùng thử miễn phí 1 năm →
               </Link>
 
@@ -704,7 +704,7 @@ export function LandingPreview() {
               Không cần thẻ tín dụng
             </div>
 
-            <Link href="/register?plan=trial" className="btn btn-primary">
+            <Link href="/register?plan=pro" className="btn btn-primary">
               Tạo tài khoản miễn phí →
             </Link>
 
@@ -735,7 +735,7 @@ export function LandingPreview() {
               kho và doanh thu trên FIXO.
             </p>
 
-            <Link href="/register?plan=trial" className="btn btn-primary">
+            <Link href="/register?plan=pro" className="btn btn-primary">
               Dùng thử FIXO miễn phí →
             </Link>
 
@@ -788,7 +788,7 @@ export function LandingPreview() {
               <a href="#pricing">Bảng giá</a>
               <Link href="/changelog">Nhật ký cập nhật</Link>
               <Link href="/changelog?tab=roadmap">Lộ trình phát triển</Link>
-              <Link href="/register?plan=trial">Dùng thử</Link>
+              <Link href="/register?plan=pro">Dùng thử</Link>
               <Link href="/login">Đăng nhập</Link>
             </div>
 

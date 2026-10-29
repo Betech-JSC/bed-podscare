@@ -314,7 +314,7 @@ function LoginFormContent() {
             <span className="text-xs text-[#6e7d75]">Chưa có gian hàng trên FIXO? </span>
             <button
               type="button"
-              onClick={() => router.push('/register')}
+              onClick={() => router.push('/register?plan=pro')}
               className="text-xs font-bold text-[#176b58] hover:underline cursor-pointer"
             >
               Đăng ký mở tiệm ngay →

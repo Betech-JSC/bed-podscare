@@ -10,6 +10,7 @@ interface PricingTier {
   badge?: string;
   price: string;
   unit: string;
+  yearlyNote?: string;
   description: string;
   features: string[];
   ctaText: string;
@@ -24,17 +25,18 @@ const TIERS: PricingTier[] = [
     badge: 'Trải nghiệm',
     price: '0đ',
     unit: '/ 1 năm',
+    yearlyNote: 'Miễn phí trọn 1 năm · Không yêu cầu thẻ tín dụng',
     description:
       'Dành cho chủ cửa hàng muốn kiểm nghiệm thực tế mọi tính năng trước khi đưa vào vận hành chính thức.',
     features: [
+      'Kích hoạt Gói Chuyên nghiệp (Pro): Không giới hạn chi nhánh, nhân sự & đơn sửa chữa',
       'Đầy đủ các module quản lý cốt lõi',
-      'Quản lý tối đa 50 đơn sửa chữa',
-      '1 chi nhánh & 2 tài khoản nhân viên',
       'In phiếu tiếp nhận & hóa đơn chuẩn',
+      'Tra cứu tiến độ & bảo hành trực tuyến',
       'Hướng dẫn thiết lập ban đầu qua Ultraview',
     ],
     ctaText: 'Dùng thử miễn phí 1 năm →',
-    ctaHref: '/register?plan=trial',
+    ctaHref: '/register?plan=pro',
   },
   {
     id: 'standard',
@@ -43,16 +45,16 @@ const TIERS: PricingTier[] = [
     isPopular: true,
     price: '299.000đ',
     unit: '/ tháng',
+    yearlyNote: 'Hoặc 3.289.000đ/năm (tiết kiệm chi phí trả năm)',
     description:
       'Giải pháp chuẩn hóa toàn diện cho các cửa hàng sửa chữa điện thoại, laptop, phụ kiện độc lập.',
     features: [
-      'Không giới hạn số lượng đơn sửa chữa',
-      '1 chi nhánh & 5 tài khoản nhân viên',
+      'Tối đa 2 chi nhánh, 5 nhân sự, 300 đơn/tháng',
       'Quản lý kho linh kiện & cảnh báo tồn kho',
       'Bảo hành điện tử qua QR Code & SMS',
       'Thu chi, công nợ & thanh toán VietQR tự động',
       'Báo cáo doanh thu & KPI kỹ thuật viên',
-      'Hỗ trợ kỹ thuật chuyên nghiệp 7 ngày/tuần',
+      'Hỗ trợ kỹ thuật trực tuyến 08:00 – 21:00 (7 ngày/tuần)',
     ],
     ctaText: 'Chọn gói Tiêu chuẩn →',
     ctaHref: '/register?plan=standard',
@@ -63,16 +65,17 @@ const TIERS: PricingTier[] = [
     badge: 'Chuỗi & Trung tâm',
     price: '599.000đ',
     unit: '/ tháng',
+    yearlyNote: 'Hoặc 6.589.000đ/năm (ưu đãi thanh toán theo năm)',
     description:
       'Dành cho chuỗi nhiều chi nhánh hoặc trung tâm bảo hành thiết bị công nghệ quy mô lớn.',
     features: [
       'Tất cả quyền lợi của gói Tiêu chuẩn',
-      'Không giới hạn số lượng chi nhánh & nhân viên',
+      'Không giới hạn chi nhánh, nhân sự và đơn sửa chữa',
       'Quản lý kho & điều chuyển linh kiện liên chi nhánh',
       'Phân quyền nâng cao theo từng vị trí nghiệp vụ',
       'Báo cáo tài chính & doanh thu đa chi nhánh realtime',
       'Tùy chỉnh mẫu phiếu in mang thương hiệu riêng',
-      'Ưu tiên hỗ trợ kỹ thuật 24/7 & chuyên viên 1-1',
+      'Ưu tiên hỗ trợ kỹ thuật cao nhất & chuyên viên 1-1',
     ],
     ctaText: 'Chọn gói Chuyên nghiệp →',
     ctaHref: '/register?plan=pro',
@@ -128,13 +131,20 @@ export const PricingSection: React.FC = () => {
                 </div>
 
                 {/* Price Display */}
-                <div className="flex items-baseline gap-1 mb-4 pb-4 border-b border-[#f0f3f1]">
-                  <span className="font-heading font-extrabold text-[36px] sm:text-[40px] text-[#102d35] tracking-tight">
-                    {tier.price}
-                  </span>
-                  <span className="text-[14px] text-[#71817b] font-medium">
-                    {tier.unit}
-                  </span>
+                <div className="mb-4 pb-4 border-b border-[#f0f3f1]">
+                  <div className="flex items-baseline gap-1">
+                    <span className="font-heading font-extrabold text-[36px] sm:text-[40px] text-[#102d35] tracking-tight">
+                      {tier.price}
+                    </span>
+                    <span className="text-[14px] text-[#71817b] font-medium">
+                      {tier.unit}
+                    </span>
+                  </div>
+                  {tier.yearlyNote && (
+                    <p className="text-[12px] text-[#176b51] font-semibold mt-1 mb-0">
+                      {tier.yearlyNote}
+                    </p>
+                  )}
                 </div>
 
                 {/* Description */}

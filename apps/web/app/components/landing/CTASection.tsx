@@ -38,7 +38,7 @@ export const CTASection: React.FC = () => {
             {/* Action Buttons */}
             <div className="flex flex-wrap items-center justify-center gap-3 sm:gap-4 mb-8">
               <Link
-                href="/register?plan=trial"
+                href="/register?plan=pro"
                 className="w-full sm:w-auto inline-flex items-center justify-center gap-2 h-[50px] px-8 rounded-[9px] bg-[#176b58] hover:bg-[#125945] text-white text-[15px] font-bold shadow-[0_10px_25px_rgba(23,107,88,0.35)] transition-all"
               >
                 <span>Bắt đầu dùng thử miễn phí 1 năm →</span>

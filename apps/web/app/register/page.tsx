@@ -11,14 +11,13 @@ function RegisterStoreForm() {
   const searchParams = useSearchParams();
   const podsCare = useOptionalPodsCare();
 
-  // Đọc query parameter `plan` ('trial' | 'standard' | 'pro', mặc định 'trial')
+  // Mọi tài khoản đăng ký mới đều được cấp Gói Chuyên nghiệp ('pro') miễn phí 1 năm đầu
+  // (kể cả khi truy cập không có ?plan= hoặc từ liên kết ?plan=trial cũ)
   const rawPlan = searchParams?.get('plan')?.toLowerCase();
-  const initialPlan =
-    rawPlan === 'standard' || rawPlan === 'pro' || rawPlan === 'trial'
-      ? (rawPlan as 'trial' | 'standard' | 'pro')
-      : 'trial';
+  const initialPlan: 'trial' | 'standard' | 'pro' =
+    rawPlan === 'pro' || rawPlan === 'trial' || !rawPlan ? 'pro' : 'pro';
 
-  const [selectedPlan, setSelectedPlan] = useState<'trial' | 'standard' | 'pro'>(initialPlan);
+  const [selectedPlan] = useState<'trial' | 'standard' | 'pro'>(initialPlan);
   const [storeName, setStoreName] = useState('');
   const [storeCode, setStoreCode] = useState('');
   const [ownerName, setOwnerName] = useState('');
@@ -199,9 +198,9 @@ function RegisterStoreForm() {
   };
 
   const planTitles = {
-    trial: 'Gói Dùng thử Miễn phí 1 năm (0đ)',
-    standard: 'Gói Tiêu chuẩn (299.000đ/tháng - Dùng thử 1 năm)',
-    pro: 'Gói Chuyên nghiệp (599.000đ/tháng - Dùng thử 1 năm)',
+    trial: 'Gói Chuyên nghiệp (Pro) - Miễn phí 1 năm đầu (Không giới hạn nhân sự & chi nhánh)',
+    standard: 'Gói Tiêu chuẩn (299.000đ/tháng - Miễn phí 1 năm đầu)',
+    pro: 'Gói Chuyên nghiệp (Pro) - Miễn phí 1 năm đầu (Không giới hạn nhân sự & chi nhánh)',
   };
 
   return (
@@ -236,111 +235,63 @@ function RegisterStoreForm() {
           </p>
         </div>
 
-        {/* Plan Switcher Selector Tabs */}
-        <div className="mb-4">
-          <label className="block text-xs font-semibold text-[#52635a] mb-2">
-            Chọn gói cước trải nghiệm:
-          </label>
-          <div className="p-1.5 rounded-[12px] bg-[#f0f4f2] border border-[#e2eae5] grid grid-cols-3 gap-1">
-            <button
-              type="button"
-              onClick={() => setSelectedPlan('trial')}
-              className={`py-2 px-2 rounded-[8px] text-xs font-bold transition-all text-center cursor-pointer ${
-                selectedPlan === 'trial'
-                  ? 'bg-white text-[#176b58] shadow-sm border border-[#d6e5dd]'
-                  : 'text-[#697972] hover:text-[#1c302b]'
-              }`}
-            >
-              Dùng thử (0đ)
-            </button>
-            <button
-              type="button"
-              onClick={() => setSelectedPlan('standard')}
-              className={`py-2 px-2 rounded-[8px] text-xs font-bold transition-all text-center cursor-pointer ${
-                selectedPlan === 'standard'
-                  ? 'bg-white text-[#176b58] shadow-sm border border-[#d6e5dd]'
-                  : 'text-[#697972] hover:text-[#1c302b]'
-              }`}
-            >
-              Tiêu chuẩn (299k)
-            </button>
-            <button
-              type="button"
-              onClick={() => setSelectedPlan('pro')}
-              className={`py-2 px-2 rounded-[8px] text-xs font-bold transition-all text-center cursor-pointer ${
-                selectedPlan === 'pro'
-                  ? 'bg-white text-[#176b58] shadow-sm border border-[#d6e5dd]'
-                  : 'text-[#697972] hover:text-[#1c302b]'
-              }`}
-            >
-              Chuyên nghiệp (599k)
-            </button>
+        {/* Activated Plan Benefit Banner — Calm Jade & Warm Ivory */}
+        <div className="mb-6 p-4 rounded-[12px] bg-[#e9f4ef] border border-[#cde3d6]">
+          <div className="flex flex-wrap items-center justify-between gap-2 mb-1.5">
+            <span className="text-[11px] font-bold uppercase tracking-[0.8px] text-[#176b51]">
+              Gói dịch vụ cấp tự động
+            </span>
+            <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-[20px] bg-[#176b51] text-white text-[10px] font-extrabold uppercase tracking-[0.4px]">
+              <span className="w-1.5 h-1.5 rounded-full bg-[#c8eadb]" />
+              CHUYÊN NGHIỆP (PRO) — MIỄN PHÍ 1 NĂM ĐẦU (0đ)
+            </span>
           </div>
-        </div>
-
-        {/* Selected Plan Highlight Banner */}
-        <div className="mb-6 p-3.5 rounded-[10px] bg-[#eaf4ef] border border-[#cde3d6] flex items-center justify-between gap-3 animate-in fade-in duration-200">
-          <div className="flex items-center gap-3">
-            <div className="w-8 h-8 rounded-full bg-[#176b58] text-white grid place-items-center flex-none">
-              <Icon name="spark" size={16} />
-            </div>
-            <div>
-              <div className="flex items-center gap-2">
-                <span className="text-[11px] font-bold uppercase tracking-wider text-[#176b58]">
-                  Đang đăng ký:
-                </span>
-                <span className="px-2 py-0.5 rounded-[4px] bg-[#176b58] text-white text-[10px] font-extrabold uppercase">
-                  {selectedPlan === 'trial'
-                    ? 'DÙNG THỬ (TRIAL)'
-                    : selectedPlan === 'standard'
-                    ? 'TIÊU CHUẨN (STANDARD)'
-                    : 'CHUYÊN NGHIỆP (PRO)'}
-                </span>
-              </div>
-              <p className="text-xs text-[#2e4d41] font-medium mt-0.5 mb-0">
-                {selectedPlan === 'trial' &&
-                  'Dùng thử 1 năm miễn phí (1 chi nhánh, 2 nhân viên, 50 đơn/tháng). Không cần thẻ tín dụng.'}
-                {selectedPlan === 'standard' &&
-                  '299.000đ/tháng · Dùng thử 1 năm đầu miễn phí. Tối đa 2 chi nhánh, 5 nhân viên, 300 đơn/tháng.'}
-                {selectedPlan === 'pro' &&
-                  '599.000đ/tháng · Dùng thử 1 năm đầu miễn phí. Không giới hạn chi nhánh, nhân sự & đơn sửa chữa.'}
-              </p>
-            </div>
-          </div>
+          <p className="text-xs text-[#17231f] font-semibold leading-relaxed m-0">
+            Không giới hạn nhân viên, không giới hạn chi nhánh &amp; không giới hạn đơn sửa chữa · Không cần thẻ tín dụng.
+          </p>
         </div>
 
         {successData ? (
-          <div className="p-6 rounded-[12px] bg-[#f7faf8] border border-[#d6e8de] text-center animate-in fade-in duration-300">
-            <div className="w-12 h-12 rounded-full bg-[#eaf4ef] text-[#176b58] mx-auto grid place-items-center mb-4">
+          <div className="p-6 rounded-[12px] bg-[#f6f8f6] border border-[#d6e8de] text-center animate-in fade-in duration-300">
+            <div className="w-12 h-12 rounded-full bg-[#e9f4ef] text-[#176b51] mx-auto grid place-items-center mb-4">
               <Icon name="check" size={24} />
             </div>
-            <h3 className="text-lg font-bold text-[#1c302b] mb-2">
+            <h3 className="text-lg font-bold text-[#17231f] mb-2">
               Đăng ký gian hàng thành công!
             </h3>
-            <p className="text-xs text-[#52635a] leading-relaxed mb-4 max-w-[480px] mx-auto">
-              Gian hàng <strong className="text-[#176b58]">{successData.store_name}</strong> (Mã:{' '}
-              <span className="font-mono font-bold text-[#1c302b]">{successData.store_code}</span>) đã được khởi tạo thành công với <strong>1 năm dùng thử miễn phí</strong>.
+            <p className="text-xs text-[#52635a] leading-relaxed mb-4 max-w-[500px] mx-auto">
+              Gian hàng <strong className="text-[#176b51]">{successData.store_name}</strong> (Mã:{' '}
+              <span className="font-mono font-bold text-[#17231f]">{successData.store_code}</span>) đã được khởi tạo thành công với{' '}
+              <strong className="text-[#176b51]">Gói Chuyên nghiệp (Pro) - Miễn phí 1 năm đầu (Không giới hạn nhân sự &amp; chi nhánh)</strong>.
             </p>
-            <div className="p-3 bg-white border border-[#e2ece6] rounded-[8px] text-xs text-[#6e7d75] mb-6 text-left space-y-1.5">
-              <div className="flex justify-between">
+            <div className="p-3.5 bg-white border border-[#e5ece8] rounded-[8px] text-xs text-[#6e7d75] mb-6 text-left space-y-2">
+              <div className="flex justify-between gap-3">
                 <span>Mã gian hàng:</span>
-                <span className="font-mono font-bold text-[#1c302b]">{successData.store_code}</span>
+                <span className="font-mono font-bold text-[#17231f]">{successData.store_code}</span>
               </div>
-              <div className="flex justify-between">
+              <div className="flex justify-between gap-3">
                 <span>Email quản trị:</span>
-                <span className="font-medium text-[#1c302b]">{successData.email}</span>
+                <span className="font-medium text-[#17231f]">{successData.email}</span>
               </div>
-              <div className="flex justify-between">
-                <span>Gói dịch vụ kích hoạt:</span>
-                <span className="font-bold text-[#176b58]">{planTitles[successData.plan as keyof typeof planTitles] || successData.plan}</span>
+              <div className="flex justify-between gap-3">
+                <span className="shrink-0">Gói dịch vụ kích hoạt:</span>
+                <span className="font-bold text-[#176b51] text-right">
+                  {planTitles[successData.plan as keyof typeof planTitles] || planTitles.pro}
+                </span>
               </div>
-              <div className="flex justify-between">
+              <div className="flex justify-between gap-3">
+                <span>Hạn mức tài nguyên:</span>
+                <span className="font-bold text-[#176b51] text-right">
+                  Không giới hạn nhân viên, chi nhánh &amp; đơn hàng
+                </span>
+              </div>
+              <div className="flex justify-between gap-3">
                 <span>Trạng thái phê duyệt:</span>
-                <span className="font-bold text-[#176b58]">Đã duyệt tự động (Active)</span>
+                <span className="font-bold text-[#176b51]">Đã duyệt tự động (Active)</span>
               </div>
-              <div className="flex justify-between">
-                <span>Hạn dùng thử:</span>
-                <span className="font-semibold text-[#176b58]">1 năm kể từ hôm nay</span>
+              <div className="flex justify-between gap-3">
+                <span>Ưu đãi miễn phí:</span>
+                <span className="font-semibold text-[#176b51]">1 năm đầu kể từ hôm nay (0đ)</span>
               </div>
             </div>
             <Link
@@ -477,11 +428,11 @@ function RegisterStoreForm() {
                 </div>
               </div>
 
-              <div className="p-3 rounded-[8px] bg-[#f8faf9] border border-[#e5ece8] text-xs text-[#6e7d75] flex items-center gap-2">
-                <span className="w-2 h-2 rounded-full bg-[#176b58] shrink-0" />
+              <div className="p-3 rounded-[8px] bg-[#f6f8f6] border border-[#e5ece8] text-xs text-[#52635a] flex items-center gap-2">
+                <span className="w-2 h-2 rounded-full bg-[#176b51] shrink-0" />
                 <span>
-                  Sau khi đăng ký, gian hàng được <strong>phê duyệt & kích hoạt tự động ngay lập tức</strong> với{' '}
-                  <strong>1 năm dùng thử miễn phí</strong>. Không cần chờ quản trị viên duyệt.
+                  Sau khi đăng ký, gian hàng được <strong>phê duyệt &amp; kích hoạt tự động ngay lập tức</strong> với{' '}
+                  <strong>Gói Chuyên nghiệp (Pro) miễn phí 1 năm đầu</strong>. Không cần chờ quản trị viên duyệt.
                 </span>
               </div>
 
