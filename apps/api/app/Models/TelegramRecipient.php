@@ -13,11 +13,13 @@ class TelegramRecipient extends Model
     protected $fillable = [
         'tenant_id',
         'branch_id',
+        'user_id',
         'label',
         'phone',
         'target_role',
         'telegram_chat_id',
         'telegram_thread_id',
+        'telegram_user_id',
         'connect_token',
         'subscribed_events',
         'is_active',
@@ -29,6 +31,7 @@ class TelegramRecipient extends Model
     ];
 
     protected $casts = [
+        'user_id'                => 'integer',
         'subscribed_events'      => 'array',
         'is_active'              => 'boolean',
         'connected_at'           => 'datetime',
@@ -59,5 +62,10 @@ class TelegramRecipient extends Model
     public function branch(): BelongsTo
     {
         return $this->belongsTo(Branch::class, 'branch_id');
+    }
+
+    public function user(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'user_id');
     }
 }

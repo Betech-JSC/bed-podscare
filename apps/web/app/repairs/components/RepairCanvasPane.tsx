@@ -29,6 +29,7 @@ export interface RepairCanvasPaneProps {
   onQuickTechComplete: (order: RepairOrder) => void;
   onQuickCheckout: () => void;
   onOpenQc: (orderId: string) => void;
+  onReturnOrder?: (order: RepairOrder) => void;
   showAddServiceForm: boolean;
   setShowAddServiceForm: (val: boolean) => void;
   newServiceName: string;
@@ -87,6 +88,7 @@ export const RepairCanvasPane: React.FC<RepairCanvasPaneProps> = ({
   onQuickTechComplete,
   onQuickCheckout,
   onOpenQc,
+  onReturnOrder,
   showAddServiceForm,
   setShowAddServiceForm,
   newServiceName,
@@ -212,6 +214,7 @@ export const RepairCanvasPane: React.FC<RepairCanvasPaneProps> = ({
         onQuickTechComplete={onQuickTechComplete}
         onQuickCheckout={onQuickCheckout}
         onOpenQc={onOpenQc}
+        onReturnOrder={onReturnOrder}
       />
 
       {/* Khối Thông tin & Cập nhật nhanh Địa chỉ Giao hàng / Gửi trả máy (COD & Bảo hành) */}

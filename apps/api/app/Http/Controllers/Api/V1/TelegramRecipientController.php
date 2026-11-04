@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\Branch;
 use App\Models\TelegramRecipient;
 use App\Models\Tenant;
+use App\Models\User;
 use App\Services\TelegramNotificationService;
 use App\Support\PhoneHelper;
 use Illuminate\Http\JsonResponse;
@@ -59,7 +60,7 @@ class TelegramRecipientController extends Controller
             }
         }
 
-        $recipients = TelegramRecipient::with('branch')
+        $recipients = TelegramRecipient::with(['branch', 'user:id,name,phone,role'])
             ->where('tenant_id', $tenantId)
             ->orderByDesc('id')
             ->get();
@@ -81,9 +82,11 @@ class TelegramRecipientController extends Controller
             'label'              => 'required|string|max:100',
             'phone'              => 'required|string|max:30',
             'branch_id'          => 'nullable|integer',
-            'target_role'        => 'nullable|string|in:admin,cskh,technician,qc',
+            'user_id'            => 'nullable|integer',
+            'target_role'        => 'nullable|string|in:admin,cskh,technician,tech,qc',
             'telegram_chat_id'   => 'nullable|string|max:64',
             'telegram_thread_id' => 'nullable|string|max:64',
+            'telegram_user_id'   => 'nullable|string|max:64',
             'subscribed_events'  => 'nullable|array',
             'is_active'          => 'nullable|boolean',
         ]);
@@ -97,6 +100,21 @@ class TelegramRecipientController extends Controller
             }
         }
 
+        if (! empty($validated['user_id'])) {
+            $userExists = User::withoutGlobalScopes()
+                ->where('tenant_id', $tenantId)
+                ->where('id', $validated['user_id'])
+                ->exists();
+            if (! $userExists) {
+                return $this->failure('Nhân sự không hợp lệ hoặc không thuộc cửa hàng.', 422);
+            }
+        }
+
+        $targetRole = $validated['target_role'] ?? 'admin';
+        if ($targetRole === 'tech') {
+            $targetRole = 'technician';
+        }
+
         $normalizedPhone = PhoneHelper::normalizeForStorage($validated['phone']) ?: trim($validated['phone']);
         $chatId = isset($validated['telegram_chat_id']) && trim($validated['telegram_chat_id']) !== ''
             ? trim($validated['telegram_chat_id'])
@@ -104,23 +122,30 @@ class TelegramRecipientController extends Controller
         $threadId = isset($validated['telegram_thread_id']) && trim($validated['telegram_thread_id']) !== ''
             ? trim($validated['telegram_thread_id'])
             : null;
+        $tgUserId = isset($validated['telegram_user_id']) && trim($validated['telegram_user_id']) !== ''
+            ? trim($validated['telegram_user_id'])
+            : null;
+
+        $tokenPrefix = $targetRole === 'technician' ? 'ktv_' : 'adm_';
 
         $recipient = TelegramRecipient::create([
             'tenant_id'          => $tenantId,
             'branch_id'          => $validated['branch_id'] ?? null,
+            'user_id'            => $validated['user_id'] ?? null,
             'label'              => trim($validated['label']),
             'phone'              => $normalizedPhone,
-            'target_role'        => $validated['target_role'] ?? 'admin',
+            'target_role'        => $targetRole,
             'telegram_chat_id'   => $chatId,
             'telegram_thread_id' => $threadId,
-            'connect_token'      => 'adm_' . Str::lower(Str::random(24)),
+            'telegram_user_id'   => $tgUserId,
+            'connect_token'      => $tokenPrefix . Str::lower(Str::random(24)),
             'subscribed_events'  => $validated['subscribed_events'] ?? ['order.created'],
             'is_active'          => $validated['is_active'] ?? true,
             'connected_at'       => $chatId ? now() : null,
         ]);
 
         return $this->success(
-            $recipient->load('branch'),
+            $recipient->load(['branch', 'user:id,name,phone,role']),
             'Thêm số điện thoại nhận thông báo Telegram thành công.',
             201
         );
@@ -145,9 +170,11 @@ class TelegramRecipientController extends Controller
             'label'              => 'sometimes|required|string|max:100',
             'phone'              => 'sometimes|required|string|max:30',
             'branch_id'          => 'nullable|integer',
-            'target_role'        => 'nullable|string|in:admin,cskh,technician,qc',
+            'user_id'            => 'nullable|integer',
+            'target_role'        => 'nullable|string|in:admin,cskh,technician,tech,qc',
             'telegram_chat_id'   => 'nullable|string|max:64',
             'telegram_thread_id' => 'nullable|string|max:64',
+            'telegram_user_id'   => 'nullable|string|max:64',
             'subscribed_events'  => 'nullable|array',
             'is_active'          => 'nullable|boolean',
         ]);
@@ -161,6 +188,16 @@ class TelegramRecipientController extends Controller
             }
         }
 
+        if (array_key_exists('user_id', $validated) && ! empty($validated['user_id'])) {
+            $userExists = User::withoutGlobalScopes()
+                ->where('tenant_id', $tenantId)
+                ->where('id', $validated['user_id'])
+                ->exists();
+            if (! $userExists) {
+                return $this->failure('Nhân sự không hợp lệ hoặc không thuộc cửa hàng.', 422);
+            }
+        }
+
         if (array_key_exists('label', $validated)) {
             $recipient->label = trim($validated['label']);
         }
@@ -170,8 +207,13 @@ class TelegramRecipientController extends Controller
         if (array_key_exists('branch_id', $validated)) {
             $recipient->branch_id = $validated['branch_id'];
         }
+        if (array_key_exists('user_id', $validated)) {
+            $recipient->user_id = $validated['user_id'];
+        }
         if (array_key_exists('target_role', $validated) && $validated['target_role'] !== null) {
-            $recipient->target_role = $validated['target_role'];
+            $recipient->target_role = $validated['target_role'] === 'tech'
+                ? 'technician'
+                : $validated['target_role'];
         }
         if (array_key_exists('telegram_chat_id', $validated)) {
             $newChatId = $validated['telegram_chat_id'] !== null && trim($validated['telegram_chat_id']) !== ''
@@ -187,6 +229,11 @@ class TelegramRecipientController extends Controller
                 ? trim($validated['telegram_thread_id'])
                 : null;
         }
+        if (array_key_exists('telegram_user_id', $validated)) {
+            $recipient->telegram_user_id = $validated['telegram_user_id'] !== null && trim($validated['telegram_user_id']) !== ''
+                ? trim($validated['telegram_user_id'])
+                : null;
+        }
         if (array_key_exists('subscribed_events', $validated) && is_array($validated['subscribed_events'])) {
             $recipient->subscribed_events = $validated['subscribed_events'];
         }
@@ -197,7 +244,7 @@ class TelegramRecipientController extends Controller
         $recipient->save();
 
         return $this->success(
-            $recipient->fresh(['branch']),
+            $recipient->fresh(['branch', 'user:id,name,phone,role']),
             'Cập nhật cấu hình người nhận Telegram thành công.'
         );
     }
@@ -233,7 +280,7 @@ class TelegramRecipientController extends Controller
         }
 
         $syncedCount = $service->syncUpdates($tenantId);
-        $recipients = TelegramRecipient::with('branch')
+        $recipients = TelegramRecipient::with(['branch', 'user:id,name,phone,role'])
             ->where('tenant_id', $tenantId)
             ->orderByDesc('id')
             ->get();
@@ -254,7 +301,7 @@ class TelegramRecipientController extends Controller
             return $this->failure('Không tìm thấy thông tin cửa hàng.', 404);
         }
 
-        $recipient = TelegramRecipient::where('tenant_id', $tenantId)->find($id);
+        $recipient = TelegramRecipient::with('user')->where('tenant_id', $tenantId)->find($id);
         if (! $recipient) {
             return $this->failure('Không tìm thấy người nhận Telegram.', 404);
         }
@@ -265,17 +312,28 @@ class TelegramRecipientController extends Controller
 
         $label = htmlspecialchars((string) $recipient->label, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
         $phone = htmlspecialchars((string) $recipient->phone, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
+        $isTech = in_array($recipient->target_role, ['technician', 'tech'], true);
+        $roleLabel = $isTech ? 'Kỹ thuật viên (Topic riêng)' : 'Quản trị viên (Admin)';
+        $threadInfo = ! empty($recipient->telegram_thread_id)
+            ? "\nChủ đề (Topic ID): <code>" . htmlspecialchars((string) $recipient->telegram_thread_id, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') . "</code>"
+            : '';
 
         $htmlMessage = "<b>TIN NHẮN KIỂM TRA HỆ THỐNG PODSCARE</b>\n"
             . "━━━━━━━━━━━━━━━━━━\n"
             . "Người nhận: <b>{$label}</b> ({$phone})\n"
+            . "Vai trò: <b>{$roleLabel}</b>{$threadInfo}\n"
             . "Trạng thái: <b>Kết nối hoạt động tốt</b>\n"
             . "Thời gian: " . now()->format('H:i:s - d/m/Y');
+
+        $inlineKeyboard = $isTech
+            ? [[['text' => '📋 Đơn của tôi hôm nay', 'callback_data' => 'tech_my_orders']]]
+            : null;
 
         $sent = $service->sendMessage(
             (string) $recipient->telegram_chat_id,
             $htmlMessage,
-            $recipient->telegram_thread_id
+            $recipient->telegram_thread_id,
+            $inlineKeyboard
         );
 
         if (! $sent) {

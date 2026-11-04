@@ -6,8 +6,14 @@ import { AppShell } from '../components/AppShell';
 import { usePodsCare } from '../providers';
 import {
   tenantService,
-  type TelegramRecipientItem,
+  userService,
+  type UserRecord,
 } from '@podscare/api-client';
+import {
+  telegramService,
+  type TelegramRecipientRecord,
+  type TelegramRecipientItem,
+} from '@podscare/api-client/src/services/telegram.service';
 import { ThermalK80Receipt } from '../components/print/ThermalK80Receipt';
 import { A4ReceiptTemplate } from '../components/print/A4ReceiptTemplate';
 import { useSilentPrint } from '../components/print/useSilentPrint';
@@ -57,7 +63,7 @@ export default function TenantBrandingPage() {
   const [bankAccountHolder, setBankAccountHolder] = useState('');
 
   // Telegram Recipients state
-  const [telegramRecipients, setTelegramRecipients] = useState<TelegramRecipientItem[]>([]);
+  const [telegramRecipients, setTelegramRecipients] = useState<TelegramRecipientRecord[]>([]);
   const [loadingTelegram, setLoadingTelegram] = useState(false);
   const [syncingTelegram, setSyncingTelegram] = useState(false);
   const [addingTelegram, setAddingTelegram] = useState(false);
@@ -65,10 +71,16 @@ export default function TenantBrandingPage() {
   const [togglingRecipientId, setTogglingRecipientId] = useState<number | null>(null);
   const [deletingRecipientId, setDeletingRecipientId] = useState<number | null>(null);
 
+  const [technicians, setTechnicians] = useState<UserRecord[]>([]);
+  const [loadingTechnicians, setLoadingTechnicians] = useState(false);
+
+  const [tgTargetRole, setTgTargetRole] = useState<'admin' | 'technician'>('admin');
+  const [tgUserId, setTgUserId] = useState('');
   const [tgLabel, setTgLabel] = useState('');
   const [tgPhone, setTgPhone] = useState('');
   const [tgBranchId, setTgBranchId] = useState('');
   const [tgChatId, setTgChatId] = useState('');
+  const [tgThreadId, setTgThreadId] = useState('');
   const [showAdvancedTg, setShowAdvancedTg] = useState(false);
 
   // Preview format switch
@@ -125,7 +137,7 @@ export default function TenantBrandingPage() {
     if (!isAdmin) return;
     setLoadingTelegram(true);
     try {
-      const res = await tenantService.getTelegramRecipients();
+      const res = await telegramService.getRecipients();
       if (res?.success && Array.isArray(res.data)) {
         setTelegramRecipients(res.data);
       }
@@ -136,13 +148,43 @@ export default function TenantBrandingPage() {
     }
   }, [isAdmin]);
 
+  const loadTechnicians = useCallback(async () => {
+    if (!isAdmin) return;
+    setLoadingTechnicians(true);
+    try {
+      const res = await userService.getUsers({
+        role: 'technician',
+        is_active: true,
+        per_page: 'all',
+        all: true,
+      });
+      const list = Array.isArray(res?.data?.data)
+        ? res.data.data
+        : Array.isArray(res?.data)
+          ? res.data
+          : Array.isArray(res)
+            ? res
+            : [];
+      const filtered = list.filter(
+        (u: UserRecord) =>
+          (u.role === 'technician' || u.role === 'tech') && u.is_active !== false
+      );
+      setTechnicians(filtered);
+    } catch (err) {
+      console.error('Failed to load technicians for Telegram config:', err);
+    } finally {
+      setLoadingTechnicians(false);
+    }
+  }, [isAdmin]);
+
   useEffect(() => {
     loadSettings();
   }, [loadSettings]);
 
   useEffect(() => {
     loadTelegramRecipients();
-  }, [loadTelegramRecipients]);
+    loadTechnicians();
+  }, [loadTelegramRecipients, loadTechnicians]);
 
   const hasPendingTelegram = telegramRecipients.some(
     (item) => item.is_active && (!item.telegram_chat_id || item.telegram_chat_id.trim() === '')
@@ -158,7 +200,7 @@ export default function TenantBrandingPage() {
       if (isSyncing) return;
       isSyncing = true;
       try {
-        const res = await tenantService.syncTelegramRecipients();
+        const res = await telegramService.syncRecipients();
         if (!isMounted || !res?.success || !res.data) return;
 
         const nextRecipients = Array.isArray(res.data.recipients) ? res.data.recipients : [];
@@ -200,10 +242,34 @@ export default function TenantBrandingPage() {
     };
   }, [isAdmin, hasPendingTelegram, telegramRecipients, toast]);
 
+  const handleSelectTechnician = (selectedUserId: string) => {
+    setTgUserId(selectedUserId);
+    if (!selectedUserId) return;
+    const tech = technicians.find((t) => String(t.id) === selectedUserId);
+    if (!tech) return;
+
+    setTgLabel((prev) =>
+      !prev.trim() || prev.startsWith('Topic KTV - ')
+        ? `Topic KTV - ${tech.name}`
+        : prev
+    );
+    if (tech.phone) {
+      setTgPhone((prev) => (!prev.trim() ? tech.phone! : prev));
+    }
+    if (tech.branch_id) {
+      setTgBranchId(String(tech.branch_id));
+    }
+  };
+
   const handleAddTelegramRecipient = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!isAdmin) {
-      toast('Chỉ Quản trị viên cửa hàng mới có quyền thêm số điện thoại nhận thông báo.', 'error');
+      toast('Chỉ Quản trị viên cửa hàng mới có quyền thêm kết nối nhận thông báo.', 'error');
+      return;
+    }
+
+    if (tgTargetRole === 'technician' && !tgUserId) {
+      toast('Vui lòng chọn Kỹ thuật viên phụ trách cho Topic Telegram này.', 'error');
       return;
     }
 
@@ -214,28 +280,38 @@ export default function TenantBrandingPage() {
 
     setAddingTelegram(true);
     try {
-      const res = await tenantService.createTelegramRecipient({
+      const res = await telegramService.createRecipient({
         label: tgLabel.trim(),
         phone: tgPhone.trim(),
         branch_id: tgBranchId ? Number(tgBranchId) : null,
-        target_role: 'admin',
+        user_id: tgTargetRole === 'technician' && tgUserId ? Number(tgUserId) : null,
+        target_role: tgTargetRole,
         telegram_chat_id: tgChatId.trim() || null,
+        telegram_thread_id:
+          tgTargetRole === 'technician' ? tgThreadId.trim() || null : null,
         is_active: true,
       });
 
       if (res?.success && res.data) {
         setTelegramRecipients((prev) => [res.data!, ...prev]);
+        setTgUserId('');
         setTgLabel('');
         setTgPhone('');
         setTgBranchId('');
         setTgChatId('');
+        setTgThreadId('');
         setShowAdvancedTg(false);
-        toast('Đã thêm số điện thoại nhận thông báo Telegram!', 'success');
+        toast(
+          tgTargetRole === 'technician'
+            ? 'Đã tạo kết nối Topic Telegram cho Kỹ thuật viên! Hãy copy lệnh /start dán vào Topic của KTV.'
+            : 'Đã thêm số điện thoại nhận thông báo Telegram!',
+          'success'
+        );
       } else {
-        toast(res?.message || 'Không thể thêm số điện thoại.', 'error');
+        toast(res?.message || 'Không thể thêm kết nối Telegram.', 'error');
       }
     } catch (err: any) {
-      toast(err?.data?.message || err?.message || 'Lỗi khi thêm số điện thoại nhận thông báo.', 'error');
+      toast(err?.data?.message || err?.message || 'Lỗi khi thêm kết nối nhận thông báo.', 'error');
     } finally {
       setAddingTelegram(false);
     }
@@ -245,7 +321,7 @@ export default function TenantBrandingPage() {
     if (!isAdmin) return;
     setSyncingTelegram(true);
     try {
-      const res = await tenantService.syncTelegramRecipients();
+      const res = await telegramService.syncRecipients();
       if (res?.success && res.data) {
         if (Array.isArray(res.data.recipients)) {
           setTelegramRecipients(res.data.recipients);
@@ -273,7 +349,7 @@ export default function TenantBrandingPage() {
     setTogglingRecipientId(item.id);
     try {
       const nextActive = !item.is_active;
-      const res = await tenantService.updateTelegramRecipient(item.id, {
+      const res = await telegramService.updateRecipient(item.id, {
         is_active: nextActive,
       });
       if (res?.success && res.data) {
@@ -300,7 +376,7 @@ export default function TenantBrandingPage() {
     if (!isAdmin) return;
     setTestingRecipientId(item.id);
     try {
-      const res = await tenantService.testTelegramRecipient(item.id);
+      const res = await telegramService.testRecipient(item.id);
       if (res?.success) {
         toast(res.message || `Đã gửi tin nhắn thử nghiệm tới ${item.label}!`, 'success');
       } else {
@@ -317,7 +393,7 @@ export default function TenantBrandingPage() {
     if (!isAdmin) return;
     setDeletingRecipientId(item.id);
     try {
-      const res = await tenantService.deleteTelegramRecipient(item.id);
+      const res = await telegramService.deleteRecipient(item.id);
       if (res?.success) {
         setTelegramRecipients((prev) => prev.filter((r) => r.id !== item.id));
         toast(`Đã xóa số điện thoại ${item.phone} (${item.label}).`, 'success');
@@ -337,6 +413,19 @@ export default function TenantBrandingPage() {
       toast('Đã sao chép đường dẫn kết nối Telegram!', 'success');
     } catch {
       toast('Không thể sao chép tự động. Vui lòng mở trực tiếp link.', 'error');
+    }
+  };
+
+  const handleCopyStartCommand = async (connectToken: string) => {
+    const command = `/start ${connectToken}`;
+    try {
+      await navigator.clipboard.writeText(command);
+      toast(
+        `Đã sao chép lệnh "${command}"! Hãy dán trực tiếp vào Topic của KTV trên nhóm Telegram.`,
+        'success'
+      );
+    } catch {
+      toast(`Không thể sao chép tự động. Vui lòng copy: ${command}`, 'error');
     }
   };
 
@@ -875,30 +964,91 @@ export default function TenantBrandingPage() {
               )}
             </form>
 
-            {/* Card 3: Telegram Notifications for New Repair Orders (Admin only) */}
+            {/* Card 3: Telegram Notifications for New Repair Orders & KTV Topic Dispatch (Admin only) */}
             {isAdmin && (
               <div className="rounded-[16px] bg-white border border-[#e5ece8] p-6 shadow-xs space-y-5">
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-[#eef3f0]">
                   <div>
                     <h2 className="text-sm font-heading font-bold text-[#1c302b] m-0">
-                      Thông báo Telegram (Đơn sửa chữa mới)
+                      Thông báo &amp; Điều phối Telegram (Admin &amp; Topic KTV)
                     </h2>
                     <p className="text-xs text-[#5c6e66] m-0 mt-0.5 leading-relaxed">
-                      Thêm một hoặc nhiều số điện thoại của Admin/Quản lý để tự động nhận tin nhắn Telegram ngay khi có đơn sửa chữa mới được tạo.
+                      Cấu hình kênh nhận thông báo đơn mới cho Quản trị viên (có giá) hoặc kết nối Topic riêng trong nhóm Telegram cho từng Kỹ thuật viên (ẩn giá 100%, nhận đơn 1 chạm &amp; tra cứu nhanh).
                     </p>
                   </div>
                   <span className="text-[10px] bg-[#e8f5f1] text-[#176b58] font-bold px-2.5 py-1 rounded-full self-start sm:self-center shrink-0">
-                    {telegramRecipients.filter((r) => r.is_active && r.telegram_chat_id).length}/{telegramRecipients.length} SĐT đã kết nối
+                    {telegramRecipients.filter((r) => r.is_active && r.telegram_chat_id).length}/{telegramRecipients.length} kết nối hoạt động
                   </span>
                 </div>
 
-                {/* Form thêm số điện thoại mới */}
+                {/* Form thêm kết nối mới */}
                 <form
                   onSubmit={handleAddTelegramRecipient}
                   className="p-4 rounded-[12px] bg-[#f9faf9] border border-[#e5ece8] space-y-3.5"
                 >
                   <div className="text-xs font-heading font-bold text-[#1c302b]">
-                    Thêm số điện thoại nhận thông báo
+                    Thêm kết nối nhận thông báo / Topic điều phối
+                  </div>
+
+                  {/* Chọn vai trò người nhận (target_role) */}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div className="space-y-1">
+                      <label className="text-[11px] font-bold text-[#2a3c36] block">
+                        Vai trò người nhận <span className="text-red-500">*</span>
+                      </label>
+                      <select
+                        value={tgTargetRole}
+                        onChange={(e) => {
+                          const nextRole = e.target.value as 'admin' | 'technician';
+                          setTgTargetRole(nextRole);
+                          if (nextRole === 'admin') {
+                            setTgUserId('');
+                            setTgThreadId('');
+                            if (tgLabel.startsWith('Topic KTV - ')) {
+                              setTgLabel('');
+                            }
+                          }
+                        }}
+                        disabled={addingTelegram}
+                        className="w-full px-3 py-2 text-xs font-semibold rounded-[8px] border border-[#d2ded8] focus:outline-none focus:border-[#176b58] focus:ring-1 focus:ring-[#176b58] transition-all bg-white"
+                      >
+                        <option value="admin">
+                          Quản trị viên (Admin — Nhận báo cáo &amp; đơn mới có giá)
+                        </option>
+                        <option value="technician">
+                          Kỹ thuật viên (KTV — Topic riêng nhận đơn &amp; tra cứu không giá)
+                        </option>
+                      </select>
+                    </div>
+
+                    {/* Khi chọn KTV: Dropdown chọn Kỹ thuật viên phụ trách (user_id) */}
+                    {tgTargetRole === 'technician' && (
+                      <div className="space-y-1">
+                        <label className="text-[11px] font-bold text-[#2a3c36] block">
+                          Chọn Kỹ thuật viên phụ trách <span className="text-red-500">*</span>
+                        </label>
+                        <select
+                          value={tgUserId}
+                          onChange={(e) => handleSelectTechnician(e.target.value)}
+                          disabled={addingTelegram || loadingTechnicians}
+                          className="w-full px-3 py-2 text-xs rounded-[8px] border border-[#d2ded8] focus:outline-none focus:border-[#176b58] focus:ring-1 focus:ring-[#176b58] transition-all bg-white"
+                          required
+                        >
+                          <option value="">
+                            {loadingTechnicians
+                              ? 'Đang tải danh sách KTV...'
+                              : '-- Chọn tài khoản Kỹ thuật viên --'}
+                          </option>
+                          {technicians.map((tech) => (
+                            <option key={tech.id} value={String(tech.id)}>
+                              {tech.name}
+                              {tech.phone ? ` (${tech.phone})` : ''}
+                              {tech.branch?.name ? ` · ${tech.branch.name}` : ''}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                    )}
                   </div>
 
                   <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
@@ -911,7 +1061,11 @@ export default function TenantBrandingPage() {
                         type="text"
                         value={tgLabel}
                         onChange={(e) => setTgLabel(e.target.value)}
-                        placeholder="VD: Anh Minh - Chủ shop"
+                        placeholder={
+                          tgTargetRole === 'technician'
+                            ? 'VD: Topic KTV - Nguyễn Văn Hùng'
+                            : 'VD: Anh Minh - Chủ shop'
+                        }
                         disabled={addingTelegram}
                         className="w-full px-3 py-2 text-xs rounded-[8px] border border-[#d2ded8] focus:outline-none focus:border-[#176b58] focus:ring-1 focus:ring-[#176b58] transition-all bg-white"
                         required
@@ -957,6 +1111,46 @@ export default function TenantBrandingPage() {
                     </div>
                   </div>
 
+                  {/* Khi chọn KTV: Ô tùy chọn Topic ID / Thread ID & Hộp hướng dẫn 3 bước */}
+                  {tgTargetRole === 'technician' && (
+                    <div className="space-y-3 pt-1">
+                      <div className="space-y-1">
+                        <label className="text-[11px] font-bold text-[#2a3c36] block">
+                          Topic ID / Thread ID (Tùy chọn)
+                        </label>
+                        <input
+                          type="text"
+                          value={tgThreadId}
+                          onChange={(e) => setTgThreadId(e.target.value)}
+                          placeholder="Tự động lấy khi gõ /start trong Topic"
+                          disabled={addingTelegram}
+                          className="w-full px-3 py-2 text-xs font-mono rounded-[8px] border border-[#d2ded8] focus:outline-none focus:border-[#176b58] focus:ring-1 focus:ring-[#176b58] transition-all bg-white"
+                        />
+                        <span className="text-[10px] text-[#718279] block">
+                          Khuyến nghị để trống và gõ trực tiếp lệnh <code>/start ktv_...</code> vào trong Topic của KTV để hệ thống tự bắt chính xác cả Group Chat ID và Topic ID.
+                        </span>
+                      </div>
+
+                      <div className="p-3.5 rounded-[10px] bg-[#eef7f4] border border-[#c5e0d6] text-[11px] text-[#1c302b] space-y-1.5 leading-relaxed">
+                        <div className="font-bold text-[#176b58] flex items-center gap-1.5">
+                          <Icon name="spark" size={14} className="shrink-0 text-[#176b58]" />
+                          <span>Hướng dẫn kết nối Topic riêng trong nhóm Telegram cho KTV:</span>
+                        </div>
+                        <ol className="list-decimal list-inside space-y-1 text-[#355046] m-0 pl-0.5">
+                          <li>
+                            <strong>Bước 1:</strong> Trong Nhóm Telegram của xưởng, bật chế độ <strong>Topics (Chủ đề)</strong> và tạo một Topic riêng cho KTV này (VD: <code># KTV Hùng</code>).
+                          </li>
+                          <li>
+                            <strong>Bước 2:</strong> Sau khi bấm <strong>Tạo kết nối</strong>, copy câu lệnh <code>/start ktv_...</code> và <strong>dán trực tiếp vào trong Topic của KTV đó</strong>.
+                          </li>
+                          <li>
+                            <strong>Bước 3:</strong> Hệ thống sẽ tự động bắt cả <code>Chat ID</code> của nhóm, <code>Topic ID (Thread ID)</code> của KTV và <code>Telegram User ID</code> của KTV.
+                          </li>
+                        </ol>
+                      </div>
+                    </div>
+                  )}
+
                   {/* Tùy chọn nâng cao: Chat ID / Group ID */}
                   <div className="pt-1">
                     <button
@@ -983,7 +1177,7 @@ export default function TenantBrandingPage() {
                           className="w-full px-3 py-2 text-xs font-mono rounded-[8px] border border-[#d2ded8] focus:outline-none focus:border-[#176b58] focus:ring-1 focus:ring-[#176b58] transition-all bg-white"
                         />
                         <span className="text-[10px] text-[#718279] block">
-                          Nếu để trống, sau khi thêm bạn chỉ cần mở link Telegram của số điện thoại đó và bấm Start Bot là hệ thống tự nhận diện Chat ID.
+                          Nếu để trống, sau khi thêm bạn chỉ cần mở link Telegram hoặc dán lệnh /start vào Topic là hệ thống tự nhận diện Chat ID.
                         </span>
                       </div>
                     )}
@@ -997,16 +1191,20 @@ export default function TenantBrandingPage() {
                       disabled={addingTelegram}
                       className="font-bold text-xs px-4 bg-[#176b58] hover:bg-[#0e4b3d]"
                     >
-                      {addingTelegram ? 'Đang thêm...' : '+ Thêm SĐT nhận đơn'}
+                      {addingTelegram
+                        ? 'Đang tạo kết nối...'
+                        : tgTargetRole === 'technician'
+                          ? '+ Tạo kết nối Topic KTV'
+                          : '+ Thêm SĐT nhận đơn'}
                     </Button>
                   </div>
                 </form>
 
-                {/* Danh sách các số điện thoại đã thêm */}
+                {/* Danh sách các kết nối đã thêm */}
                 <div className="space-y-3">
                   <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
                     <div className="text-xs font-heading font-bold text-[#1c302b]">
-                      Danh sách số điện thoại nhận thông báo ({telegramRecipients.length})
+                      Danh sách kết nối nhận thông báo &amp; Topic KTV ({telegramRecipients.length})
                     </div>
                     <Button
                       type="button"
@@ -1022,11 +1220,11 @@ export default function TenantBrandingPage() {
 
                   {loadingTelegram ? (
                     <div className="p-6 text-center text-xs text-[#6b7c74] bg-[#f9faf9] rounded-[12px] border border-[#e5ece8]">
-                      Đang tải danh sách số điện thoại...
+                      Đang tải danh sách kết nối Telegram...
                     </div>
                   ) : telegramRecipients.length === 0 ? (
                     <div className="p-6 text-center text-xs text-[#6b7c74] bg-[#f9faf9] rounded-[12px] border border-[#e5ece8]">
-                      Chưa có số điện thoại nào được cấu hình. Hãy thêm số điện thoại của Admin ở biểu mẫu phía trên.
+                      Chưa có kết nối nào được cấu hình. Hãy thêm SĐT của Admin hoặc Topic của Kỹ thuật viên ở biểu mẫu phía trên.
                     </div>
                   ) : (
                     <div className="space-y-2.5">
@@ -1037,10 +1235,12 @@ export default function TenantBrandingPage() {
                             ? branches.find((b) => String(b.id) === String(item.branch_id))?.name ||
                               `Chi nhánh #${item.branch_id}`
                             : 'Tất cả chi nhánh');
-                        const roleName =
-                          item.target_role === 'admin'
-                            ? 'Admin'
-                            : item.target_role.toUpperCase();
+                        const isTechRole = item.target_role === 'technician';
+                        const linkedTechName =
+                          item.user?.name ||
+                          (item.user_id
+                            ? technicians.find((t) => Number(t.id) === Number(item.user_id))?.name
+                            : null);
                         const isConnected = Boolean(item.telegram_chat_id);
 
                         return (
@@ -1064,9 +1264,21 @@ export default function TenantBrandingPage() {
                                   <span className="text-[10px] font-semibold text-[#516059] bg-[#f0f3f1] px-2 py-0.5 rounded-full">
                                     {branchName}
                                   </span>
-                                  <span className="text-[10px] font-semibold text-[#516059] bg-[#f0f3f1] px-2 py-0.5 rounded-full">
-                                    Vai trò: {roleName}
-                                  </span>
+                                  {isTechRole ? (
+                                    <span className="text-[10px] font-bold text-[#0f5b78] bg-[#e6f4f9] border border-[#bce0ee] px-2.5 py-0.5 rounded-full">
+                                      KTV Topic
+                                      {linkedTechName ? ` · ${linkedTechName}` : ''}
+                                      {item.telegram_thread_id
+                                        ? ` · Topic #${item.telegram_thread_id}`
+                                        : ''}
+                                    </span>
+                                  ) : (
+                                    <span className="text-[10px] font-bold text-[#176b58] bg-[#e8f5f1] border border-[#c2e2d8] px-2.5 py-0.5 rounded-full">
+                                      {item.target_role === 'admin'
+                                        ? 'Admin'
+                                        : item.target_role.toUpperCase()}
+                                    </span>
+                                  )}
                                   {!item.is_active && (
                                     <span className="text-[10px] font-semibold text-[#77847e] bg-[#e9eeeb] px-2 py-0.5 rounded-full">
                                       Đang tạm tắt
@@ -1084,11 +1296,18 @@ export default function TenantBrandingPage() {
                                       <span className="text-[10px] font-mono text-[#6b7c74]">
                                         Chat ID: {item.telegram_chat_id}
                                       </span>
+                                      {item.telegram_thread_id && (
+                                        <span className="text-[10px] font-mono font-bold text-[#0f5b78] bg-[#eef7fa] px-2 py-0.5 rounded-[5px]">
+                                          Topic #{item.telegram_thread_id}
+                                        </span>
+                                      )}
                                     </>
                                   ) : (
                                     <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-bold text-[#b77a21] bg-[#faf3e7]">
                                       <span className="w-1.5 h-1.5 rounded-full bg-[#b77a21]" />
-                                      Chờ bấm Start trên Telegram
+                                      {isTechRole
+                                        ? `Chờ dán "/start ${item.connect_token}" vào Topic Telegram`
+                                        : 'Chờ bấm Start trên Telegram'}
                                     </span>
                                   )}
                                 </div>
@@ -1097,28 +1316,60 @@ export default function TenantBrandingPage() {
                               {/* Nút thao tác */}
                               <div className="flex flex-wrap items-center gap-1.5 self-start sm:self-center">
                                 {isConnected ? (
-                                  <Button
-                                    type="button"
-                                    variant="secondary"
-                                    size="sm"
-                                    onClick={() => handleTestTelegramRecipient(item)}
-                                    disabled={testingRecipientId === item.id}
-                                    className="text-[11px] font-bold text-[#176b58] border-[#b8d0c5] hover:bg-[#f0f8f4]"
-                                  >
-                                    {testingRecipientId === item.id ? 'Đang gửi...' : 'Gửi thử'}
-                                  </Button>
+                                  <>
+                                    <Button
+                                      type="button"
+                                      variant="secondary"
+                                      size="sm"
+                                      onClick={() => handleTestTelegramRecipient(item)}
+                                      disabled={testingRecipientId === item.id}
+                                      className="text-[11px] font-bold text-[#176b58] border-[#b8d0c5] hover:bg-[#f0f8f4]"
+                                    >
+                                      {testingRecipientId === item.id ? 'Đang gửi...' : 'Gửi thử'}
+                                    </Button>
+                                    {isTechRole && item.connect_token && (
+                                      <Button
+                                        type="button"
+                                        variant="secondary"
+                                        size="sm"
+                                        onClick={() => handleCopyStartCommand(item.connect_token)}
+                                        className="text-[11px] font-mono font-bold text-[#0f5b78] border-[#bce0ee] hover:bg-[#eef7fa]"
+                                      >
+                                        Copy lệnh /start {item.connect_token}
+                                      </Button>
+                                    )}
+                                  </>
                                 ) : (
                                   <>
+                                    {item.connect_token && (
+                                      <Button
+                                        type="button"
+                                        variant={isTechRole ? 'primary' : 'secondary'}
+                                        size="sm"
+                                        onClick={() => handleCopyStartCommand(item.connect_token)}
+                                        className={
+                                          isTechRole
+                                            ? 'text-[11px] font-mono font-bold bg-[#176b58] hover:bg-[#0e4b3d]'
+                                            : 'text-[11px] font-mono'
+                                        }
+                                      >
+                                        Copy lệnh /start {item.connect_token}
+                                      </Button>
+                                    )}
                                     {item.connect_url && (
                                       <>
                                         <Button
                                           type="button"
-                                          variant="primary"
+                                          variant={isTechRole ? 'secondary' : 'primary'}
                                           size="sm"
                                           onClick={() =>
                                             window.open(item.connect_url, '_blank', 'noopener,noreferrer')
                                           }
-                                          className="text-[11px] font-bold bg-[#176b58] hover:bg-[#0e4b3d]"
+                                          className={
+                                            isTechRole
+                                              ? 'text-[11px] font-bold text-[#176b58] border-[#b8d0c5] hover:bg-[#f0f8f4]'
+                                              : 'text-[11px] font-bold bg-[#176b58] hover:bg-[#0e4b3d]'
+                                          }
                                         >
                                           Mở Telegram kích hoạt
                                         </Button>
@@ -1170,7 +1421,7 @@ export default function TenantBrandingPage() {
                   )}
 
                   <div className="p-3 rounded-[10px] bg-[#f7faf8] border border-[#dce7e1] text-[11px] text-[#4d6359] leading-relaxed">
-                    <strong>Hướng dẫn kết nối 1 chạm:</strong> Sau khi thêm số điện thoại, hãy bấm <strong>&ldquo;Mở Telegram kích hoạt&rdquo;</strong> (hoặc gửi link cho chủ số điện thoại đó) và bấm <strong>Start</strong> trên Telegram Bot. Sau đó bấm <strong>&ldquo;Đồng bộ kết nối Telegram&rdquo;</strong> để hoàn tất liên kết tự động.
+                    <strong>Hướng dẫn kết nối 1 chạm:</strong> Với <strong>Admin</strong>, bấm <strong>&ldquo;Mở Telegram kích hoạt&rdquo;</strong> và bấm <strong>Start</strong> trên Bot. Với <strong>KTV Topic</strong>, bấm <strong>&ldquo;Copy lệnh /start ktv_...&rdquo;</strong> và dán trực tiếp vào Topic riêng của KTV trong nhóm Telegram của xưởng, sau đó bấm <strong>&ldquo;Đồng bộ kết nối Telegram&rdquo;</strong> để hoàn tất.
                   </div>
                 </div>
               </div>

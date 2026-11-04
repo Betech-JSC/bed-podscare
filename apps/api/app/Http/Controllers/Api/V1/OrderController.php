@@ -523,6 +523,8 @@ class OrderController extends Controller
             'status'                => 'nullable|string',
             'order_type'            => 'nullable|string|in:in_store,cod,warranty',
             'shipping_address'      => 'nullable|string|max:500',
+            'parts_needed'          => 'nullable|string|max:2000',
+            'additional_services'   => 'nullable|array',
             'checklists'            => 'nullable|array',
             'checklists.*.item_name'=> 'required_with:checklists|string',
             'checklists.*.status'   => 'required_with:checklists|in:pass,fail,not_tested',
@@ -611,9 +613,22 @@ class OrderController extends Controller
                 'customer_approved_at'  => $initialStatus === 'waiting_tech' ? now() : null,
                 'initial_price'         => $validated['estimated_price'] ?? 0.00,
                 'total_price'           => $validated['estimated_price'] ?? 0.00,
+                'parts_needed'          => $validated['parts_needed'] ?? null,
+                'additional_services'   => $validated['additional_services'] ?? null,
                 'warranty_terms_days'   => $validated['warranty_terms_days'] ?? 90,
                 'created_by_user_id'    => $creatorId,
             ]);
+
+            if (! empty($validated['additional_services']) && is_array($validated['additional_services'])) {
+                foreach ($validated['additional_services'] as $srvItem) {
+                    if (is_array($srvItem) && ! empty($srvItem['linked_parts']) && is_array($srvItem['linked_parts'])) {
+                        $order->appendLinkedPartsToPartsNeeded($srvItem['linked_parts']);
+                    }
+                }
+                if ($order->isDirty('parts_needed')) {
+                    $order->save();
+                }
+            }
 
             // 4. Lưu checklists nếu có
             if (! empty($validated['checklists'])) {
@@ -815,6 +830,7 @@ class OrderController extends Controller
 
         $user = $request->user();
         $isAdmin = $user && in_array($user->role, ['admin', 'super_admin'], true);
+        $canFullEditOrder = $user && in_array($user->role, ['admin', 'super_admin', 'cskh', 'inventory', 'qc'], true);
 
         if ($request->has('customer_name') && is_string($request->input('customer_name'))) {
             $request->merge(['customer_name' => PhoneHelper::sanitizeText($request->input('customer_name'))]);
@@ -826,7 +842,7 @@ class OrderController extends Controller
             $request->merge(['serial_number' => PhoneHelper::sanitizeText($request->input('serial_number'))]);
         }
 
-        if ($isAdmin) {
+        if ($canFullEditOrder) {
             $validated = $request->validate([
                 'customer_id'           => ['nullable', $this->tenantExistsRule('customers', $user)],
                 'customer_name'         => 'nullable|string|max:255',
@@ -839,6 +855,7 @@ class OrderController extends Controller
                 'test_note'             => 'nullable|string',
                 'price_note'            => 'nullable|string|max:255',
                 'repair_note'           => 'nullable|string',
+                'parts_needed'          => 'nullable|string|max:2000',
                 'parts_used_summary'    => 'nullable|string',
                 'estimated_price'       => 'nullable|numeric|min:0',
                 'total_price'           => 'nullable|numeric|min:0',
@@ -852,7 +869,7 @@ class OrderController extends Controller
             ]);
 
             try {
-                return DB::transaction(function () use ($order, $validated, $user, $request) {
+                return DB::transaction(function () use ($order, $validated, $user, $isAdmin, $request) {
                     // Cập nhật thông tin khách hàng nếu có
                     if (! empty($validated['customer_name']) || ! empty($validated['customer_phone'])) {
                         $cleanName = ! empty($validated['customer_name'])
@@ -888,6 +905,10 @@ class OrderController extends Controller
                     $orderUpdates = array_filter($validated, function ($k) {
                         return ! in_array($k, ['customer_name', 'customer_phone'], true);
                     }, ARRAY_FILTER_USE_KEY);
+
+                    if (! $isAdmin && isset($orderUpdates['branch_id'])) {
+                        $orderUpdates['branch_id'] = $user->branch_id ?: $order->branch_id;
+                    }
 
                     $requestedStatus = $orderUpdates['status'] ?? null;
                     unset($orderUpdates['status']);
@@ -926,6 +947,7 @@ class OrderController extends Controller
                         $order->update($orderUpdates);
                     }
 
+                    $statusTransitioned = false;
                     if ($requestedStatus !== null) {
                         $normalizedRequested = $this->normalizeStatus((string) $requestedStatus);
                         $normalizedCurrent = $this->normalizeStatus((string) $order->status);
@@ -939,7 +961,16 @@ class OrderController extends Controller
                                 'ip'            => $request->ip(),
                                 'user_agent'    => $request->userAgent(),
                             ]);
+                            $statusTransitioned = true;
                         }
+                    }
+
+                    if (
+                        ! $statusTransitioned
+                        && (isset($orderUpdates['parts_used_summary']) || isset($orderUpdates['parts_needed']))
+                        && in_array($order->status, ['in_repair', 'waiting_qc', 'qc_pending', 'qc_inspecting', 'ready_for_return', 'waiting_pickup', 'completed'], true)
+                    ) {
+                        $this->workflowService->deductInventoryForOrder($order->fresh(), $user->id);
                     }
 
                     app(\App\Services\AuditLogService::class)->logFieldDiff(
@@ -1193,9 +1224,16 @@ class OrderController extends Controller
         $this->authorizeOrderBranch($order, $request->user());
 
         $validated = $request->validate([
-            'parts_needed' => 'nullable|string|max:1000',
-            'repair_note'  => 'nullable|string|max:2000',
-            'parts_note'   => 'nullable|string|max:2000',
+            'parts_needed'                  => 'nullable|string|max:2000',
+            'repair_note'                   => 'nullable|string|max:2000',
+            'parts_note'                    => 'nullable|string|max:2000',
+            'additional_issue'              => 'nullable|array',
+            'additional_issue.name'         => 'required_with:additional_issue|string|max:255',
+            'additional_issue.note'         => 'nullable|string|max:500',
+            'additional_issue.linked_parts' => 'nullable|array',
+            'additional_issue.service_id'   => 'nullable|integer',
+            'additional_issue.watch_size'   => 'nullable|string|max:50',
+            'additional_issue.price'        => 'nullable|numeric|min:0',
         ]);
 
         $updates = [];
@@ -1209,6 +1247,62 @@ class OrderController extends Controller
 
         if (! empty($updates)) {
             $order->update($updates);
+        }
+
+        if (! empty($validated['additional_issue']) && is_array($validated['additional_issue'])) {
+            $issueData = $validated['additional_issue'];
+            $order->addAdditionalService([
+                'name'          => $issueData['name'],
+                'price'         => $issueData['price'] ?? 0,
+                'service_id'    => $issueData['service_id'] ?? null,
+                'note'          => $issueData['note'] ?? null,
+                'linked_parts'  => $issueData['linked_parts'] ?? [],
+                'watch_size'    => $issueData['watch_size'] ?? null,
+                'added_by_role' => 'technician',
+            ], $request->user());
+
+            $notificationTitle = "KTV báo phát sinh lỗi: {$issueData['name']}";
+            $notificationMsg = "KTV vừa ghi nhận thêm lỗi/linh kiện phát sinh ({$issueData['name']}) cho đơn {$order->order_code}.";
+
+            $notification = Notification::create([
+                'tenant_id'   => $order->tenant_id,
+                'branch_id'   => $order->branch_id,
+                'order_id'    => $order->id,
+                'target_role' => 'cskh',
+                'type'        => 'additional_service_added',
+                'title'       => $notificationTitle,
+                'message'     => $notificationMsg,
+                'severity'    => 'warning',
+                'action_url'  => "/repairs?id={$order->id}",
+            ]);
+
+            $eventTimestamp = now()->toIso8601String();
+            DB::afterCommit(function () use ($notification, $order, $notificationTitle, $notificationMsg, $eventTimestamp) {
+                $resolvedTenantId = $notification->tenant_id !== null
+                    ? (int) $notification->tenant_id
+                    : ($order->tenant_id !== null ? (int) $order->tenant_id : null);
+
+                OrderOperationalEvent::dispatch(
+                    $notification->id,
+                    $order->id,
+                    $order->order_code ?? (string) $order->id,
+                    $notificationTitle,
+                    $notificationMsg,
+                    'warning',
+                    $eventTimestamp,
+                    "/repairs?id={$order->id}",
+                    $order->branch_id !== null ? (int) $order->branch_id : null,
+                    'cskh',
+                    null,
+                    'additional_service_added',
+                    'order.additional_service_added',
+                    $resolvedTenantId
+                );
+            });
+        }
+
+        if (in_array($order->status, ['in_repair', 'waiting_qc', 'qc_pending', 'qc_inspecting', 'ready_for_return', 'waiting_pickup', 'completed'], true)) {
+            $this->workflowService->deductInventoryForOrder($order->fresh(), $request->user()?->id);
         }
 
         AuditLog::create([
@@ -1359,8 +1453,8 @@ class OrderController extends Controller
     public function fulfillSpecialPart(Request $request, int|string $id): JsonResponse
     {
         $user = $request->user();
-        if ($user && ! in_array($user->role, ['admin', 'cskh', 'super_admin'], true)) {
-            return $this->failure('Chỉ Quản trị viên (Admin) hoặc CSKH mới có quyền xác nhận đã mua linh kiện ngoài.', 403);
+        if ($user && ! in_array($user->role, ['admin', 'cskh', 'super_admin', 'inventory', 'qc'], true)) {
+            return $this->failure('Chỉ Quản trị viên (Admin) hoặc nhân sự vận hành mới có quyền xác nhận đã mua linh kiện ngoài.', 403);
         }
 
         $order = $this->resolveOrder($id);
@@ -1767,7 +1861,7 @@ class OrderController extends Controller
     public function addAdditionalService(Request $request, int|string $id): JsonResponse
     {
         $user = $request->user();
-        if (! $user || in_array($user->role, ['technician'], true) || ! in_array($user->role, ['cskh', 'admin', 'super_admin'], true)) {
+        if (! $user || in_array($user->role, ['technician'], true) || ! in_array($user->role, ['cskh', 'admin', 'super_admin', 'inventory', 'qc'], true)) {
             return response()->json([
                 'success' => false,
                 'message' => 'Bạn không có quyền thực hiện thao tác này.',
@@ -1786,10 +1880,12 @@ class OrderController extends Controller
         }
 
         $validated = $request->validate([
-            'name'       => 'required|string|min:2|max:255',
-            'price'      => 'required|numeric|gt:0',
-            'service_id' => 'nullable|integer',
-            'note'       => 'nullable|string|max:500',
+            'name'         => 'required|string|min:2|max:255',
+            'price'        => 'required|numeric|gt:0',
+            'service_id'   => 'nullable|integer',
+            'note'         => 'nullable|string|max:500',
+            'linked_parts' => 'nullable|array',
+            'watch_size'   => 'nullable|string|max:50',
         ], [
             'name.required'  => 'Vui lòng chọn hoặc nhập tên dịch vụ bổ sung',
             'price.required' => 'Đơn giá dịch vụ là bắt buộc, vui lòng nhập tay số tiền đã báo khách',
@@ -1801,6 +1897,10 @@ class OrderController extends Controller
             $lockedOrder = RepairOrder::where('id', $order->id)->lockForUpdate()->firstOrFail();
 
             $serviceItem = $lockedOrder->addAdditionalService($validated, $user);
+
+            if (in_array($lockedOrder->status, ['in_repair', 'waiting_qc', 'qc_pending', 'qc_inspecting', 'ready_for_return', 'waiting_pickup', 'completed'], true)) {
+                $this->workflowService->deductInventoryForOrder($lockedOrder->fresh(), $user->id);
+            }
 
             AuditLog::create([
                 'user_id'        => $user->id,
@@ -1899,7 +1999,7 @@ class OrderController extends Controller
     public function deleteAdditionalService(Request $request, int|string $id, string $serviceId): JsonResponse
     {
         $user = $request->user();
-        if (! $user || in_array($user->role, ['technician'], true) || ! in_array($user->role, ['cskh', 'admin', 'super_admin'], true)) {
+        if (! $user || in_array($user->role, ['technician'], true) || ! in_array($user->role, ['cskh', 'admin', 'super_admin', 'inventory', 'qc'], true)) {
             return response()->json([
                 'success' => false,
                 'message' => 'Bạn không có quyền thực hiện thao tác này.',

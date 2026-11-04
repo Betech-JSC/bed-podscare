@@ -16,6 +16,10 @@ import {
 import { useQuery } from '@tanstack/react-query';
 import { CreatePartTransactionModal, type PartOption } from './CreatePartTransactionModal';
 import type { BranchOption } from './StockTab';
+import {
+  exportDailyExportedPartsExcel,
+  getTodayDateStringInGmt7,
+} from '../utils/dailyExportedPartsExcel';
 
 export interface MovementsTabProps {
   role?: string;
@@ -24,6 +28,10 @@ export interface MovementsTabProps {
   branchId?: string | number;
   branches: BranchOption[];
   parts: PartOption[];
+  selectedExportDate?: string;
+  onSelectExportDate?: (dateStr: string) => void;
+  onExportDailyParts?: (targetDate?: string, overrideBranchId?: string | number) => void;
+  isExportingDailyParts?: boolean;
   onRefreshAll?: () => void;
 }
 
@@ -39,14 +47,34 @@ export const MovementsTab: React.FC<MovementsTabProps> = ({
   branchId = 1,
   branches,
   parts,
+  selectedExportDate,
+  onSelectExportDate,
+  onExportDailyParts,
+  isExportingDailyParts = false,
   onRefreshAll,
 }) => {
+  const todayStr = useMemo(() => getTodayDateStringInGmt7(), []);
   const [search, setSearch] = useState('');
   const [selectedBranch, setSelectedBranch] = useState<string>(String(branchId || '1'));
   const [selectedType, setSelectedType] = useState<string>('');
+  const [dateFilterMode, setDateFilterMode] = useState<'all' | 'today' | 'custom'>('all');
+  const [customDate, setCustomDate] = useState<string>(selectedExportDate || todayStr);
   const [page, setPage] = useState<number>(1);
   const [perPage, setPerPage] = useState<number | 'all'>(15);
   const [transactionModalOpen, setTransactionModalOpen] = useState(false);
+
+  React.useEffect(() => {
+    if (selectedExportDate) {
+      setCustomDate(selectedExportDate);
+    }
+  }, [selectedExportDate]);
+
+  const effectiveFilterDate =
+    dateFilterMode === 'today'
+      ? todayStr
+      : dateFilterMode === 'custom'
+      ? customDate
+      : '';
 
   // Sync warehouse filter when context branchId changes or for non-admin
   React.useEffect(() => {
@@ -65,17 +93,27 @@ export const MovementsTab: React.FC<MovementsTabProps> = ({
     isError,
     refetch,
   } = useQuery({
-    queryKey: ['inventory-transactions', selectedBranch, selectedType, search, page, perPage],
+    queryKey: [
+      'inventory-transactions',
+      selectedBranch,
+      selectedType,
+      effectiveFilterDate,
+      search,
+      page,
+      perPage,
+    ],
     queryFn: async () => {
       const res = await inventoryService.getTransactions({
         branch_id: selectedBranch && selectedBranch !== 'all' ? Number(selectedBranch) : undefined,
         transaction_type: selectedType || undefined,
+        from_date: effectiveFilterDate || undefined,
+        to_date: effectiveFilterDate || undefined,
         q: search.trim() || undefined,
         search: search.trim() || undefined,
         page: perPage === 'all' ? 1 : page,
         per_page: perPage,
         all: perPage === 'all' ? true : undefined,
-      });
+      } as any);
       return res?.data || res;
     },
   });
@@ -105,6 +143,13 @@ export const MovementsTab: React.FC<MovementsTabProps> = ({
         return (
           <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-[6px] text-xs font-semibold bg-[#eaf4ef] text-[#28805e] border border-[#c5e1d4]">
             <span>Nhập kho</span>
+          </span>
+        );
+      case 'import_reversal':
+      case 'import_return':
+        return (
+          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-[6px] text-xs font-semibold bg-[#eaf4ef] text-[#176b58] border border-[#b8d9cb]">
+            <span>Hoàn trả kho</span>
           </span>
         );
       case 'export_repair':
@@ -144,13 +189,36 @@ export const MovementsTab: React.FC<MovementsTabProps> = ({
           <span className="text-[#176b58] font-bold">{currentWarehouseName}</span>
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
+          <Button
+            variant="outline"
+            size="sm"
+            icon="download"
+            data-testid="movements-export-daily-btn"
+            disabled={isExportingDailyParts}
+            onClick={() => {
+              const targetDate = effectiveFilterDate || customDate || todayStr;
+              if (onExportDailyParts) {
+                onExportDailyParts(targetDate, selectedBranch);
+              } else {
+                exportDailyExportedPartsExcel({
+                  transactions: filtered,
+                  selectedDate: targetDate,
+                  branchLabel: currentWarehouseName,
+                });
+              }
+            }}
+            className="text-xs text-[#176b58] border-[#cde2d6] hover:bg-[#eaf4ef] font-bold"
+          >
+            {isExportingDailyParts ? 'Đang xuất...' : 'Xuất Excel xuất kho ngày (.xls)'}
+          </Button>
           <Button
             variant="secondary"
             size="sm"
             onClick={() => {
               setSearch('');
               setSelectedType('');
+              setDateFilterMode('all');
               setPage(1);
               refetch();
             }}
@@ -229,8 +297,67 @@ export const MovementsTab: React.FC<MovementsTabProps> = ({
                 <option value="import">Nhập kho (NCC)</option>
                 <option value="export_repair">Xuất sửa chữa</option>
                 <option value="export_damage">Xuất hỏng / hao hụt</option>
+                <option value="import_reversal">Hoàn trả kho (Hoàn đơn)</option>
                 <option value="adjust_inventory">Điều chỉnh kiểm kê</option>
               </select>
+            </div>
+
+            {/* Quick Date Filter (Tất cả / Hôm nay / Chọn ngày) */}
+            <div className="flex flex-wrap items-center gap-1.5">
+              <span className="text-xs text-[#7c8b84] font-medium hidden sm:inline">Ngày:</span>
+              <button
+                type="button"
+                data-testid="movements-date-filter-all"
+                onClick={() => {
+                  setDateFilterMode('all');
+                  setPage(1);
+                }}
+                className={`h-9 px-2.5 rounded-[8px] text-xs font-semibold transition-all cursor-pointer border ${
+                  dateFilterMode === 'all'
+                    ? 'bg-[#176b58] text-white border-[#176b58]'
+                    : 'bg-white text-[#596962] border-[#e4eae6] hover:bg-[#f5f8f6]'
+                }`}
+              >
+                Tất cả
+              </button>
+              <button
+                type="button"
+                data-testid="movements-date-filter-today"
+                onClick={() => {
+                  setDateFilterMode('today');
+                  setCustomDate(todayStr);
+                  onSelectExportDate?.(todayStr);
+                  setPage(1);
+                }}
+                className={`h-9 px-2.5 rounded-[8px] text-xs font-semibold transition-all cursor-pointer border ${
+                  dateFilterMode === 'today'
+                    ? 'bg-[#176b58] text-white border-[#176b58]'
+                    : 'bg-white text-[#596962] border-[#e4eae6] hover:bg-[#f5f8f6]'
+                }`}
+              >
+                Hôm nay
+              </button>
+              <input
+                type="date"
+                data-testid="movements-date-picker-input"
+                value={customDate}
+                onChange={(e) => {
+                  const val = e.target.value;
+                  setCustomDate(val);
+                  if (val) {
+                    setDateFilterMode('custom');
+                    onSelectExportDate?.(val);
+                  } else {
+                    setDateFilterMode('all');
+                  }
+                  setPage(1);
+                }}
+                className={`h-9 px-2.5 text-xs rounded-[8px] border outline-none cursor-pointer ${
+                  dateFilterMode === 'custom'
+                    ? 'bg-[#eaf4ef] text-[#176b58] font-bold border-[#176b58]'
+                    : 'bg-white text-[#2b3a32] border-[#e4eae6] focus:border-[#75a994]'
+                }`}
+              />
             </div>
           </div>
         </div>
@@ -266,6 +393,14 @@ export const MovementsTab: React.FC<MovementsTabProps> = ({
               <tbody className="divide-y divide-[#f1f3f2] text-sm">
                 {filtered.map((tx: any) => {
                   const isExport = tx.transaction_type === 'export_repair' || tx.transaction_type === 'export_damage';
+                  const absQty = Math.abs(Number(tx.quantity) || 0);
+                  const deviceModelObj =
+                    tx.repair_order?.device_model || tx.repair_order?.deviceModel || tx.repairOrder?.deviceModel;
+                  const productLineText =
+                    deviceModelObj?.name ||
+                    tx.part?.category ||
+                    deviceModelObj?.category ||
+                    '';
                   return (
                     <tr key={tx.id} className="h-12 hover:bg-[#fafcfa] transition-colors">
                       <td className="px-3 text-xs text-[#6e7f77] whitespace-nowrap">
@@ -273,11 +408,18 @@ export const MovementsTab: React.FC<MovementsTabProps> = ({
                       </td>
                       <td className="px-3 font-medium text-[#1c302b]">
                         <div>{tx.part?.name || `Part #${tx.part_id}`}</div>
-                        {tx.part?.sku && (
-                          <div className="text-[10px] font-mono text-[#176b58] font-bold">
-                            {tx.part.sku}
-                          </div>
-                        )}
+                        <div className="flex flex-wrap items-center gap-1.5 mt-0.5">
+                          {tx.part?.sku && (
+                            <span className="text-[10px] font-mono text-[#176b58] font-bold">
+                              {tx.part.sku}
+                            </span>
+                          )}
+                          {productLineText && (
+                            <span className="text-[10px] px-1.5 py-0.2 rounded bg-[#eef2ef] text-[#556960] font-semibold">
+                              {productLineText}
+                            </span>
+                          )}
+                        </div>
                       </td>
                       <td className="px-3 text-xs text-[#47574f]">
                         <span className="font-semibold">{tx.branch?.name || '—'}</span>
@@ -293,7 +435,7 @@ export const MovementsTab: React.FC<MovementsTabProps> = ({
                               : 'text-[#28805e]'
                           }
                         >
-                          {isExport ? `-${tx.quantity}` : `+${tx.quantity}`}
+                          {isExport ? `-${absQty}` : `+${absQty}`}
                         </span>
                       </td>
                       {role === 'admin' && (

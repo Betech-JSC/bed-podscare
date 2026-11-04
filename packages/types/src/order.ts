@@ -63,6 +63,15 @@ export interface DevicePhoto {
   url: string;
 }
 
+export interface LinkedPartDTO {
+  part_sku: string;
+  part_name: string;
+  quantity: number;
+  unit: string;
+  position?: string;
+  watch_size?: string;
+}
+
 export interface AdditionalServiceItem {
   id: string;
   name: string;
@@ -72,6 +81,8 @@ export interface AdditionalServiceItem {
   created_at: string;
   created_by_user_id?: number | null;
   created_by_name?: string | null;
+  added_by_role?: 'cskh' | 'admin' | 'technician' | string | null;
+  linked_parts?: LinkedPartDTO[];
 }
 
 export interface AddAdditionalServiceDTO {
@@ -79,6 +90,8 @@ export interface AddAdditionalServiceDTO {
   price: number;
   service_id?: number | null;
   note?: string | null;
+  added_by_role?: string;
+  linked_parts?: LinkedPartDTO[];
 }
 
 export interface RepairOrder {
@@ -209,6 +222,9 @@ export interface CreateIntakeDTO {
   shipping_address?: string | null;
   shippingAddress?: string | null;
   created_by_user_id?: number | string;
+  parts_needed?: string | null;
+  partsNeeded?: string | null;
+  watch_size?: string | null;
 }
 
 export interface UpdateOrderDTO {

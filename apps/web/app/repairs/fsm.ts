@@ -180,24 +180,63 @@ export const TECH_COMPLETABLE_STATUSES = TECHNICAL_STAGE_STATUSES;
 export const FSM_TRANSITIONS: Record<string, string[]> = {
   inspecting: ['waiting_approval', 'waiting_tech', 'cancelled'],
   waiting_approval: ['waiting_tech', 'rejected', 'cancelled'],
-  waiting_tech: ['assigned', 'in_repair', 'waiting_qc', 'ready_for_return'],
-  assigned: ['in_repair', 'waiting_tech', 'waiting_qc', 'ready_for_return'],
-  in_repair: ['waiting_parts', 'waiting_qc', 'ready_for_return', 'waiting_tech'],
-  waiting_parts: ['in_repair', 'waiting_tech', 'assigned', 'waiting_qc', 'ready_for_return'],
-  rework_needed: ['in_repair', 'waiting_qc', 'ready_for_return'],
-  waiting_qc: ['ready_for_return', 'rework_needed'],
-  ready_for_return: ['waiting_pickup', 'completed', 'rework_needed'],
-  waiting_pickup: ['completed'],
-  completed: ['refunded'],
+  waiting_tech: ['assigned', 'in_repair', 'waiting_qc', 'ready_for_return', 'cancelled'],
+  assigned: ['in_repair', 'waiting_tech', 'waiting_qc', 'ready_for_return', 'cancelled'],
+  in_repair: ['waiting_parts', 'waiting_qc', 'ready_for_return', 'waiting_tech', 'cancelled'],
+  waiting_parts: ['in_repair', 'waiting_tech', 'assigned', 'waiting_qc', 'ready_for_return', 'cancelled'],
+  rework_needed: ['in_repair', 'waiting_qc', 'ready_for_return', 'cancelled'],
+  waiting_qc: ['ready_for_return', 'rework_needed', 'cancelled'],
+  ready_for_return: ['waiting_pickup', 'completed', 'rework_needed', 'cancelled'],
+  waiting_pickup: ['completed', 'cancelled'],
+  completed: ['refunded', 'cancelled'],
   rejected: ['cancelled'],
   cancelled: [],
   refunded: [],
 };
 
+export const ALLOWED_TRANSITIONS = FSM_TRANSITIONS;
+
+export const ORDER_RETURNABLE_STATUSES = [
+  'waiting_tech',
+  'assigned',
+  'in_repair',
+  'waiting_parts',
+  'rework_needed',
+  'waiting_qc',
+  'ready_for_return',
+  'waiting_pickup',
+  'completed',
+];
+
+/**
+ * Kiểm tra xem đơn hàng ở trạng thái hiện tại có thể thực hiện "Hoàn trả đơn hàng (Hoàn kho)"
+ * (chuyển về cancelled và cộng hoàn trả linh kiện vào kho) hay không.
+ * Áp dụng cho mọi trạng thái từ waiting_tech / in_repair đến completed (kể cả đã thanh toán hoặc chưa thanh toán).
+ */
+export function canReturnOrderWithInventoryRestock(status?: string | null): boolean {
+  if (!status) return false;
+  const normalized = normalizeStatusCode(status);
+  return ORDER_RETURNABLE_STATUSES.includes(normalized);
+}
+
+export const canReturnOrder = canReturnOrderWithInventoryRestock;
+
+export function getOrderReturnAction(status?: string | null): QuickTransitionAction | null {
+  if (!canReturnOrderWithInventoryRestock(status)) return null;
+  return {
+    label: 'Hoàn trả đơn hàng (Hoàn kho)',
+    targetStatus: 'cancelled',
+    statusType: 'gray',
+    variant: 'danger',
+  };
+}
+
 export const TECH_COMPLETION_ALLOWED_ROLES = [
   'cskh',
   'tech',
   'technician',
+  'qc',
+  'inventory',
   'admin',
   'super_admin',
 ];
@@ -245,24 +284,15 @@ export function canOpenCheckoutForStatus(status?: string | null): boolean {
 }
 
 /**
- * Trả về danh sách hành động hợp lệ cho trạng thái chỉ định kèm FSM UI Guard theo vai trò người dùng.
- * - Nếu vai trò là `cskh`: Ẩn toàn bộ nút thao tác kỹ thuật nội bộ khi đơn đang ở các trạng thái:
- *   waiting_tech, assigned, in_repair, waiting_parts, rework_needed.
+ * Trả về danh sách hành động hợp lệ cho trạng thái chỉ định.
+ * Mở khóa đầy đủ các nút thao tác chuyển trạng thái nhanh cho mọi nhân sự vận hành giống như Admin.
  */
 export function getQuickActionsForStatus(
   status?: string | null,
-  userRole?: string | null
+  _userRole?: string | null
 ): QuickTransitionAction[] {
   if (!status) return [];
   const normalized = normalizeStatusCode(status);
-
-  // FSM UI Guard: CSKH không thể can thiệp vào các trạng thái sửa chữa kỹ thuật của Kỹ Thuật, NGOẠI TRỪ việc xác nhận đã có linh kiện để KTV tiếp tục sửa
-  if (userRole === 'cskh' && TECHNICAL_STAGE_STATUSES.includes(normalized)) {
-    if (normalized === 'waiting_parts') {
-      return FSM_QUICK_ACTIONS.waiting_parts || [];
-    }
-    return [];
-  }
 
   return FSM_QUICK_ACTIONS[normalized] || FSM_QUICK_ACTIONS[status] || [];
 }

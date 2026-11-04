@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   Input,
   Select,
@@ -16,7 +16,22 @@ import {
 } from '@podscare/ui';
 import type { ChecklistStatus } from '@podscare/types';
 import type { CommonIssueItem } from '@podscare/api-client';
-import type { IntakeDeviceItem } from './IntakeWizardModal';
+import {
+  type IntakeDeviceItem,
+  CATEGORY_HANDOVER_PARTS,
+  parseCategoryHandoverPartsFromText,
+  toggleCategoryHandoverPartInText,
+  resolveCanonicalModelName,
+} from './IntakeWizardModal';
+import {
+  POPULAR_APPLE_WATCH_SIZES,
+  filterCommonIssues,
+  enrichCommonIssueWithParts,
+  mergeLinkedPartsFromIssues,
+  formatLinkedPartsSummary,
+  applyWatchSizeTagToText,
+  type CommonIssueCatalogItem,
+} from '../constants/commonIssueCatalog';
 
 export interface IntakeQuickConsoleProps {
   name: string;
@@ -81,6 +96,60 @@ export const IntakeQuickConsole: React.FC<IntakeQuickConsoleProps> = ({
   }, [onSubmitAndPrint]);
 
   const selectedParts = parseHardwarePartsFromText(device.accessories);
+  const handoverPartDefs =
+    CATEGORY_HANDOVER_PARTS[device.category] || CATEGORY_HANDOVER_PARTS.DEFAULT;
+  const selectedCategoryParts = parseCategoryHandoverPartsFromText(
+    device.accessories,
+    device.category
+  );
+  const canonicalSelectedModel = resolveCanonicalModelName(device.device, availableModels);
+  const selectModelOptions = (() => {
+    const opts = availableModels.map((m) => ({
+      value: m.name,
+      label: `${m.name}${m.model ? ` · ${m.model}` : ''}`,
+    }));
+    if (canonicalSelectedModel && !opts.some((o) => o.value === canonicalSelectedModel)) {
+      opts.unshift({
+        value: canonicalSelectedModel,
+        label: canonicalSelectedModel,
+      });
+    }
+    return opts;
+  })();
+  const [quickIssueFilter, setQuickIssueFilter] = useState('');
+  const [showSampleJson, setShowSampleJson] = useState(false);
+
+  const filteredIssues = filterCommonIssues(
+    commonIssues,
+    quickIssueFilter,
+    device.category,
+    device.watchSize
+  );
+
+  const activeIssueObjects: CommonIssueCatalogItem[] = filteredIssues.filter((item) =>
+    device.issue.toLowerCase().includes(item.issue_name.toLowerCase())
+  );
+  const previewIssueObjects: CommonIssueCatalogItem[] =
+    activeIssueObjects.length > 0
+      ? activeIssueObjects
+      : filteredIssues.length > 0
+      ? [filteredIssues[0]]
+      : [];
+
+  const handleSelectWatchSize = (size: string) => {
+    const nextAccessories = applyWatchSizeTagToText(device.accessories, size);
+    const enrichedSelected = (device.selectedIssues || activeIssueObjects).map((iss) =>
+      enrichCommonIssueWithParts(iss, 'Apple Watch', size)
+    );
+    const mergedParts = mergeLinkedPartsFromIssues(enrichedSelected, 'Apple Watch', size);
+    const nextPartsNeeded = formatLinkedPartsSummary(mergedParts, size);
+    onUpdateDevice({
+      watchSize: size,
+      accessories: nextAccessories,
+      selectedIssues: enrichedSelected,
+      partsNeeded: nextPartsNeeded || device.partsNeeded,
+    });
+  };
 
   return (
     <div
@@ -150,8 +219,21 @@ export const IntakeQuickConsole: React.FC<IntakeQuickConsoleProps> = ({
 
         <section className="bg-white p-4 rounded-[10px] border border-[#e9eeeb] space-y-3">
           <h3 className="font-heading font-bold text-xs uppercase tracking-wider text-[#17231f] flex items-center gap-1.5 pb-2 border-b border-[#e9eeeb] m-0">
-            <Icon name="headphones" size={14} className="text-[#176b51]" />
-            <span>2. Thiết bị & Thành phần bàn giao (L / R / Case)</span>
+            <Icon
+              name={
+                device.category === 'Apple Watch'
+                  ? 'watch'
+                  : device.category === 'Apple Pencil'
+                  ? 'edit'
+                  : 'headphones'
+              }
+              size={14}
+              className="text-[#176b51]"
+            />
+            <span>
+              2. Thiết bị & Thành phần bàn giao (
+              {device.category === 'AirPods' ? 'L / R / Case' : device.category})
+            </span>
           </h3>
 
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
@@ -163,12 +245,9 @@ export const IntakeQuickConsole: React.FC<IntakeQuickConsoleProps> = ({
             />
             <Select
               label="Dòng máy *"
-              value={device.device}
+              value={canonicalSelectedModel}
               onChange={(e) => onUpdateDevice({ device: e.target.value })}
-              options={availableModels.map((m) => ({
-                value: m.name,
-                label: `${m.name}${m.model ? ` · ${m.model}` : ''}`,
-              }))}
+              options={selectModelOptions}
             />
             <Input
               label="Serial Number"
@@ -178,19 +257,121 @@ export const IntakeQuickConsole: React.FC<IntakeQuickConsoleProps> = ({
             />
           </div>
 
-          <div>
-            <label className="block text-xs font-bold text-[#17231f] mb-1.5">
-              Chọn nhanh linh kiện bàn giao (L / R / Case):
-            </label>
-            <HardwarePartSelector
-              selectedParts={selectedParts}
-              onChange={(parts) => {
-                onUpdateDevice({ accessories: formatHardwarePartsToText(parts) });
-              }}
-            />
-          </div>
+          {device.category === 'Apple Watch' && (
+            <div
+              data-testid="quick-apple-watch-size-selector"
+              className="p-3 rounded-[8px] bg-[#f4faf7] border border-[#cde4d8] space-y-2"
+            >
+              <div className="flex items-center justify-between">
+                <label className="text-xs font-bold text-[#176b51]">
+                  Chọn nhanh Size Apple Watch phổ biến *
+                </label>
+                {device.watchSize && (
+                  <span className="text-[11px] font-mono font-bold text-[#176b51] bg-white px-2 py-0.5 rounded border border-[#b8d9cb]">
+                    Đang chọn: {device.watchSize}
+                  </span>
+                )}
+              </div>
+              <div className="flex flex-wrap gap-1.5">
+                {POPULAR_APPLE_WATCH_SIZES.map((size) => {
+                  const isActive = device.watchSize === size;
+                  return (
+                    <button
+                      key={size}
+                      type="button"
+                      data-testid={`quick-watch-size-chip-${size.replace(/[^a-zA-Z0-9]/g, '')}`}
+                      onClick={() => handleSelectWatchSize(size)}
+                      className={`px-2.5 py-1 rounded-[6px] text-xs font-bold border transition-all cursor-pointer ${
+                        isActive
+                          ? 'bg-[#176b51] text-white border-[#176b51] shadow-2xs'
+                          : 'bg-white text-[#17231f] border-[#d6e4dc] hover:bg-[#e9f4ef] hover:border-[#176b51]'
+                      }`}
+                    >
+                      {size}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          )}
 
-          <div>
+          {device.category === 'AirPods' ? (
+            <div>
+              <label className="block text-xs font-bold text-[#17231f] mb-1.5">
+                Chọn nhanh linh kiện bàn giao (L / R / Case):
+              </label>
+              <HardwarePartSelector
+                selectedParts={selectedParts}
+                onChange={(parts) => {
+                  onUpdateDevice({ accessories: formatHardwarePartsToText(parts) });
+                }}
+              />
+            </div>
+          ) : (
+            <div data-testid="quick-category-handover-parts-selector">
+              <label className="block text-xs font-bold text-[#17231f] mb-1.5">
+                Chọn nhanh thành phần bàn giao ({device.category}):
+              </label>
+              <div
+                className={`grid grid-cols-2 ${
+                  handoverPartDefs.length >= 4 ? 'sm:grid-cols-4' : 'sm:grid-cols-3'
+                } gap-2`}
+              >
+                {handoverPartDefs.map((part, pIdx) => {
+                  const isPartSelected = selectedCategoryParts.includes(part.label);
+                  return (
+                    <button
+                      key={part.label}
+                      type="button"
+                      data-testid={`quick-handover-part-btn-${pIdx}`}
+                      aria-pressed={isPartSelected}
+                      onClick={() => {
+                        const nextAcc = toggleCategoryHandoverPartInText(
+                          device.accessories,
+                          part.label,
+                          device.category,
+                          device.watchSize
+                        );
+                        onUpdateDevice({ accessories: nextAcc });
+                      }}
+                      className={`flex items-center justify-between gap-2 rounded-[8px] border px-2.5 py-2 transition-colors text-left cursor-pointer ${
+                        isPartSelected
+                          ? 'bg-[#e9f4ef] border-[#176b51] text-[#17231f]'
+                          : 'bg-white border-[#e9eeeb] text-[#81908a] hover:border-[#176b51]/60'
+                      }`}
+                    >
+                      <div className="flex items-center gap-2 min-w-0">
+                        <span
+                          className={`w-6 h-6 rounded-[6px] grid place-items-center flex-none border ${
+                            isPartSelected
+                              ? 'bg-[#176b51] text-white border-[#176b51]'
+                              : 'bg-[#f6f8f6] text-[#81908a] border-[#e9eeeb]'
+                          }`}
+                        >
+                          <Icon name={part.icon} size={13} />
+                        </span>
+                        <div className="min-w-0">
+                          <div className="text-xs font-bold leading-tight truncate">
+                            {part.label}
+                          </div>
+                          <div className="text-[10px] font-medium text-[#81908a] leading-tight mt-0.5">
+                            {isPartSelected ? 'Có nhận' : 'Không kèm'}
+                          </div>
+                        </div>
+                      </div>
+                      <span
+                        className={`w-2 h-2 rounded-full flex-none ${
+                          isPartSelected ? 'bg-[#176b51]' : 'bg-[#d6e0db]'
+                        }`}
+                      />
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+          <div className="space-y-2.5">
             <Textarea
               label="Mô tả lỗi khách báo *"
               value={device.issue}
@@ -198,27 +379,135 @@ export const IntakeQuickConsole: React.FC<IntakeQuickConsoleProps> = ({
               placeholder="Ví dụ: Tai trái mất nguồn, bật ANC rè..."
               error={errors.issue || errors[`issue_${device.id}`]}
             />
-            {commonIssues.length > 0 && (
-              <div className="flex flex-wrap gap-1.5 mt-2">
-                {commonIssues.map((chip, idx) => {
-                  const active = device.issue.includes(chip.issue_name);
-                  return (
-                    <button
-                      key={chip.id || idx}
-                      type="button"
-                      onClick={() => onChipClick(chip)}
-                      className={`text-[11px] px-2.5 py-1 rounded-full border transition-colors cursor-pointer ${
-                        active
-                          ? 'bg-[#e9f4ef] border-[#176b51] text-[#176b51] font-bold'
-                          : 'bg-[#f6f8f6] border-[#e9eeeb] text-[#5c6964] hover:border-[#176b51]'
-                      }`}
-                    >
-                      + {chip.issue_name}
-                    </button>
-                  );
-                })}
+
+            {/* Filter nhanh lỗi hoặc linh kiện */}
+            <div className="space-y-2 pt-1">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <span className="text-[11px] font-bold text-[#176b51] uppercase tracking-wide">
+                  Lỗi thường gặp ({device.category}) & Linh kiện đi kèm:
+                </span>
+                <span className="text-[11px] text-[#81908a]">
+                  ({filteredIssues.length} mẫu lỗi)
+                </span>
               </div>
-            )}
+
+              <Input
+                data-testid="quick-intake-issue-filter-input"
+                value={quickIssueFilter}
+                onChange={(e) => setQuickIssueFilter(e.target.value)}
+                placeholder="🔍 Gõ lọc nhanh lỗi hoặc linh kiện (VD: pin, rè ANC, vỡ kính, sập nguồn...)"
+              />
+
+              {filteredIssues.length > 0 ? (
+                <div className="flex flex-wrap gap-1.5">
+                  {filteredIssues.map((chip, idx) => {
+                    const active = device.issue.includes(chip.issue_name);
+                    const firstPart = chip.linked_parts?.[0];
+                    return (
+                      <button
+                        key={chip.id || idx}
+                        type="button"
+                        onClick={() => onChipClick(chip)}
+                        className={`text-[11px] px-2.5 py-1.5 rounded-[12px] border transition-colors cursor-pointer flex items-center gap-1.5 text-left ${
+                          active
+                            ? 'bg-[#e9f4ef] border-[#176b51] text-[#176b51] font-bold shadow-2xs'
+                            : 'bg-[#f6f8f6] border-[#e9eeeb] text-[#5c6964] hover:border-[#176b51]'
+                        }`}
+                      >
+                        <span>{active ? '✓' : '+'} {chip.issue_name}</span>
+                        {firstPart && (
+                          <span className="px-1.5 py-0.5 rounded bg-white/90 border border-[#cde4d8] text-[10px] font-mono text-[#176b51]">
+                            🔧 {firstPart.part_name} ×{firstPart.quantity}
+                          </span>
+                        )}
+                      </button>
+                    );
+                  })}
+                </div>
+              ) : (
+                <div className="text-xs text-[#81908a] italic py-1">
+                  Không tìm thấy mẫu lỗi khớp từ khóa &ldquo;{quickIssueFilter}&rdquo;.
+                </div>
+              )}
+
+              {/* Preview Mẫu Object Lỗi & Linh kiện liên kết */}
+              {previewIssueObjects.length > 0 && (
+                <div
+                  data-testid="quick-intake-issue-object-preview"
+                  className="p-3 rounded-[8px] bg-[#f8fbf9] border border-[#cde4d8] space-y-2 text-xs"
+                >
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <div className="flex items-center gap-1.5">
+                      <span className="px-2 py-0.5 rounded bg-[#176b51] text-white text-[10px] font-bold uppercase">
+                        Object Lỗi Mẫu
+                      </span>
+                      <strong className="text-[#17231f]">
+                        Mẫu Object Lỗi & Linh kiện liên kết (Preview chuyển sang Kỹ thuật)
+                      </strong>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setShowSampleJson((v) => !v)}
+                      className="text-[11px] font-bold text-[#176b51] underline cursor-pointer"
+                    >
+                      {showSampleJson ? 'Ẩn cấu trúc JSON' : 'Xem JSON Object lỗi'}
+                    </button>
+                  </div>
+
+                  {previewIssueObjects.map((obj) => (
+                    <div
+                      key={obj.issue_code}
+                      className="p-2.5 rounded-[6px] bg-white border border-[#e3ece7] space-y-1.5"
+                    >
+                      <div className="flex flex-wrap items-center justify-between gap-1">
+                        <div className="flex items-center gap-1.5">
+                          <span className="font-mono text-[11px] font-bold text-[#176b51] bg-[#e9f4ef] px-1.5 py-0.5 rounded">
+                            {obj.issue_code}
+                          </span>
+                          <b className="text-[#17231f]">{obj.issue_name}</b>
+                        </div>
+                        <span className="text-[11px] text-[#5c6964]">
+                          Danh mục: <b>{obj.category}</b>
+                          {device.watchSize ? ` · Size: ${device.watchSize}` : ''}
+                        </span>
+                      </div>
+                      <div className="flex flex-wrap items-center gap-1.5">
+                        <span className="text-[11px] text-[#81908a] font-semibold">
+                          Linh kiện liên kết ({obj.linked_parts.length}):
+                        </span>
+                        {obj.linked_parts.map((pt) => (
+                          <span
+                            key={`${obj.issue_code}-${pt.part_sku}`}
+                            className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-[#e9f4ef] text-[#176b51] border border-[#cde4d8] text-[11px] font-semibold"
+                          >
+                            <span>🔧 {pt.part_name}</span>
+                            <span className="font-mono text-[10px] opacity-80">({pt.part_sku})</span>
+                            <span className="font-mono font-bold">×{pt.quantity} {pt.unit}</span>
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  ))}
+
+                  {showSampleJson && (
+                    <pre className="p-2.5 rounded bg-[#17231f] text-[#a7f3d0] text-[11px] font-mono overflow-x-auto max-h-44">
+                      {JSON.stringify(
+                        previewIssueObjects.length === 1 ? previewIssueObjects[0] : previewIssueObjects,
+                        null,
+                        2
+                      )}
+                    </pre>
+                  )}
+
+                  {device.partsNeeded && (
+                    <div className="pt-1 border-t border-[#dcebe3] text-[11px] text-[#176b51]">
+                      <span className="font-bold">Linh kiện lỗi tự động gán theo đơn (parts_needed): </span>
+                      <span className="font-mono font-semibold text-[#17231f]">{device.partsNeeded}</span>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
           </div>
         </section>
       </div>

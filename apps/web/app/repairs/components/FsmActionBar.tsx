@@ -6,8 +6,8 @@ import type { RepairOrder } from '@podscare/types';
 import {
   normalizeStatusCode,
   getQuickActionsForStatus,
-  isTechnicalStageStatus,
   canCompleteTechnicalRepair,
+  canReturnOrderWithInventoryRestock,
 } from '../fsm';
 
 export interface FsmActionBarProps {
@@ -18,6 +18,7 @@ export interface FsmActionBarProps {
   onQuickTechComplete: (order: RepairOrder) => void;
   onQuickCheckout: () => void;
   onOpenQc: (orderId: string) => void;
+  onReturnOrder?: (order: RepairOrder) => void;
 }
 
 export const FsmActionBar: React.FC<FsmActionBarProps> = ({
@@ -28,11 +29,12 @@ export const FsmActionBar: React.FC<FsmActionBarProps> = ({
   onQuickTechComplete,
   onQuickCheckout,
   onOpenQc,
+  onReturnOrder,
 }) => {
   const currentStatusCode = normalizeStatusCode(order.status);
   const isWaitingQc = currentStatusCode === 'waiting_qc';
   const actions = getQuickActionsForStatus(currentStatusCode, role as any);
-  const inTechPhase = isTechnicalStageStatus(currentStatusCode);
+  const canReturnOrder = canReturnOrderWithInventoryRestock(currentStatusCode);
 
   const orderTotal = Number(order.total_price ?? order.price ?? 0) || 0;
   const orderDiscount = Number(order.discount_amount ?? 0) || 0;
@@ -46,26 +48,14 @@ export const FsmActionBar: React.FC<FsmActionBarProps> = ({
 
   return (
     <div className="space-y-2.5 pt-1 pb-3 border-b border-[#e9eeeb]">
-      {/* Status Banner cho CSKH khi đơn ở giai đoạn kỹ thuật */}
-      {role === 'cskh' && inTechPhase && currentStatusCode !== 'waiting_parts' && (
-        <div className="flex items-center gap-2.5 p-3 rounded-[8px] bg-[#e9f4ef] border border-[#cde4d8] text-xs text-[#176b51]">
-          <span className="w-2 h-2 rounded-full bg-[#176b51] animate-pulse flex-none" />
-          <span>
-            <strong>Tiến độ:</strong> Thiết bị đang trong quá trình xử lý kỹ thuật bởi Kỹ Thuật. CSKH không can thiệp trạng thái ở bước này.
-          </span>
-        </div>
-      )}
-
       <div className="flex flex-wrap items-center gap-2">
         <span className="text-xs text-[#81908a] font-bold">Chuyển trạng thái nhanh:</span>
         {actions.length === 0 ? (
           <span className="text-xs text-[#81908a] italic">
-            {role === 'cskh' && inTechPhase
-              ? 'Đang được Kỹ Thuật xử lý trong phòng kỹ thuật'
-              : currentStatusCode === 'completed'
+            {currentStatusCode === 'completed'
               ? 'Đơn hàng đã hoàn tất vòng đời'
               : currentStatusCode === 'cancelled'
-              ? 'Đơn hàng đã hủy'
+              ? 'Đơn hàng đã hủy / hoàn trả'
               : 'Không có bước chuyển trạng thái tiếp theo'}
           </span>
         ) : (
@@ -89,7 +79,7 @@ export const FsmActionBar: React.FC<FsmActionBarProps> = ({
           ))
         )}
 
-        {/* Nút Hoàn thành sửa chữa nhanh cho CSKH / Kỹ Thuật / Admin */}
+        {/* Nút Hoàn thành sửa chữa nhanh cho Nhân sự / Kỹ Thuật / Admin */}
         {canCompleteTechnicalRepair(currentStatusCode, role) && (
           <Button
             variant="primary"
@@ -103,7 +93,7 @@ export const FsmActionBar: React.FC<FsmActionBarProps> = ({
           </Button>
         )}
 
-        {/* Nút thanh toán & bàn giao nhanh cho CSKH */}
+        {/* Nút thanh toán & bàn giao nhanh */}
         {['ready_for_return', 'waiting_pickup', 'in_repair', 'waiting_qc'].includes(currentStatusCode) && (
           <Button
             variant="primary"
@@ -117,8 +107,29 @@ export const FsmActionBar: React.FC<FsmActionBarProps> = ({
           </Button>
         )}
 
+        {/* Nút Hoàn trả đơn hàng (Hoàn kho) cho mọi trạng thái từ waiting_tech / in_repair đến completed */}
+        {canReturnOrder && (
+          <Button
+            variant="danger"
+            size="sm"
+            icon="refresh"
+            disabled={isTransitioning}
+            data-testid="fsm-return-order-btn"
+            onClick={() => {
+              if (onReturnOrder) {
+                onReturnOrder(order);
+              } else {
+                onUpdateStatus('Đã hủy', 'gray', 'cancelled');
+              }
+            }}
+            className="text-xs font-bold"
+          >
+            Hoàn trả đơn hàng (Hoàn kho)
+          </Button>
+        )}
+
         {/* Nút phụ điều hướng kiểm định QC khi đơn ở trạng thái Chờ QC */}
-        {isWaitingQc && role !== 'cskh' && (
+        {isWaitingQc && (
           <Button
             variant="outline"
             size="sm"
@@ -136,7 +147,7 @@ export const FsmActionBar: React.FC<FsmActionBarProps> = ({
         <div className="flex items-center gap-2 p-2.5 rounded-[8px] bg-[#e9f4ef] border border-[#cde4d8] text-xs text-[#176b51]">
           <span className="w-2 h-2 rounded-full bg-[#176b51] animate-pulse flex-none" />
           <span>
-            <strong>Lưu ý QC:</strong> Đơn hàng đang chờ kiểm định chất lượng. Nhân sự có thể bấm <strong>&ldquo;Sẵn sàng trả&rdquo;</strong> để xác nhận đạt chuẩn nhanh{role !== 'cskh' ? ' hoặc mở phiếu kiểm định QC chi tiết để đánh giá từng tiêu chí.' : ' hoặc tiến hành thu tiền & bàn giao ngay.'}
+            <strong>Lưu ý QC:</strong> Đơn hàng đang chờ kiểm định chất lượng. Nhân sự có thể bấm <strong>&ldquo;Sẵn sàng trả&rdquo;</strong> để xác nhận đạt chuẩn nhanh hoặc mở phiếu kiểm định QC chi tiết để đánh giá từng tiêu chí.
           </span>
         </div>
       )}

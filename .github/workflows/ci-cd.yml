@@ -1,0 +1,130 @@
+name: CI/CD Pipeline
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  ci-test-and-build:
+    name: Test API & Build TypeScript Client
+    runs-on: ubuntu-latest
+
+    services:
+      mysql:
+        image: mysql:8.0
+        env:
+          MYSQL_ROOT_PASSWORD: root
+          MYSQL_DATABASE: podscare_repair_os_testing
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="mysqladmin ping -h 127.0.0.1 -u root -proot"
+          --health-interval=5s
+          --health-timeout=5s
+          --health-retries=10
+
+    steps:
+      - name: 1. Checkout code
+        uses: actions/checkout@v4
+
+      - name: 2. Setup PHP 8.3
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.3'
+          extensions: mbstring, xml, ctype, iconv, intl, pdo_mysql, pdo_sqlite, dom, gd, zip
+          coverage: none
+          tools: composer:v2
+
+      - name: 3. Setup pnpm 9 & Node.js 20
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9.15.9
+
+      - name: 4. Setup Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'pnpm'
+
+      - name: 5. Prepare Laravel API & Run Feature Tests
+        working-directory: apps/api
+        env:
+          DB_CONNECTION: mysql
+          DB_HOST: 127.0.0.1
+          DB_PORT: 3306
+          DB_DATABASE: podscare_repair_os_testing
+          DB_USERNAME: root
+          DB_PASSWORD: root
+        run: |
+          cp .env.example .env
+          sed -i 's/^DB_CONNECTION=.*/DB_CONNECTION=mysql/' .env
+          printf "\nDB_HOST=127.0.0.1\nDB_PORT=3306\nDB_DATABASE=podscare_repair_os_testing\nDB_USERNAME=root\nDB_PASSWORD=root\n" >> .env
+          composer install --no-interaction --prefer-dist
+          php artisan key:generate
+          php artisan migrate --force
+          php artisan test --filter=TelegramTechTopicDispatchTest
+
+      - name: 6. Install Workspace Dependencies & Build @podscare/api-client
+        run: |
+          pnpm install --no-frozen-lockfile
+          npm --prefix packages/api-client run build
+
+  cd-deploy:
+    name: Deploy Backend API to Production VPS
+    needs: ci-test-and-build
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: 1. Setup SSH Key & Known Hosts
+        env:
+          RAW_SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
+        run: |
+          mkdir -p ~/.ssh
+          chmod 700 ~/.ssh
+          printf '%s\n' "$RAW_SSH_KEY" | tr -d '\r' > ~/.ssh/id_deploy
+          chmod 600 ~/.ssh/id_deploy
+          if ! ssh-keygen -y -f ~/.ssh/id_deploy >/dev/null 2>&1; then
+            echo "Reconstructing OpenSSH Private Key header/footer..."
+            BODY=$(printf '%s' "$RAW_SSH_KEY" | sed '/-----BEGIN/d; /-----END/d' | tr -d ' \t\r\n' | fold -w 70)
+            printf -- "-----BEGIN OPENSSH PRIVATE KEY-----\n%s\n-----END OPENSSH PRIVATE KEY-----\n" "$BODY" > ~/.ssh/id_deploy
+            chmod 600 ~/.ssh/id_deploy
+          fi
+          if ! ssh-keygen -y -f ~/.ssh/id_deploy >/dev/null 2>&1; then
+            echo "Trying RSA Private Key header/footer..."
+            BODY=$(printf '%s' "$RAW_SSH_KEY" | sed '/-----BEGIN/d; /-----END/d' | tr -d ' \t\r\n' | fold -w 64)
+            printf -- "-----BEGIN RSA PRIVATE KEY-----\n%s\n-----END RSA PRIVATE KEY-----\n" "$BODY" > ~/.ssh/id_deploy
+            chmod 600 ~/.ssh/id_deploy
+          fi
+          ssh-keygen -y -f ~/.ssh/id_deploy >/dev/null
+          eval "$(ssh-agent -s)"
+          ssh-add ~/.ssh/id_deploy
+          echo "SSH_AUTH_SOCK=$SSH_AUTH_SOCK" >> $GITHUB_ENV
+          echo "SSH_AGENT_PID=$SSH_AGENT_PID" >> $GITHUB_ENV
+          printf "Host *\n  IdentityFile ~/.ssh/id_deploy\n  StrictHostKeyChecking accept-new\n" >> ~/.ssh/config
+          chmod 600 ~/.ssh/config
+          ssh-keyscan -p ${{ secrets.VPS_PORT || 22 }} -H ${{ secrets.VPS_HOST }} >> ~/.ssh/known_hosts
+
+      - name: 2. Pull Latest Code, Run Migrations & Restart Services on VPS
+        run: |
+          ssh -p ${{ secrets.VPS_PORT || 22 }} ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }} << 'EOF'
+            set -e
+            cd /var/www/bed-podscare
+            git config core.fileMode false
+            git fetch origin main </dev/null
+            git reset --hard origin/main
+            cd /var/www/bed-podscare/apps/api
+            PHP_BIN=$(command -v php8.3 || command -v php8.2 || command -v php)
+            COMPOSER_BIN=$(command -v composer)
+            COMPOSER_ALLOW_SUPERUSER=1 "$PHP_BIN" "$COMPOSER_BIN" install --no-dev --optimize-autoloader --no-interaction --ignore-platform-req=php </dev/null
+            "$PHP_BIN" artisan migrate --force
+            "$PHP_BIN" artisan optimize:clear
+            "$PHP_BIN" artisan queue:restart
+            chown -R www-data:www-data storage bootstrap/cache || true
+            chmod -R ug+rwx storage bootstrap/cache || true
+            supervisorctl restart laravel-api:* laravel-worker:* || true
+            systemctl reload php8.2-fpm || true
+            systemctl reload php8.3-fpm || true
+          EOF

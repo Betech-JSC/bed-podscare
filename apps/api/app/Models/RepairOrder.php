@@ -37,6 +37,8 @@ class RepairOrder extends Model
         'warranty_terms_days',
         'created_by_user_id',
         'technician_id',
+        'rejected_by_tech_ids',
+        'telegram_dispatch_messages',
         'qc_inspector_id',
         'handed_over_by_user_id',
         'customer_approved_at',
@@ -87,6 +89,8 @@ class RepairOrder extends Model
             'total_price' => 'decimal:2',
             'initial_price' => 'decimal:2',
             'additional_services' => 'array',
+            'rejected_by_tech_ids' => 'array',
+            'telegram_dispatch_messages' => 'array',
             'warranty_terms_days' => 'integer',
             'customer_approved_at' => 'datetime',
             'customer_declined_at' => 'datetime',
@@ -161,6 +165,32 @@ class RepairOrder extends Model
         return $newTotal;
     }
 
+    public function appendLinkedPartsToPartsNeeded(array $linkedParts): void
+    {
+        if (empty($linkedParts)) {
+            return;
+        }
+
+        $current = trim((string) ($this->parts_needed ?? ''));
+
+        foreach ($linkedParts as $part) {
+            $partName = '';
+            if (is_array($part)) {
+                $partName = trim((string) ($part['part_name'] ?? $part['name'] ?? $part['part_sku'] ?? ''));
+            } elseif (is_string($part)) {
+                $partName = trim($part);
+            }
+
+            if ($partName !== '' && ($current === '' || mb_stripos($current, $partName) === false)) {
+                $current = $current === '' ? $partName : ($current . ', ' . $partName);
+            }
+        }
+
+        if ($current !== '') {
+            $this->parts_needed = mb_substr($current, 0, 2000);
+        }
+    }
+
     public function addAdditionalService(array $serviceData, ?User $user = null): array
     {
         if ($this->initial_price === null || (float) $this->initial_price <= 1) {
@@ -169,6 +199,9 @@ class RepairOrder extends Model
 
         $services = $this->additional_services ?? [];
         $serviceId = $serviceData['id'] ?? ('srv_' . (string) \Illuminate\Support\Str::uuid());
+        $linkedParts = isset($serviceData['linked_parts']) && is_array($serviceData['linked_parts'])
+            ? array_values($serviceData['linked_parts'])
+            : [];
 
         $newItem = [
             'id' => $serviceId,
@@ -176,6 +209,9 @@ class RepairOrder extends Model
             'price' => self::normalizeVndAmount($serviceData['price'] ?? 0),
             'service_id' => isset($serviceData['service_id']) && $serviceData['service_id'] !== '' ? (int) $serviceData['service_id'] : null,
             'note' => $serviceData['note'] ?? null,
+            'linked_parts' => $linkedParts,
+            'watch_size' => $serviceData['watch_size'] ?? null,
+            'added_by_role' => $serviceData['added_by_role'] ?? ($user?->role ?? 'cskh'),
             'created_at' => now()->toIso8601String(),
             'created_by_user_id' => $user?->id ?? $serviceData['created_by_user_id'] ?? null,
             'created_by_name' => $user?->name ?? $serviceData['created_by_name'] ?? 'CSKH',
@@ -183,6 +219,7 @@ class RepairOrder extends Model
 
         $services[] = $newItem;
         $this->additional_services = array_values($services);
+        $this->appendLinkedPartsToPartsNeeded($linkedParts);
         $this->recalculateTotalPrice();
         $this->save();
 

@@ -673,6 +673,7 @@ export default function DashboardPage() {
           currentUser={currentUser}
           todayOrdersCount={todayOrdersCount}
           branchOrdersCount={branchOrders.length}
+          branchOrders={branchOrders}
           cskhReadyOrders={cskhReadyOrders}
           repairingCount={repairingCount}
           cskhPendingOrders={cskhPendingOrders}

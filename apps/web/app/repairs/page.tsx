@@ -28,10 +28,17 @@ import { useQuery } from '@tanstack/react-query';
 import {
   normalizeStatusCode,
   canCompleteTechnicalRepair,
+  canReturnOrderWithInventoryRestock,
 } from './fsm';
 import { useSilentPrint, PrintButtonDropdown } from '../components/print';
 import { RepairQueuePane } from './components/RepairQueuePane';
 import { RepairCanvasPane } from './components/RepairCanvasPane';
+import { exportPartsUsageExcel } from '../dashboard/utils/partsUsageExcelExport';
+import {
+  inferLinkedPartsFromOrderText,
+  formatLinkedPartsSummary,
+  extractWatchSizeFromText,
+} from '../constants/commonIssueCatalog';
 
 function RepairsPageContent() {
   const router = useRouter();
@@ -85,7 +92,7 @@ function RepairsPageContent() {
   const resolvedInitialStatus =
     initialStatusParam || (initialFilterParam === 'overdue' ? 'overdue' : initialFilterParam);
 
-  const [dateFilter, setDateFilter] = useState<OrderDateFilter>('today');
+  const [dateFilter, setDateFilter] = useState<OrderDateFilter>('all');
   const [selectedDate, setSelectedDate] = useState<string>(initialDate);
   const [dateType, setDateType] = useState<'created_at' | 'completed_at'>(initialDateType);
   const [search, setSearch] = useState(initialSearchParam);
@@ -107,6 +114,9 @@ function RepairsPageContent() {
   const [adminEditModalOpen, setAdminEditModalOpen] = useState(false);
   const [adminDeleteModalOpen, setAdminDeleteModalOpen] = useState(false);
   const [refundModalOpen, setRefundModalOpen] = useState(false);
+  const [returnOrderToConfirm, setReturnOrderToConfirm] = useState<RepairOrder | null>(null);
+  const [returnOrderReason, setReturnOrderReason] = useState<string>('');
+  const [isReturningOrder, setIsReturningOrder] = useState<boolean>(false);
   const [isTransitioning, setIsTransitioning] = useState(false);
   const [isFulfillingSpecialPart, setIsFulfillingSpecialPart] = useState(false);
   const { printReceipt, isPrinting: isSilentPrinting } = useSilentPrint();
@@ -144,7 +154,7 @@ function RepairsPageContent() {
     const validDateFilters: OrderDateFilter[] = ['all', 'today', 'yesterday', '3_days', '7_days', '30_days'];
     if (dfParam && validDateFilters.includes(dfParam)) {
       setDateFilter(dfParam);
-    } else if (rawStatus || role === 'admin' || currentUser?.role === 'admin') {
+    } else if (rawStatus || role === 'admin' || currentUser?.role === 'admin' || !dfParam) {
       setDateFilter('all');
     }
   }, [searchParams, role, currentUser?.role]);
@@ -564,8 +574,15 @@ function RepairsPageContent() {
     currentUser?.role === 'tech' ||
     currentUser?.role === 'technician';
 
-  const canManageAdditionalServices = role === 'cskh' || role === 'admin' || (role as string) === 'super_admin';
-  const canManageShippingAddress = role === 'cskh' || role === 'admin' || (role as string) === 'super_admin';
+  const canManageAdditionalServices = ['cskh', 'admin', 'super_admin', 'inventory', 'qc', 'tech', 'technician'].includes(
+    (role || currentUser?.role || 'cskh') as string
+  );
+  const canManageShippingAddress = ['cskh', 'admin', 'super_admin', 'inventory', 'qc', 'tech', 'technician'].includes(
+    (role || currentUser?.role || 'cskh') as string
+  );
+  const canEditOrderComprehensive = ['admin', 'super_admin', 'cskh', 'inventory', 'qc', 'tech', 'technician'].includes(
+    (role || currentUser?.role || 'cskh') as string
+  );
 
   React.useEffect(() => {
     if (selectedOrder) {
@@ -653,18 +670,33 @@ function RepairsPageContent() {
     setIsSubmittingService(true);
 
     try {
+      const watchSize =
+        extractWatchSizeFromText(selectedOrder.accessories) ||
+        extractWatchSizeFromText(selectedOrder.issue);
+      const inferredLinkedParts = inferLinkedPartsFromOrderText(
+        newServiceName.trim(),
+        selectedOrder.deviceCategory || selectedOrder.device,
+        watchSize
+      ).linkedParts;
+
       const res = await repairService.addAdditionalService(selectedOrder.id, {
         name: newServiceName.trim(),
         price: priceNum,
         service_id: newServiceId || undefined,
         note: newServiceNote.trim() || undefined,
+        added_by_role: role || currentUser?.role || 'cskh',
+        linked_parts: inferredLinkedParts.length > 0 ? inferredLinkedParts : undefined,
       });
 
       const updatedRaw = res?.data?.data || res?.data || res;
       toast(`Đã thêm dịch vụ "${newServiceName.trim()}" cho đơn ${selectedOrder.id}!`, 'success');
 
       const newAdditional = Array.isArray(updatedRaw.additional_services)
-        ? updatedRaw.additional_services
+        ? updatedRaw.additional_services.map((s: any, idx: number, arr: any[]) =>
+            idx === arr.length - 1 && (!s.linked_parts || s.linked_parts.length === 0)
+              ? { ...s, linked_parts: inferredLinkedParts }
+              : s
+          )
         : [
             ...(selectedOrder.additional_services || []),
             {
@@ -674,8 +706,17 @@ function RepairsPageContent() {
               note: newServiceNote.trim() || null,
               created_at: new Date().toISOString(),
               created_by_name: 'CSKH',
+              added_by_role: 'cskh',
+              linked_parts: inferredLinkedParts,
             },
           ];
+
+      const addedPartsSummary = formatLinkedPartsSummary(inferredLinkedParts, watchSize);
+      const existingPartsNeeded = (selectedOrder.parts_needed || selectedOrder.partsNeeded || '').trim();
+      const mergedPartsNeeded = [existingPartsNeeded, addedPartsSummary]
+        .filter(Boolean)
+        .filter((v, idx, a) => a.indexOf(v) === idx)
+        .join(', ');
 
       const newTotalPrice = normalizeVndPrice(
         updatedRaw.total_price !== undefined
@@ -696,6 +737,8 @@ function RepairsPageContent() {
         total_price: newTotalPrice,
         initial_price: normalizedInitialPrice,
         initialPrice: normalizedInitialPrice,
+        parts_needed: mergedPartsNeeded || selectedOrder.parts_needed,
+        partsNeeded: mergedPartsNeeded || selectedOrder.partsNeeded,
         additional_services: newAdditional,
         additionalServices: newAdditional,
       };
@@ -858,6 +901,46 @@ function RepairsPageContent() {
     }
   };
 
+  const handleConfirmReturnOrderWithRestock = async () => {
+    if (!returnOrderToConfirm || isReturningOrder) return;
+    setIsReturningOrder(true);
+    try {
+      const noteText =
+        returnOrderReason.trim() || 'Hoàn trả đơn hàng - hoàn trả linh kiện về kho';
+      await repairService.transition(returnOrderToConfirm.id, {
+        transition: 'cancelled',
+        status: 'cancelled',
+        notes: noteText,
+      });
+      const updated: RepairOrder = {
+        ...returnOrderToConfirm,
+        status: 'Đã hủy',
+        statusType: 'gray',
+      };
+      updateOrder(updated);
+      if (selectedOrder && selectedOrder.id === returnOrderToConfirm.id) {
+        setSelectedOrder(updated);
+      }
+      setReturnOrderToConfirm(null);
+      setReturnOrderReason('');
+      refetch();
+      if (invalidateOrders) await invalidateOrders();
+      toast(
+        `Đã hoàn trả đơn hàng ${returnOrderToConfirm.id} & cộng trả lại linh kiện vào kho thành công!`,
+        'success'
+      );
+    } catch (err: any) {
+      const errMsg =
+        err?.response?.data?.message ||
+        err?.data?.message ||
+        err?.message ||
+        'Không thể hoàn trả đơn hàng.';
+      toast(errMsg, 'error');
+    } finally {
+      setIsReturningOrder(false);
+    }
+  };
+
   return (
     <AppShell crumbName="Đơn sửa chữa">
       <div className="space-y-6">
@@ -878,7 +961,41 @@ function RepairsPageContent() {
               Theo dõi toàn bộ vòng đời tiếp nhận, kiểm định và bàn giao theo từng chi nhánh.
             </p>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
+            {!isTechRole && (
+              <Button
+                variant="outline"
+                size="md"
+                data-testid="repairs-export-parts-excel-btn"
+                onClick={() => {
+                  const periodLbl = selectedDate
+                    ? `Ngày ${selectedDate}`
+                    : dateFilter === 'today'
+                    ? 'Hôm nay'
+                    : dateFilter === 'yesterday'
+                    ? 'Hôm qua'
+                    : dateFilter === '7_days'
+                    ? '7 ngày qua'
+                    : dateFilter === '30_days'
+                    ? '30 ngày qua'
+                    : 'Toàn bộ';
+                  const res = exportPartsUsageExcel({
+                    orders: filteredOrders,
+                    periodLabel: periodLbl,
+                    branchLabel: branchId === 'all' ? 'Toàn bộ chi nhánh' : branch,
+                    hideRevenue: role !== 'admin' && (role as string) !== 'super_admin',
+                  });
+                  toast(
+                    `Đã xuất file Linh kiện (.xls): ${res.totalPartQuantity} linh kiện tiêu hao / ${res.orderCount} đơn!`,
+                    'success'
+                  );
+                }}
+                className="bg-white text-[#176b51] border-[#cde4d8] hover:bg-[#e9f4ef] font-bold flex items-center gap-1.5"
+              >
+                <Icon name="download" size={14} />
+                <span>Xuất file Linh kiện (.xls)</span>
+              </Button>
+            )}
             <Button
               variant="outline"
               size="md"
@@ -1048,29 +1165,47 @@ function RepairsPageContent() {
                   </Button>
                 )}
 
+                {canEditOrderComprehensive && (
+                  <Button
+                    variant="outline"
+                    size="md"
+                    icon="edit"
+                    data-testid="admin-edit-order-btn"
+                    onClick={() => setAdminEditModalOpen(true)}
+                    className="text-xs text-[#176b51] border-[#cde4d8] hover:bg-[#e9f4ef] font-bold"
+                  >
+                    Sửa toàn diện
+                  </Button>
+                )}
+
+                {canReturnOrderWithInventoryRestock(selectedOrder.status) && (
+                  <Button
+                    variant="danger"
+                    size="md"
+                    icon="refresh"
+                    data-testid="return-order-restock-btn"
+                    disabled={isTransitioning || isReturningOrder}
+                    onClick={() => {
+                      setReturnOrderReason('');
+                      setReturnOrderToConfirm(selectedOrder);
+                    }}
+                    className="text-xs font-bold"
+                  >
+                    Hoàn trả đơn hàng (Hoàn kho)
+                  </Button>
+                )}
+
                 {(role === 'admin' || role === 'super_admin') && (
-                  <>
-                    <Button
-                      variant="outline"
-                      size="md"
-                      icon="edit"
-                      data-testid="admin-edit-order-btn"
-                      onClick={() => setAdminEditModalOpen(true)}
-                      className="text-xs text-[#176b51] border-[#cde4d8] hover:bg-[#e9f4ef] font-bold"
-                    >
-                      Sửa toàn diện
-                    </Button>
-                    <Button
-                      variant="danger"
-                      size="md"
-                      icon="trash"
-                      data-testid="admin-delete-order-btn"
-                      onClick={() => setAdminDeleteModalOpen(true)}
-                      className="text-xs font-bold"
-                    >
-                      Xóa đơn
-                    </Button>
-                  </>
+                  <Button
+                    variant="danger"
+                    size="md"
+                    icon="trash"
+                    data-testid="admin-delete-order-btn"
+                    onClick={() => setAdminDeleteModalOpen(true)}
+                    className="text-xs font-bold"
+                  >
+                    Xóa đơn
+                  </Button>
                 )}
 
                 {['completed', 'ready_for_return', 'waiting_pickup'].includes(
@@ -1123,6 +1258,10 @@ function RepairsPageContent() {
             }}
             onQuickCheckout={() => setCheckoutModalOpen(true)}
             onOpenQc={(orderId) => router.push(`/qc?id=${orderId}`)}
+            onReturnOrder={(order) => {
+              setReturnOrderReason('');
+              setReturnOrderToConfirm(order);
+            }}
             showAddServiceForm={showAddServiceForm}
             setShowAddServiceForm={setShowAddServiceForm}
             newServiceName={newServiceName}
@@ -1189,8 +1328,8 @@ function RepairsPageContent() {
         />
       )}
 
-      {/* Admin Edit Order Modal */}
-      {selectedOrder && (role === 'admin' || role === 'super_admin') && (
+      {/* Admin / Staff Edit Order Modal (Sửa toàn diện) */}
+      {selectedOrder && canEditOrderComprehensive && (
         <AdminEditOrderModal
           isOpen={adminEditModalOpen}
           order={selectedOrder}
@@ -1211,6 +1350,47 @@ function RepairsPageContent() {
             refetch();
             if (invalidateOrders) invalidateOrders();
           }}
+        />
+      )}
+
+      {/* Confirm Modal Hoàn Trả Đơn Hàng (Hoàn Kho Linh Kiện) */}
+      {returnOrderToConfirm && (
+        <ConfirmModal
+          isOpen={Boolean(returnOrderToConfirm)}
+          onClose={() => {
+            if (!isReturningOrder) setReturnOrderToConfirm(null);
+          }}
+          onConfirm={handleConfirmReturnOrderWithRestock}
+          title="Xác nhận hoàn trả đơn hàng & hoàn kho linh kiện"
+          description={
+            <div data-testid="return-order-restock-confirm-modal" className="space-y-3 text-xs">
+              <div>
+                Bạn có chắc chắn muốn hoàn trả đơn hàng{' '}
+                <strong className="text-[#17231f] font-mono">{returnOrderToConfirm.id}</strong> (
+                {returnOrderToConfirm.device} · {returnOrderToConfirm.name})?
+              </div>
+              <div className="p-2.5 bg-[#fbeaea] border border-[#f5c2c2] rounded-[8px] text-[#bc5b52] font-semibold">
+                Linh kiện đã xuất cho đơn này sẽ được cộng trả lại vào kho.
+              </div>
+              <div>
+                <label className="block text-[11px] font-bold text-[#4a5c54] mb-1">
+                  Lý do hoàn trả đơn hàng (tùy chọn):
+                </label>
+                <input
+                  type="text"
+                  data-testid="return-order-reason-input"
+                  value={returnOrderReason}
+                  onChange={(e) => setReturnOrderReason(e.target.value)}
+                  placeholder="Nhập lý do khách không sửa nữa / hoàn trả đơn hàng..."
+                  className="w-full h-9 px-3 text-xs border border-[#d6dfda] rounded-[8px] bg-white text-[#17231f] outline-none focus:border-[#176b51]"
+                />
+              </div>
+            </div>
+          }
+          confirmText="Xác nhận hoàn trả & hoàn kho"
+          cancelText="Giữ lại đơn"
+          variant="danger"
+          loading={isReturningOrder}
         />
       )}
 

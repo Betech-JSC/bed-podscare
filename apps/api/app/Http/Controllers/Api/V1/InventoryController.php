@@ -199,7 +199,7 @@ class InventoryController extends Controller
         $user = $request->user();
         $isAdmin = $user && in_array($user->role, ['admin', 'super_admin'], true);
 
-        $query = InventoryTransaction::with(['part', 'branch', 'repairOrder', 'createdByUser:id,name']);
+        $query = InventoryTransaction::with(['part', 'branch', 'repairOrder.deviceModel:id,name,category', 'createdByUser:id,name']);
 
         if ($user && $user->role !== 'super_admin' && ! empty($user->tenant_id)) {
             $masterTenantId = \App\Models\Scopes\TenantScope::resolveMasterTenantId();
@@ -241,6 +241,14 @@ class InventoryController extends Controller
             if ($branchId !== 'all') {
                 $query->where('branch_id', $branchId);
             }
+        }
+
+        if ($date = $request->input('date')) {
+            $parsedDate = \Illuminate\Support\Carbon::parse($date);
+            $query->whereBetween('created_at', [
+                $parsedDate->copy()->startOfDay(),
+                $parsedDate->copy()->endOfDay(),
+            ]);
         }
 
         if ($fromDate = $request->input('from_date')) {

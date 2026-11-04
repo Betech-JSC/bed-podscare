@@ -350,7 +350,10 @@ export const AppShell: React.FC<AppShellProps> = ({ children, crumbName = 'Tổn
               : 'admin';
 
           const allowedModules = rolePermissions[normalizedRole] || [];
-          if (!allowedModules.includes(moduleKey)) {
+          const hasAccess =
+            allowedModules.includes(moduleKey) ||
+            (moduleKey === 'suppliers' && allowedModules.includes('inventory'));
+          if (!hasAccess) {
             toast('Tính năng này đã được tinh gọn hoặc bạn không có quyền truy cập.', 'error');
             const defaultRoute = normalizedRole === 'tech' ? '/tech' : '/dashboard';
             if (defaultRoute === '/tech') {

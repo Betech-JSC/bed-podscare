@@ -13,9 +13,9 @@ test('1. IntakeWizardModal: Common Issue Chips MUST NOT display price tags', () 
   const content = fs.readFileSync(intakeWizardPath, 'utf-8');
 
   // Verify that the common issue chips section does NOT contain any price formatting or currency symbols
-  const chipSectionRegex = /\{commonIssues\.map\(\(chip, idx\) => \{([\s\S]*?)\}\)\}/;
+  const chipSectionRegex = /\{(?:commonIssues|enrichedAndFiltered)\.map\(\(chip, idx\) => \{([\s\S]*?)\}\)\}/;
   const match = content.match(chipSectionRegex);
-  assert.ok(match, 'Phải tìm thấy khối render commonIssues.map');
+  assert.ok(match, 'Phải tìm thấy khối render commonIssues/enrichedAndFiltered.map');
 
   const chipRenderBody = match[1];
   assert.strictEqual(
@@ -29,7 +29,7 @@ test('1. IntakeWizardModal: Common Issue Chips MUST NOT display price tags', () 
     'Chip Lỗi thường gặp không được render estimated_cost'
   );
   assert.ok(
-    chipRenderBody.includes('<span>{chip.issue_name}</span>'),
+    chipRenderBody.includes('{chip.issue_name}'),
     'Chip phải hiển thị tên lỗi chip.issue_name'
   );
 });
@@ -37,11 +37,11 @@ test('1. IntakeWizardModal: Common Issue Chips MUST NOT display price tags', () 
 test('2. IntakeWizardModal: handleChipClick MUST NOT auto-populate price', () => {
   const content = fs.readFileSync(intakeWizardPath, 'utf-8');
 
-  const handleChipClickRegex = /const handleChipClick = \(chip: CommonIssueItem\) => \{([\s\S]*?)\};/;
+  const handleChipClickRegex = /const handleChipClickForDevice = \(chip: CommonIssueItem, devIndex: number\) => \{([\s\S]*?)const handleChipClick = \(chip: CommonIssueItem\) => \{([\s\S]*?)\};/;
   const match = content.match(handleChipClickRegex);
-  assert.ok(match, 'Phải tìm thấy hàm handleChipClick');
+  assert.ok(match, 'Phải tìm thấy hàm handleChipClickForDevice và handleChipClick');
 
-  const functionBody = match[1];
+  const functionBody = `${match[1]}\n${match[2]}`;
   assert.strictEqual(
     functionBody.includes('setPrice'),
     false,

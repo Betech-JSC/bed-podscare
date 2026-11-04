@@ -437,5 +437,50 @@ class OrderTest extends TestCase
             ->assertJsonPath('success', true);
         $this->assertCount(2, $indexRes->json('data.data'));
     }
+
+    /**
+     * Test: Tạo đơn kèm parts_needed và additional_services tự động đồng bộ linh kiện cho KTV.
+     */
+    public function test_store_order_persists_parts_needed_and_additional_services(): void
+    {
+        $user = $this->getAuthenticatedUser();
+        $branch = Branch::first();
+        $device = DeviceModel::first();
+
+        $res = $this->actingAs($user, 'sanctum')->postJson('/api/v1/orders', [
+            'branch_id'           => $branch->id,
+            'customer_phone'      => '0988123999',
+            'customer_name'       => 'Khách Test Linh Kiện',
+            'device_model_id'     => $device->id,
+            'issue_description'   => 'Pin chai, tụt pin nhanh dưới 1 tiếng',
+            'parts_needed'        => 'Pin tai nghe AirPods dung lượng cao (BAT-APP2-01)',
+            'additional_services' => [
+                [
+                    'id'            => 'srv_intake_1',
+                    'name'          => 'Pin chai, tụt pin nhanh dưới 1 tiếng',
+                    'price'         => 0,
+                    'added_by_role' => 'cskh',
+                    'linked_parts'  => [
+                        [
+                            'part_sku'  => 'BAT-APP2-01',
+                            'part_name' => 'Pin tai nghe AirPods dung lượng cao',
+                            'quantity'  => 1,
+                            'unit'      => 'cái',
+                            'position'  => 'Tai trái / Tai phải',
+                        ],
+                    ],
+                ],
+            ],
+        ]);
+
+        $res->assertStatus(201)
+            ->assertJsonPath('success', true);
+
+        $this->assertStringContainsString(
+            'Pin tai nghe AirPods dung lượng cao',
+            (string) $res->json('data.parts_needed')
+        );
+        $this->assertNotEmpty($res->json('data.additional_services'));
+    }
 }
 

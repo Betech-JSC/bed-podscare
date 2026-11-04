@@ -240,15 +240,17 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
           </p>
         </div>
         <div className="flex items-center gap-2.5">
-          <Button
-            variant="secondary"
-            size="md"
-            icon="download"
-            data-testid="admin-export-excel-btn"
-            onClick={onExportReport}
-          >
-            Xuất báo cáo
-          </Button>
+          {role === 'admin' && (
+            <Button
+              variant="secondary"
+              size="md"
+              icon="download"
+              data-testid="admin-export-excel-btn"
+              onClick={onExportReport}
+            >
+              Xuất báo cáo
+            </Button>
+          )}
           <Button
             variant="outline"
             size="md"
@@ -1240,55 +1242,60 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
         </div>
       )}
 
-      {/* Khối đối chiếu vận hành & dòng tiền (Chỉ render khi role === 'admin') */}
-      {role === 'admin' && (
-        <div className="bg-white rounded-[14px] border border-[#e9eeeb] p-5 sm:p-6 shadow-xs">
-          <div className="flex flex-wrap items-center justify-between gap-3 mb-5">
-            <div>
-              <div className="text-xs font-bold text-[#81908a] uppercase tracking-[1px] mb-1">
-                ĐỐI SOÁT VẬN HÀNH & DÒNG TIỀN
-              </div>
-              <h3 className="font-heading font-bold text-lg text-[#17231f] m-0">
-                Đối chiếu máy khách đã lấy vs chưa lấy
-              </h3>
-              <p className="text-xs text-[#81908a] mt-0.5 mb-0">
-                Cán cân doanh thu thực thu so với dòng tiền chờ thu tại quầy và thiết bị đang xử lý trong xưởng.
-              </p>
+      {/* Khối đối chiếu vận hành (Hiển thị số lượng đơn/máy cho mọi nhân sự; chỉ hiển thị dòng tiền khi role === 'admin') */}
+      <div
+        data-testid="dashboard-handover-reconciliation-block"
+        className="bg-white rounded-[14px] border border-[#e9eeeb] p-5 sm:p-6 shadow-xs"
+      >
+        <div className="flex flex-wrap items-center justify-between gap-3 mb-5">
+          <div>
+            <div className="text-xs font-bold text-[#81908a] uppercase tracking-[1px] mb-1">
+              {role === 'admin' ? 'ĐỐI SOÁT VẬN HÀNH & DÒNG TIỀN' : 'ĐỐI SOÁT VẬN HÀNH QUẦY & XƯỞNG'}
             </div>
-            <div className="flex items-center gap-2">
-              <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-[#e9f4ef] text-[#176b51]">
-                <span className="w-2 h-2 rounded-full bg-[#176b51]" />
-                Tổng quan toàn quầy
-              </span>
-            </div>
+            <h3 className="font-heading font-bold text-lg text-[#17231f] m-0">
+              Đối chiếu máy khách đã lấy vs chưa lấy
+            </h3>
+            <p className="text-xs text-[#81908a] mt-0.5 mb-0">
+              {role === 'admin'
+                ? 'Cán cân doanh thu thực thu so với dòng tiền chờ thu tại quầy và thiết bị đang xử lý trong xưởng.'
+                : 'Đối chiếu số lượng máy khách đã lấy so với máy chờ nhận tại quầy và thiết bị đang xử lý trong xưởng.'}
+            </p>
           </div>
+          <div className="flex items-center gap-2">
+            <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-[#e9f4ef] text-[#176b51]">
+              <span className="w-2 h-2 rounded-full bg-[#176b51]" />
+              Tổng quan toàn quầy
+            </span>
+          </div>
+        </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-            {/* CỘT 1: Calm Jade - Máy khách đã lấy */}
-            <div className="bg-[#e9f4ef] border border-[#cde4d8] rounded-[12px] p-5 flex flex-col justify-between relative overflow-hidden">
-              <div>
-                <div className="flex items-center justify-between mb-3">
-                  <span className="inline-flex items-center gap-1.5 text-xs font-bold uppercase tracking-wider text-[#176b51] bg-white px-2.5 py-1 rounded-full border border-[#cde4d8]">
-                    <span className="w-2 h-2 rounded-full bg-[#176b51]" />
-                    <span>Máy khách đã lấy (Đã bàn giao)</span>
-                  </span>
-                  <span className="text-xs text-[#4a5c54] font-medium">Hoàn tất quy trình</span>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+          {/* CỘT 1: Calm Jade - Máy khách đã lấy */}
+          <div className="bg-[#e9f4ef] border border-[#cde4d8] rounded-[12px] p-5 flex flex-col justify-between relative overflow-hidden">
+            <div>
+              <div className="flex items-center justify-between mb-3">
+                <span className="inline-flex items-center gap-1.5 text-xs font-bold uppercase tracking-wider text-[#176b51] bg-white px-2.5 py-1 rounded-full border border-[#cde4d8]">
+                  <span className="w-2 h-2 rounded-full bg-[#176b51]" />
+                  <span>Máy khách đã lấy (Đã bàn giao)</span>
+                </span>
+                <span className="text-xs text-[#4a5c54] font-medium">Hoàn tất quy trình</span>
+              </div>
+
+              <div className="mt-2 mb-4">
+                <div className="flex items-baseline gap-2">
+                  {isKpiLoading ? (
+                    <span
+                      data-testid="kpi-card-loading-skeleton"
+                      className="inline-block h-9 w-16 rounded-[6px] bg-[#cde4d8] animate-pulse"
+                    />
+                  ) : (
+                    <span className="text-3xl md:text-4xl font-heading font-extrabold text-[#176b51] tabular-nums">
+                      {reconciliation?.handed_over_count ?? completedCount}
+                    </span>
+                  )}
+                  <span className="text-sm font-semibold text-[#176b51]">máy đã giao khách</span>
                 </div>
-
-                <div className="mt-2 mb-4">
-                  <div className="flex items-baseline gap-2">
-                    {isKpiLoading ? (
-                      <span
-                        data-testid="kpi-card-loading-skeleton"
-                        className="inline-block h-9 w-16 rounded-[6px] bg-[#cde4d8] animate-pulse"
-                      />
-                    ) : (
-                      <span className="text-3xl md:text-4xl font-heading font-extrabold text-[#176b51] tabular-nums">
-                        {reconciliation?.handed_over_count ?? completedCount}
-                      </span>
-                    )}
-                    <span className="text-sm font-semibold text-[#176b51]">máy đã giao khách</span>
-                  </div>
+                {role === 'admin' && (
                   <div className="mt-3 p-3 bg-white rounded-[9px] border border-[#cde4d8]">
                     <div className="text-xs text-[#4a5c54] mb-0.5 font-medium">
                       Doanh thu thực thu tích lũy toàn thời gian:
@@ -1305,57 +1312,59 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
                       Tích lũy toàn thời gian (tại quầy VietQR/tiền mặt & COD giao thành công)
                     </div>
                   </div>
-                </div>
-              </div>
-
-              <div className="pt-3 border-t border-[#cde4d8]">
-                <button
-                  type="button"
-                  onClick={() =>
-                    onNavigate(
-                      `/repairs?date=${selectedDate}&date_type=completed_at&status=completed`
-                    )
-                  }
-                  className="w-full py-2.5 px-3 bg-[#176b51] hover:bg-[#10583f] text-white text-xs font-bold rounded-[8px] transition-all flex items-center justify-center gap-1.5 cursor-pointer shadow-xs"
-                >
-                  <span>Xem danh sách máy đã bàn giao</span>
-                  <Icon name="arrow" size={14} />
-                </button>
+                )}
               </div>
             </div>
 
-            {/* CỘT 2: Warm Ivory / Amber - Máy khách chưa lấy */}
-            <div className="bg-[#faf1df] border border-[#f2deba] rounded-[12px] p-5 flex flex-col justify-between relative overflow-hidden">
-              <div>
-                <div className="flex items-center justify-between mb-3">
-                  <span className="inline-flex items-center gap-1.5 text-xs font-bold uppercase tracking-wider text-[#b77a21] bg-white px-2.5 py-1 rounded-full border border-[#f2deba]">
-                    <span className="w-2 h-2 rounded-full bg-[#b77a21]" />
-                    <span>Máy khách chưa lấy (Tại cửa hàng)</span>
+            <div className="pt-3 border-t border-[#cde4d8]">
+              <button
+                type="button"
+                onClick={() =>
+                  onNavigate(
+                    `/repairs?date=${selectedDate}&date_type=completed_at&status=completed`
+                  )
+                }
+                className="w-full py-2.5 px-3 bg-[#176b51] hover:bg-[#10583f] text-white text-xs font-bold rounded-[8px] transition-all flex items-center justify-center gap-1.5 cursor-pointer shadow-xs"
+              >
+                <span>Xem danh sách máy đã bàn giao</span>
+                <Icon name="arrow" size={14} />
+              </button>
+            </div>
+          </div>
+
+          {/* CỘT 2: Warm Ivory / Amber - Máy khách chưa lấy */}
+          <div className="bg-[#faf1df] border border-[#f2deba] rounded-[12px] p-5 flex flex-col justify-between relative overflow-hidden">
+            <div>
+              <div className="flex items-center justify-between mb-3">
+                <span className="inline-flex items-center gap-1.5 text-xs font-bold uppercase tracking-wider text-[#b77a21] bg-white px-2.5 py-1 rounded-full border border-[#f2deba]">
+                  <span className="w-2 h-2 rounded-full bg-[#b77a21]" />
+                  <span>Máy khách chưa lấy (Tại cửa hàng)</span>
+                </span>
+                {isKpiLoading ? (
+                  <span className="inline-block h-4 w-24 rounded bg-[#f2deba] animate-pulse" />
+                ) : (
+                  <span className="text-xs text-[#b77a21] font-medium">
+                    {(reconciliation?.ready_for_pickup_count ?? 0) + (reconciliation?.in_workshop_count ?? 0)} máy tồn tại shop
                   </span>
+                )}
+              </div>
+
+              <div className="mt-2 mb-4">
+                <div className="flex items-baseline gap-2">
                   {isKpiLoading ? (
-                    <span className="inline-block h-4 w-24 rounded bg-[#f2deba] animate-pulse" />
+                    <span
+                      data-testid="kpi-card-loading-skeleton"
+                      className="inline-block h-9 w-16 rounded-[6px] bg-[#f2deba] animate-pulse"
+                    />
                   ) : (
-                    <span className="text-xs text-[#b77a21] font-medium">
-                      {(reconciliation?.ready_for_pickup_count ?? 0) + (reconciliation?.in_workshop_count ?? 0)} máy tồn tại shop
+                    <span className="text-3xl md:text-4xl font-heading font-extrabold text-[#b77a21] tabular-nums">
+                      {(reconciliation?.ready_for_pickup_count ?? 0) + (reconciliation?.in_workshop_count ?? 0)}
                     </span>
                   )}
+                  <span className="text-sm font-semibold text-[#b77a21]">máy chưa bàn giao</span>
                 </div>
 
-                <div className="mt-2 mb-4">
-                  <div className="flex items-baseline gap-2">
-                    {isKpiLoading ? (
-                      <span
-                        data-testid="kpi-card-loading-skeleton"
-                        className="inline-block h-9 w-16 rounded-[6px] bg-[#f2deba] animate-pulse"
-                      />
-                    ) : (
-                      <span className="text-3xl md:text-4xl font-heading font-extrabold text-[#b77a21] tabular-nums">
-                        {(reconciliation?.ready_for_pickup_count ?? 0) + (reconciliation?.in_workshop_count ?? 0)}
-                      </span>
-                    )}
-                    <span className="text-sm font-semibold text-[#b77a21]">máy chưa bàn giao</span>
-                  </div>
-
+                {role === 'admin' && (
                   <div className="mt-3 p-3 bg-white rounded-[9px] border border-[#f2deba] shadow-2xs">
                     <div className="flex items-center justify-between mb-0.5">
                       <span className="text-xs font-bold uppercase tracking-wider text-[#b77a21]">
@@ -1382,81 +1391,89 @@ export const AdminDashboardView: React.FC<AdminDashboardViewProps> = ({
                       Bao gồm tiền chắc chắn thu khi giao và giá trị công dở dang trong xưởng
                     </div>
                   </div>
+                )}
 
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-3">
-                    <div
-                      onClick={() => onNavigate('/repairs?status=waiting_pickup&date_filter=all')}
-                      className="p-3.5 bg-white rounded-[9px] border border-[#f2deba] shadow-2xs cursor-pointer hover:border-[#176b51]/40 transition-colors"
-                    >
-                      <div className="flex items-center justify-between mb-1.5">
-                        <span className="text-xs font-bold text-[#b77a21]">Đã sửa xong chờ lấy / Chờ giao</span>
-                        {isKpiLoading ? (
-                          <span className="inline-block h-4 w-12 rounded-full bg-[#faf1df] animate-pulse" />
-                        ) : (
-                          <span className="px-2 py-0.5 rounded-full text-[11px] font-bold bg-[#faf1df] text-[#b77a21]">
-                            {reconciliation?.ready_for_pickup_count ?? 0} máy
-                          </span>
-                        )}
-                      </div>
-                      <div className="text-xs text-[#81908a] mb-0.5">Tiền chắc chắn thu khi giao:</div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-3">
+                  <div
+                    onClick={() => onNavigate('/repairs?status=waiting_pickup&date_filter=all')}
+                    className="p-3.5 bg-white rounded-[9px] border border-[#f2deba] shadow-2xs cursor-pointer hover:border-[#176b51]/40 transition-colors"
+                  >
+                    <div className="flex items-center justify-between mb-1.5">
+                      <span className="text-xs font-bold text-[#b77a21]">Đã sửa xong chờ lấy / Chờ giao</span>
                       {isKpiLoading ? (
-                        <div className="h-6 w-28 rounded-[6px] bg-[#faf1df] animate-pulse my-0.5" />
+                        <span className="inline-block h-4 w-12 rounded-full bg-[#faf1df] animate-pulse" />
                       ) : (
-                        <div className="text-lg font-heading font-bold text-[#b77a21] tabular-nums">
-                          {reconciliation?.ready_for_pickup_amount_formatted ??
-                            formatVND(reconciliation?.ready_for_pickup_amount)}
-                        </div>
+                        <span className="px-2 py-0.5 rounded-full text-[11px] font-bold bg-[#faf1df] text-[#b77a21]">
+                          {reconciliation?.ready_for_pickup_count ?? 0} máy
+                        </span>
                       )}
-                      <div className="text-[11px] text-[#81908a] mt-1">
-                        Trạng thái: Sẵn sàng trả / Chờ nhận
-                      </div>
                     </div>
-
-                    <div
-                      onClick={() => onNavigate('/repairs?status=in_workshop&date_filter=all')}
-                      className="p-3.5 bg-white rounded-[9px] border border-[#e9eeeb] shadow-2xs cursor-pointer hover:border-[#b77a21]/40 transition-colors"
-                    >
-                      <div className="flex items-center justify-between mb-1.5">
-                        <span className="text-xs font-bold text-[#17231f]">Đang sửa trong xưởng</span>
+                    {role === 'admin' && (
+                      <>
+                        <div className="text-xs text-[#81908a] mb-0.5">Tiền chắc chắn thu khi giao:</div>
                         {isKpiLoading ? (
-                          <span className="inline-block h-4 w-12 rounded-full bg-[#e9f4ef] animate-pulse" />
+                          <div className="h-6 w-28 rounded-[6px] bg-[#faf1df] animate-pulse my-0.5" />
                         ) : (
-                          <span className="px-2 py-0.5 rounded-full text-[11px] font-bold bg-[#e9f4ef] text-[#176b51]">
-                            {reconciliation?.in_workshop_count ?? 0} máy
-                          </span>
+                          <div className="text-lg font-heading font-bold text-[#b77a21] tabular-nums">
+                            {reconciliation?.ready_for_pickup_amount_formatted ??
+                              formatVND(reconciliation?.ready_for_pickup_amount)}
+                          </div>
                         )}
-                      </div>
-                      <div className="text-xs text-[#81908a] mb-0.5">Giá trị tạm tính dở dang:</div>
+                      </>
+                    )}
+                    <div className="text-[11px] text-[#81908a] mt-1">
+                      Trạng thái: Sẵn sàng trả / Chờ nhận
+                    </div>
+                  </div>
+
+                  <div
+                    onClick={() => onNavigate('/repairs?status=in_workshop&date_filter=all')}
+                    className="p-3.5 bg-white rounded-[9px] border border-[#e9eeeb] shadow-2xs cursor-pointer hover:border-[#b77a21]/40 transition-colors"
+                  >
+                    <div className="flex items-center justify-between mb-1.5">
+                      <span className="text-xs font-bold text-[#17231f]">Đang sửa trong xưởng</span>
                       {isKpiLoading ? (
-                        <div className="h-6 w-28 rounded-[6px] bg-[#e9f4ef] animate-pulse my-0.5" />
+                        <span className="inline-block h-4 w-12 rounded-full bg-[#e9f4ef] animate-pulse" />
                       ) : (
-                        <div className="text-lg font-heading font-bold text-[#17231f] tabular-nums">
-                          {reconciliation?.in_workshop_amount_formatted ??
-                            formatVND(reconciliation?.in_workshop_amount)}
-                        </div>
+                        <span className="px-2 py-0.5 rounded-full text-[11px] font-bold bg-[#e9f4ef] text-[#176b51]">
+                          {reconciliation?.in_workshop_count ?? 0} máy
+                        </span>
                       )}
-                      <div className="text-[11px] text-[#81908a] mt-1">
-                        Đang khám / chờ linh kiện / sửa / QC
-                      </div>
+                    </div>
+                    {role === 'admin' && (
+                      <>
+                        <div className="text-xs text-[#81908a] mb-0.5">Giá trị tạm tính dở dang:</div>
+                        {isKpiLoading ? (
+                          <div className="h-6 w-28 rounded-[6px] bg-[#e9f4ef] animate-pulse my-0.5" />
+                        ) : (
+                          <div className="text-lg font-heading font-bold text-[#17231f] tabular-nums">
+                            {reconciliation?.in_workshop_amount_formatted ??
+                              formatVND(reconciliation?.in_workshop_amount)}
+                          </div>
+                        )}
+                      </>
+                    )}
+                    <div className="text-[11px] text-[#81908a] mt-1">
+                      Đang khám / chờ linh kiện / sửa / QC
                     </div>
                   </div>
                 </div>
               </div>
+            </div>
 
-              <div className="pt-3 border-t border-[#f2deba]">
-                <button
-                  type="button"
-                  onClick={() => onNavigate('/repairs?status=open&date_filter=all')}
-                  className="w-full py-2.5 px-3 bg-white hover:bg-[#f6f8f6] text-[#b77a21] text-xs font-bold rounded-[8px] transition-all flex items-center justify-center gap-1.5 cursor-pointer border border-[#f2deba]"
-                >
-                  <span>Xem danh sách đơn chưa giao tại shop</span>
-                  <Icon name="arrow" size={14} />
-                </button>
-              </div>
+            <div className="pt-3 border-t border-[#f2deba]">
+              <button
+                type="button"
+                onClick={() => onNavigate('/repairs?status=open&date_filter=all')}
+                className="w-full py-2.5 px-3 bg-white hover:bg-[#f6f8f6] text-[#b77a21] text-xs font-bold rounded-[8px] transition-all flex items-center justify-center gap-1.5 cursor-pointer border border-[#f2deba]"
+              >
+                <span>Xem danh sách đơn chưa giao tại shop</span>
+                <Icon name="arrow" size={14} />
+              </button>
             </div>
           </div>
         </div>
-      )}
+      </div>
 
       {/* KHU VỰC D & F: HIỆU SUẤT NHÂN SỰ & TÓM TẮT CA TRỰC SỔ QUỸ */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">

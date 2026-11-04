@@ -7,14 +7,17 @@ import {
   StatusTag,
   Icon,
   Modal,
+  useToast,
 } from '@podscare/ui';
 import type { RepairOrder } from '@podscare/types';
 import { normalizeStatusCode } from '../../repairs/fsm';
+import { exportPartsUsageExcel } from '../utils/partsUsageExcelExport';
 
 export interface CskhDashboardViewProps {
   currentUser?: any;
   todayOrdersCount: number;
   branchOrdersCount: number;
+  branchOrders?: RepairOrder[];
   cskhReadyOrders: RepairOrder[];
   repairingCount: number;
   cskhPendingOrders: RepairOrder[];
@@ -24,6 +27,7 @@ export interface CskhDashboardViewProps {
   onOpenRegularIntake: () => void;
   onOpenCheckout: (order: RepairOrder) => void;
   onNavigateToRepairs: () => void;
+  onExportPartsUsage?: () => void;
   moneyFormatted: (n: number) => string;
 }
 
@@ -31,6 +35,7 @@ export const CskhDashboardView: React.FC<CskhDashboardViewProps> = ({
   currentUser,
   todayOrdersCount,
   branchOrdersCount,
+  branchOrders,
   cskhReadyOrders,
   repairingCount,
   cskhPendingOrders,
@@ -40,8 +45,52 @@ export const CskhDashboardView: React.FC<CskhDashboardViewProps> = ({
   onOpenRegularIntake,
   onOpenCheckout,
   onNavigateToRepairs,
+  onExportPartsUsage,
   moneyFormatted,
 }) => {
+  const { toast } = useToast();
+
+  const handleExportPartsClick = () => {
+    if (onExportPartsUsage) {
+      onExportPartsUsage();
+      return;
+    }
+    const ordersToExport =
+      Array.isArray(branchOrders) && branchOrders.length > 0
+        ? branchOrders
+        : Array.from(
+            new Map(
+              [...cskhReadyOrders, ...cskhPendingOrders].map((o) => [o.id, o])
+            ).values()
+          );
+    const res = exportPartsUsageExcel({
+      orders: ordersToExport,
+      periodLabel: 'Ca làm việc CSKH hôm nay',
+      branchLabel: currentUser?.branch || 'Chi nhánh hiện tại',
+      hideRevenue: currentUser?.role !== 'admin' && currentUser?.role !== 'super_admin',
+    });
+    toast(
+      `Đã xuất file Linh kiện (.xls): ${res.totalPartQuantity} linh kiện tiêu hao / ${res.orderCount} đơn!`,
+      'success'
+    );
+  };
+
+  const handedOverCount = React.useMemo(() => {
+    if (!Array.isArray(branchOrders)) return 0;
+    return branchOrders.filter(
+      (o) => normalizeStatusCode(o.status) === 'completed' || o.status === 'Hoàn tất'
+    ).length;
+  }, [branchOrders]);
+
+  const inWorkshopCount = React.useMemo(() => {
+    return cskhPendingOrders.filter(
+      (o) =>
+        !['Sẵn sàng trả', 'Chờ khách nhận', 'ready_for_return', 'waiting_pickup'].includes(
+          o.status
+        ) &&
+        !['ready_for_return', 'waiting_pickup'].includes(normalizeStatusCode(o.status))
+    ).length;
+  }, [cskhPendingOrders]);
   const getCskhNextAction = (o: RepairOrder) => {
     switch (o.status) {
       case 'Cần sửa lại':
@@ -75,7 +124,17 @@ export const CskhDashboardView: React.FC<CskhDashboardViewProps> = ({
             Bảng công việc CSKH · Tập trung tiếp nhận, trả máy và chăm sóc khách hàng.
           </p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
+          <Button
+            variant="outline"
+            size="md"
+            icon="download"
+            data-testid="cskh-export-parts-excel-btn"
+            onClick={handleExportPartsClick}
+            className="bg-white text-[#176b51] border-[#cde4d8] hover:bg-[#e9f4ef] font-bold"
+          >
+            Xuất file Linh kiện (.xls)
+          </Button>
           <Button
             variant="outline"
             size="md"
@@ -120,6 +179,74 @@ export const CskhDashboardView: React.FC<CskhDashboardViewProps> = ({
           trend="down"
           onClick={() => setCskhPendingModalOpen(true)}
         />
+      </div>
+
+      {/* Khối đối chiếu số lượng máy (Không hiển thị doanh thu cho nhân sự CSKH) */}
+      <div
+        data-testid="cskh-handover-reconciliation-block"
+        className="bg-white rounded-[12px] border border-[#e9eeeb] p-5 sm:p-6 shadow-xs"
+      >
+        <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
+          <div>
+            <div className="text-xs font-bold text-[#81908a] uppercase tracking-[1px] mb-1">
+              ĐỐI SOÁT VẬN HÀNH QUẦY & XƯỞNG
+            </div>
+            <h3 className="font-heading font-bold text-base text-[#17231f] m-0">
+              Đối chiếu máy khách đã lấy vs chưa lấy
+            </h3>
+            <p className="text-xs text-[#81908a] mt-0.5 mb-0">
+              Tổng hợp số lượng thiết bị đã bàn giao, chờ khách nhận tại quầy và đang sửa trong xưởng.
+            </p>
+          </div>
+          <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-[#e9f4ef] text-[#176b51]">
+            <span className="w-2 h-2 rounded-full bg-[#176b51]" />
+            {branchOrdersCount} đơn toàn chi nhánh
+          </span>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-3.5">
+          <div className="p-4 rounded-[10px] bg-[#e9f4ef] border border-[#cde4d8] flex items-center justify-between">
+            <div>
+              <span className="text-xs font-bold text-[#176b51] uppercase block">
+                Máy khách đã lấy
+              </span>
+              <span className="text-[11px] text-[#4a5c54] block mt-0.5">
+                Đã hoàn tất bàn giao
+              </span>
+            </div>
+            <span className="text-2xl font-heading font-extrabold text-[#176b51] tabular-nums">
+              {handedOverCount} <small className="text-xs font-semibold">máy</small>
+            </span>
+          </div>
+
+          <div className="p-4 rounded-[10px] bg-[#faf1df] border border-[#f2deba] flex items-center justify-between">
+            <div>
+              <span className="text-xs font-bold text-[#b77a21] uppercase block">
+                Chờ khách nhận tại quầy
+              </span>
+              <span className="text-[11px] text-[#78350f] block mt-0.5">
+                Sẵn sàng trả / Chờ nhận
+              </span>
+            </div>
+            <span className="text-2xl font-heading font-extrabold text-[#b77a21] tabular-nums">
+              {cskhReadyOrders.length} <small className="text-xs font-semibold">máy</small>
+            </span>
+          </div>
+
+          <div className="p-4 rounded-[10px] bg-[#f6f8f6] border border-[#e9eeeb] flex items-center justify-between">
+            <div>
+              <span className="text-xs font-bold text-[#17231f] uppercase block">
+                Đang sửa trong xưởng
+              </span>
+              <span className="text-[11px] text-[#81908a] block mt-0.5">
+                Đang kiểm tra / sửa / chờ linh kiện
+              </span>
+            </div>
+            <span className="text-2xl font-heading font-extrabold text-[#17231f] tabular-nums">
+              {inWorkshopCount} <small className="text-xs font-semibold">máy</small>
+            </span>
+          </div>
+        </div>
       </div>
 
       {/* Panel: "Máy sẵn sàng trả" */}

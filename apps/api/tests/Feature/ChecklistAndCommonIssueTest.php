@@ -246,6 +246,18 @@ class ChecklistAndCommonIssueTest extends TestCase
                         'issue_name',
                         'solution',
                         'estimated_time',
+                        'issue_code',
+                        'keywords',
+                        'watch_sizes',
+                        'linked_parts' => [
+                            '*' => [
+                                'part_sku',
+                                'part_name',
+                                'quantity',
+                                'unit',
+                                'position',
+                            ],
+                        ],
                     ],
                 ],
             ]);

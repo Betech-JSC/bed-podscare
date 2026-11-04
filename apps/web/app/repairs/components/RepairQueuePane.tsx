@@ -169,12 +169,6 @@ export const RepairQueuePane: React.FC<RepairQueuePaneProps> = ({
     return filteredOrders.slice(pageOffset, pageOffset + size);
   }, [filteredOrders, perPage, pageOffset]);
 
-  const isAdmin =
-    role === 'admin' ||
-    currentUserRole === 'admin' ||
-    role === 'super_admin' ||
-    currentUserRole === 'super_admin';
-
   return (
     <div className="bg-white rounded-[12px] border border-[#e9eeeb] p-5 sm:p-6 shadow-xs">
       {/* Quick Filter Tabs: Tất cả, Tại cửa hàng, Đơn COD, Đơn bảo hành, Cần mua ngoài */}
@@ -372,79 +366,77 @@ export const RepairQueuePane: React.FC<RepairQueuePaneProps> = ({
         ) : null}
       </div>
 
-      {/* Admin Status Reconciliation Bar */}
-      {isAdmin && (
-        <div
-          data-testid="admin-repairs-status-reconciliation-bar"
-          className="flex flex-wrap items-center gap-2 border-b border-[#e9eeeb] pb-3 mb-4"
+      {/* Status Reconciliation Bar (Hiển thị đồng bộ cho mọi vai trò vận hành & Admin) */}
+      <div
+        data-testid="admin-repairs-status-reconciliation-bar"
+        className="flex flex-wrap items-center gap-2 border-b border-[#e9eeeb] pb-3 mb-4"
+      >
+        <span className="text-xs font-semibold text-[#81908a] mr-0.5">Đối chiếu trạng thái:</span>
+        <button
+          type="button"
+          data-testid="status-pill-all"
+          onClick={() => setStatusFilter('')}
+          className={`px-3 py-1 rounded-[8px] text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
+            !statusFilter
+              ? 'bg-[#176b51] text-white shadow-xs'
+              : 'bg-[#f6f8f6] text-[#4a5c54] hover:bg-[#e9f4ef]'
+          }`}
         >
-          <span className="text-xs font-semibold text-[#81908a] mr-0.5">Đối chiếu trạng thái:</span>
-          <button
-            type="button"
-            data-testid="status-pill-all"
-            onClick={() => setStatusFilter('')}
-            className={`px-3 py-1 rounded-[8px] text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
-              !statusFilter
-                ? 'bg-[#176b51] text-white shadow-xs'
-                : 'bg-[#f6f8f6] text-[#4a5c54] hover:bg-[#e9f4ef]'
-            }`}
-          >
-            <span>Tất cả trạng thái ({statusReconciliationCounts.allCount})</span>
-          </button>
-          <button
-            type="button"
-            data-testid="status-pill-open"
-            onClick={() => setStatusFilter('Đơn đang mở')}
-            className={`px-3 py-1 rounded-[8px] text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
-              statusFilter === 'Đơn đang mở'
-                ? 'bg-[#176b51] text-white shadow-xs'
-                : 'bg-[#e9f4ef] text-[#176b51] border border-[#cde4d8] hover:bg-[#d8ede1]'
-            }`}
-          >
-            <span>
-              Đơn đang mở ({statusReconciliationCounts.openCount}:{' '}
-              {statusReconciliationCounts.inWorkshopCount} trong xưởng ·{' '}
-              {statusReconciliationCounts.waitingPickupCount} chờ nhận)
-            </span>
-          </button>
-          <button
-            type="button"
-            data-testid="status-pill-in-workshop"
-            onClick={() => setStatusFilter('Đang sửa trong xưởng')}
-            className={`px-3 py-1 rounded-[8px] text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
-              statusFilter === 'Đang sửa trong xưởng'
-                ? 'bg-[#176b51] text-white shadow-xs'
-                : 'bg-[#f6f8f6] text-[#4a5c54] hover:bg-[#e9f4ef]'
-            }`}
-          >
-            <span>Đang sửa trong xưởng ({statusReconciliationCounts.inWorkshopCount})</span>
-          </button>
-          <button
-            type="button"
-            data-testid="status-pill-waiting-pickup"
-            onClick={() => setStatusFilter('Chờ khách nhận')}
-            className={`px-3 py-1 rounded-[8px] text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
-              statusFilter === 'Chờ khách nhận'
-                ? 'bg-[#176b51] text-white shadow-xs'
-                : 'bg-[#f6f8f6] text-[#4a5c54] hover:bg-[#e9f4ef]'
-            }`}
-          >
-            <span>Chờ khách nhận ({statusReconciliationCounts.waitingPickupCount})</span>
-          </button>
-          <button
-            type="button"
-            data-testid="status-pill-completed"
-            onClick={() => setStatusFilter('Hoàn tất')}
-            className={`px-3 py-1 rounded-[8px] text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
-              statusFilter === 'Hoàn tất'
-                ? 'bg-[#176b51] text-white shadow-xs'
-                : 'bg-[#f6f8f6] text-[#4a5c54] hover:bg-[#e9f4ef]'
-            }`}
-          >
-            <span>Hoàn tất ({statusReconciliationCounts.completedCount})</span>
-          </button>
-        </div>
-      )}
+          <span>Tất cả trạng thái ({statusReconciliationCounts.allCount})</span>
+        </button>
+        <button
+          type="button"
+          data-testid="status-pill-open"
+          onClick={() => setStatusFilter('Đơn đang mở')}
+          className={`px-3 py-1 rounded-[8px] text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
+            statusFilter === 'Đơn đang mở'
+              ? 'bg-[#176b51] text-white shadow-xs'
+              : 'bg-[#e9f4ef] text-[#176b51] border border-[#cde4d8] hover:bg-[#d8ede1]'
+          }`}
+        >
+          <span>
+            Đơn đang mở ({statusReconciliationCounts.openCount}:{' '}
+            {statusReconciliationCounts.inWorkshopCount} trong xưởng ·{' '}
+            {statusReconciliationCounts.waitingPickupCount} chờ nhận)
+          </span>
+        </button>
+        <button
+          type="button"
+          data-testid="status-pill-in-workshop"
+          onClick={() => setStatusFilter('Đang sửa trong xưởng')}
+          className={`px-3 py-1 rounded-[8px] text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
+            statusFilter === 'Đang sửa trong xưởng'
+              ? 'bg-[#176b51] text-white shadow-xs'
+              : 'bg-[#f6f8f6] text-[#4a5c54] hover:bg-[#e9f4ef]'
+          }`}
+        >
+          <span>Đang sửa trong xưởng ({statusReconciliationCounts.inWorkshopCount})</span>
+        </button>
+        <button
+          type="button"
+          data-testid="status-pill-waiting-pickup"
+          onClick={() => setStatusFilter('Chờ khách nhận')}
+          className={`px-3 py-1 rounded-[8px] text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
+            statusFilter === 'Chờ khách nhận'
+              ? 'bg-[#176b51] text-white shadow-xs'
+              : 'bg-[#f6f8f6] text-[#4a5c54] hover:bg-[#e9f4ef]'
+          }`}
+        >
+          <span>Chờ khách nhận ({statusReconciliationCounts.waitingPickupCount})</span>
+        </button>
+        <button
+          type="button"
+          data-testid="status-pill-completed"
+          onClick={() => setStatusFilter('Hoàn tất')}
+          className={`px-3 py-1 rounded-[8px] text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
+            statusFilter === 'Hoàn tất'
+              ? 'bg-[#176b51] text-white shadow-xs'
+              : 'bg-[#f6f8f6] text-[#4a5c54] hover:bg-[#e9f4ef]'
+          }`}
+        >
+          <span>Hoàn tất ({statusReconciliationCounts.completedCount})</span>
+        </button>
+      </div>
 
       <FilterBar
         searchValue={search}

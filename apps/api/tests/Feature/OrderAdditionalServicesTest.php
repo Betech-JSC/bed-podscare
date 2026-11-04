@@ -245,4 +245,44 @@ class OrderAdditionalServicesTest extends TestCase
         $this->assertEquals(400000.0, (float) $order->initial_price);
         $this->assertEquals(500000.0, (float) $order->total_price);
     }
+
+    public function test_cskh_can_add_additional_service_with_linked_parts_and_syncs_parts_needed(): void
+    {
+        $cskh = $this->getAuthenticatedUser('cskh');
+        $order = $this->createTestOrder(500000, $cskh);
+
+        $response = $this->actingAs($cskh)
+            ->postJson("/api/v1/orders/{$order->id}/additional-services", [
+                'name'         => 'Ép kính Apple Watch Series 9',
+                'price'        => 450000,
+                'watch_size'   => '45mm',
+                'linked_parts' => [
+                    [
+                        'part_sku'  => 'GLS-AW-OCA',
+                        'part_name' => 'Mặt kính Apple Watch liền keo OCA',
+                        'quantity'  => 1,
+                        'unit'      => 'cái',
+                        'position'  => 'Màn hình trên',
+                    ],
+                    [
+                        'part_sku'  => 'SEAL-AW-WP',
+                        'part_name' => 'Ron keo chống nước Apple Watch',
+                        'quantity'  => 1,
+                        'unit'      => 'bộ',
+                        'position'  => 'Viền màn hình',
+                    ],
+                ],
+            ]);
+
+        $response->assertStatus(200)
+            ->assertJsonPath('success', true);
+
+        $order->refresh();
+        $this->assertCount(1, $order->additional_services);
+        $this->assertEquals('45mm', $order->additional_services[0]['watch_size']);
+        $this->assertEquals('cskh', $order->additional_services[0]['added_by_role']);
+        $this->assertCount(2, $order->additional_services[0]['linked_parts']);
+        $this->assertStringContainsString('Mặt kính Apple Watch liền keo OCA', (string) $order->parts_needed);
+        $this->assertStringContainsString('Ron keo chống nước Apple Watch', (string) $order->parts_needed);
+    }
 }

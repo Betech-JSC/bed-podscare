@@ -1,6 +1,6 @@
 'use client';
 
-import React from 'react';
+import React, { useState, useMemo } from 'react';
 import {
   Button,
   Icon,
@@ -10,6 +10,16 @@ import {
 } from '@podscare/ui';
 import type { RepairOrder, AdditionalServiceItem } from '@podscare/types';
 import { normalizeStatusCode } from '../fsm';
+import {
+  COMMON_ISSUE_CATALOG_BY_CATEGORY,
+  filterCommonIssues,
+  enrichCommonIssueWithParts,
+  inferLinkedPartsFromOrderText,
+  formatLinkedPartsSummary,
+  extractWatchSizeFromText,
+  parsePartsSummaryToItems,
+  type LinkedPartItem,
+} from '../../constants/commonIssueCatalog';
 
 export interface BomInspectorProps {
   order: RepairOrder;
@@ -69,6 +79,54 @@ export const BomInspector: React.FC<BomInspectorProps> = ({
     order.special_parts_status === 'purchased' || order.specialPartsStatus === 'purchased';
   const isSpecialPartPending =
     order.special_parts_status === 'pending' || order.specialPartsStatus === 'pending';
+
+  const [serviceQuickFilter, setServiceQuickFilter] = useState('');
+
+  const resolvedOrderCategory = useMemo(() => {
+    if (order.deviceCategory) return order.deviceCategory;
+    const d = (order.device || '').toLowerCase();
+    if (d.includes('watch')) return 'Apple Watch';
+    if (d.includes('pencil')) return 'Apple Pencil';
+    return 'AirPods';
+  }, [order.deviceCategory, order.device]);
+
+  const detectedWatchSize = useMemo(
+    () =>
+      extractWatchSizeFromText(order.accessories) ||
+      extractWatchSizeFromText(order.issue) ||
+      extractWatchSizeFromText(order.parts_needed || order.partsNeeded),
+    [order.accessories, order.issue, order.parts_needed, order.partsNeeded]
+  );
+
+  const catalogIssuesForServiceForm = useMemo(() => {
+    const base = COMMON_ISSUE_CATALOG_BY_CATEGORY[resolvedOrderCategory] || [];
+    return filterCommonIssues(base, serviceQuickFilter, resolvedOrderCategory, detectedWatchSize);
+  }, [resolvedOrderCategory, serviceQuickFilter, detectedWatchSize]);
+
+  const filteredAvailableServices = useMemo(() => {
+    const q = serviceQuickFilter.trim().toLowerCase();
+    if (!q) return availableServices;
+    return availableServices.filter((s) => (s.name || '').toLowerCase().includes(q));
+  }, [availableServices, serviceQuickFilter]);
+
+  const previewLinkedPartsForNewService: LinkedPartItem[] = useMemo(() => {
+    if (!newServiceName.trim()) return [];
+    return inferLinkedPartsFromOrderText(
+      newServiceName,
+      resolvedOrderCategory,
+      detectedWatchSize
+    ).linkedParts;
+  }, [newServiceName, resolvedOrderCategory, detectedWatchSize]);
+
+  const initialIntakeLinkedParts: LinkedPartItem[] = useMemo(() => {
+    const fromPartsNeeded = parsePartsSummaryToItems(order.parts_needed || order.partsNeeded);
+    if (fromPartsNeeded.length > 0) return fromPartsNeeded;
+    return inferLinkedPartsFromOrderText(
+      order.issue,
+      resolvedOrderCategory,
+      detectedWatchSize
+    ).linkedParts;
+  }, [order.parts_needed, order.partsNeeded, order.issue, resolvedOrderCategory, detectedWatchSize]);
 
   return (
     <div className="space-y-4">
@@ -269,6 +327,74 @@ export const BomInspector: React.FC<BomInspectorProps> = ({
             )}
 
             <div className="space-y-2.5">
+              {/* Ô Filter nhanh lỗi & linh kiện cho CSKH */}
+              <div className="space-y-1.5">
+                <label className="block text-xs font-bold text-[#176b51]">
+                  Lọc nhanh mẫu lỗi & linh kiện ({resolvedOrderCategory}):
+                </label>
+                <Input
+                  data-testid="cskh-add-service-filter-input"
+                  placeholder="🔍 Gõ lọc nhanh lỗi hoặc linh kiện (VD: pin, màng loa, kính cảm ứng...)"
+                  value={serviceQuickFilter}
+                  onChange={(e) => setServiceQuickFilter(e.target.value)}
+                />
+                {catalogIssuesForServiceForm.length > 0 && (
+                  <div className="flex flex-wrap gap-1.5 pt-0.5">
+                    {catalogIssuesForServiceForm.map((item) => {
+                      const firstPart = item.linked_parts?.[0];
+                      const isPicked = newServiceName === item.issue_name;
+                      return (
+                        <button
+                          key={item.issue_code}
+                          type="button"
+                          onClick={() => {
+                            const enriched = enrichCommonIssueWithParts(
+                              item,
+                              resolvedOrderCategory,
+                              detectedWatchSize
+                            );
+                            setNewServiceName(enriched.issue_name);
+                            if (enriched.estimated_cost && !newServicePrice) {
+                              setNewServicePrice(enriched.estimated_cost);
+                            }
+                            const partsSummary = formatLinkedPartsSummary(
+                              enriched.linked_parts,
+                              detectedWatchSize
+                            );
+                            if (partsSummary && !newServiceNote.includes(partsSummary)) {
+                              setNewServiceNote(
+                                newServiceNote.trim()
+                                  ? `${newServiceNote.trim()} | Linh kiện: ${partsSummary}`
+                                  : `Linh kiện liên kết: ${partsSummary}`
+                              );
+                            }
+                            setServiceError('');
+                          }}
+                          className={`text-[11px] px-2.5 py-1 rounded-[10px] border transition-colors cursor-pointer flex items-center gap-1.5 ${
+                            isPicked
+                              ? 'bg-[#176b51] text-white border-[#176b51] font-bold'
+                              : 'bg-white hover:bg-[#d8ece1] border-[#c5ddd1] text-[#176b51]'
+                          }`}
+                        >
+                          <span>+ {item.issue_name}</span>
+                          {firstPart && (
+                            <span
+                              className={`px-1.5 py-0.5 rounded text-[10px] font-mono ${
+                                isPicked
+                                  ? 'bg-white/20 text-white'
+                                  : 'bg-[#e9f4ef] text-[#176b51]'
+                              }`}
+                            >
+                              🔧 {firstPart.part_name} ×{firstPart.quantity}
+                            </span>
+                          )}
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+
               <div>
                 <label className="block text-xs font-bold text-[#17231f] mb-1">
                   Tên dịch vụ làm thêm <span className="text-red-500">*</span>:
@@ -282,10 +408,10 @@ export const BomInspector: React.FC<BomInspectorProps> = ({
                       setServiceError('');
                     }}
                   />
-                  {availableServices.length > 0 && (
+                  {filteredAvailableServices.length > 0 && (
                     <div className="flex flex-wrap gap-1.5 pt-0.5">
-                      <span className="text-[11px] text-[#81908a] self-center">Gợi ý nhanh:</span>
-                      {availableServices.slice(0, 5).map((srv) => (
+                      <span className="text-[11px] text-[#81908a] self-center">Bảng giá dịch vụ:</span>
+                      {filteredAvailableServices.slice(0, 5).map((srv) => (
                         <button
                           key={srv.id}
                           type="button"
@@ -303,6 +429,26 @@ export const BomInspector: React.FC<BomInspectorProps> = ({
                   )}
                 </div>
               </div>
+
+              {previewLinkedPartsForNewService.length > 0 && (
+                <div className="p-2.5 rounded-[6px] bg-white border border-[#b8d9cb] space-y-1 text-xs">
+                  <span className="font-bold text-[#176b51] block text-[11px]">
+                    Linh kiện tự động đính kèm chuyển sang Kỹ thuật:
+                  </span>
+                  <div className="flex flex-wrap gap-1.5">
+                    {previewLinkedPartsForNewService.map((pt) => (
+                      <span
+                        key={pt.part_sku}
+                        className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-[#e9f4ef] text-[#176b51] border border-[#cde4d8] text-[11px] font-semibold"
+                      >
+                        <span>🔧 {pt.part_name}</span>
+                        <span className="font-mono text-[10px]">({pt.part_sku})</span>
+                        <span className="font-mono font-bold">×{pt.quantity}</span>
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              )}
 
               <div>
                 <CurrencyInput
@@ -355,15 +501,30 @@ export const BomInspector: React.FC<BomInspectorProps> = ({
         {/* Bảng kê chi tiết phân rã */}
         <div className="space-y-2 text-xs">
           {/* 1. Dịch vụ tiếp nhận ban đầu */}
-          <div className="p-2.5 rounded-[8px] bg-white border border-[#e9eeeb] flex items-center justify-between">
-            <div>
+          <div className="p-2.5 rounded-[8px] bg-white border border-[#e9eeeb] flex items-start justify-between gap-2">
+            <div className="space-y-1">
               <span className="font-bold text-[#17231f] block text-[13px]">
                 1. Tiếp nhận ban đầu: {order.device}
               </span>
-              <span className="text-[#81908a] block mt-0.5">Lỗi ghi nhận: {order.issue}</span>
+              <span className="text-[#81908a] block">Lỗi ghi nhận: {order.issue}</span>
+              {initialIntakeLinkedParts.length > 0 && (
+                <div className="flex flex-wrap items-center gap-1 pt-0.5">
+                  <span className="text-[11px] font-bold text-[#176b51]">Linh kiện liên kết:</span>
+                  {initialIntakeLinkedParts.map((pt, pIdx) => (
+                    <span
+                      key={`${pt.part_sku}-${pIdx}`}
+                      className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-[#e9f4ef] text-[#176b51] border border-[#cde4d8] text-[11px] font-semibold"
+                    >
+                      <span>🔧 {pt.part_name}</span>
+                      <span className="font-mono text-[10px]">({pt.part_sku})</span>
+                      <span className="font-mono font-bold">×{pt.quantity}</span>
+                    </span>
+                  ))}
+                </div>
+              )}
             </div>
             {!isTechRole && (
-              <div className="text-right">
+              <div className="text-right flex-none">
                 <span className="font-bold text-sm text-[#17231f] font-mono tabular-nums">
                   {moneyFormatted(
                     normalizeVndPrice(
@@ -385,53 +546,99 @@ export const BomInspector: React.FC<BomInspectorProps> = ({
           (order.additionalServices && order.additionalServices.length > 0) ? (
             <div className="space-y-1.5">
               <span className="font-bold text-[#176b51] uppercase tracking-wide block pt-1 text-[11px]">
-                Dịch vụ khách yêu cầu làm thêm (
+                Dịch vụ khách yêu cầu làm thêm / Phát sinh từ Kỹ thuật (
                 {(order.additional_services || order.additionalServices || []).length} mục):
               </span>
-              {(order.additional_services || order.additionalServices || []).map((srv, idx) => (
-                <div
-                  key={srv.id || idx}
-                  className="p-2.5 rounded-[8px] bg-[#f6f8f6] border border-[#cde4d8] flex items-start justify-between gap-2"
-                >
-                  <div className="space-y-0.5">
-                    <div className="flex items-center gap-1.5">
-                      <span className="font-bold text-[#17231f] text-sm">
-                        #{idx + 2}. {srv.name}
-                      </span>
-                      {!isTechRole && (
-                        <span className="text-xs font-bold text-[#176b51] font-mono tabular-nums bg-white px-2 py-0.5 rounded border border-[#b8d9cb]">
-                          +{moneyFormatted(srv.price)}
-                        </span>
-                      )}
-                    </div>
-                    {srv.note && (
-                      <p className="text-[#4a5c54] italic m-0 text-xs flex items-center gap-1">
-                        <Icon name="comment" size={12} />
-                        <span>Dặn dò: {srv.note}</span>
-                      </p>
-                    )}
-                    <div className="text-[11px] text-[#81908a]">
-                      Tạo bởi: <b className="text-[#17231f]">{srv.created_by_name || 'CSKH'}</b>
-                      {srv.created_at && (
-                        <span className="ml-1">({new Date(srv.created_at).toLocaleString('vi-VN')})</span>
-                      )}
-                    </div>
-                  </div>
+              {(order.additional_services || order.additionalServices || []).map((srv, idx) => {
+                const isAddedByTech =
+                  srv.added_by_role === 'technician' ||
+                  (srv as any).created_by_role === 'technician' ||
+                  Number(srv.price || 0) === 0;
+                const srvLinkedParts: LinkedPartItem[] =
+                  Array.isArray(srv.linked_parts) && srv.linked_parts.length > 0
+                    ? srv.linked_parts
+                    : inferLinkedPartsFromOrderText(
+                        srv.name,
+                        resolvedOrderCategory,
+                        detectedWatchSize
+                      ).linkedParts;
 
-                  {canManageAdditionalServices &&
-                    !['completed', 'cancelled'].includes(normalizeStatusCode(order.status)) && (
-                      <button
-                        type="button"
-                        onClick={() => onRequestDeleteService(srv)}
-                        className="text-[#bc5b52] hover:bg-[#fbeaea] px-2 py-1 rounded text-xs font-semibold transition-colors flex items-center gap-1 flex-none cursor-pointer"
-                        title="Hủy dịch vụ này"
-                      >
-                        <Icon name="trash" size={12} />
-                        <span>Xóa</span>
-                      </button>
-                    )}
-                </div>
-              ))}
+                return (
+                  <div
+                    key={srv.id || idx}
+                    className={`p-2.5 rounded-[8px] border flex items-start justify-between gap-2 ${
+                      isAddedByTech
+                        ? 'bg-[#fffbeb] border-[#f59e0b]'
+                        : 'bg-[#f6f8f6] border-[#cde4d8]'
+                    }`}
+                  >
+                    <div className="space-y-1">
+                      <div className="flex flex-wrap items-center gap-1.5">
+                        <span className="font-bold text-[#17231f] text-sm">
+                          #{idx + 2}. {srv.name}
+                        </span>
+                        {isAddedByTech && (
+                          <span
+                            data-testid="badge-from-tech-need-quote"
+                            className="px-2 py-0.5 rounded bg-[#fef3c7] text-[#b45309] border border-[#f59e0b] text-[10px] font-extrabold uppercase tracking-wide"
+                          >
+                            TỪ KỸ THUẬT - CẦN BÁO GIÁ KHÁCH
+                          </span>
+                        )}
+                        {!isTechRole && (
+                          <span className="text-xs font-bold text-[#176b51] font-mono tabular-nums bg-white px-2 py-0.5 rounded border border-[#b8d9cb]">
+                            +{moneyFormatted(srv.price)}
+                          </span>
+                        )}
+                      </div>
+
+                      {srvLinkedParts.length > 0 && (
+                        <div className="flex flex-wrap items-center gap-1">
+                          <span className="text-[11px] font-semibold text-[#176b51]">
+                            Linh kiện đi kèm:
+                          </span>
+                          {srvLinkedParts.map((pt, pIdx) => (
+                            <span
+                              key={`${pt.part_sku}-${pIdx}`}
+                              className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-white text-[#176b51] border border-[#cde4d8] text-[11px] font-semibold"
+                            >
+                              <span>🔧 {pt.part_name}</span>
+                              <span className="font-mono text-[10px]">({pt.part_sku})</span>
+                              <span className="font-mono font-bold">×{pt.quantity}</span>
+                            </span>
+                          ))}
+                        </div>
+                      )}
+
+                      {srv.note && (
+                        <p className="text-[#4a5c54] italic m-0 text-xs flex items-center gap-1">
+                          <Icon name="comment" size={12} />
+                          <span>Dặn dò / Ghi chú: {srv.note}</span>
+                        </p>
+                      )}
+                      <div className="text-[11px] text-[#81908a]">
+                        Tạo bởi: <b className="text-[#17231f]">{srv.created_by_name || (isAddedByTech ? 'Kỹ thuật viên' : 'CSKH')}</b>
+                        {srv.created_at && (
+                          <span className="ml-1">({new Date(srv.created_at).toLocaleString('vi-VN')})</span>
+                        )}
+                      </div>
+                    </div>
+
+                    {canManageAdditionalServices &&
+                      !['completed', 'cancelled'].includes(normalizeStatusCode(order.status)) && (
+                        <button
+                          type="button"
+                          onClick={() => onRequestDeleteService(srv)}
+                          className="text-[#bc5b52] hover:bg-[#fbeaea] px-2 py-1 rounded text-xs font-semibold transition-colors flex items-center gap-1 flex-none cursor-pointer"
+                          title="Hủy dịch vụ này"
+                        >
+                          <Icon name="trash" size={12} />
+                          <span>Xóa</span>
+                        </button>
+                      )}
+                  </div>
+                );
+              })}
             </div>
           ) : (
             <div className="p-2.5 rounded-[8px] bg-[#f6f8f6] border border-dashed border-[#d2dfd8] text-center text-[#81908a] text-xs">

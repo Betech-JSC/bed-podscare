@@ -12,13 +12,25 @@ import {
   useToast,
   Icon,
 } from '@podscare/ui';
-import type { RepairOrder } from '@podscare/types';
-import { repairService, userService } from '@podscare/api-client';
-import { normalizeStatusCode } from '../repairs/fsm';
+import type { RepairOrder, AdditionalServiceItem } from '@podscare/types';
+import { repairService, userService, inventoryService, type InventoryPart } from '@podscare/api-client';
+import { normalizeStatusCode, canReturnOrderWithInventoryRestock } from '../repairs/fsm';
 import { useOptionalPodsCare } from '../providers';
 import { useSilentPrint } from './print';
 import { HandoverTechModal } from './HandoverTechModal';
 import { SpecialPartsRequestModal } from './SpecialPartsRequestModal';
+import {
+  COMMON_ISSUE_CATALOG_BY_CATEGORY,
+  POPULAR_APPLE_WATCH_SIZES,
+  filterCommonIssues,
+  enrichCommonIssueWithParts,
+  inferLinkedPartsFromOrderText,
+  formatLinkedPartsSummary,
+  parsePartsSummaryToItems,
+  extractWatchSizeFromText,
+  applyWatchSizeToLinkedPart,
+  type LinkedPartItem,
+} from '../constants/commonIssueCatalog';
 
 export const TECH_COMPLETABLE_STATUSES = [
   'waiting_tech',
@@ -77,6 +89,20 @@ export const TechOrderDetailModal: React.FC<TechOrderDetailModalProps> = ({
   const [isRequestingParts, setIsRequestingParts] = useState(false);
   const [isSpecialPartsModalOpen, setIsSpecialPartsModalOpen] = useState(false);
 
+  // Return Order & Restock Inventory State
+  const [isReturnOrderConfirmOpen, setIsReturnOrderConfirmOpen] = useState(false);
+  const [returnOrderNote, setReturnOrderNote] = useState('');
+  const [isReturningOrder, setIsReturningOrder] = useState(false);
+
+  // Additional Issue & Linked Parts State for Technician (tương tự CSKH)
+  const [techIssueFilter, setTechIssueFilter] = useState('');
+  const [techWatchSize, setTechWatchSize] = useState<string>('');
+  const [additionalIssueName, setAdditionalIssueName] = useState('');
+  const [additionalIssueNote, setAdditionalIssueNote] = useState('');
+  const [additionalLinkedParts, setAdditionalLinkedParts] = useState<LinkedPartItem[]>([]);
+  const [inventoryParts, setInventoryParts] = useState<InventoryPart[]>([]);
+  const [isSubmittingAdditionalIssue, setIsSubmittingAdditionalIssue] = useState(false);
+
   // Tải danh sách KTV cùng chi nhánh cho CSKH / Admin chọn xác nhận KTV thực hiện
   useEffect(() => {
     let active = true;
@@ -104,6 +130,17 @@ export const TechOrderDetailModal: React.FC<TechOrderDetailModalProps> = ({
         if (active) setLoadingTechnicians(false);
       });
 
+    inventoryService
+      .getParts({ per_page: 50 })
+      .then((res: any) => {
+        if (!active) return;
+        const raw = res?.data?.data || res?.data || res;
+        if (Array.isArray(raw)) {
+          setInventoryParts(raw);
+        }
+      })
+      .catch(() => {});
+
     return () => {
       active = false;
     };
@@ -113,13 +150,35 @@ export const TechOrderDetailModal: React.FC<TechOrderDetailModalProps> = ({
   useEffect(() => {
     if (order) {
       setRepairNote(order.repairNote || '');
-      const initialPartsNeeded = order.parts_needed || order.partsNeeded || '';
+      const detectedSize =
+        extractWatchSizeFromText(order.accessories) ||
+        extractWatchSizeFromText(order.issue) ||
+        extractWatchSizeFromText(order.parts_needed || order.partsNeeded) ||
+        '';
+      setTechWatchSize(detectedSize);
+      setTechIssueFilter('');
+      setAdditionalIssueName('');
+      setAdditionalIssueNote('');
+      setAdditionalLinkedParts([]);
+
+      const inferredFromOrder = inferLinkedPartsFromOrderText(
+        order.issue,
+        order.deviceCategory || order.device,
+        detectedSize
+      );
+      const initialPartsNeeded =
+        order.parts_needed ||
+        order.partsNeeded ||
+        formatLinkedPartsSummary(inferredFromOrder.linkedParts, detectedSize) ||
+        '';
       setPartsNeeded(initialPartsNeeded);
       setPartsNote(order.repairNote || '');
       setPartsUsed(order.partsUsed || initialPartsNeeded || '');
       setFinalCheck(order.finalCheck || 'Đã chạy thử, hoạt động hoàn hảo');
       setConsentCheck(false);
       setFormError('');
+      setIsReturnOrderConfirmOpen(false);
+      setReturnOrderNote('');
 
       const existingTechId = order.technician_id ?? order.technicianId;
       if (existingTechId !== undefined && existingTechId !== null && String(existingTechId) !== '') {
@@ -132,15 +191,289 @@ export const TechOrderDetailModal: React.FC<TechOrderDetailModalProps> = ({
     }
   }, [order, isOpen, isTechUser, effectiveUser?.id]);
 
+  const additionalServicesList = React.useMemo(
+    () => ((order?.additional_services || order?.additionalServices || []) as AdditionalServiceItem[]),
+    [order?.additional_services, order?.additionalServices]
+  );
+  const hasAdditionalServices = Array.isArray(additionalServicesList) && additionalServicesList.length > 0;
+
+  // Xác định danh mục thiết bị của đơn
+  const resolvedOrderCategory =
+    order?.deviceCategory ||
+    (order?.device?.toLowerCase().includes('watch')
+      ? 'Apple Watch'
+      : order?.device?.toLowerCase().includes('pencil')
+      ? 'Apple Pencil'
+      : 'AirPods');
+
+  // Trích xuất danh sách Linh kiện lỗi được link từ đơn tạo của CSKH & dịch vụ bổ sung
+  const cskhLinkedPartsWithSource = React.useMemo(() => {
+    if (!order) return [];
+    const items: (LinkedPartItem & { source: string })[] = [];
+    const seen = new Set<string>();
+
+    // 1. Từ order.parts_needed / partsNeeded
+    const explicitParts = parsePartsSummaryToItems(order.parts_needed || order.partsNeeded);
+    explicitParts.forEach((p) => {
+      const sized = applyWatchSizeToLinkedPart(p, techWatchSize, resolvedOrderCategory);
+      const key = `${sized.part_sku}__${sized.part_name}`;
+      if (!seen.has(key)) {
+        seen.add(key);
+        items.push({ ...sized, source: `Từ đơn CSKH (${order.issue})` });
+      }
+    });
+
+    // 2. Từ additional_services[].linked_parts
+    additionalServicesList.forEach((srv) => {
+      const srvParts =
+        Array.isArray(srv.linked_parts) && srv.linked_parts.length > 0
+          ? srv.linked_parts
+          : inferLinkedPartsFromOrderText(srv.name, resolvedOrderCategory, techWatchSize).linkedParts;
+      srvParts.forEach((p) => {
+        const sized = applyWatchSizeToLinkedPart(p, techWatchSize, resolvedOrderCategory);
+        const key = `${sized.part_sku}__${sized.part_name}`;
+        if (!seen.has(key)) {
+          seen.add(key);
+          items.push({
+            ...sized,
+            source:
+              srv.added_by_role === 'technician'
+                ? `KTV báo phát sinh: ${srv.name}`
+                : `Dịch vụ làm thêm CSKH: ${srv.name}`,
+          });
+        }
+      });
+    });
+
+    // 3. Suy diễn từ commonIssueCatalog nếu đơn chưa có parts_needed tường minh
+    if (items.length === 0 && order.issue) {
+      const inferred = inferLinkedPartsFromOrderText(
+        order.issue,
+        resolvedOrderCategory,
+        techWatchSize
+      );
+      inferred.linkedParts.forEach((p) => {
+        const key = `${p.part_sku}__${p.part_name}`;
+        if (!seen.has(key)) {
+          seen.add(key);
+          items.push({
+            ...p,
+            source: `Link tự động từ lỗi khách báo: ${order.issue}`,
+          });
+        }
+      });
+    }
+
+    return items;
+  }, [
+    order,
+    additionalServicesList,
+    resolvedOrderCategory,
+    techWatchSize,
+  ]);
+
+  const cskhLinkedSummaryText = React.useMemo(
+    () => formatLinkedPartsSummary(cskhLinkedPartsWithSource, techWatchSize),
+    [cskhLinkedPartsWithSource, techWatchSize]
+  );
+
+  // Danh sách lỗi mẫu lọc nhanh cho Kỹ thuật ở Khối 2
+  const catalogIssuesForTech = React.useMemo(() => {
+    const base = COMMON_ISSUE_CATALOG_BY_CATEGORY[resolvedOrderCategory] || [];
+    return filterCommonIssues(base, techIssueFilter, resolvedOrderCategory, techWatchSize);
+  }, [resolvedOrderCategory, techIssueFilter, techWatchSize]);
+
   if (!order) return null;
 
   const code = normalizeStatusCode(order.status);
   const isAvailable = code === 'waiting_tech' && !order.technicianId && !order.technician_id;
   const isCompleted = ['ready_for_return', 'waiting_qc', 'waiting_pickup', 'completed'].includes(code);
   const isActive = TECH_COMPLETABLE_STATUSES.includes(code);
+  const canReturnOrder = canReturnOrderWithInventoryRestock(code);
 
-  const additionalServicesList = (order.additional_services || order.additionalServices || []) as any[];
-  const hasAdditionalServices = Array.isArray(additionalServicesList) && additionalServicesList.length > 0;
+  const handleReturnOrderWithRestock = async () => {
+    if (isReturningOrder || !order) return;
+    setIsReturningOrder(true);
+    setFormError('');
+    try {
+      const noteText =
+        returnOrderNote.trim() || 'Hoàn trả đơn hàng - hoàn trả linh kiện về kho';
+      await repairService.transition(order.id, {
+        transition: 'cancelled',
+        status: 'cancelled',
+        notes: noteText,
+        repair_note: [repairNote.trim(), `[Hoàn trả đơn]: ${noteText}`]
+          .filter(Boolean)
+          .join(' | '),
+      });
+      if (invalidateOrders) await invalidateOrders();
+      toast(
+        `Đã hoàn trả đơn hàng ${order.id} & cộng trả lại linh kiện vào kho thành công!`,
+        'success'
+      );
+      const updated: RepairOrder = {
+        ...order,
+        status: 'Đã hủy',
+        statusType: 'gray',
+      };
+      if (updateOrder) updateOrder(updated);
+      if (onCompleteSuccess) onCompleteSuccess(updated);
+      setIsReturnOrderConfirmOpen(false);
+      onClose();
+    } catch (err: any) {
+      const errMsg =
+        err?.response?.data?.message ||
+        err?.data?.message ||
+        err?.message ||
+        'Không thể hoàn trả đơn hàng.';
+      setFormError(errMsg);
+      toast(errMsg, 'error');
+    } finally {
+      setIsReturningOrder(false);
+    }
+  };
+
+  const handleApplyLinkedPartsToUsed = () => {
+    const summaryToInsert = cskhLinkedSummaryText || partsNeeded.trim();
+    if (!summaryToInsert) {
+      toast('Chưa có linh kiện liên kết nào để chèn', 'info');
+      return;
+    }
+    setPartsUsed(summaryToInsert);
+    if (!partsNeeded.trim()) {
+      setPartsNeeded(summaryToInsert);
+    }
+    toast('Đã chèn nhanh danh sách linh kiện lỗi từ đơn CSKH vào ô Linh kiện đã thay thế!', 'success');
+  };
+
+  const handleSelectTechIssueChip = (chip: any) => {
+    const enriched = enrichCommonIssueWithParts(chip, resolvedOrderCategory, techWatchSize);
+    setAdditionalIssueName((prev) => {
+      if (!prev.trim()) return enriched.issue_name;
+      if (prev.includes(enriched.issue_name)) return prev;
+      return `${prev}, ${enriched.issue_name}`;
+    });
+    setAdditionalLinkedParts((prev) => {
+      const map = new Map<string, LinkedPartItem>();
+      prev.forEach((p) => map.set(p.part_sku, { ...p }));
+      enriched.linked_parts.forEach((p) => {
+        if (!map.has(p.part_sku)) {
+          map.set(p.part_sku, { ...p });
+        }
+      });
+      return Array.from(map.values());
+    });
+  };
+
+  const handleAddInventoryPartToAdditional = (invPart: InventoryPart) => {
+    setAdditionalLinkedParts((prev) => {
+      const existingIdx = prev.findIndex((p) => p.part_sku === invPart.sku);
+      if (existingIdx >= 0) {
+        const next = [...prev];
+        next[existingIdx] = {
+          ...next[existingIdx],
+          quantity: next[existingIdx].quantity + 1,
+        };
+        return next;
+      }
+      const newPart: LinkedPartItem = applyWatchSizeToLinkedPart(
+        {
+          part_sku: invPart.sku,
+          part_name: invPart.name,
+          quantity: 1,
+          unit: 'Cái',
+        },
+        techWatchSize,
+        resolvedOrderCategory
+      );
+      return [...prev, newPart];
+    });
+  };
+
+  const handleConfirmAddTechIssueAndParts = async () => {
+    if (isSubmittingAdditionalIssue) return;
+    if (!additionalIssueName.trim() && additionalLinkedParts.length === 0) {
+      toast('Vui lòng chọn hoặc nhập tên lỗi phát sinh / linh kiện đi kèm', 'error');
+      return;
+    }
+
+    const addedPartsSummary = formatLinkedPartsSummary(additionalLinkedParts, techWatchSize);
+    const mergedPartsNeeded = [partsNeeded.trim(), addedPartsSummary]
+      .filter(Boolean)
+      .filter((val, idx, arr) => arr.indexOf(val) === idx)
+      .join(', ');
+
+    const effectiveIssueTitle =
+      additionalIssueName.trim() || `Bổ sung linh kiện: ${addedPartsSummary}`;
+    const effectiveNote =
+      additionalIssueNote.trim() ||
+      (addedPartsSummary ? `Linh kiện cần thay: ${addedPartsSummary}` : 'Phát sinh khi kiểm tra kỹ thuật');
+
+    setIsSubmittingAdditionalIssue(true);
+    try {
+      const res = await repairService.updatePartsNote(order.id, {
+        parts_needed: mergedPartsNeeded || undefined,
+        repair_note: [partsNote.trim(), `[Phát sinh KT]: ${effectiveIssueTitle} (${effectiveNote})`]
+          .filter(Boolean)
+          .join(' | '),
+        parts_note: effectiveNote,
+        additional_issue: {
+          name: effectiveIssueTitle,
+          note: effectiveNote,
+          linked_parts: additionalLinkedParts,
+        },
+      });
+
+      const resData = res?.data?.data || res?.data || res;
+      const newTechServiceItem: AdditionalServiceItem = {
+        id: `tech_srv_${Date.now()}`,
+        name: effectiveIssueTitle,
+        price: 0,
+        note: effectiveNote,
+        created_at: new Date().toISOString(),
+        created_by_name: effectiveUser?.name || order.tech || 'Kỹ thuật viên',
+        added_by_role: 'technician',
+        linked_parts: additionalLinkedParts,
+      };
+
+      const nextAdditionalServices: AdditionalServiceItem[] = Array.isArray(
+        resData?.additional_services
+      )
+        ? resData.additional_services
+        : [...additionalServicesList, newTechServiceItem];
+
+      setPartsNeeded(mergedPartsNeeded);
+      setPartsUsed((prev) => prev.trim() || mergedPartsNeeded);
+
+      const updated: RepairOrder = {
+        ...order,
+        parts_needed: mergedPartsNeeded || order.parts_needed,
+        partsNeeded: mergedPartsNeeded || order.partsNeeded,
+        repairNote: resData?.repair_note || order.repairNote,
+        additional_services: nextAdditionalServices,
+        additionalServices: nextAdditionalServices,
+      };
+
+      if (updateOrder) updateOrder(updated);
+      if (invalidateOrders) await invalidateOrders();
+
+      toast(
+        `Đã lưu lỗi phát sinh "${effectiveIssueTitle}" & đồng bộ linh kiện sang Quầy CSKH!`,
+        'success'
+      );
+      setAdditionalIssueName('');
+      setAdditionalIssueNote('');
+      setAdditionalLinkedParts([]);
+    } catch (err: any) {
+      const errMsg =
+        err?.response?.data?.message ||
+        err?.message ||
+        'Không thể lưu lỗi phát sinh & linh kiện.';
+      toast(errMsg, 'error');
+    } finally {
+      setIsSubmittingAdditionalIssue(false);
+    }
+  };
 
   // In tem khay K80
   const handlePrint = async () => {
@@ -384,6 +717,20 @@ export const TechOrderDetailModal: React.FC<TechOrderDetailModalProps> = ({
               <Icon name="printer" size={14} />
               <span>{isSilentPrinting ? 'Đang in...' : 'In tem dán khay K80'}</span>
             </Button>
+
+            {canReturnOrder && (
+              <Button
+                variant="danger"
+                size="md"
+                disabled={isSubmitting || isReturningOrder}
+                data-testid="tech-modal-return-order-btn"
+                onClick={() => setIsReturnOrderConfirmOpen(true)}
+                className="flex items-center gap-1.5 text-xs font-bold"
+              >
+                <Icon name="refresh" size={14} />
+                <span>Hoàn trả đơn hàng (Hoàn kho)</span>
+              </Button>
+            )}
           </div>
 
           <div className="flex items-center gap-2.5">
@@ -510,6 +857,57 @@ export const TechOrderDetailModal: React.FC<TechOrderDetailModalProps> = ({
               {order.issue}
             </p>
           </div>
+
+          {/* BOX NỔI BẬT: LINH KIỆN LỖI ĐƯỢC LINK TỪ ĐƠN CSKH */}
+          {cskhLinkedPartsWithSource.length > 0 && (
+            <div
+              data-testid="tech-linked-parts-from-cskh"
+              className="p-4 bg-[#eef8f3] rounded-[10px] border-2 border-[#176b51] space-y-2.5 shadow-xs"
+            >
+              <div className="flex flex-wrap items-center justify-between gap-2 pb-2 border-b border-[#cbe4d7]">
+                <div className="flex items-center gap-2">
+                  <Icon name="package" size={16} className="text-[#176b51]" />
+                  <h5 className="text-xs font-bold text-[#176b51] uppercase tracking-wide m-0">
+                    LINH KIỆN LỖI ĐƯỢC LINK TỪ ĐƠN CSKH ({cskhLinkedPartsWithSource.length} LINH KIỆN)
+                  </h5>
+                </div>
+                <Button
+                  type="button"
+                  variant="primary"
+                  size="sm"
+                  data-testid="tech-apply-linked-parts-btn"
+                  onClick={handleApplyLinkedPartsToUsed}
+                  className="bg-[#176b51] hover:bg-[#125848] text-white font-bold text-xs px-3 py-1 cursor-pointer"
+                >
+                  Chèn nhanh vào Linh kiện đã thay thế
+                </Button>
+              </div>
+
+              <div className="divide-y divide-[#d8ece2] bg-white rounded-[8px] border border-[#cde4d8] overflow-hidden text-xs">
+                {cskhLinkedPartsWithSource.map((pt, idx) => (
+                  <div
+                    key={`${pt.part_sku}-${idx}`}
+                    className="p-2.5 flex flex-wrap items-center justify-between gap-2"
+                  >
+                    <div className="space-y-0.5">
+                      <div className="flex items-center gap-2">
+                        <span className="font-mono text-[11px] font-bold text-[#176b51] bg-[#e9f4ef] px-2 py-0.5 rounded border border-[#b8d9cb]">
+                          {pt.part_sku}
+                        </span>
+                        <b className="text-[#17231f] text-xs">{pt.part_name}</b>
+                        <span className="px-2 py-0.5 rounded-full bg-[#176b51] text-white font-mono text-[11px] font-bold">
+                          ×{pt.quantity} {pt.unit || 'Cái'}
+                        </span>
+                      </div>
+                      <span className="text-[11px] text-[#5c6964] block">
+                        Nguồn: <b>{pt.source}</b>
+                      </span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
 
           {/* Checklist test quầy tiếp nhận */}
           <div>
@@ -664,6 +1062,211 @@ export const TechOrderDetailModal: React.FC<TechOrderDetailModalProps> = ({
               </span>
             )}
           </div>
+
+          {/* ========================================================================= */}
+          {/* KHU VỰC MỚI: ĐIỀN THÊM LỖI & LINH KIỆN PHÁT SINH (TƯƠNG TỰ QUẦY CSKH)       */}
+          {/* ========================================================================= */}
+          {isActive && (
+            <div
+              data-testid="tech-add-issue-parts-section"
+              className="p-4 bg-[#f4faf7] rounded-[10px] border-2 border-[#176b51]/80 space-y-3.5 shadow-xs"
+            >
+              <div className="flex flex-wrap items-center justify-between gap-2 pb-2 border-b border-[#cde4d8]">
+                <div className="flex items-center gap-2">
+                  <Icon name="wrench" size={15} className="text-[#176b51]" />
+                  <h5 className="text-xs font-bold text-[#176b51] uppercase tracking-[0.8px] m-0">
+                    ĐIỀN THÊM LỖI & LINH KIỆN PHÁT SINH (TƯƠNG TỰ QUẦY CSKH)
+                  </h5>
+                </div>
+                <span className="text-[11px] font-bold text-[#176b51] bg-white px-2.5 py-0.5 rounded-full border border-[#b8d9cb]">
+                  Đồng bộ trực tiếp sang màn hình CSKH báo giá khách
+                </span>
+              </div>
+
+              {/* Chọn nhanh Size Apple Watch nếu là đơn Apple Watch */}
+              {resolvedOrderCategory === 'Apple Watch' && (
+                <div className="p-2.5 rounded-[8px] bg-white border border-[#cde4d8] space-y-1.5">
+                  <div className="flex items-center justify-between text-xs">
+                    <span className="font-bold text-[#176b51]">Size Apple Watch của máy:</span>
+                    {techWatchSize && (
+                      <span className="font-mono font-bold text-[#176b51]">
+                        Đang chọn: {techWatchSize}
+                      </span>
+                    )}
+                  </div>
+                  <div className="flex flex-wrap gap-1.5">
+                    {POPULAR_APPLE_WATCH_SIZES.map((sz) => (
+                      <button
+                        key={sz}
+                        type="button"
+                        onClick={() => {
+                          setTechWatchSize(sz);
+                          setAdditionalLinkedParts((prev) =>
+                            prev.map((p) => applyWatchSizeToLinkedPart(p, sz, 'Apple Watch'))
+                          );
+                        }}
+                        className={`px-2.5 py-1 rounded text-xs font-bold border cursor-pointer ${
+                          techWatchSize === sz
+                            ? 'bg-[#176b51] text-white border-[#176b51]'
+                            : 'bg-[#f6f8f6] text-[#17231f] border-[#d6e4dc] hover:border-[#176b51]'
+                        }`}
+                      >
+                        {sz}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Ô Filter nhanh lỗi / linh kiện cho KTV */}
+              <div className="space-y-2">
+                <label className="block text-xs font-bold text-[#1c302b]">
+                  1. Lọc & Chọn nhanh lỗi phát sinh ({resolvedOrderCategory}):
+                </label>
+                <Input
+                  data-testid="tech-issue-filter-input"
+                  value={techIssueFilter}
+                  onChange={(e) => setTechIssueFilter(e.target.value)}
+                  placeholder="🔍 Lọc nhanh lỗi phát sinh hoặc linh kiện (VD: pin, màng loa, IC sạc, kính cảm ứng...)"
+                />
+                <div className="flex flex-wrap gap-1.5">
+                  {catalogIssuesForTech.map((chip) => {
+                    const isSelected = additionalIssueName.includes(chip.issue_name);
+                    const firstPart = chip.linked_parts?.[0];
+                    return (
+                      <button
+                        key={chip.issue_code}
+                        type="button"
+                        data-testid={`tech-issue-chip-${chip.issue_code}`}
+                        onClick={() => handleSelectTechIssueChip(chip)}
+                        className={`text-xs px-2.5 py-1.5 rounded-[12px] border transition-all text-left flex items-center gap-1.5 cursor-pointer ${
+                          isSelected
+                            ? 'bg-[#176b51] text-white border-[#176b51] font-bold shadow-2xs'
+                            : 'bg-white border-[#cde4d8] text-[#1c302b] hover:bg-[#e9f4ef] hover:border-[#176b51]'
+                        }`}
+                      >
+                        <span>+ {chip.issue_name}</span>
+                        {firstPart && (
+                          <span
+                            className={`px-1.5 py-0.5 rounded text-[10px] font-mono ${
+                              isSelected
+                                ? 'bg-white/20 text-white'
+                                : 'bg-[#e9f4ef] text-[#176b51]'
+                            }`}
+                          >
+                            🔧 {firstPart.part_name} ×{firstPart.quantity}
+                          </span>
+                        )}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Tên lỗi phát sinh & Gợi ý chọn thêm linh kiện từ kho */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <Input
+                  label="Tên lỗi / hạng mục phát sinh *"
+                  data-testid="tech-additional-issue-name-input"
+                  value={additionalIssueName}
+                  onChange={(e) => setAdditionalIssueName(e.target.value)}
+                  placeholder="VD: Phát hiện thêm chạm IC sạc hộp, rách màng loa trái..."
+                />
+                <Input
+                  label="Ghi chú kỹ thuật gửi CSKH báo khách"
+                  data-testid="tech-additional-issue-note-input"
+                  value={additionalIssueNote}
+                  onChange={(e) => setAdditionalIssueNote(e.target.value)}
+                  placeholder="VD: Cần báo khách đồng ý thay thêm màng loa trước khi đóng seal..."
+                />
+              </div>
+
+              {/* Chọn thêm linh kiện từ kho nội bộ */}
+              {inventoryParts.length > 0 && (
+                <div className="space-y-1.5">
+                  <span className="text-[11px] font-bold text-[#4e5f57] block">
+                    Chèn thêm linh kiện từ kho nội bộ:
+                  </span>
+                  <div className="flex flex-wrap gap-1.5">
+                    {inventoryParts.slice(0, 8).map((inv) => (
+                      <button
+                        key={inv.id}
+                        type="button"
+                        onClick={() => handleAddInventoryPartToAdditional(inv)}
+                        className="text-[11px] px-2 py-1 rounded bg-white hover:bg-[#e9f4ef] border border-[#cde4d8] text-[#176b51] font-medium cursor-pointer"
+                      >
+                        + {inv.name} ({inv.sku}) · Tồn: {inv.stock_quantity}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Danh sách linh kiện đi kèm lỗi phát sinh đang chọn */}
+              {additionalLinkedParts.length > 0 && (
+                <div className="p-2.5 rounded-[8px] bg-white border border-[#cde4d8] space-y-2 text-xs">
+                  <span className="font-bold text-[#176b51] block">
+                    Linh kiện đi kèm lỗi phát sinh ({additionalLinkedParts.length} mục):
+                  </span>
+                  <div className="space-y-1.5">
+                    {additionalLinkedParts.map((pt, idx) => (
+                      <div
+                        key={`${pt.part_sku}-${idx}`}
+                        className="flex flex-wrap items-center justify-between gap-2 p-2 rounded bg-[#f8fbf9] border border-[#e3ece7]"
+                      >
+                        <div className="flex items-center gap-2">
+                          <span className="font-mono text-[11px] font-bold text-[#176b51] bg-[#e9f4ef] px-1.5 py-0.5 rounded">
+                            {pt.part_sku}
+                          </span>
+                          <b className="text-[#17231f]">{pt.part_name}</b>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <span className="text-[11px] text-[#5c6964]">Số lượng:</span>
+                          <input
+                            type="number"
+                            min={1}
+                            value={pt.quantity}
+                            onChange={(e) => {
+                              const q = Math.max(1, Number(e.target.value) || 1);
+                              setAdditionalLinkedParts((prev) =>
+                                prev.map((item, i) => (i === idx ? { ...item, quantity: q } : item))
+                              );
+                            }}
+                            className="w-14 h-7 px-2 text-center font-mono text-xs border border-[#b8d9cb] rounded bg-white"
+                          />
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setAdditionalLinkedParts((prev) => prev.filter((_, i) => i !== idx))
+                            }
+                            className="text-red-600 hover:underline text-[11px] font-bold cursor-pointer"
+                          >
+                            Xóa
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              <div className="flex items-center justify-end pt-1">
+                <Button
+                  type="button"
+                  variant="primary"
+                  size="sm"
+                  data-testid="tech-confirm-add-issue-parts-btn"
+                  disabled={isSubmittingAdditionalIssue}
+                  onClick={handleConfirmAddTechIssueAndParts}
+                  className="bg-[#176b51] hover:bg-[#10583f] text-white font-bold text-xs px-4 py-2 cursor-pointer"
+                >
+                  {isSubmittingAdditionalIssue
+                    ? 'Đang đồng bộ...'
+                    : 'Xác nhận thêm lỗi & linh kiện'}
+                </Button>
+              </div>
+            </div>
+          )}
 
           {/* ========================================================================= */}
           {/* KHU VỰC CHUYÊN DỤNG: YÊU CẦU & GHI CHÚ LINH KIỆN                          */}
@@ -1057,6 +1660,64 @@ export const TechOrderDetailModal: React.FC<TechOrderDetailModalProps> = ({
           if (updateOrder) updateOrder(updatedOrder);
         }}
       />
+    )}
+
+    {isReturnOrderConfirmOpen && (
+      <Modal
+        isOpen={isReturnOrderConfirmOpen}
+        onClose={() => {
+          if (!isReturningOrder) setIsReturnOrderConfirmOpen(false);
+        }}
+        maxWidth="md"
+        eyebrow={`XÁC NHẬN HOÀN TRẢ · ${order.id}`}
+        title="Xác nhận hoàn trả đơn hàng & hoàn kho linh kiện"
+        subtitle={`Thiết bị: ${order.device} · Khách hàng: ${order.name}`}
+        footer={
+          <div className="flex items-center justify-end gap-2.5 w-full">
+            <Button
+              variant="secondary"
+              size="md"
+              disabled={isReturningOrder}
+              onClick={() => setIsReturnOrderConfirmOpen(false)}
+            >
+              Giữ lại đơn
+            </Button>
+            <Button
+              variant="danger"
+              size="md"
+              disabled={isReturningOrder}
+              data-testid="tech-modal-confirm-return-order-btn"
+              onClick={handleReturnOrderWithRestock}
+              className="font-bold"
+            >
+              {isReturningOrder ? 'Đang hoàn trả...' : 'Xác nhận hoàn trả & hoàn kho'}
+            </Button>
+          </div>
+        }
+      >
+        <div
+          data-testid="tech-modal-return-order-confirm-box"
+          className="space-y-3.5 text-xs text-[#1c302b]"
+        >
+          <div className="p-3.5 rounded-[10px] bg-[#fdf2f2] border border-[#f5c6cb] text-[#991b1b] space-y-1.5">
+            <div className="font-bold text-sm">
+              Linh kiện đã xuất cho đơn này sẽ được cộng trả lại vào kho.
+            </div>
+            <p className="m-0 leading-relaxed">
+              Đơn hàng <b>{order.id}</b> sẽ chuyển sang trạng thái <b>Đã hủy</b> (hoàn trả đơn hàng) và hệ thống tự động tạo bút toán hoàn kho cho toàn bộ linh kiện đã xuất theo đơn này (nếu có).
+            </p>
+          </div>
+
+          <Textarea
+            label="Lý do hoàn trả đơn hàng (tùy chọn)"
+            data-testid="tech-modal-return-order-note-input"
+            value={returnOrderNote}
+            onChange={(e) => setReturnOrderNote(e.target.value)}
+            placeholder="Nhập lý do khách đổi ý, không sửa nữa hoặc hoàn trả đơn hàng..."
+            rows={2}
+          />
+        </div>
+      </Modal>
     )}
   </>
   );

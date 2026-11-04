@@ -89,7 +89,7 @@ Route::prefix('v1')->group(function () {
         });
 
         // Users & Role Management
-        Route::middleware('role:admin,super_admin,technician,tech,cskh')->group(function () {
+        Route::middleware('role:admin,super_admin,technician,tech,cskh,inventory,qc')->group(function () {
             Route::get('/users', [UserController::class, 'index'])->name('api.v1.users.index');
         });
 
@@ -132,6 +132,8 @@ Route::prefix('v1')->group(function () {
         Route::put('/repairs/{id}', [OrderController::class, 'update'])->name('api.v1.repairs.update');
         Route::post('/orders/{id}/transition', [OrderController::class, 'transition'])->name('api.v1.orders.transition');
         Route::post('/repairs/{id}/transition', [OrderController::class, 'transition'])->name('api.v1.repairs.transition');
+        Route::match(['post', 'patch'], '/orders/{id}/status', [OrderController::class, 'transition'])->name('api.v1.orders.status');
+        Route::match(['post', 'patch'], '/repairs/{id}/status', [OrderController::class, 'transition'])->name('api.v1.repairs.status');
         Route::patch('/orders/{id}/parts-note', [OrderController::class, 'updatePartsNote'])->name('api.v1.orders.parts_note');
         Route::patch('/repairs/{id}/parts-note', [OrderController::class, 'updatePartsNote'])->name('api.v1.repairs.parts_note');
         Route::post('/orders/{id}/special-parts-request', [OrderController::class, 'requestSpecialPart'])->name('api.v1.orders.special_parts_request');
@@ -149,8 +151,8 @@ Route::prefix('v1')->group(function () {
         Route::post('/orders/{id}/photos', [OrderController::class, 'uploadPhoto'])->name('api.v1.orders.photos');
         Route::post('/repairs/{id}/photos', [OrderController::class, 'uploadPhoto'])->name('api.v1.repairs.photos');
 
-        // Additional services (CSKH & Admin exclusive)
-        Route::middleware('role:admin,cskh,super_admin')->group(function () {
+        // Additional services (CSKH, Operational Staff & Admin)
+        Route::middleware('role:admin,cskh,super_admin,inventory,qc')->group(function () {
             Route::post('/orders/{id}/additional-services', [OrderController::class, 'addAdditionalService'])->name('api.v1.orders.additional_services.store');
             Route::delete('/orders/{id}/additional-services/{serviceId}', [OrderController::class, 'deleteAdditionalService'])->name('api.v1.orders.additional_services.destroy');
             Route::post('/repairs/{id}/additional-services', [OrderController::class, 'addAdditionalService'])->name('api.v1.repairs.additional_services.store');

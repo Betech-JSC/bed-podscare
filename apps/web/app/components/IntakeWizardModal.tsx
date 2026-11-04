@@ -39,6 +39,17 @@ import {
 import { usePodsCare } from '../providers';
 import { useSilentPrint, PrintFormatModal } from './print';
 import { IntakeQuickConsole } from './IntakeQuickConsole';
+import {
+  POPULAR_APPLE_WATCH_SIZES,
+  COMMON_ISSUE_CATALOG_BY_CATEGORY,
+  enrichCommonIssueWithParts,
+  filterCommonIssues,
+  mergeLinkedPartsFromIssues,
+  formatLinkedPartsSummary,
+  applyWatchSizeTagToText,
+  inferLinkedPartsFromOrderText,
+  type CommonIssueCatalogItem,
+} from '../constants/commonIssueCatalog';
 
 export interface IntakeDeviceItem {
   id: string;
@@ -47,6 +58,9 @@ export interface IntakeDeviceItem {
   serial: string;
   accessories: string;
   issue: string;
+  watchSize?: string;
+  partsNeeded?: string;
+  selectedIssues?: CommonIssueCatalogItem[];
   testAnswers: Record<string, ChecklistStatus>;
   testNote: string;
   appearance: string;
@@ -65,24 +79,7 @@ export interface IntakeWizardModalProps {
   initialCustomerPhone?: string;
 }
 
-const DEFAULT_COMMON_ISSUES: Record<string, CommonIssueItem[]> = {
-  AirPods: [
-    { id: 1, category: 'AirPods', issue_name: 'Pin chai, tụt pin nhanh dưới 1 tiếng', estimated_cost: 250000 },
-    { id: 2, category: 'AirPods', issue_name: 'Bật chống ồn ANC bị rè, rít gió chói tai', estimated_cost: 350000 },
-    { id: 3, category: 'AirPods', issue_name: 'Loa một bên nhỏ tiếng hoặc rè bass', estimated_cost: 200000 },
-    { id: 4, category: 'AirPods', issue_name: 'Hộp sạc không nhận sạc hoặc không sạc được cho tai', estimated_cost: 300000 },
-    { id: 5, category: 'AirPods', issue_name: 'Bám bẩn lâu ngày, tắc màng âm thanh', estimated_cost: 100000 },
-  ],
-  'Apple Watch': [
-    { id: 11, category: 'Apple Watch', issue_name: 'Pin phù, sụt nhanh hoặc đẩy bung màn hình', estimated_cost: 350000 },
-    { id: 12, category: 'Apple Watch', issue_name: 'Cảm ứng liệt hoặc loạn sau va đập', estimated_cost: 450000 },
-    { id: 13, category: 'Apple Watch', issue_name: 'Không nhận sạc không dây', estimated_cost: 300000 },
-  ],
-  'Apple Pencil': [
-    { id: 21, category: 'Apple Pencil', issue_name: 'Pin kiệt không nhận sạc từ iPad', estimated_cost: 250000 },
-    { id: 22, category: 'Apple Pencil', issue_name: 'Ngòi mòn, đứt nét hoặc mất cảm ứng lực', estimated_cost: 150000 },
-  ],
-};
+const DEFAULT_COMMON_ISSUES: Record<string, CommonIssueItem[]> = COMMON_ISSUE_CATALOG_BY_CATEGORY;
 
 export const QUICK_POPULAR_MODELS = [
   { label: 'AirPods 2', category: 'AirPods', name: 'AirPods 2', code: 'A2031/A2032' },
@@ -90,8 +87,237 @@ export const QUICK_POPULAR_MODELS = [
   { label: 'AirPods Pro 1', category: 'AirPods', name: 'AirPods Pro 1', code: 'A2083/A2084' },
   { label: 'AirPods Pro 2', category: 'AirPods', name: 'AirPods Pro 2', code: 'A2698/A2699' },
   { label: 'AirPods Max', category: 'AirPods', name: 'AirPods Max', code: 'A2096' },
+  { label: 'Apple Watch', category: 'Apple Watch', name: 'Apple Watch', code: '38mm–49mm Ultra' },
   { label: 'Khác', category: 'Khác', name: 'Khác', code: 'Dòng máy khác' },
 ];
+
+export const DEFAULT_MODELS_BY_CATEGORY: Record<string, { name: string; model: string }[]> = {
+  AirPods: [
+    { name: 'AirPods 2', model: 'A2031/A2032' },
+    { name: 'AirPods 3', model: 'A2564/A2565' },
+    { name: 'AirPods 4', model: 'MXP63VN/A' },
+    { name: 'AirPods Pro 1', model: 'A2083/A2084' },
+    { name: 'AirPods Pro 2', model: 'A2698/A2699' },
+    { name: 'AirPods Max', model: 'A2096' },
+  ],
+  'Apple Watch': [
+    { name: 'Apple Watch Series 9', model: 'MR993VN/A' },
+    { name: 'Apple Watch Ultra 2', model: 'MREG3VN/A' },
+  ],
+  'Apple Pencil': [
+    { name: 'Apple Pencil 1', model: 'MK0C2AM/A' },
+    { name: 'Apple Pencil 2', model: 'MU8F2AM/A' },
+    { name: 'Apple Pencil Pro', model: 'MX2D3AM/A' },
+  ],
+  MacBook: [
+    { name: 'MacBook Air M2', model: 'MLY33VN/A' },
+    { name: 'MacBook Pro 14 M3', model: 'MTL73VN/A' },
+  ],
+  iPad: [
+    { name: 'iPad Air 5', model: 'MM9E3VN/A' },
+    { name: 'iPad Pro 11 M4', model: 'MVVJ3VN/A' },
+  ],
+};
+
+export const CATEGORY_HANDOVER_PARTS: Record<string, { label: string; icon: string }[]> = {
+  'Apple Watch': [
+    { label: 'Thân đồng hồ (Body)', icon: 'watch' },
+    { label: 'Dây đeo (Strap)', icon: 'tag' },
+    { label: 'Cáp sạc từ', icon: 'bolt' },
+  ],
+  'Apple Pencil': [
+    { label: 'Thân bút (Pencil)', icon: 'edit' },
+    { label: 'Ngòi bút (Tip)', icon: 'spark' },
+    { label: 'Nắp / Đầu chuyển sạc', icon: 'bolt' },
+    { label: 'Hộp bút', icon: 'box' },
+  ],
+  DEFAULT: [
+    { label: 'Thân máy', icon: 'device' },
+    { label: 'Bộ sạc / Cáp sạc', icon: 'bolt' },
+    { label: 'Bao da / Túi chống sốc', icon: 'box' },
+  ],
+};
+
+const ALL_KNOWN_CATEGORY_PART_LABELS = [
+  'Tai trái (L)',
+  'Tai phải (R)',
+  'Hộp sạc (Case)',
+  'Thân đồng hồ (Body)',
+  'Dây đeo (Strap)',
+  'Cáp sạc từ',
+  'Thân bút (Pencil)',
+  'Ngòi bút (Tip)',
+  'Nắp / Đầu chuyển sạc',
+  'Hộp bút',
+  'Thân máy',
+  'Bộ sạc / Cáp sạc',
+  'Bao da / Túi chống sốc',
+];
+
+export function isSameDeviceModel(modelA?: string | null, modelB?: string | null): boolean {
+  if (!modelA || !modelB) return false;
+  const normA = modelA.trim().toLowerCase();
+  const normB = modelB.trim().toLowerCase();
+  if (normA === normB) return true;
+  const pro1Aliases = new Set(['airpods pro', 'airpods pro 1', 'airpods pro gen 1']);
+  if (pro1Aliases.has(normA) && pro1Aliases.has(normB)) return true;
+  return false;
+}
+
+export function resolveCanonicalModelName(
+  targetName: string,
+  availableModels: { name: string; model?: string }[]
+): string {
+  const matched = availableModels.find((m) => isSameDeviceModel(m.name, targetName));
+  return matched ? matched.name : targetName;
+}
+
+export function sanitizeAccessoriesOnCategoryChange(
+  prevAccessories: string,
+  nextCategory: string,
+  watchSize?: string
+): string {
+  if (!prevAccessories || !prevAccessories.trim()) return '';
+  const withoutSize = prevAccessories.replace(/^\[Size:\s*[^\]]+\]\s*/i, '').trim();
+  const validForNext = new Set(
+    nextCategory === 'AirPods'
+      ? ['tai trái (l)', 'tai phải (r)', 'hộp sạc (case)']
+      : (CATEGORY_HANDOVER_PARTS[nextCategory] || CATEGORY_HANDOVER_PARTS.DEFAULT).map((p) =>
+          p.label.toLowerCase()
+        )
+  );
+  const allKnownLower = new Set(ALL_KNOWN_CATEGORY_PART_LABELS.map((l) => l.toLowerCase()));
+  const remainingTokens = withoutSize
+    .split(',')
+    .map((s) => s.trim())
+    .filter((s) => {
+      if (!s) return false;
+      const lower = s.toLowerCase();
+      if (allKnownLower.has(lower) && !validForNext.has(lower)) {
+        return false;
+      }
+      return true;
+    });
+  const joined = remainingTokens.join(', ');
+  if (nextCategory === 'Apple Watch' && watchSize && joined) {
+    return applyWatchSizeTagToText(joined, watchSize);
+  }
+  return joined;
+}
+
+export function parseCategoryHandoverPartsFromText(
+  text: string | undefined | null,
+  category: string
+): string[] {
+  if (!text || !text.trim()) return [];
+  const withoutSize = text.replace(/^\[Size:\s*[^\]]+\]\s*/i, '').trim();
+  const tokens = withoutSize
+    .split(',')
+    .map((s) => s.trim().toLowerCase())
+    .filter(Boolean);
+  const defs = CATEGORY_HANDOVER_PARTS[category] || CATEGORY_HANDOVER_PARTS.DEFAULT;
+  return defs.filter((d) => tokens.includes(d.label.toLowerCase())).map((d) => d.label);
+}
+
+export function toggleCategoryHandoverPartInText(
+  text: string | undefined | null,
+  partLabel: string,
+  category: string,
+  watchSize?: string
+): string {
+  const raw = (text || '').replace(/^\[Size:\s*[^\]]+\]\s*/i, '').trim();
+  const tokens = raw
+    .split(',')
+    .map((s) => s.trim())
+    .filter(Boolean);
+  const exists = tokens.some((t) => t.toLowerCase() === partLabel.toLowerCase());
+  const nextTokens = exists
+    ? tokens.filter((t) => t.toLowerCase() !== partLabel.toLowerCase())
+    : [...tokens, partLabel];
+  const joined = nextTokens.join(', ');
+  if (category === 'Apple Watch' && watchSize && joined) {
+    return applyWatchSizeTagToText(joined, watchSize);
+  }
+  return joined;
+}
+
+export interface QuickDeviceCardItem {
+  label: string;
+  category: string;
+  name: string;
+  resolvedName: string;
+  code: string;
+  isCategorySwitch?: boolean;
+}
+
+export function buildQuickDeviceItemsForCategory(
+  category: string,
+  availableModelsForDev: { name: string; model?: string }[]
+): QuickDeviceCardItem[] {
+  if (category === 'AirPods') {
+    const airpodsQuickBase = QUICK_POPULAR_MODELS.filter((q) => q.category === 'AirPods');
+    const items: QuickDeviceCardItem[] = airpodsQuickBase.map((item) => {
+      const matched = availableModelsForDev.find((m) => isSameDeviceModel(m.name, item.name));
+      return {
+        label: item.label,
+        category: 'AirPods',
+        name: item.name,
+        resolvedName: matched ? matched.name : item.name,
+        code: matched?.model || item.code,
+        isCategorySwitch: false,
+      };
+    });
+
+    // Bổ sung các model AirPods khác có trong DB (ví dụ AirPods 4 hoặc model mới tạo trong /devices)
+    availableModelsForDev.forEach((m) => {
+      const alreadyCovered = items.some(
+        (it) => isSameDeviceModel(it.resolvedName, m.name) || isSameDeviceModel(it.name, m.name)
+      );
+      if (!alreadyCovered) {
+        items.push({
+          label: m.name,
+          category: 'AirPods',
+          name: m.name,
+          resolvedName: m.name,
+          code: m.model || 'AirPods',
+          isCategorySwitch: false,
+        });
+      }
+    });
+
+    // Giữ 2 nút chuyển nhanh Apple Watch và Khác từ QUICK_POPULAR_MODELS
+    QUICK_POPULAR_MODELS.filter((q) => q.category !== 'AirPods').forEach((q) => {
+      items.push({
+        label: q.label,
+        category: q.category,
+        name: q.name,
+        resolvedName: q.name,
+        code: q.code,
+        isCategorySwitch: true,
+      });
+    });
+
+    return items;
+  }
+
+  // Khi category !== 'AirPods' (Apple Watch, Apple Pencil, MacBook, iPad...):
+  // Hiển thị trực tiếp các dòng sản phẩm thực tế của loại thiết bị đó để map 1-1 với Dòng sản phẩm bên dưới
+  const modelSource =
+    availableModelsForDev.length > 0
+      ? availableModelsForDev
+      : DEFAULT_MODELS_BY_CATEGORY[category] || [];
+
+  const categoryItems: QuickDeviceCardItem[] = modelSource.map((m) => ({
+    label: m.name,
+    category,
+    name: m.name,
+    resolvedName: m.name,
+    code: m.model || category,
+    isCategorySwitch: false,
+  }));
+
+  return categoryItems;
+}
 
 const createDefaultDevice = (id = 'dev-1', defaultCategory = 'AirPods', defaultModel = 'AirPods Pro 2'): IntakeDeviceItem => ({
   id,
@@ -100,6 +326,9 @@ const createDefaultDevice = (id = 'dev-1', defaultCategory = 'AirPods', defaultM
   serial: '',
   accessories: '',
   issue: '',
+  watchSize: undefined,
+  partsNeeded: '',
+  selectedIssues: [],
   testAnswers: {},
   testNote: '',
   appearance: '',
@@ -207,11 +436,57 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
   const [commonIssues, setCommonIssues] = useState<CommonIssueItem[]>([]);
   const [categoryIssues, setCategoryIssues] = useState<Record<string, CommonIssueItem[]>>({});
   const [checklistTemplate, setChecklistTemplate] = useState<string[]>([]);
+  const [issueFilterByDevice, setIssueFilterByDevice] = useState<Record<string, string>>({});
+  const [showJsonByDevice, setShowJsonByDevice] = useState<Record<string, boolean>>({});
 
   // Validation errors
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [deviceList, setDeviceList] = useState<{ id: number; name: string }[]>([]);
+  const [deviceList, setDeviceList] = useState<
+    { id: number; name: string; category?: string; model?: string }[]
+  >([]);
+
+  const getAvailableModelsForCategory = React.useCallback(
+    (cat: string): { id?: number; name: string; category: string; model?: string }[] => {
+      const mergedMap = new Map<string, { id?: number; name: string; category: string; model?: string }>();
+
+      deviceProfiles
+        .filter((p) => p.category === cat)
+        .forEach((p) => {
+          mergedMap.set(p.name.trim().toLowerCase(), {
+            id: p.id,
+            name: p.name,
+            category: p.category,
+            model: p.model || '',
+          });
+        });
+
+      deviceList
+        .filter((d) => (d.category || 'AirPods') === cat)
+        .forEach((d) => {
+          const key = d.name.trim().toLowerCase();
+          const existing = mergedMap.get(key);
+          mergedMap.set(key, {
+            id: d.id ?? existing?.id,
+            name: existing?.name || d.name,
+            category: cat,
+            model: d.model || existing?.model || '',
+          });
+        });
+
+      if (mergedMap.size > 0) {
+        return Array.from(mergedMap.values());
+      }
+
+      const defaults = DEFAULT_MODELS_BY_CATEGORY[cat] || [];
+      return defaults.map((m) => ({
+        name: m.name,
+        category: cat,
+        model: m.model,
+      }));
+    },
+    [deviceProfiles, deviceList]
+  );
 
   const resetForm = () => {
     setName('');
@@ -325,7 +600,12 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
       const res: any = await deviceService.getDevices();
       const items = res?.data || res;
       if (Array.isArray(items) && items.length > 0) {
-        return items.map((d: any) => ({ id: d.id, name: d.name, category: d.category }));
+        return items.map((d: any) => ({
+          id: d.id,
+          name: d.name,
+          category: d.category || 'AirPods',
+          model: d.model_code || d.model || '',
+        }));
       }
       return [];
     },
@@ -461,8 +741,8 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
   const step3Category = activeDeviceStep3?.category || selectedCategory;
   const step3Device = activeDeviceStep3?.device || selectedDevice;
   const matchedStep3Model =
-    deviceList.find((d) => d.name === step3Device) ||
-    deviceProfiles.find((p) => p.name === step3Device);
+    deviceList.find((d) => isSameDeviceModel(d.name, step3Device)) ||
+    deviceProfiles.find((p) => isSameDeviceModel(p.name, step3Device));
   const modelId = matchedStep3Model?.id;
 
   const { data: cachedChecklistTemplate } = useQuery({
@@ -497,7 +777,7 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
 
   const getEffectiveChecksForDevice = (dev: IntakeDeviceItem): string[] => {
     const profile =
-      deviceProfiles.find((p) => p.name === dev.device) ||
+      deviceProfiles.find((p) => isSameDeviceModel(p.name, dev.device)) ||
       deviceProfiles.find((p) => p.category === dev.category) ||
       deviceProfiles[0];
 
@@ -605,17 +885,61 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
   const handleChipClickForDevice = (chip: CommonIssueItem, devIndex: number) => {
     const textToAdd = chip.issue_name;
     const targetDev = devices[devIndex];
+    const devCategory = targetDev?.category || selectedCategory;
+    const devWatchSize = targetDev?.watchSize;
+    const enrichedChip = enrichCommonIssueWithParts(chip, devCategory, devWatchSize);
+
     const prev = targetDev ? targetDev.issue : issue;
-    const newIssue = !prev.trim()
-      ? textToAdd
-      : prev.includes(textToAdd)
-      ? prev
-      : `${prev}, ${textToAdd}`;
+    const isAlreadyInText = prev.includes(textToAdd);
+
+    let newIssue = prev;
+    let nextSelectedIssues: CommonIssueCatalogItem[] = [...(targetDev?.selectedIssues || [])];
+
+    if (!prev.trim()) {
+      newIssue = devCategory === 'Apple Watch' && devWatchSize
+        ? applyWatchSizeTagToText(textToAdd, devWatchSize)
+        : textToAdd;
+      if (!nextSelectedIssues.some((i) => i.issue_name === enrichedChip.issue_name)) {
+        nextSelectedIssues.push(enrichedChip);
+      }
+    } else if (isAlreadyInText) {
+      // Nếu chưa có trong selectedIssues thì đồng bộ vào selectedIssues, ngược lại cho phép bỏ chọn
+      if (!nextSelectedIssues.some((i) => i.issue_name === enrichedChip.issue_name)) {
+        nextSelectedIssues.push(enrichedChip);
+      } else {
+        const cleaned = prev
+          .split(',')
+          .map((s) => s.trim())
+          .filter((s) => s && s !== textToAdd && !s.endsWith(textToAdd))
+          .join(', ');
+        newIssue = cleaned || prev;
+        nextSelectedIssues = nextSelectedIssues.filter((i) => i.issue_name !== enrichedChip.issue_name);
+      }
+    } else {
+      newIssue = `${prev}, ${textToAdd}`;
+      if (!nextSelectedIssues.some((i) => i.issue_name === enrichedChip.issue_name)) {
+        nextSelectedIssues.push(enrichedChip);
+      }
+    }
+
+    // Luôn đồng bộ tất cả lỗi khớp trong newIssue để tổng hợp linked_parts
+    const catalogForCat = categoryIssues[devCategory] || DEFAULT_COMMON_ISSUES[devCategory] || [];
+    const matchedFromText = catalogForCat
+      .filter((item) => newIssue.toLowerCase().includes(item.issue_name.toLowerCase()))
+      .map((item) => enrichCommonIssueWithParts(item, devCategory, devWatchSize));
+
+    const combinedSelected = matchedFromText.length > 0 ? matchedFromText : nextSelectedIssues;
+    const mergedParts = mergeLinkedPartsFromIssues(combinedSelected, devCategory, devWatchSize);
+    const nextPartsNeeded = formatLinkedPartsSummary(mergedParts, devWatchSize);
 
     if (devIndex === 0) {
       setIssue(newIssue);
     }
-    updateDevice(devIndex, { issue: newIssue });
+    updateDevice(devIndex, {
+      issue: newIssue,
+      selectedIssues: combinedSelected,
+      partsNeeded: nextPartsNeeded,
+    });
 
     setErrors((prevErrs) => {
       const next = { ...prevErrs };
@@ -626,34 +950,87 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
   };
 
   const handleChipClick = (chip: CommonIssueItem) => {
-    setIssue((prev) => {
-      const textToAdd = chip.issue_name;
-      if (!prev.trim()) return textToAdd;
-      if (prev.includes(textToAdd)) return prev;
-      return `${prev}, ${textToAdd}`;
-    });
     handleChipClickForDevice(chip, 0);
   };
 
+  const handleSelectWatchSizeForDevice = (size: string, devIndex: number) => {
+    const targetDev = devices[devIndex];
+    if (!targetDev) return;
+
+    const nextAccessories = applyWatchSizeTagToText(targetDev.accessories, size);
+    const nextIssue = targetDev.issue.trim()
+      ? applyWatchSizeTagToText(targetDev.issue, size)
+      : targetDev.issue;
+
+    const catalogForCat = categoryIssues['Apple Watch'] || DEFAULT_COMMON_ISSUES['Apple Watch'] || [];
+    const activeIssues =
+      targetDev.selectedIssues && targetDev.selectedIssues.length > 0
+        ? targetDev.selectedIssues.map((iss) => enrichCommonIssueWithParts(iss, 'Apple Watch', size))
+        : catalogForCat
+            .filter((item) => nextIssue.toLowerCase().includes(item.issue_name.toLowerCase()))
+            .map((item) => enrichCommonIssueWithParts(item, 'Apple Watch', size));
+
+    const mergedParts = mergeLinkedPartsFromIssues(activeIssues, 'Apple Watch', size);
+    const nextPartsNeeded = formatLinkedPartsSummary(mergedParts, size);
+
+    updateDevice(devIndex, {
+      watchSize: size,
+      accessories: nextAccessories,
+      issue: nextIssue,
+      selectedIssues: activeIssues,
+      partsNeeded: nextPartsNeeded || targetDev.partsNeeded,
+    });
+    if (devIndex === 0) {
+      setAccessories(nextAccessories);
+      if (nextIssue !== targetDev.issue) setIssue(nextIssue);
+    }
+  };
+
   const handleCategoryChangeForDevice = (cat: string, devIndex: number) => {
-    const models = deviceProfiles.filter((p) => p.category === cat);
-    const firstModel = models.length > 0 && models[0] ? models[0].name : '';
+    const models = getAvailableModelsForCategory(cat);
+    const firstModel =
+      models.length > 0 && models[0]
+        ? models[0].name
+        : cat === 'Apple Watch'
+        ? 'Apple Watch Series 9'
+        : cat === 'Apple Pencil'
+        ? 'Apple Pencil 2'
+        : 'AirPods Pro 2';
+
+    const targetDev = devices[devIndex];
+    const nextWatchSize = cat === 'Apple Watch' ? targetDev?.watchSize || '45mm' : undefined;
+    const cleanedAccessories = sanitizeAccessoriesOnCategoryChange(
+      targetDev?.accessories || '',
+      cat,
+      nextWatchSize
+    );
 
     updateDevice(devIndex, {
       category: cat,
       device: firstModel,
+      watchSize: nextWatchSize,
+      accessories: cleanedAccessories,
+      selectedIssues: [],
+      partsNeeded: '',
     });
 
     if (devIndex === 0) {
       setSelectedCategory(cat);
       setSelectedDevice(firstModel);
+      setAccessories(cleanedAccessories);
     }
 
     setErrors((prev) => {
       const next = { ...prev };
       const dev = devices[devIndex];
-      if (dev) delete next[`category_${dev.id}`];
-      if (devIndex === 0) delete next.category;
+      if (dev) {
+        delete next[`category_${dev.id}`];
+        delete next[`device_${dev.id}`];
+      }
+      if (devIndex === 0) {
+        delete next.category;
+        delete next.device;
+      }
       return next;
     });
   };
@@ -851,9 +1228,9 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
         }));
 
         // Resolve device_model_id
-        const matchedDevice = deviceList.find(
-          (d) => d.name.toLowerCase() === dev.device.toLowerCase()
-        );
+        const matchedDevice =
+          deviceList.find((d) => isSameDeviceModel(d.name, dev.device)) ||
+          deviceProfiles.find((p) => isSameDeviceModel(p.name, dev.device));
         const deviceModelId = matchedDevice?.id || 1;
 
         // Map checklists to backend format
@@ -867,14 +1244,34 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
         const cleanCustomerName = sanitizeSearchQuery(name) || name.trim();
         const normalizedCustomerPhone = normalizePhoneForStorage(phone) || phone.trim();
 
+        const effectiveWatchSize =
+          dev.category === 'Apple Watch' ? dev.watchSize || '45mm' : undefined;
+        const effectiveAccessories =
+          dev.category === 'Apple Watch' && effectiveWatchSize
+            ? applyWatchSizeTagToText(dev.accessories.trim(), effectiveWatchSize)
+            : dev.accessories.trim();
+        const effectiveIssueText =
+          dev.category === 'Apple Watch' && effectiveWatchSize
+            ? applyWatchSizeTagToText(dev.issue.trim(), effectiveWatchSize)
+            : dev.issue.trim();
+
+        const computedPartsFromText = formatLinkedPartsSummary(
+          inferLinkedPartsFromOrderText(effectiveIssueText, dev.category, effectiveWatchSize)
+            .linkedParts,
+          effectiveWatchSize
+        );
+        const effectivePartsNeeded =
+          (dev.partsNeeded || '').trim() || computedPartsFromText || undefined;
+
         const payload = {
           branch_id: branchIdNum,
           customer_name: cleanCustomerName,
           customer_phone: normalizedCustomerPhone,
           device_model_id: deviceModelId,
           serial_number: dev.serial.trim() || undefined,
-          accessories: dev.accessories.trim() || undefined,
-          issue_description: dev.issue.trim(),
+          accessories: effectiveAccessories || undefined,
+          issue_description: effectiveIssueText,
+          parts_needed: effectivePartsNeeded,
           appearance_notes: dev.appearance.trim() || undefined,
           test_note: dev.testNote.trim() || undefined,
           estimated_price: devPrice,
@@ -923,8 +1320,10 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
           deviceCategory: dev.category,
           device: dev.device,
           serial: dev.serial.trim() || 'Chưa cập nhật',
-          issue: dev.issue.trim(),
-          accessories: dev.accessories.trim() || 'Không gửi kèm',
+          issue: effectiveIssueText,
+          accessories: effectiveAccessories || 'Không gửi kèm',
+          parts_needed: effectivePartsNeeded || null,
+          partsNeeded: effectivePartsNeeded || null,
           branch: branchObj.name,
           branchId: branchObj.id,
           branchName: branchObj.name,
@@ -1193,7 +1592,7 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
               selectedCskhId={selectedCskhId}
               onCskhChange={setSelectedCskhId}
               categories={categories}
-              availableModels={deviceProfiles.filter((p) => p.category === (devices[0]?.category || selectedCategory))}
+              availableModels={getAvailableModelsForCategory(devices[0]?.category || selectedCategory)}
               device={devices[0] || createDefaultDevice('dev-1')}
               onUpdateDevice={(updater) => updateDevice(0, updater)}
               onCategoryChange={(cat) => handleCategoryChangeForDevice(cat, 0)}
@@ -1427,8 +1826,44 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
           {!quickConsoleMode && currentStepIndex === 1 && (
             <div className="space-y-4">
               {devices.map((dev, devIdx) => {
-                const availableModelsForDev = deviceProfiles.filter((p) => p.category === dev.category);
-                const issuesForDev = categoryIssues[dev.category] || DEFAULT_COMMON_ISSUES[dev.category] || [];
+                const availableModelsForDev = getAvailableModelsForCategory(dev.category);
+                const quickDeviceItems = buildQuickDeviceItemsForCategory(
+                  dev.category,
+                  availableModelsForDev
+                );
+                const canonicalSelectedModel = resolveCanonicalModelName(
+                  dev.device,
+                  availableModelsForDev
+                );
+                const selectModelOptions = (() => {
+                  const opts = availableModelsForDev.map((m) => ({
+                    value: m.name,
+                    label: `${m.name}${m.model ? ` · ${m.model}` : ''}`,
+                  }));
+                  if (
+                    canonicalSelectedModel &&
+                    !opts.some((o) => o.value === canonicalSelectedModel)
+                  ) {
+                    const matchedQuick = QUICK_POPULAR_MODELS.find((q) =>
+                      isSameDeviceModel(q.name, canonicalSelectedModel)
+                    );
+                    opts.unshift({
+                      value: canonicalSelectedModel,
+                      label: matchedQuick?.code
+                        ? `${canonicalSelectedModel} · ${matchedQuick.code}`
+                        : canonicalSelectedModel,
+                    });
+                  }
+                  return opts;
+                })();
+                const handoverPartDefs =
+                  CATEGORY_HANDOVER_PARTS[dev.category] || CATEGORY_HANDOVER_PARTS.DEFAULT;
+                const selectedCategoryParts = parseCategoryHandoverPartsFromText(
+                  dev.accessories,
+                  dev.category
+                );
+                const issuesForDev =
+                  categoryIssues[dev.category] || DEFAULT_COMMON_ISSUES[dev.category] || [];
 
                 return (
                   <section
@@ -1456,38 +1891,83 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
                       )}
                     </div>
 
-                    {/* Thẻ chọn nhanh dòng máy phổ biến (1-Click Selection) */}
+                    {/* Thẻ chọn nhanh dòng máy phổ biến (Đồng bộ 2 chiều với Loại thiết bị & Dòng sản phẩm bên dưới) */}
                     <div className="mb-3.5">
-                      <div className="flex items-center justify-between mb-2">
+                      <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
                         <label className="text-xs font-bold text-[#1c302b] uppercase tracking-[0.5px]">
-                          Chọn nhanh thiết bị *
+                          Chọn nhanh thiết bị ({dev.category}) *
                         </label>
-                        <span className="text-[11px] text-[#718279]">
-                          1-click chọn nhanh model phổ biến
-                        </span>
+                        <div className="flex flex-wrap items-center gap-1">
+                          {categories.map((cat) => {
+                            const isCatActive = dev.category === cat;
+                            return (
+                              <button
+                                key={cat}
+                                type="button"
+                                data-testid={`quick-category-pill-${cat.toLowerCase().replace(/\s+/g, '-')}`}
+                                onClick={() => {
+                                  if (dev.category !== cat) {
+                                    handleCategoryChangeForDevice(cat, devIdx);
+                                  }
+                                }}
+                                className={`px-2 py-0.5 rounded-[6px] text-[11px] font-semibold transition-all cursor-pointer border ${
+                                  isCatActive
+                                    ? 'bg-[#176b58] text-white border-[#176b58]'
+                                    : 'bg-[#f4f8f5] text-[#4c6157] border-[#d6e2dc] hover:bg-[#eaf4ef] hover:border-[#176b58]'
+                                }`}
+                              >
+                                {cat}
+                              </button>
+                            );
+                          })}
+                        </div>
                       </div>
-                      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-2">
-                        {QUICK_POPULAR_MODELS.map((item) => {
+                      <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-7 gap-2">
+                        {quickDeviceItems.map((item) => {
                           const isKhac = item.name === 'Khác';
-                          const isSelected = isKhac
-                            ? (dev.category !== 'AirPods' || !QUICK_POPULAR_MODELS.some((q) => q.name === dev.device && q.name !== 'Khác'))
-                            : (dev.device === item.name);
+                          const isAppleWatchSwitchBtn =
+                            item.isCategorySwitch && item.category === 'Apple Watch';
+                          const isSelected = isAppleWatchSwitchBtn
+                            ? dev.category === 'Apple Watch'
+                            : isKhac
+                            ? dev.category !== 'AirPods' && dev.category !== 'Apple Watch'
+                            : dev.category === item.category &&
+                              (isSameDeviceModel(dev.device, item.resolvedName) ||
+                                isSameDeviceModel(dev.device, item.name));
+
+                          const iconName = isAppleWatchSwitchBtn || item.category === 'Apple Watch'
+                            ? 'watch'
+                            : isKhac
+                            ? 'spark'
+                            : item.category === 'Apple Pencil'
+                            ? 'edit'
+                            : item.category === 'AirPods'
+                            ? 'headphones'
+                            : 'device';
 
                           return (
                             <button
-                              key={item.label}
+                              key={`${item.category}-${item.label}`}
                               type="button"
                               data-testid={`quick-device-btn-${item.label.toLowerCase().replace(/\s+/g, '-')}`}
                               onClick={() => {
-                                if (isKhac) {
-                                  if (dev.category === 'AirPods') {
-                                    handleCategoryChangeForDevice(categories.find((c) => c !== 'AirPods') || 'Apple Watch', devIdx);
-                                  }
+                                if (isAppleWatchSwitchBtn) {
+                                  handleCategoryChangeForDevice('Apple Watch', devIdx);
+                                } else if (isKhac) {
+                                  const nextCat =
+                                    categories.find((c) => c !== 'AirPods' && c !== 'Apple Watch') ||
+                                    'Apple Pencil';
+                                  handleCategoryChangeForDevice(nextCat, devIdx);
                                 } else {
-                                  updateDevice(devIdx, { category: 'AirPods', device: item.name });
+                                  const targetCategory = item.category || dev.category;
+                                  const targetModel = item.resolvedName || item.name;
+                                  updateDevice(devIdx, {
+                                    category: targetCategory,
+                                    device: targetModel,
+                                  });
                                   if (devIdx === 0) {
-                                    setSelectedCategory('AirPods');
-                                    setSelectedDevice(item.name);
+                                    setSelectedCategory(targetCategory);
+                                    setSelectedDevice(targetModel);
                                   }
                                   setErrors((prev) => {
                                     const next = { ...prev };
@@ -1508,7 +1988,7 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
                               }`}
                             >
                               <Icon
-                                name={isKhac ? 'spark' : 'headphones'}
+                                name={iconName}
                                 size={18}
                                 className={isSelected ? 'text-[#176b58]' : 'text-[#6a7d74]'}
                               />
@@ -1533,7 +2013,7 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
 
                       <Select
                         label="Dòng sản phẩm *"
-                        value={dev.device}
+                        value={canonicalSelectedModel}
                         onChange={(e) => {
                           const val = e.target.value;
                           updateDevice(devIdx, { device: val });
@@ -1545,12 +2025,49 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
                             return next;
                           });
                         }}
-                        options={availableModelsForDev.map((m) => ({
-                          value: m.name,
-                          label: `${m.name}${m.model ? ` · ${m.model}` : ''}`,
-                        }))}
+                        options={selectModelOptions}
                         error={errors[`device_${dev.id}`] || (devIdx === 0 ? errors.device : undefined)}
                       />
+
+                      {/* Chọn nhanh Size Apple Watch phổ biến */}
+                      {dev.category === 'Apple Watch' && (
+                        <div
+                          data-testid="apple-watch-size-selector"
+                          className="sm:col-span-2 p-3.5 rounded-[10px] bg-[#f3faf6] border border-[#b9dccb] space-y-2"
+                        >
+                          <div className="flex flex-wrap items-center justify-between gap-2">
+                            <label className="text-xs font-bold text-[#176b58] flex items-center gap-1.5">
+                              <Icon name="watch" size={14} className="text-[#176b58]" />
+                              <span>Chọn nhanh Size Apple Watch phổ biến *</span>
+                            </label>
+                            <span className="text-[11px] font-mono font-bold text-[#176b58] bg-white px-2.5 py-0.5 rounded border border-[#b9dccb]">
+                              {dev.watchSize
+                                ? `Đang chọn: Size ${dev.watchSize}`
+                                : '1-click chọn size mặt đồng hồ'}
+                            </span>
+                          </div>
+                          <div className="flex flex-wrap gap-1.5">
+                            {POPULAR_APPLE_WATCH_SIZES.map((size) => {
+                              const isSizeSelected = dev.watchSize === size;
+                              return (
+                                <button
+                                  key={size}
+                                  type="button"
+                                  data-testid={`watch-size-chip-${size.replace(/[^a-zA-Z0-9]/g, '')}`}
+                                  onClick={() => handleSelectWatchSizeForDevice(size, devIdx)}
+                                  className={`px-3 py-1.5 rounded-[8px] text-xs font-bold border transition-all cursor-pointer ${
+                                    isSizeSelected
+                                      ? 'bg-[#176b58] text-white border-[#176b58] shadow-xs ring-2 ring-[#176b58]/20'
+                                      : 'bg-white text-[#243830] border-[#cfe2d8] hover:bg-[#eaf4ef] hover:border-[#176b58]'
+                                  }`}
+                                >
+                                  {size}
+                                </button>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      )}
 
                       <Input
                         label="Số serial / Model code"
@@ -1571,22 +2088,97 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
                           updateDevice(devIdx, { accessories: val });
                           if (devIdx === 0) setAccessories(val);
                         }}
-                        placeholder="Hộp sạc, cáp sạc, núm tai..."
+                        placeholder={
+                          dev.category === 'AirPods'
+                            ? 'Tai trái (L), Tai phải (R), Hộp sạc (Case)...'
+                            : dev.category === 'Apple Watch'
+                            ? 'Thân đồng hồ (Body), Dây đeo (Strap), Cáp sạc từ...'
+                            : dev.category === 'Apple Pencil'
+                            ? 'Thân bút (Pencil), Ngòi bút (Tip), Hộp bút...'
+                            : 'Thân máy, Bộ sạc / Cáp sạc, Bao da...'
+                        }
                       />
 
-                      <div className="sm:col-span-2">
-                        <label className="block text-xs font-bold text-[#17231f] mb-1.5">
-                          Chọn nhanh thành phần bàn giao (L / R / Case):
-                        </label>
-                        <HardwarePartSelector
-                          selectedParts={parseHardwarePartsFromText(dev.accessories)}
-                          onChange={(parts) => {
-                            const formatted = formatHardwarePartsToText(parts);
-                            updateDevice(devIdx, { accessories: formatted });
-                            if (devIdx === 0) setAccessories(formatted);
-                          }}
-                        />
-                      </div>
+                      {dev.category === 'AirPods' ? (
+                        <div className="sm:col-span-2" data-testid="airpods-handover-parts-selector">
+                          <label className="block text-xs font-bold text-[#17231f] mb-1.5">
+                            Chọn nhanh thành phần bàn giao (L / R / Case):
+                          </label>
+                          <HardwarePartSelector
+                            selectedParts={parseHardwarePartsFromText(dev.accessories)}
+                            onChange={(parts) => {
+                              const formatted = formatHardwarePartsToText(parts);
+                              updateDevice(devIdx, { accessories: formatted });
+                              if (devIdx === 0) setAccessories(formatted);
+                            }}
+                          />
+                        </div>
+                      ) : (
+                        <div className="sm:col-span-2" data-testid="category-handover-parts-selector">
+                          <label className="block text-xs font-bold text-[#17231f] mb-1.5">
+                            Chọn nhanh thành phần bàn giao ({dev.category}):
+                          </label>
+                          <div
+                            role="group"
+                            aria-label={`Thành phần bàn giao (${dev.category})`}
+                            className={`grid grid-cols-2 ${
+                              handoverPartDefs.length >= 4 ? 'sm:grid-cols-4' : 'sm:grid-cols-3'
+                            } gap-2`}
+                          >
+                            {handoverPartDefs.map((part, pIdx) => {
+                              const isPartSelected = selectedCategoryParts.includes(part.label);
+                              return (
+                                <button
+                                  key={part.label}
+                                  type="button"
+                                  data-testid={`handover-part-btn-${pIdx}`}
+                                  aria-pressed={isPartSelected}
+                                  onClick={() => {
+                                    const nextAcc = toggleCategoryHandoverPartInText(
+                                      dev.accessories,
+                                      part.label,
+                                      dev.category,
+                                      dev.watchSize
+                                    );
+                                    updateDevice(devIdx, { accessories: nextAcc });
+                                    if (devIdx === 0) setAccessories(nextAcc);
+                                  }}
+                                  className={`flex items-center justify-between gap-2 rounded-[8px] border px-3 py-2.5 transition-colors text-left cursor-pointer ${
+                                    isPartSelected
+                                      ? 'bg-[#e9f4ef] border-[#176b51] text-[#17231f]'
+                                      : 'bg-white border-[#e9eeeb] text-[#81908a] hover:border-[#176b51]/60'
+                                  }`}
+                                >
+                                  <div className="flex items-center gap-2 min-w-0">
+                                    <span
+                                      className={`w-7 h-7 rounded-[6px] grid place-items-center flex-none border ${
+                                        isPartSelected
+                                          ? 'bg-[#176b51] text-white border-[#176b51]'
+                                          : 'bg-[#f6f8f6] text-[#81908a] border-[#e9eeeb]'
+                                      }`}
+                                    >
+                                      <Icon name={part.icon} size={15} />
+                                    </span>
+                                    <div className="min-w-0">
+                                      <div className="text-xs font-bold leading-tight truncate">
+                                        {part.label}
+                                      </div>
+                                      <div className="text-[10px] font-medium text-[#81908a] leading-tight mt-0.5">
+                                        {isPartSelected ? 'Có nhận' : 'Không kèm'}
+                                      </div>
+                                    </div>
+                                  </div>
+                                  <span
+                                    className={`w-2 h-2 rounded-full flex-none ${
+                                      isPartSelected ? 'bg-[#176b51]' : 'bg-[#d6e0db]'
+                                    }`}
+                                  />
+                                </button>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      )}
 
                       <div className="sm:col-span-2">
                         <Textarea
@@ -1594,7 +2186,20 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
                           value={dev.issue}
                           onChange={(e) => {
                             const val = e.target.value;
-                            updateDevice(devIdx, { issue: val });
+                            const inferred = inferLinkedPartsFromOrderText(
+                              val,
+                              dev.category,
+                              dev.watchSize
+                            );
+                            const nextPartsSummary = formatLinkedPartsSummary(
+                              inferred.linkedParts,
+                              dev.watchSize
+                            );
+                            updateDevice(devIdx, {
+                              issue: val,
+                              selectedIssues: inferred.matchedIssues,
+                              partsNeeded: nextPartsSummary,
+                            });
                             if (devIdx === 0) setIssue(val);
                             setErrors((prev) => {
                               const next = { ...prev };
@@ -1608,59 +2213,210 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
                           required
                         />
 
-                        {/* Interactive Quick Issue Chips */}
-                        {issuesForDev.length > 0 && (
-                          <div className="mt-2.5">
-                            <div className="text-[11px] font-semibold text-[#6d7e75] mb-1.5 flex items-center gap-1.5">
-                              <span>Lỗi thường gặp ({dev.category}):</span>
-                              <span className="text-[10px] text-[#91a098] font-normal">
-                                (Bấm để chèn nhanh vào mô tả lỗi)
-                              </span>
+                        {/* Interactive Quick Issue Chips + FE Filter + Sample Object Preview */}
+                        {(() => {
+                          const rawList = devIdx === 0 ? commonIssues : issuesForDev;
+                          const filterQuery = issueFilterByDevice[dev.id] || '';
+                          const enrichedAndFiltered = filterCommonIssues(
+                            rawList,
+                            filterQuery,
+                            dev.category,
+                            dev.watchSize
+                          );
+                          const activeObjects = enrichedAndFiltered.filter((item) =>
+                            dev.issue.toLowerCase().includes(item.issue_name.toLowerCase())
+                          );
+                          const previewObjects =
+                            activeObjects.length > 0
+                              ? activeObjects
+                              : enrichedAndFiltered.length > 0
+                              ? [enrichedAndFiltered[0]]
+                              : [];
+                          const isShowingSampleDefault = activeObjects.length === 0;
+                          const isJsonVisible = Boolean(showJsonByDevice[dev.id]);
+
+                          return (
+                            <div className="mt-3 space-y-3">
+                              <div className="flex flex-wrap items-center justify-between gap-2">
+                                <div className="text-[11px] font-semibold text-[#6d7e75] flex items-center gap-1.5">
+                                  <span>Lỗi thường gặp ({dev.category}):</span>
+                                  <span className="text-[10px] text-[#91a098] font-normal">
+                                    (Bấm để chọn lỗi & tự động link linh kiện sang Kỹ thuật)
+                                  </span>
+                                </div>
+                                <span className="text-[11px] font-mono text-[#176b58] bg-[#eaf4ef] px-2 py-0.5 rounded">
+                                  {enrichedAndFiltered.length} lỗi mẫu
+                                </span>
+                              </div>
+
+                              {/* Ô input Filter nhanh ở FE */}
+                              <Input
+                                data-testid="intake-issue-filter-input"
+                                value={filterQuery}
+                                onChange={(e) =>
+                                  setIssueFilterByDevice((prev) => ({
+                                    ...prev,
+                                    [dev.id]: e.target.value,
+                                  }))
+                                }
+                                placeholder="🔍 Gõ lọc nhanh lỗi hoặc linh kiện (VD: pin, rè ANC, vỡ kính, sập nguồn...)"
+                              />
+
+                              {enrichedAndFiltered.length > 0 ? (
+                                <div className="flex flex-wrap gap-1.5">
+                                  {enrichedAndFiltered.map((chip, idx) => {
+                                    const isSelected = dev.issue.includes(chip.issue_name);
+                                    const firstPart = chip.linked_parts?.[0];
+                                    return (
+                                      <button
+                                        key={chip.id || `chip-${devIdx}-${idx}`}
+                                        type="button"
+                                        onClick={() =>
+                                          devIdx === 0
+                                            ? handleChipClick(chip)
+                                            : handleChipClickForDevice(chip, devIdx)
+                                        }
+                                        className={`text-xs px-2.5 py-1.5 rounded-[14px] border transition-all text-left flex flex-wrap items-center gap-1.5 cursor-pointer touch-manipulation active:scale-[0.98] ${
+                                          isSelected
+                                            ? 'bg-[#eaf4ef] border-[#176b58] text-[#176b58] font-semibold shadow-2xs ring-1 ring-[#176b58]/20'
+                                            : 'bg-white border-[#dbe4df] text-[#42524a] hover:bg-[#f5f8f6] hover:border-[#b5cec0]'
+                                        }`}
+                                      >
+                                        <span>
+                                          {isSelected ? '✓ ' : '+ '}
+                                          {chip.issue_name}
+                                        </span>
+                                        {firstPart && (
+                                          <span className="px-1.5 py-0.5 rounded bg-[#f4faf7] border border-[#c6e0d2] text-[10px] font-mono text-[#176b58]">
+                                            🔧 {firstPart.part_name} ×{firstPart.quantity}
+                                          </span>
+                                        )}
+                                      </button>
+                                    );
+                                  })}
+                                </div>
+                              ) : (
+                                <div className="p-2.5 rounded-[8px] bg-[#fafcfa] border border-dashed border-[#d8e2dc] text-xs text-[#718279]">
+                                  Không tìm thấy mẫu lỗi hoặc linh kiện nào khớp từ khóa &ldquo;{filterQuery}&rdquo;.
+                                </div>
+                              )}
+
+                              {/* Khung Render mẫu Object Lỗi & Linh kiện liên kết */}
+                              {previewObjects.length > 0 && (
+                                <div
+                                  data-testid="intake-issue-object-preview"
+                                  className="p-3.5 rounded-[10px] bg-[#f7fbf9] border border-[#c5dfd1] space-y-2.5 text-xs"
+                                >
+                                  <div className="flex flex-wrap items-center justify-between gap-2 pb-2 border-b border-[#dfeee6]">
+                                    <div className="flex items-center gap-2">
+                                      <span className="px-2 py-0.5 rounded bg-[#176b58] text-white text-[10px] font-bold uppercase tracking-wider">
+                                        {isShowingSampleDefault ? 'Mẫu Object Lỗi' : `Đã chọn ${previewObjects.length} Object Lỗi`}
+                                      </span>
+                                      <strong className="text-[#1c302b]">
+                                        Mẫu Object Lỗi & Linh kiện liên kết (Preview chuyển sang Kỹ thuật)
+                                      </strong>
+                                    </div>
+                                    <button
+                                      type="button"
+                                      data-testid="toggle-issue-json-preview-btn"
+                                      onClick={() =>
+                                        setShowJsonByDevice((prev) => ({
+                                          ...prev,
+                                          [dev.id]: !prev[dev.id],
+                                        }))
+                                      }
+                                      className="text-[11px] font-bold text-[#176b58] hover:underline cursor-pointer"
+                                    >
+                                      {isJsonVisible
+                                        ? 'Ẩn cấu trúc JSON Object Lỗi'
+                                        : 'Xem cấu trúc JSON mẫu của Object Lỗi'}
+                                    </button>
+                                  </div>
+
+                                  <div className="space-y-2">
+                                    {previewObjects.map((obj) => (
+                                      <div
+                                        key={obj.issue_code}
+                                        className="p-2.5 rounded-[8px] bg-white border border-[#e2ede7] space-y-1.5"
+                                      >
+                                        <div className="flex flex-wrap items-center justify-between gap-2">
+                                          <div className="flex items-center gap-1.5">
+                                            <span className="font-mono text-[11px] font-bold text-[#176b58] bg-[#eaf4ef] px-2 py-0.5 rounded border border-[#cbe3d6]">
+                                              {obj.issue_code}
+                                            </span>
+                                            <b className="text-[#1c302b] text-xs">{obj.issue_name}</b>
+                                          </div>
+                                          <div className="flex items-center gap-1.5 text-[11px] text-[#5f7067]">
+                                            <span>Thiết bị: <b>{obj.category}</b></span>
+                                            {dev.category === 'Apple Watch' && dev.watchSize && (
+                                              <span className="px-1.5 py-0.5 rounded bg-[#eaf4ef] text-[#176b58] font-bold">
+                                                Size: {dev.watchSize}
+                                              </span>
+                                            )}
+                                          </div>
+                                        </div>
+
+                                        {obj.solution && (
+                                          <div className="text-[11px] text-[#55665d]">
+                                            <span>Hướng xử lý KT: </span>
+                                            <span className="font-medium text-[#243830]">{obj.solution}</span>
+                                          </div>
+                                        )}
+
+                                        <div className="pt-1 flex flex-wrap items-center gap-1.5">
+                                          <span className="text-[11px] font-bold text-[#176b58]">
+                                            Linh kiện liên kết ({obj.linked_parts.length}):
+                                          </span>
+                                          {obj.linked_parts.map((pt) => (
+                                            <span
+                                              key={`${obj.issue_code}-${pt.part_sku}`}
+                                              className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-[#eaf4ef] text-[#176b58] border border-[#c2dfd0] text-[11px] font-semibold"
+                                            >
+                                              <span>🔧 {pt.part_name}</span>
+                                              <span className="font-mono text-[10px] text-[#4a6b5d]">
+                                                ({pt.part_sku})
+                                              </span>
+                                              <span className="font-mono font-bold">
+                                                ×{pt.quantity} {pt.unit}
+                                              </span>
+                                            </span>
+                                          ))}
+                                        </div>
+                                      </div>
+                                    ))}
+                                  </div>
+
+                                  {isJsonVisible && (
+                                    <pre
+                                      data-testid="intake-issue-json-code"
+                                      className="p-3 rounded-[8px] bg-[#17231f] text-[#a7f3d0] text-[11px] font-mono overflow-x-auto max-h-52 leading-relaxed"
+                                    >
+                                      {JSON.stringify(
+                                        previewObjects.length === 1 ? previewObjects[0] : previewObjects,
+                                        null,
+                                        2
+                                      )}
+                                    </pre>
+                                  )}
+
+                                  <div className="pt-2 border-t border-[#dfeee6] space-y-1">
+                                    <label className="block text-[11px] font-bold text-[#176b58]">
+                                      Linh kiện lỗi tự động link sang phòng Kỹ thuật (parts_needed):
+                                    </label>
+                                    <Input
+                                      data-testid="intake-linked-parts-needed-input"
+                                      value={dev.partsNeeded || ''}
+                                      onChange={(e) =>
+                                        updateDevice(devIdx, { partsNeeded: e.target.value })
+                                      }
+                                      placeholder="Tự động điền khi chọn chip lỗi hoặc nhập bổ sung linh kiện dự kiến..."
+                                    />
+                                  </div>
+                                </div>
+                              )}
                             </div>
-                            {devIdx === 0 && (
-                              <div className="flex flex-wrap gap-1.5">
-                                {commonIssues.map((chip, idx) => {
-                                  const isSelected = dev.issue.includes(chip.issue_name);
-                                  return (
-                                    <button
-                                      key={chip.id || `chip-0-${idx}`}
-                                      type="button"
-                                      onClick={() => handleChipClick(chip)}
-                                      className={`text-xs px-2.5 py-1.5 rounded-[16px] border transition-all text-left flex items-center gap-1.5 cursor-pointer touch-manipulation active:scale-[0.98] ${
-                                        isSelected
-                                          ? 'bg-[#eaf4ef] border-[#176b58] text-[#176b58] font-semibold shadow-2xs'
-                                          : 'bg-white border-[#dbe4df] text-[#42524a] hover:bg-[#f5f8f6] hover:border-[#b5cec0]'
-                                      }`}
-                                    >
-                                      <span>{chip.issue_name}</span>
-                                    </button>
-                                  );
-                                })}
-                              </div>
-                            )}
-                            {devIdx > 0 && (
-                              <div className="flex flex-wrap gap-1.5">
-                                {issuesForDev.map((chip, idx) => {
-                                  const isSelected = dev.issue.includes(chip.issue_name);
-                                  return (
-                                    <button
-                                      key={chip.id || `chip-${devIdx}-${idx}`}
-                                      type="button"
-                                      onClick={() => handleChipClickForDevice(chip, devIdx)}
-                                      className={`text-xs px-2.5 py-1.5 rounded-[16px] border transition-all text-left flex items-center gap-1.5 cursor-pointer touch-manipulation active:scale-[0.98] ${
-                                        isSelected
-                                          ? 'bg-[#eaf4ef] border-[#176b58] text-[#176b58] font-semibold shadow-2xs'
-                                          : 'bg-white border-[#dbe4df] text-[#42524a] hover:bg-[#f5f8f6] hover:border-[#b5cec0]'
-                                      }`}
-                                    >
-                                      <span>{chip.issue_name}</span>
-                                    </button>
-                                  );
-                                })}
-                              </div>
-                            )}
-                          </div>
-                        )}
+                          );
+                        })()}
                       </div>
                     </div>
                   </section>

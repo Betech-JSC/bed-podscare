@@ -192,4 +192,47 @@ class OrderPartsRequestTest extends TestCase
             'type'     => 'order_resumed',
         ]);
     }
+
+    /**
+     * Test 5: KTV báo phát sinh lỗi kèm linh kiện qua updatePartsNote đồng bộ cho CSKH
+     */
+    public function test_technician_can_add_additional_issue_with_linked_parts_via_parts_note(): void
+    {
+        $tech = $this->getAuthenticatedUser('technician');
+        $order = $this->createTestOrder('in_repair', $tech);
+
+        $response = $this->actingAs($tech, 'sanctum')->patchJson("/api/v1/orders/{$order->id}/parts-note", [
+            'repair_note'      => 'Kiểm tra thấy cáp hộp sạc bị đứt ngầm',
+            'additional_issue' => [
+                'name'         => 'Hộp sạc không nhận sạc',
+                'note'         => 'Cần thay thêm cáp flex chân tiếp xúc',
+                'watch_size'   => null,
+                'linked_parts' => [
+                    [
+                        'part_sku'  => 'FLEX-CASE-01',
+                        'part_name' => 'Cáp flex hộp sạc AirPods',
+                        'quantity'  => 1,
+                        'unit'      => 'cái',
+                        'position'  => 'Hộp sạc (Dock)',
+                    ],
+                ],
+            ],
+        ]);
+
+        $response->assertStatus(200)
+            ->assertJsonPath('success', true);
+
+        $fresh = $order->fresh();
+        $this->assertNotEmpty($fresh->additional_services);
+        $this->assertEquals('Hộp sạc không nhận sạc', $fresh->additional_services[0]['name']);
+        $this->assertEquals('technician', $fresh->additional_services[0]['added_by_role']);
+        $this->assertEquals(0, (float) $fresh->additional_services[0]['price']);
+        $this->assertStringContainsString('Cáp flex hộp sạc AirPods', (string) $fresh->parts_needed);
+
+        $this->assertDatabaseHas('notifications', [
+            'order_id'    => $order->id,
+            'target_role' => 'cskh',
+            'type'        => 'additional_service_added',
+        ]);
+    }
 }

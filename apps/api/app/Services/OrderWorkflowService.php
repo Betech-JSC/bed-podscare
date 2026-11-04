@@ -22,17 +22,18 @@ class OrderWorkflowService extends BaseWorkflowService
         'waiting_approval' => ['waiting_tech', 'rejected', 'cancelled'],
         'quote_pending'    => ['waiting_tech', 'rejected', 'cancelled'],
         'rejected'         => ['inspecting', 'waiting_pickup', 'completed', 'cancelled'],
-        'waiting_tech'     => ['assigned', 'in_repair', 'waiting_qc', 'ready_for_return'],
-        'assigned'         => ['in_repair', 'waiting_qc', 'ready_for_return', 'waiting_parts', 'waiting_tech', 'assigned'],
-        'in_repair'        => ['waiting_parts', 'waiting_qc', 'qc_pending', 'qc_inspecting', 'ready_for_return', 'waiting_tech', 'assigned'],
-        'waiting_parts'    => ['in_repair', 'waiting_tech', 'assigned', 'waiting_qc', 'ready_for_return'],
-        'rework_needed'    => ['in_repair', 'waiting_qc', 'ready_for_return', 'waiting_parts', 'waiting_tech', 'assigned'],
-        'waiting_qc'       => ['ready_for_return', 'rework_needed'],
-        'qc_pending'       => ['ready_for_return', 'rework_needed'],
-        'qc_inspecting'    => ['ready_for_return', 'rework_needed'],
+        'waiting_tech'     => ['assigned', 'in_repair', 'waiting_qc', 'ready_for_return', 'cancelled'],
+        'assigned'         => ['in_repair', 'waiting_qc', 'ready_for_return', 'waiting_parts', 'waiting_tech', 'assigned', 'cancelled'],
+        'in_repair'        => ['waiting_parts', 'waiting_qc', 'qc_pending', 'qc_inspecting', 'ready_for_return', 'waiting_tech', 'assigned', 'cancelled'],
+        'waiting_parts'    => ['in_repair', 'waiting_tech', 'assigned', 'waiting_qc', 'ready_for_return', 'cancelled'],
+        'rework_needed'    => ['in_repair', 'waiting_qc', 'ready_for_return', 'waiting_parts', 'waiting_tech', 'assigned', 'cancelled'],
+        'waiting_qc'       => ['ready_for_return', 'rework_needed', 'cancelled'],
+        'qc_pending'       => ['ready_for_return', 'rework_needed', 'cancelled'],
+        'qc_inspecting'    => ['ready_for_return', 'rework_needed', 'cancelled'],
         'ready_for_return' => ['waiting_pickup', 'completed', 'cancelled'],
         'waiting_pickup'   => ['completed', 'cancelled'],
         'completed'        => ['cancelled'],
+        'cancelled'        => ['waiting_tech', 'in_repair'],
     ];
 
     /**
@@ -432,12 +433,22 @@ class OrderWorkflowService extends BaseWorkflowService
             case 'cancelled':
                 $adminId = $options['admin_id'] ?? ($user?->id ?? auth()->id());
                 // Tự động hoàn kho nếu đơn đã từng xuất linh kiện
-                $this->reverseInventoryForOrder($model, $adminId, 'cancelled');
+                $this->reverseInventoryForOrder($model, $adminId ? (int) $adminId : null, 'cancelled');
                 break;
         }
 
         if (! empty($updates)) {
             $model->update($updates);
+        }
+
+        // Tự động trừ kho ngay khi bắt đầu sửa chữa (in_repair) hoặc khi nghiệm thu kỹ thuật (idempotent theo lượng ròng)
+        if (in_array($newStatus, ['in_repair', 'waiting_qc', 'qc_pending', 'qc_inspecting', 'ready_for_return'], true) && $model instanceof RepairOrder) {
+            $actorId = $options['admin_id']
+                ?? ($user?->id
+                ?? ($updates['technician_id']
+                ?? ($model->technician_id
+                ?? auth()->id())));
+            $this->deductInventoryForOrder($model, $actorId ? (int) $actorId : null);
         }
     }
 
@@ -600,42 +611,212 @@ class OrderWorkflowService extends BaseWorkflowService
     }
 
     /**
-     * Tự động trừ tồn kho linh kiện khi đơn hàng hoàn tất (export_repair).
-     * Đảm bảo Idempotency: không trừ lần hai nếu đã từng xuất linh kiện cho đơn này.
+     * Phân giải toàn bộ linh kiện gắn với đơn sửa chữa thành mảng [part_id => total_quantity].
+     * Hỗ trợ đồng thời:
+     * 1. quote_items (thuộc báo giá approved / sent / draft của đơn)
+     * 2. additional_services[].linked_parts, parts_used_summary, parts_needed (ánh xạ qua part_id, sku hoặc tên)
+     */
+    protected function resolveOrderPartsForInventory(RepairOrder $order): array
+    {
+        $requiredByPartId = [];
+
+        // 1. Nguồn chuẩn từ bảng quote_items
+        $quoteItems = \App\Models\QuoteItem::whereHas('quote', function ($q) use ($order) {
+            $q->withoutGlobalScopes()
+              ->where('repair_order_id', $order->id)
+              ->where(function ($sq) {
+                  $sq->whereIn('status', ['approved', 'sent', 'draft'])
+                     ->orWhereNull('status');
+              });
+        })->whereNotNull('part_id')
+          ->where('quantity', '>', 0)
+          ->get();
+
+        foreach ($quoteItems as $item) {
+            $pid = (int) $item->part_id;
+            $qty = max(1, (int) $item->quantity);
+            $requiredByPartId[$pid] = ($requiredByPartId[$pid] ?? 0) + $qty;
+        }
+
+        // 2. Nguồn linh kiện gắn trực tiếp trên đơn (additional_services, parts_used_summary, parts_needed)
+        $extractCandidates = function (mixed $raw): array {
+            if (empty($raw)) {
+                return [];
+            }
+
+            if (is_string($raw)) {
+                $decoded = json_decode($raw, true);
+                if (is_array($decoded)) {
+                    $raw = $decoded;
+                } else {
+                    // Hỗ trợ chuỗi chứa mã SKU (ví dụ: "LK-AP-PIN-CAP (x2)", "PART-AP2-BAT-L", "CAP-APP2-123 x1")
+                    $matches = [];
+                    if (preg_match_all('/\b([A-Z0-9]{2,}(?:-[A-Z0-9]+)+)\b(?:\s*(?:\(\s*x?(\d+)\s*\)|x(\d+)))?/i', $raw, $matches, PREG_SET_ORDER)) {
+                        $items = [];
+                        foreach ($matches as $m) {
+                            $qty = ! empty($m[2]) ? (int) $m[2] : (! empty($m[3]) ? (int) $m[3] : 1);
+                            $items[] = [
+                                'sku'      => strtoupper(trim($m[1])),
+                                'quantity' => max(1, $qty),
+                            ];
+                        }
+                        return $items;
+                    }
+                    return [];
+                }
+            }
+
+            if (! is_array($raw)) {
+                return [];
+            }
+
+            $entries = [];
+            foreach ($raw as $entry) {
+                if (! is_array($entry)) {
+                    if (is_string($entry) && preg_match('/\b((?:LK|PART)-[A-Z0-9\-]+)\b/i', $entry, $m)) {
+                        $entries[] = [
+                            'sku'      => strtoupper(trim($m[1])),
+                            'quantity' => 1,
+                        ];
+                    }
+                    continue;
+                }
+
+                // Nếu phần tử là một service chứa mảng linked_parts
+                if (! empty($entry['linked_parts']) && is_array($entry['linked_parts'])) {
+                    foreach ($entry['linked_parts'] as $lp) {
+                        if (is_array($lp)) {
+                            $entries[] = [
+                                'part_id'  => $lp['part_id'] ?? ($lp['id'] ?? null),
+                                'sku'      => $lp['part_sku'] ?? ($lp['sku'] ?? null),
+                                'name'     => $lp['part_name'] ?? ($lp['name'] ?? null),
+                                'quantity' => max(1, (int) ($lp['quantity'] ?? ($lp['qty'] ?? 1))),
+                            ];
+                        }
+                    }
+                    continue;
+                }
+
+                if (! empty($entry['part_id']) || ! empty($entry['part_sku']) || ! empty($entry['sku']) || ! empty($entry['part_name'])) {
+                    $entries[] = [
+                        'part_id'  => $entry['part_id'] ?? null,
+                        'sku'      => $entry['part_sku'] ?? ($entry['sku'] ?? null),
+                        'name'     => $entry['part_name'] ?? ($entry['name'] ?? null),
+                        'quantity' => max(1, (int) ($entry['quantity'] ?? ($entry['qty'] ?? 1))),
+                    ];
+                }
+            }
+
+            return $entries;
+        };
+
+        $sourceGroups = [
+            $extractCandidates($order->additional_services),
+            $extractCandidates($order->parts_used_summary),
+            $extractCandidates($order->parts_needed),
+        ];
+
+        $resolveEntriesToPartQuantities = function (array $entries) use ($order): array {
+            if (empty($entries)) {
+                return [];
+            }
+
+            $partIds = [];
+            $skus = [];
+            $names = [];
+            foreach ($entries as $e) {
+                if (! empty($e['part_id']) && is_numeric($e['part_id'])) {
+                    $partIds[] = (int) $e['part_id'];
+                }
+                if (! empty($e['sku']) && is_string($e['sku'])) {
+                    $skus[] = trim($e['sku']);
+                }
+                if (empty($e['part_id']) && empty($e['sku']) && ! empty($e['name']) && is_string($e['name'])) {
+                    $names[] = trim($e['name']);
+                }
+            }
+
+            $query = \App\Models\Part::withoutGlobalScopes();
+            if (! empty($order->tenant_id)) {
+                $query->where(function ($q) use ($order) {
+                    $q->where('tenant_id', $order->tenant_id)
+                      ->orWhereNull('tenant_id');
+                });
+            }
+
+            $query->where(function ($q) use ($partIds, $skus, $names) {
+                if (! empty($partIds)) {
+                    $q->orWhereIn('id', array_unique($partIds));
+                }
+                if (! empty($skus)) {
+                    $q->orWhereIn('sku', array_unique($skus));
+                }
+                if (! empty($names)) {
+                    $q->orWhereIn('name', array_unique($names));
+                }
+            });
+
+            $matchedParts = $query->get();
+            if ($matchedParts->isEmpty()) {
+                return [];
+            }
+
+            $byId = $matchedParts->keyBy('id');
+            $bySku = $matchedParts->keyBy(fn ($p) => strtoupper((string) $p->sku));
+            $byName = $matchedParts->keyBy(fn ($p) => mb_strtolower(trim((string) $p->name)));
+
+            $resolved = [];
+            foreach ($entries as $e) {
+                $part = null;
+                if (! empty($e['part_id']) && is_numeric($e['part_id'])) {
+                    $part = $byId->get((int) $e['part_id']);
+                }
+                if (! $part && ! empty($e['sku'])) {
+                    $part = $bySku->get(strtoupper(trim((string) $e['sku'])));
+                }
+                if (! $part && ! empty($e['name'])) {
+                    $part = $byName->get(mb_strtolower(trim((string) $e['name'])));
+                }
+
+                if ($part) {
+                    $pid = (int) $part->id;
+                    $qty = max(1, (int) ($e['quantity'] ?? 1));
+                    $resolved[$pid] = ($resolved[$pid] ?? 0) + $qty;
+                }
+            }
+
+            return $resolved;
+        };
+
+        foreach ($sourceGroups as $candidateGroup) {
+            $groupResolved = $resolveEntriesToPartQuantities($candidateGroup);
+            foreach ($groupResolved as $pid => $qty) {
+                // Chỉ bổ sung nếu part_id này chưa được khai báo ở nguồn có độ ưu tiên cao hơn (tránh nhân đôi giữa QuoteItem, additional_services và parts_needed)
+                if (! isset($requiredByPartId[$pid])) {
+                    $requiredByPartId[$pid] = $qty;
+                }
+            }
+        }
+
+        return $requiredByPartId;
+    }
+
+    /**
+     * Tự động trừ tồn kho linh kiện khi kỹ thuật bắt đầu sửa chữa (in_repair) hoặc khi hoàn tất (export_repair).
+     * Đảm bảo Net Idempotency: chỉ trừ phần chênh lệch giữa số lượng cần dùng và số lượng ròng đã xuất (export_repair trừ import_reversal/import_return).
      */
     public function deductInventoryForOrder(RepairOrder $order, ?int $userId = null): void
     {
         DB::transaction(function () use ($order, $userId) {
-            // Idempotency check: Chỉ xuất kho nếu chưa từng có export_repair cho đơn này
-            $alreadyExported = \App\Models\InventoryTransaction::where('repair_order_id', $order->id)
-                ->where('transaction_type', 'export_repair')
-                ->exists();
-
-            if ($alreadyExported) {
+            $requiredByPartId = $this->resolveOrderPartsForInventory($order);
+            if (empty($requiredByPartId)) {
                 return;
             }
 
-            // Lấy danh sách linh kiện từ quote_items của báo giá approved
-            $quoteItems = \App\Models\QuoteItem::whereHas('quote', function ($q) use ($order) {
-                $q->where('repair_order_id', $order->id)
-                  ->where(function ($sq) {
-                      $sq->where('status', 'approved')
-                         ->orWhereNull('status');
-                  });
-            })->whereNotNull('part_id')
-              ->where('quantity', '>', 0)
-              ->get();
+            $partIds = array_keys($requiredByPartId);
 
-            if ($quoteItems->isEmpty()) {
-                return;
-            }
-
-            $partIds = $quoteItems->pluck('part_id')->filter()->unique()->values()->all();
-            if (empty($partIds)) {
-                return;
-            }
-
-            $partsById = \App\Models\Part::whereIn('id', $partIds)
+            $partsById = \App\Models\Part::withoutGlobalScopes()
+                ->whereIn('id', $partIds)
                 ->lockForUpdate()
                 ->get()
                 ->keyBy('id');
@@ -646,6 +827,12 @@ class OrderWorkflowService extends BaseWorkflowService
                 ->get()
                 ->keyBy('part_id');
 
+            $existingOrderTxs = \App\Models\InventoryTransaction::where('repair_order_id', $order->id)
+                ->whereIn('part_id', $partIds)
+                ->whereIn('transaction_type', ['export_repair', 'import_reversal', 'import_return'])
+                ->lockForUpdate()
+                ->get();
+
             $date = date('Ymd');
             $actorId = $userId ?? $order->handed_over_by_user_id ?? $order->technician_id ?? $order->created_by_user_id ?? auth()->id();
 
@@ -653,25 +840,38 @@ class OrderWorkflowService extends BaseWorkflowService
                 ->pluck('transaction_code')
                 ->flip();
 
-            foreach ($quoteItems as $item) {
-                $part = $partsById->get($item->part_id);
+            foreach ($requiredByPartId as $partId => $requiredQty) {
+                $part = $partsById->get($partId);
                 if (! $part) {
                     continue;
                 }
 
-                $branchPart = $branchPartsByPartId->get($item->part_id);
+                $partTxs = $existingOrderTxs->where('part_id', $partId);
+                $exportedQty = (int) $partTxs
+                    ->where('transaction_type', 'export_repair')
+                    ->sum(fn ($tx) => abs((int) $tx->quantity));
+                $reversedQty = (int) $partTxs
+                    ->whereIn('transaction_type', ['import_reversal', 'import_return'])
+                    ->sum(fn ($tx) => abs((int) $tx->quantity));
+
+                $netDeductedQty = max(0, $exportedQty - $reversedQty);
+                $qtyToDeduct = (int) $requiredQty - $netDeductedQty;
+
+                if ($qtyToDeduct <= 0) {
+                    continue;
+                }
+
+                $branchPart = $branchPartsByPartId->get($partId);
 
                 if (! $branchPart) {
                     $branchPart = \App\Models\BranchPart::create([
                         'branch_id'       => $order->branch_id,
-                        'part_id'         => $item->part_id,
+                        'part_id'         => $partId,
                         'stock_quantity'  => 0,
                         'min_stock_alert' => $part->min_stock_alert ?? 5,
                     ]);
-                    $branchPartsByPartId->put($item->part_id, $branchPart);
+                    $branchPartsByPartId->put($partId, $branchPart);
                 }
-
-                $qty = (int) $item->quantity;
 
                 do {
                     $rand = str_pad((string) random_int(1, 9999), 4, '0', STR_PAD_LEFT);
@@ -681,43 +881,36 @@ class OrderWorkflowService extends BaseWorkflowService
 
                 \App\Models\InventoryTransaction::create([
                     'transaction_code'   => $txCode,
-                    'part_id'            => $item->part_id,
+                    'part_id'            => $partId,
                     'branch_id'          => $order->branch_id,
                     'repair_order_id'    => $order->id,
                     'transaction_type'   => 'export_repair',
-                    'quantity'           => -$qty,
+                    'quantity'           => -$qtyToDeduct,
                     'unit_cost'          => (float) ($part->cost_price ?? 0),
                     'notes'              => "Xuất kho tự động cho đơn sửa chữa {$order->order_code}",
                     'created_by_user_id' => $actorId,
                 ]);
 
-                $branchPart->decrement('stock_quantity', $qty);
-                $part->decrement('stock_quantity', $qty);
+                $branchPart->decrement('stock_quantity', $qtyToDeduct);
+                $part->decrement('stock_quantity', $qtyToDeduct);
             }
         });
     }
 
     /**
-     * Tự động hoàn kho linh kiện khi đơn hàng bị hủy hoặc xóa (import_reversal).
-     * Đảm bảo Idempotency: không hoàn trả lần hai nếu đã từng hoàn kho cho đơn này.
+     * Tự động hoàn kho linh kiện khi đơn hàng bị hoàn trả, hủy hoặc xóa (import_reversal).
+     * Đảm bảo Net Idempotency: chỉ hoàn trả phần chênh lệch ròng (export_repair trừ import_reversal/import_return) chưa được hoàn.
      */
     public function reverseInventoryForOrder(RepairOrder $order, ?int $userId = null, string $reason = 'cancelled'): void
     {
         DB::transaction(function () use ($order, $userId, $reason) {
-            $exportTxs = \App\Models\InventoryTransaction::where('repair_order_id', $order->id)
-                ->where('transaction_type', 'export_repair')
+            $orderTxs = \App\Models\InventoryTransaction::where('repair_order_id', $order->id)
+                ->whereIn('transaction_type', ['export_repair', 'import_reversal', 'import_return'])
+                ->lockForUpdate()
                 ->get();
 
+            $exportTxs = $orderTxs->where('transaction_type', 'export_repair');
             if ($exportTxs->isEmpty()) {
-                return;
-            }
-
-            // Idempotency check: Chỉ hoàn kho nếu chưa từng có import_reversal cho đơn này
-            $alreadyReversed = \App\Models\InventoryTransaction::where('repair_order_id', $order->id)
-                ->where('transaction_type', 'import_reversal')
-                ->exists();
-
-            if ($alreadyReversed) {
                 return;
             }
 
@@ -725,7 +918,7 @@ class OrderWorkflowService extends BaseWorkflowService
             $branchIds = $exportTxs->pluck('branch_id')->filter()->unique()->values()->all();
 
             $partsById = ! empty($partIds)
-                ? \App\Models\Part::whereIn('id', $partIds)->lockForUpdate()->get()->keyBy('id')
+                ? \App\Models\Part::withoutGlobalScopes()->whereIn('id', $partIds)->lockForUpdate()->get()->keyBy('id')
                 : collect();
 
             $branchPartsByKey = (! empty($branchIds) && ! empty($partIds))
@@ -743,15 +936,31 @@ class OrderWorkflowService extends BaseWorkflowService
                 ->pluck('transaction_code')
                 ->flip();
 
-            foreach ($exportTxs as $tx) {
-                $reverseQty = abs($tx->quantity);
+            $groupedExports = $exportTxs->groupBy(fn ($tx) => $tx->branch_id . ':' . $tx->part_id);
 
-                $branchPart = $branchPartsByKey->get($tx->branch_id . ':' . $tx->part_id);
+            foreach ($groupedExports as $groupKey => $groupExportTxs) {
+                $firstExport = $groupExportTxs->first();
+                $branchId = (int) $firstExport->branch_id;
+                $partId = (int) $firstExport->part_id;
+
+                $exportedQty = (int) $groupExportTxs->sum(fn ($tx) => abs((int) $tx->quantity));
+                $alreadyRestoredQty = (int) $orderTxs
+                    ->where('branch_id', $branchId)
+                    ->where('part_id', $partId)
+                    ->whereIn('transaction_type', ['import_reversal', 'import_return'])
+                    ->sum(fn ($tx) => abs((int) $tx->quantity));
+
+                $reverseQty = max(0, $exportedQty - $alreadyRestoredQty);
+                if ($reverseQty <= 0) {
+                    continue;
+                }
+
+                $branchPart = $branchPartsByKey->get($groupKey);
                 if ($branchPart) {
                     $branchPart->increment('stock_quantity', $reverseQty);
                 }
 
-                $part = $partsById->get($tx->part_id);
+                $part = $partsById->get($partId);
                 if ($part) {
                     $part->increment('stock_quantity', $reverseQty);
                 }
@@ -764,16 +973,16 @@ class OrderWorkflowService extends BaseWorkflowService
 
                 $note = $reason === 'deleted'
                     ? "Hoàn kho tự động do xóa đơn sửa chữa {$order->order_code}"
-                    : "Hoàn kho tự động do hủy đơn sửa chữa {$order->order_code}";
+                    : "Hoàn kho tự động do hoàn trả / hủy đơn sửa chữa {$order->order_code}";
 
                 \App\Models\InventoryTransaction::create([
                     'transaction_code'   => $txCode,
-                    'part_id'            => $tx->part_id,
-                    'branch_id'          => $tx->branch_id,
+                    'part_id'            => $partId,
+                    'branch_id'          => $branchId,
                     'repair_order_id'    => $order->id,
                     'transaction_type'   => 'import_reversal',
                     'quantity'           => $reverseQty,
-                    'unit_cost'          => $tx->unit_cost,
+                    'unit_cost'          => $firstExport->unit_cost,
                     'notes'              => $note,
                     'created_by_user_id' => $actorId,
                 ]);

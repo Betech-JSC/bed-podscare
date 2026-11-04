@@ -95,7 +95,16 @@ export class RepairService {
 
   async updatePartsNote(
     id: string | number,
-    data: { parts_needed?: string; repair_note?: string; parts_note?: string }
+    data: {
+      parts_needed?: string;
+      repair_note?: string;
+      parts_note?: string;
+      additional_issue?: {
+        name: string;
+        note?: string;
+        linked_parts?: any[];
+      };
+    }
   ): Promise<any> {
     return this.http.patch(`/api/v1/orders/${id}/parts-note`, data);
   }
@@ -225,3 +234,4 @@ export class RepairService {
 }
 
 export const repairService = new RepairService();
+export const orderService = repairService;
