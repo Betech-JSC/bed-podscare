@@ -61,7 +61,7 @@ jobs:
           cp .env.example .env
           sed -i 's/^DB_CONNECTION=.*/DB_CONNECTION=mysql/' .env
           printf "\nDB_HOST=127.0.0.1\nDB_PORT=3306\nDB_DATABASE=podscare_repair_os_testing\nDB_USERNAME=root\nDB_PASSWORD=root\n" >> .env
-          composer install --no-interaction --prefer-dist
+          composer install --no-interaction --prefer-dist --ignore-platform-req=php
           php artisan key:generate
           php artisan migrate --force
           php artisan test --filter=TelegramTechTopicDispatchTest
