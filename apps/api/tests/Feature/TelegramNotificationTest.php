@@ -435,7 +435,7 @@ class TelegramNotificationTest extends TestCase
     }
 
     /**
-     * 8. Bảo mật liên kết: /start thuần KHÔNG tự động liên kết bản ghi đang chờ; phải gửi SĐT chờ kích hoạt hoặc /start <token>.
+     * 8. Bảo mật liên kết: /start thuần hoặc gõ SĐT thô KHÔNG tự động liên kết bản ghi Admin đang chờ; bắt buộc phải gửi connect_token (adm_... / /start adm_...).
      */
     public function test_polling_sync_updates_links_pending_recipient_on_plain_start_from_telegram_web(): void
     {
@@ -468,8 +468,20 @@ class TelegramNotificationTest extends TestCase
                     [
                         'update_id' => 3002,
                         'message'   => [
-                            'chat' => ['id' => 66554433],
+                            'chat' => ['id' => 99887766],
                             'text' => '0862389728',
+                        ],
+                    ],
+                ],
+            ], 200)
+            ->push([
+                'ok'     => true,
+                'result' => [
+                    [
+                        'update_id' => 3003,
+                        'message'   => [
+                            'chat' => ['id' => 66554433],
+                            'text' => 'adm_web_fallback_token',
                         ],
                     ],
                 ],
@@ -490,11 +502,22 @@ class TelegramNotificationTest extends TestCase
         $recipient->refresh();
         $this->assertNull($recipient->telegram_chat_id);
 
-        // Bước 2: Gửi SĐT đang chờ kích hoạt -> Liên kết thành công
-        $syncPhoneRes = $this->actingAs($this->adminA, 'sanctum')
+        // Bước 2: KTV cố tình gõ SĐT của Admin (0862389728) -> BỊ CHẶN, không liên kết
+        $syncSpoofPhoneRes = $this->actingAs($this->adminA, 'sanctum')
             ->postJson('/api/v1/telegram-recipients/sync');
 
-        $syncPhoneRes->assertStatus(200)
+        $syncSpoofPhoneRes->assertStatus(200)
+            ->assertJsonPath('success', true)
+            ->assertJsonPath('data.synced_count', 0);
+
+        $recipient->refresh();
+        $this->assertNull($recipient->telegram_chat_id);
+
+        // Bước 3: Gửi đúng connect_token (adm_web_fallback_token) -> Liên kết thành công
+        $syncTokenRes = $this->actingAs($this->adminA, 'sanctum')
+            ->postJson('/api/v1/telegram-recipients/sync');
+
+        $syncTokenRes->assertStatus(200)
             ->assertJsonPath('success', true)
             ->assertJsonPath('data.synced_count', 1);
 

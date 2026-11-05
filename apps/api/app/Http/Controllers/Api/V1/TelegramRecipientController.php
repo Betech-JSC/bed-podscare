@@ -100,22 +100,62 @@ class TelegramRecipientController extends Controller
             }
         }
 
-        if (! empty($validated['user_id'])) {
-            $userExists = User::withoutGlobalScopes()
-                ->where('tenant_id', $tenantId)
-                ->where('id', $validated['user_id'])
-                ->exists();
-            if (! $userExists) {
-                return $this->failure('Nhân sự không hợp lệ hoặc không thuộc cửa hàng.', 422);
-            }
-        }
-
         $targetRole = $validated['target_role'] ?? 'admin';
         if ($targetRole === 'tech') {
             $targetRole = 'technician';
         }
 
+        if (! empty($validated['user_id'])) {
+            $targetUser = User::withoutGlobalScopes()
+                ->where('tenant_id', $tenantId)
+                ->where('id', $validated['user_id'])
+                ->first();
+            if (! $targetUser) {
+                return $this->failure('Nhân sự không hợp lệ hoặc không thuộc cửa hàng.', 422);
+            }
+            if ($targetRole === 'technician' && in_array($targetUser->role, ['admin', 'super_admin'], true)) {
+                return $this->failure('Không thể gán tài khoản Quản trị viên (Admin) vào luồng Kỹ thuật viên.', 422);
+            }
+        }
+
         $normalizedPhone = PhoneHelper::normalizeForStorage($validated['phone']) ?: trim($validated['phone']);
+
+        if ($targetRole === 'technician') {
+            $adminPhoneConflict = TelegramRecipient::where('tenant_id', $tenantId)
+                ->where('target_role', 'admin')
+                ->where('phone', $normalizedPhone)
+                ->exists()
+                || User::withoutGlobalScopes()
+                    ->where('tenant_id', $tenantId)
+                    ->whereIn('role', ['admin', 'super_admin'])
+                    ->where('phone', $normalizedPhone)
+                    ->exists();
+
+            if ($adminPhoneConflict) {
+                return $this->failure(
+                    'Số điện thoại này thuộc về Quản trị viên (Admin). Vui lòng nhập số điện thoại riêng của Kỹ thuật viên để tách biệt quyền hạn và bảo mật doanh thu.',
+                    422
+                );
+            }
+        } elseif ($targetRole === 'admin') {
+            $techPhoneConflict = TelegramRecipient::where('tenant_id', $tenantId)
+                ->whereIn('target_role', ['technician', 'tech'])
+                ->where('phone', $normalizedPhone)
+                ->exists()
+                || User::withoutGlobalScopes()
+                    ->where('tenant_id', $tenantId)
+                    ->whereIn('role', ['technician', 'tech'])
+                    ->where('phone', $normalizedPhone)
+                    ->exists();
+
+            if ($techPhoneConflict) {
+                return $this->failure(
+                    'Số điện thoại này thuộc về Kỹ thuật viên. Không thể đăng ký số điện thoại Kỹ thuật viên làm kênh Quản trị viên (Admin).',
+                    422
+                );
+            }
+        }
+
         $chatId = isset($validated['telegram_chat_id']) && trim($validated['telegram_chat_id']) !== ''
             ? trim($validated['telegram_chat_id'])
             : null;

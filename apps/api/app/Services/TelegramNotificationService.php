@@ -356,9 +356,71 @@ class TelegramNotificationService
             return null;
         }
 
+        $normalizedThreadId = $threadId !== null ? trim($threadId) : '';
+        $isTechRole = in_array($recipient->target_role, ['technician', 'tech'], true);
+
+        // Khóa bảo mật 1: Một khi kết nối đã gắn với một chat_id, tuyệt đối chặn chat_id khác dùng lại connect_token để chiếm quyền
+        if (! empty($recipient->telegram_chat_id) && (string) $recipient->telegram_chat_id !== $chatId) {
+            $rejectMsg = "<b>🔒 Từ chối kích hoạt: Kết nối đã được khóa bảo mật</b>\n"
+                . "Mã kết nối này đã được liên kết với một thiết bị/đoạn hội thoại Telegram khác.\n"
+                . "Để chống mạo danh và chiếm quyền xem dữ liệu, mã kết nối đang hoạt động không thể kích hoạt đè sang tài khoản khác.\n"
+                . "Nếu bạn là Quản trị viên và muốn đổi thiết bị, vui lòng xóa kết nối cũ và tạo lại trên trang Cài đặt thương hiệu.";
+            $this->sendMessage($chatId, $rejectMsg, $normalizedThreadId !== '' ? $normalizedThreadId : null);
+
+            return null;
+        }
+
+        // Khóa bảo mật 2: Chống gộp chung Admin (có giá) và KTV (ẩn giá) trên cùng 1 đoạn hội thoại cá nhân (không có Topic ID)
+        if ($normalizedThreadId === '') {
+            if ($isTechRole) {
+                $existingAdminOnSamePrivateChat = TelegramRecipient::query()
+                    ->where('id', '!=', $recipient->id)
+                    ->where('telegram_chat_id', $chatId)
+                    ->where('target_role', 'admin')
+                    ->where('is_active', true)
+                    ->where(function ($q) {
+                        $q->whereNull('telegram_thread_id')
+                            ->orWhere('telegram_thread_id', '');
+                    })
+                    ->exists();
+
+                if ($existingAdminOnSamePrivateChat) {
+                    $conflictMsg = "<b>⚠️ Không thể kích hoạt KTV chung trên đoạn hội thoại của Admin!</b>\n"
+                        . "Tài khoản Telegram hiện tại đang được kết nối làm kênh <b>Quản trị viên (Admin — có hiển thị doanh thu &amp; giá tiền)</b>.\n"
+                        . "Nếu kích hoạt mã Kỹ thuật viên ngay trên cùng đoạn hội thoại 1-1 này, thông báo của Admin và KTV sẽ bị gộp chung.\n\n"
+                        . "<b>Cách tạo đoạn hội thoại riêng biệt cho từng KTV:</b>\n"
+                        . "• <b>Cách 1 (Chat 1-1 trên máy riêng của KTV):</b> Gửi link hoặc lệnh <code>/start {$this->escapeHtml($connectToken)}</code> cho Kỹ thuật viên mở trên <b>tài khoản Telegram cá nhân của KTV đó</b>.\n"
+                        . "• <b>Cách 2 (Dùng Nhóm có chia Chủ đề / Topics):</b> Tạo 1 Nhóm Telegram bật chế độ <b>Topics</b>, tạo Topic riêng cho từng KTV và dán lệnh <code>/start {$this->escapeHtml($connectToken)}</code> vào đúng Topic đó.";
+                    $this->sendMessage($chatId, $conflictMsg);
+
+                    return null;
+                }
+            } else {
+                $existingTechOnSamePrivateChat = TelegramRecipient::query()
+                    ->where('id', '!=', $recipient->id)
+                    ->where('telegram_chat_id', $chatId)
+                    ->whereIn('target_role', ['technician', 'tech'])
+                    ->where('is_active', true)
+                    ->where(function ($q) {
+                        $q->whereNull('telegram_thread_id')
+                            ->orWhere('telegram_thread_id', '');
+                    })
+                    ->exists();
+
+                if ($existingTechOnSamePrivateChat) {
+                    $conflictMsg = "<b>🔒 Từ chối kích hoạt: Tách biệt bảo mật Admin &amp; Kỹ thuật viên</b>\n"
+                        . "Đoạn hội thoại Telegram này đang được cấu hình làm kênh riêng của <b>Kỹ thuật viên</b> (chế độ ẩn giá 100%).\n"
+                        . "Để bảo mật doanh thu và số tiền của cửa hàng, không thể kích hoạt quyền <b>Quản trị viên (Admin)</b> chung trên cùng đoạn hội thoại cá nhân của Kỹ thuật viên.";
+                    $this->sendMessage($chatId, $conflictMsg);
+
+                    return null;
+                }
+            }
+        }
+
         $recipient->telegram_chat_id = $chatId;
-        if ($threadId !== null && trim($threadId) !== '') {
-            $recipient->telegram_thread_id = trim($threadId);
+        if ($normalizedThreadId !== '') {
+            $recipient->telegram_thread_id = $normalizedThreadId;
         }
         if ($telegramUserId !== null && trim($telegramUserId) !== '') {
             $recipient->telegram_user_id = trim($telegramUserId);
@@ -369,17 +431,21 @@ class TelegramNotificationService
         $phone = $this->escapeHtml((string) $recipient->phone);
         $label = $this->escapeHtml((string) $recipient->label);
 
-        if (in_array($recipient->target_role, ['technician', 'tech'], true)) {
+        if ($isTechRole) {
             $techName = $recipient->user?->name
                 ? $this->escapeHtml((string) $recipient->user->name)
                 : $label;
-            $threadLine = ! empty($recipient->telegram_thread_id)
+            $hasTopic = ! empty($recipient->telegram_thread_id);
+            $threadLine = $hasTopic
                 ? "\nChủ đề (Topic ID): <code>" . $this->escapeHtml((string) $recipient->telegram_thread_id) . "</code>"
-                : '';
+                : "\nChế độ: <b>Đoạn hội thoại 1-1 riêng biệt của Kỹ thuật viên (Ẩn giá 100%)</b>";
+            $headerTitle = $hasTopic
+                ? 'Đã kích hoạt Chủ đề (Topic) Kỹ thuật viên!'
+                : 'Đã kích hoạt Kênh Kỹ thuật viên độc lập!';
 
-            $welcomeMessage = "<b>Đã kích hoạt Chủ đề (Topic) Kỹ thuật viên!</b>\n"
+            $welcomeMessage = "<b>{$headerTitle}</b>\n"
                 . "Kỹ thuật viên: <b>{$techName}</b> (<code>{$phone}</code>){$threadLine}\n"
-                . "• Đơn mới tại chi nhánh sẽ tự động gửi vào Chủ đề này kèm nút <b>Nhận đơn / Không nhận</b>.\n"
+                . "• Đơn mới tại chi nhánh sẽ tự động gửi vào đây kèm nút <b>Nhận đơn / Không nhận</b>.\n"
                 . "• Gõ <code>/doncuatoi</code> để xem toàn bộ đơn đang phụ trách trong ngày.\n"
                 . "• Gõ <code>/tracuu &lt;mã_đơn_hoặc_SĐT&gt;</code> để tra cứu nhanh chi tiết đơn.";
 
@@ -461,8 +527,8 @@ class TelegramNotificationService
     }
 
     /**
-     * Tìm bản ghi người nhận tương ứng với nội dung tin nhắn (/start <token>, hoặc SĐT đang chờ kích hoạt / mã kết nối).
-     * Tuyệt đối KHÔNG tự động liên kết lệnh /start trống (không kèm connect_token) để tránh chiếm quyền bản ghi đang chờ.
+     * Tìm bản ghi người nhận tương ứng với nội dung tin nhắn (/start <connect_token> hoặc mã kết nối adm_... / ktv_...).
+     * Tuyệt đối KHÔNG tự động liên kết lệnh /start trống hoặc số điện thoại thô để chống KTV mạo danh SĐT của Admin.
      */
     protected function resolveRecipientFromMessage(string $text, ?int $tenantId = null): ?TelegramRecipient
     {
@@ -471,28 +537,16 @@ class TelegramNotificationService
             return null;
         }
 
-        // Trường hợp 1: /start <connect_token_hoặc_sđt_đang_chờ>
+        // Trường hợp 1: /start <connect_token>
         if (preg_match('#^/start(?:@\S+)?\s+(.+)$#i', $text, $matches)) {
             $param = trim($matches[1]);
             if ($param === '') {
                 return null;
             }
 
-            $cleanParamPhone = preg_replace('/[\s.\-]+/', '', $param);
-
             $query = TelegramRecipient::query()
                 ->where('is_active', true)
-                ->where(function ($q) use ($param, $cleanParamPhone) {
-                    $q->where('connect_token', $param)
-                        ->orWhere(function ($pq) use ($param, $cleanParamPhone) {
-                            $phones = array_values(array_unique(array_filter([$param, (string) $cleanParamPhone])));
-                            $pq->whereIn('phone', $phones)
-                                ->where(function ($sub) {
-                                    $sub->whereNull('telegram_chat_id')
-                                        ->orWhere('telegram_chat_id', '');
-                                });
-                        });
-                });
+                ->where('connect_token', $param);
 
             if ($tenantId !== null) {
                 $query->where('tenant_id', $tenantId);
@@ -506,7 +560,7 @@ class TelegramNotificationService
             return null;
         }
 
-        // Trường hợp 2: Nhập trực tiếp mã adm_... / ktv_... hoặc số điện thoại đang chờ kích hoạt
+        // Trường hợp 2: Nhập trực tiếp mã kết nối adm_... / ktv_...
         if (str_starts_with($text, 'adm_') || str_starts_with($text, 'ktv_')) {
             $query = TelegramRecipient::query()
                 ->where('is_active', true)
@@ -515,23 +569,6 @@ class TelegramNotificationService
                 $query->where('tenant_id', $tenantId);
             }
             return $query->first();
-        }
-
-        $cleanPhone = preg_replace('/[\s.\-]+/', '', $text);
-        if ($cleanPhone !== null && preg_match('/^0\d{8,10}$/', $cleanPhone)) {
-            $query = TelegramRecipient::query()
-                ->where('is_active', true)
-                ->where('phone', $cleanPhone)
-                ->where(function ($q) {
-                    $q->whereNull('telegram_chat_id')
-                        ->orWhere('telegram_chat_id', '');
-                });
-
-            if ($tenantId !== null) {
-                $query->where('tenant_id', $tenantId);
-            }
-
-            return $query->orderByDesc('id')->first();
         }
 
         return null;
@@ -781,8 +818,10 @@ class TelegramNotificationService
                         || ($threadId !== null && (string) $recipient->telegram_thread_id !== $threadId);
 
                     if ($needsLink) {
-                        $this->handleStartCommand((string) $recipient->connect_token, $chatId, $threadId, $fromId);
-                        $syncedCount++;
+                        $linked = $this->handleStartCommand((string) $recipient->connect_token, $chatId, $threadId, $fromId);
+                        if ($linked !== null) {
+                            $syncedCount++;
+                        }
                     }
                     continue;
                 }

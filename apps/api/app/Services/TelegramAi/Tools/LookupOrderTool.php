@@ -448,10 +448,12 @@ class LookupOrderTool implements TelegramAiToolInterface
         $technicianName = $this->scalarString($args['technician_name'] ?? '');
         $status = strtolower($this->scalarString($args['status'] ?? ''));
         $orderType = strtolower($this->scalarString($args['order_type'] ?? ''));
+        $role = strtolower(trim((string) ($recipient->target_role ?? '')));
+        $canViewPrice = ! in_array($role, ['technician', 'tech'], true);
         $rawSortBy = strtolower($this->scalarString($args['sort_by'] ?? 'latest', 'latest'));
         $sortBy = match ($rawSortBy) {
-            'price_desc', 'revenue_desc', 'total_price_desc', 'amount_desc', 'highest', 'max', 'desc' => 'price_desc',
-            'price_asc', 'revenue_asc', 'total_price_asc', 'amount_asc', 'lowest', 'min', 'asc'       => 'price_asc',
+            'price_desc', 'revenue_desc', 'total_price_desc', 'amount_desc', 'highest', 'max', 'desc' => $canViewPrice ? 'price_desc' : 'latest',
+            'price_asc', 'revenue_asc', 'total_price_asc', 'amount_asc', 'lowest', 'min', 'asc'       => $canViewPrice ? 'price_asc' : 'latest',
             'oldest'                                                                                  => 'oldest',
             default                                                                                   => 'latest',
         };
@@ -620,7 +622,7 @@ class LookupOrderTool implements TelegramAiToolInterface
 
         $orders = $query->limit($limit)->get();
 
-        $items = $orders->map(function (RepairOrder $order) use ($branchDisplay): array {
+        $items = $orders->map(function (RepairOrder $order) use ($branchDisplay, $canViewPrice): array {
             $type = strtolower((string) ($order->order_type ?: 'in_store'));
             $orderTypeLabel = match ($type) {
                 'cod'      => 'Đơn COD (Khách tỉnh)',
@@ -641,7 +643,7 @@ class LookupOrderTool implements TelegramAiToolInterface
                                 continue;
                             }
                             $amt = (float) ($qi->amount ?? $qi->unit_price ?? 0);
-                            $quoteLines[] = $amt > 0
+                            $quoteLines[] = ($canViewPrice && $amt > 0)
                                 ? $desc . ' (' . number_format($amt, 0, ',', '.') . ' đ)'
                                 : $desc;
                         }
@@ -660,7 +662,7 @@ class LookupOrderTool implements TelegramAiToolInterface
                     }
                     $srvName = trim((string) $srv['name']);
                     $srvPrice = (float) ($srv['price'] ?? 0);
-                    $quoteLines[] = $srvPrice > 0
+                    $quoteLines[] = ($canViewPrice && $srvPrice > 0)
                         ? $srvName . ' (' . number_format($srvPrice, 0, ',', '.') . ' đ)'
                         : $srvName;
                 }
@@ -675,27 +677,28 @@ class LookupOrderTool implements TelegramAiToolInterface
             ])))));
 
             return [
-                'order_code'          => (string) $order->order_code,
-                'intake_batch_code'   => $order->intake_batch_code,
-                'status'              => $rawStatus,
-                'status_label'        => self::formatStatusLabel($rawStatus),
-                'order_type'          => $type,
-                'order_type_label'    => $orderTypeLabel,
-                'branch_name'         => (string) ($order->branch?->name ?? $branchDisplay),
-                'customer_name'       => (string) ($order->customer?->name ?? 'Khách lẻ'),
-                'customer_phone'      => (string) ($order->customer?->phone ?? ''),
-                'device_name'         => (string) ($order->deviceModel?->name ?? 'Thiết bị AirPods'),
-                'device_category'     => self::resolveDeviceCategoryLabel($order->deviceModel),
-                'issue_description'   => (string) ($order->issue_description ?? ''),
-                'repair_note'         => (string) ($order->repair_note ?? ''),
-                'quote_items_summary' => $quoteItemsSummary,
-                'parts_summary'       => $partsSummary,
-                'total_price'         => $totalPrice,
-                'formatted_price'     => number_format($totalPrice, 0, ',', '.') . ' đ',
-                'technician_name'     => (string) ($order->technician?->name ?? 'Chưa phân công'),
-                'received_by_name'    => (string) ($order->createdByUser?->name ?? 'Hệ thống'),
-                'shipping_address'    => (string) ($order->shipping_address ?? ''),
-                'created_at'          => optional($order->created_at)->format('H:i - d/m/Y'),
+                'order_code'                => (string) $order->order_code,
+                'intake_batch_code'         => $order->intake_batch_code,
+                'status'                    => $rawStatus,
+                'status_label'              => self::formatStatusLabel($rawStatus),
+                'order_type'                => $type,
+                'order_type_label'          => $orderTypeLabel,
+                'branch_name'               => (string) ($order->branch?->name ?? $branchDisplay),
+                'customer_name'             => (string) ($order->customer?->name ?? 'Khách lẻ'),
+                'customer_phone'            => (string) ($order->customer?->phone ?? ''),
+                'device_name'               => (string) ($order->deviceModel?->name ?? 'Thiết bị AirPods'),
+                'device_category'           => self::resolveDeviceCategoryLabel($order->deviceModel),
+                'issue_description'         => (string) ($order->issue_description ?? ''),
+                'repair_note'               => (string) ($order->repair_note ?? ''),
+                'quote_items_summary'       => $quoteItemsSummary,
+                'parts_summary'             => $partsSummary,
+                'total_price'               => $canViewPrice ? $totalPrice : null,
+                'formatted_price'           => $canViewPrice ? (number_format($totalPrice, 0, ',', '.') . ' đ') : null,
+                'financial_fields_redacted' => ! $canViewPrice,
+                'technician_name'           => (string) ($order->technician?->name ?? 'Chưa phân công'),
+                'received_by_name'          => (string) ($order->createdByUser?->name ?? 'Hệ thống'),
+                'shipping_address'          => (string) ($order->shipping_address ?? ''),
+                'created_at'                => optional($order->created_at)->format('H:i - d/m/Y'),
             ];
         })->values()->all();
 
@@ -707,9 +710,10 @@ class LookupOrderTool implements TelegramAiToolInterface
         }
 
         return [
-            'branch_name'     => $branchDisplay,
-            'branch_scope'    => $branchDisplay,
-            'filters_applied' => [
+            'branch_name'               => $branchDisplay,
+            'branch_scope'              => $branchDisplay,
+            'financial_fields_redacted' => ! $canViewPrice,
+            'filters_applied'           => [
                 'order_code'      => $orderCode !== '' ? $orderCode : null,
                 'customer_phone'  => $customerPhone !== '' ? $customerPhone : null,
                 'customer_name'   => $customerName !== '' ? $customerName : null,
@@ -752,6 +756,8 @@ class LookupOrderTool implements TelegramAiToolInterface
             "Chi nhánh: <b>{$branchScope}</b> (Tìm thấy <b>{$totalMatched}</b> đơn)",
         ];
 
+        $resultRedacted = ! empty($result['financial_fields_redacted']);
+
         foreach ($orders as $order) {
             if (! is_array($order)) {
                 continue;
@@ -774,6 +780,9 @@ class LookupOrderTool implements TelegramAiToolInterface
             $statusLabel = htmlspecialchars($rawStatusLabel, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
             $technicianName = htmlspecialchars((string) (($order['technician_name'] ?? '') ?: 'Chưa phân công'), ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
             $receivedByName = htmlspecialchars((string) (($order['received_by_name'] ?? '') ?: 'Hệ thống'), ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
+            $isOrderRedacted = $resultRedacted
+                || ! empty($order['financial_fields_redacted'])
+                || (array_key_exists('formatted_price', $order) && $order['formatted_price'] === null);
             $formattedPrice = htmlspecialchars((string) ($order['formatted_price'] ?? '0 đ'), ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
             $createdAt = htmlspecialchars((string) ($order['created_at'] ?? ''), ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
 
@@ -800,7 +809,11 @@ class LookupOrderTool implements TelegramAiToolInterface
             }
 
             $entryLines[] = "  Trạng thái: <b>{$statusLabel}</b> | Kỹ thuật viên: <b>{$technicianName}</b> | Người tiếp nhận: {$receivedByName}";
-            $entryLines[] = "  Chi phí: <b>{$formattedPrice}</b> | Thời gian: {$createdAt}";
+            if ($isOrderRedacted) {
+                $entryLines[] = "  Thời gian: {$createdAt}";
+            } else {
+                $entryLines[] = "  Chi phí: <b>{$formattedPrice}</b> | Thời gian: {$createdAt}";
+            }
 
             $lines[] = implode("\n", $entryLines);
         }

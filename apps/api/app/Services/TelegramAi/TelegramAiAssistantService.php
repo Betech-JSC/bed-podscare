@@ -282,10 +282,12 @@ class TelegramAiAssistantService
         }
 
         $normalizedQ = mb_strtolower(trim($question), 'UTF-8');
+        $isTechRecipient = $recipient !== null
+            && in_array(strtolower(trim((string) $recipient->target_role)), ['technician', 'tech'], true);
 
         if ($canonicalToolName === 'lookup_repair_orders') {
             $currentSortBy = strtolower($this->scalarString($args['sort_by'] ?? ''));
-            if (! in_array($currentSortBy, ['price_desc', 'price_asc', 'oldest'], true)) {
+            if (! $isTechRecipient && ! in_array($currentSortBy, ['price_desc', 'price_asc', 'oldest'], true)) {
                 if (
                     str_contains($normalizedQ, 'doanh thu cao nhất')
                     || str_contains($normalizedQ, 'giá cao nhất')
@@ -630,6 +632,10 @@ class TelegramAiAssistantService
             "7. Tên chi nhánh: Khi nhắc đến tên cửa hàng hoặc chi nhánh trong câu trả lời, BẮT BUỘC ưu tiên sử dụng đúng tên chi nhánh tại trường 'branch_name' hoặc 'branch_scope' trong kết quả Tool trả về (nếu không gọi Tool thì dùng '{$branchDisplay}'). TUYỆT ĐỐI KHÔNG dùng cụm từ 'FIXO Master System', 'Toàn cửa hàng' hay 'Cửa hàng PodsCare'.",
             "8. TUYỆT ĐỐI KHÔNG in lại chuỗi JSON thô của công cụ (như {\"..._response\": ...}) vào câu trả lời. Chỉ trả lời bằng văn bản tiếng Việt định dạng HTML.",
         ];
+
+        if (in_array(strtolower(trim((string) $recipient->target_role)), ['technician', 'tech'], true)) {
+            $lines[] = "9. BẢO MẬT VAI TRÒ KỸ THUẬT VIÊN: Người đang trò chuyện là Kỹ thuật viên. TUYỆT ĐỐI KHÔNG hiển thị, nhắc tới hoặc ước tính bất kỳ giá tiền sửa chữa, chi phí, doanh thu, công nợ hay số tiền nào trong câu trả lời.";
+        }
 
         $memorySection = $this->memoryService->formatMemoryPromptSection($recipient);
         if ($memorySection !== '') {

@@ -254,7 +254,7 @@ export default function TenantBrandingPage() {
         : prev
     );
     if (tech.phone) {
-      setTgPhone((prev) => (!prev.trim() ? tech.phone! : prev));
+      setTgPhone(tech.phone);
     }
     if (tech.branch_id) {
       setTgBranchId(String(tech.branch_id));
@@ -1131,22 +1131,22 @@ export default function TenantBrandingPage() {
                         </span>
                       </div>
 
-                      <div className="p-3.5 rounded-[10px] bg-[#eef7f4] border border-[#c5e0d6] text-[11px] text-[#1c302b] space-y-1.5 leading-relaxed">
+                      <div className="p-3.5 rounded-[10px] bg-[#eef7f4] border border-[#c5e0d6] text-[11px] text-[#1c302b] space-y-2 leading-relaxed">
                         <div className="font-bold text-[#176b58] flex items-center gap-1.5">
                           <Icon name="spark" size={14} className="shrink-0 text-[#176b58]" />
-                          <span>Hướng dẫn kết nối Topic riêng trong nhóm Telegram cho KTV:</span>
+                          <span>2 Cách tách riêng đoạn hội thoại độc lập giữa Admin và từng KTV (Bảo mật giá 100%):</span>
                         </div>
-                        <ol className="list-decimal list-inside space-y-1 text-[#355046] m-0 pl-0.5">
+                        <ul className="list-disc list-inside space-y-1.5 text-[#355046] m-0 pl-0.5">
                           <li>
-                            <strong>Bước 1:</strong> Trong Nhóm Telegram của xưởng, bật chế độ <strong>Topics (Chủ đề)</strong> và tạo một Topic riêng cho KTV này (VD: <code># KTV Hùng</code>).
+                            <strong>Cách 1 — Đoạn hội thoại 1-1 riêng trên máy từng KTV (Khuyên dùng):</strong> Sau khi tạo kết nối, bấm <strong>&ldquo;Copy link&rdquo;</strong> hoặc <strong>&ldquo;Copy lệnh /start ktv_...&rdquo;</strong> gửi cho KTV mở trên <strong>điện thoại Telegram cá nhân của KTV đó</strong>. Mỗi KTV sẽ có 1 cuộc trò chuyện riêng biệt với Bot (ẩn 100% giá tiền &amp; doanh thu). <em>Lưu ý: Admin không bấm mở link của KTV ngay trên máy Telegram của Admin để tránh gộp chung vào cửa sổ chat của Admin.</em>
                           </li>
                           <li>
-                            <strong>Bước 2:</strong> Sau khi bấm <strong>Tạo kết nối</strong>, copy câu lệnh <code>/start ktv_...</code> và <strong>dán trực tiếp vào trong Topic của KTV đó</strong>.
+                            <strong>Cách 2 — Chia nhiều Chủ đề (Topics) trong 1 Nhóm Telegram:</strong> Bật chế độ <strong>Topics (Chủ đề)</strong> trong nhóm Telegram của xưởng, tạo từng Topic riêng (VD: <code># KTV Hùng</code>, <code># KTV Nam</code>) rồi dán lệnh <code>/start ktv_...</code> trực tiếp vào đúng Topic của KTV đó.
                           </li>
                           <li>
-                            <strong>Bước 3:</strong> Hệ thống sẽ tự động bắt cả <code>Chat ID</code> của nhóm, <code>Topic ID (Thread ID)</code> của KTV và <code>Telegram User ID</code> của KTV.
+                            <strong>Khóa bảo mật chống mạo danh:</strong> Hệ thống chặn hoàn toàn việc dùng SĐT của Admin cho KTV hoặc gõ SĐT thô vào Bot để chiếm quyền. Mỗi mã kết nối chỉ khóa cố định vào 1 thiết bị/đoạn hội thoại sau khi kích hoạt.
                           </li>
-                        </ol>
+                        </ul>
                       </div>
                     </div>
                   )}
@@ -1421,7 +1421,7 @@ export default function TenantBrandingPage() {
                   )}
 
                   <div className="p-3 rounded-[10px] bg-[#f7faf8] border border-[#dce7e1] text-[11px] text-[#4d6359] leading-relaxed">
-                    <strong>Hướng dẫn kết nối 1 chạm:</strong> Với <strong>Admin</strong>, bấm <strong>&ldquo;Mở Telegram kích hoạt&rdquo;</strong> và bấm <strong>Start</strong> trên Bot. Với <strong>KTV Topic</strong>, bấm <strong>&ldquo;Copy lệnh /start ktv_...&rdquo;</strong> và dán trực tiếp vào Topic riêng của KTV trong nhóm Telegram của xưởng, sau đó bấm <strong>&ldquo;Đồng bộ kết nối Telegram&rdquo;</strong> để hoàn tất.
+                    <strong>Hướng dẫn tách riêng đoạn hội thoại Admin &amp; KTV:</strong> Với <strong>Admin</strong>, bấm <strong>&ldquo;Mở Telegram kích hoạt&rdquo;</strong> trên máy của Admin. Với <strong>từng Kỹ thuật viên</strong>, hãy gửi link/lệnh <code>/start ktv_...</code> để KTV mở trên <strong>máy Telegram riêng của KTV đó</strong> (hoặc dán vào <strong>Topic riêng</strong> của KTV trong nhóm Telegram bật Topics). Không bấm kích hoạt mã của KTV ngay trên cùng tài khoản Telegram cá nhân của Admin.
                   </div>
                 </div>
               </div>

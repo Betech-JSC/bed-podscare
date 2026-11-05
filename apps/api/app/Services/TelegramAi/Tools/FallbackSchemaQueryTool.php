@@ -652,10 +652,12 @@ class FallbackSchemaQueryTool implements TelegramAiToolInterface
         }
 
         $totalMatched = (clone $query)->count();
+        $role = strtolower(trim((string) ($recipient->target_role ?? '')));
+        $canViewFinancials = ! in_array($role, ['technician', 'tech'], true);
 
-        if ($sortBy === 'price_asc') {
+        if ($canViewFinancials && $sortBy === 'price_asc') {
             $query->orderBy('estimated_cost', 'asc')->orderBy('id', 'asc');
-        } elseif ($sortBy === 'price_desc') {
+        } elseif ($canViewFinancials && $sortBy === 'price_desc') {
             $query->orderBy('estimated_cost', 'desc')->orderByDesc('id');
         } else {
             $query->orderBy('order_index', 'asc')->orderByDesc('id');
@@ -663,7 +665,7 @@ class FallbackSchemaQueryTool implements TelegramAiToolInterface
 
         $records = $query->limit($limit)->get();
 
-        $items = $records->map(function (CommonIssue $issue): array {
+        $items = $records->map(function (CommonIssue $issue) use ($canViewFinancials): array {
             $estimatedPrice = (float) ($issue->estimated_cost ?? $issue->suggestedService?->base_price ?? 0);
             $deviceName = (string) ($issue->deviceModel?->name ?? 'Tất cả dòng máy');
             $issueName = (string) $issue->issue_name;
@@ -678,9 +680,10 @@ class FallbackSchemaQueryTool implements TelegramAiToolInterface
                 'symptom'                   => $solution !== '' ? $solution : $issueName,
                 'solution'                  => $solution,
                 'estimated_time'            => (string) ($issue->estimated_time ?? ''),
-                'estimated_price'           => $estimatedPrice,
-                'estimated_cost'            => $estimatedPrice,
-                'formatted_estimated_price' => $this->formatVnd($estimatedPrice),
+                'estimated_price'           => $canViewFinancials ? $estimatedPrice : null,
+                'estimated_cost'            => $canViewFinancials ? $estimatedPrice : null,
+                'formatted_estimated_price' => $canViewFinancials ? $this->formatVnd($estimatedPrice) : 'Đã ẩn (Chỉ Admin/Thu ngân)',
+                'financial_fields_redacted' => ! $canViewFinancials,
                 'device_model_name'         => $deviceName,
                 'device_name'               => $deviceName,
                 'suggested_service_name'    => (string) ($issue->suggestedService?->name ?? ''),
@@ -1247,16 +1250,22 @@ class FallbackSchemaQueryTool implements TelegramAiToolInterface
         }
 
         $totalMatched = (clone $query)->count();
+        $role = strtolower(trim((string) ($recipient->target_role ?? '')));
+        $canViewFinancials = ! in_array($role, ['technician', 'tech'], true);
 
         if ($sortBy === 'orders_desc') {
-            $query->orderByDesc('repair_orders_count')
-                ->orderByDesc('valid_orders_spent');
+            $query->orderByDesc('repair_orders_count');
+            if ($canViewFinancials) {
+                $query->orderByDesc('valid_orders_spent');
+            }
             if (! $hasScopeFilter) {
-                $query->orderByDesc('orders_count')
-                    ->orderByDesc('total_spent');
+                $query->orderByDesc('orders_count');
+                if ($canViewFinancials) {
+                    $query->orderByDesc('total_spent');
+                }
             }
             $query->orderByDesc('id');
-        } elseif (in_array($sortBy, ['spent_desc', 'price_desc'], true)) {
+        } elseif ($canViewFinancials && in_array($sortBy, ['spent_desc', 'price_desc'], true)) {
             $query->orderByDesc('valid_orders_spent')
                 ->orderByDesc('repair_orders_count');
             if (! $hasScopeFilter) {
@@ -1269,7 +1278,7 @@ class FallbackSchemaQueryTool implements TelegramAiToolInterface
 
         $records = $query->limit($limit)->get();
 
-        $items = $records->map(function (Customer $customer) use ($hasScopeFilter): array {
+        $items = $records->map(function (Customer $customer) use ($hasScopeFilter, $canViewFinancials): array {
             $countedOrders = (int) ($customer->getAttribute('repair_orders_count') ?? 0);
             $allOrdersCount = (int) ($customer->getAttribute('all_repair_orders_count') ?? 0);
             $storedOrders = (int) ($customer->getRawOriginal('orders_count') ?? $customer->orders_count ?? 0);
@@ -1286,20 +1295,21 @@ class FallbackSchemaQueryTool implements TelegramAiToolInterface
                 : ($canFallbackToStored ? $storedSpent : 0.0);
 
             return [
-                'id'                    => (int) $customer->id,
-                'name'                  => (string) $customer->name,
-                'phone'                 => (string) ($customer->phone ?? ''),
-                'email'                 => (string) ($customer->email ?? ''),
-                'address'               => (string) ($customer->address ?? ''),
-                'customer_type'         => (string) ($customer->customer_type ?? 'retail'),
-                'orders_count'          => $ordersCount,
-                'repair_orders_count'   => $ordersCount,
-                'valid_orders_count'    => $countedOrders,
-                'total_spent'           => $totalSpent,
-                'valid_orders_spent'    => $countedOrders > 0 ? $summedSpent : 0.0,
-                'formatted_total_spent' => $this->formatVnd($totalSpent),
-                'notes'                 => (string) ($customer->notes ?? ''),
-                'created_at'            => optional($customer->created_at)->format('H:i - d/m/Y'),
+                'id'                        => (int) $customer->id,
+                'name'                      => (string) $customer->name,
+                'phone'                     => (string) ($customer->phone ?? ''),
+                'email'                     => (string) ($customer->email ?? ''),
+                'address'                   => (string) ($customer->address ?? ''),
+                'customer_type'             => (string) ($customer->customer_type ?? 'retail'),
+                'orders_count'              => $ordersCount,
+                'repair_orders_count'       => $ordersCount,
+                'valid_orders_count'        => $countedOrders,
+                'total_spent'               => $canViewFinancials ? $totalSpent : null,
+                'valid_orders_spent'        => $canViewFinancials ? ($countedOrders > 0 ? $summedSpent : 0.0) : null,
+                'formatted_total_spent'     => $canViewFinancials ? $this->formatVnd($totalSpent) : 'Đã ẩn (Chỉ Admin/Thu ngân)',
+                'financial_fields_redacted' => ! $canViewFinancials,
+                'notes'                     => (string) ($customer->notes ?? ''),
+                'created_at'                => optional($customer->created_at)->format('H:i - d/m/Y'),
             ];
         })->values()->all();
 
@@ -1477,9 +1487,11 @@ class FallbackSchemaQueryTool implements TelegramAiToolInterface
         }
 
         $totalMatched = (clone $query)->count();
+        $role = strtolower(trim((string) ($recipient->target_role ?? '')));
+        $canViewFinancials = ! in_array($role, ['technician', 'tech'], true);
         $records = $query->orderByDesc('created_at')->orderByDesc('id')->limit($limit)->get();
 
-        $items = $records->map(function (Shipment $shipment) use ($branchDisplay): array {
+        $items = $records->map(function (Shipment $shipment) use ($branchDisplay, $canViewFinancials): array {
             $carrier = trim((string) ($shipment->carrier_name ?: ($shipment->partner?->name ?? 'Đơn vị vận chuyển')));
             $trackingCode = (string) ($shipment->tracking_code ?? '');
             $codAmount = (float) ($shipment->getAttribute('cod_amount') ?? $shipment->repairOrder?->total_price ?? 0);
@@ -1500,28 +1512,29 @@ class FallbackSchemaQueryTool implements TelegramAiToolInterface
             $deliveredAtStr = optional($shipment->delivered_at)->format('H:i - d/m/Y');
 
             return [
-                'id'                      => (int) $shipment->id,
-                'shipment_code'           => (string) $shipment->shipment_code,
-                'order_code'              => (string) ($shipment->repairOrder?->order_code ?? ''),
-                'branch_name'             => (string) ($shipment->repairOrder?->branch?->name ?? $branchDisplay),
-                'carrier'                 => $carrier,
-                'provider'                => $carrier,
-                'carrier_name'            => $carrier,
-                'tracking_number'         => $trackingCode,
-                'tracking_code'           => $trackingCode,
-                'delivery_method'         => (string) ($shipment->delivery_method ?? ''),
-                'delivery_address'        => (string) ($shipment->delivery_address ?: ($shipment->repairOrder?->shipping_address ?? '')),
-                'status'                  => (string) $shipment->status,
-                'status_label'            => $statusLabel,
-                'cod_amount'              => $codAmount,
-                'formatted_cod_amount'    => $this->formatVnd($codAmount),
-                'shipping_fee'            => $shippingFee,
-                'formatted_shipping_fee'  => $this->formatVnd($shippingFee),
-                'recipient_name'          => $recipientName,
-                'recipient_phone'         => $recipientPhone,
-                'shipped_at'              => $shippedAtStr,
-                'delivered_at'            => $deliveredAtStr,
-                'notes'                   => (string) ($shipment->notes ?? ''),
+                'id'                        => (int) $shipment->id,
+                'shipment_code'             => (string) $shipment->shipment_code,
+                'order_code'                => (string) ($shipment->repairOrder?->order_code ?? ''),
+                'branch_name'               => (string) ($shipment->repairOrder?->branch?->name ?? $branchDisplay),
+                'carrier'                   => $carrier,
+                'provider'                  => $carrier,
+                'carrier_name'              => $carrier,
+                'tracking_number'           => $trackingCode,
+                'tracking_code'             => $trackingCode,
+                'delivery_method'           => (string) ($shipment->delivery_method ?? ''),
+                'delivery_address'          => (string) ($shipment->delivery_address ?: ($shipment->repairOrder?->shipping_address ?? '')),
+                'status'                    => (string) $shipment->status,
+                'status_label'              => $statusLabel,
+                'cod_amount'                => $canViewFinancials ? $codAmount : null,
+                'formatted_cod_amount'      => $canViewFinancials ? $this->formatVnd($codAmount) : 'Đã ẩn (Chỉ Admin/Thu ngân)',
+                'shipping_fee'              => $canViewFinancials ? $shippingFee : null,
+                'formatted_shipping_fee'    => $canViewFinancials ? $this->formatVnd($shippingFee) : 'Đã ẩn (Chỉ Admin/Thu ngân)',
+                'financial_fields_redacted' => ! $canViewFinancials,
+                'recipient_name'            => $recipientName,
+                'recipient_phone'           => $recipientPhone,
+                'shipped_at'                => $shippedAtStr,
+                'delivered_at'              => $deliveredAtStr,
+                'notes'                     => (string) ($shipment->notes ?? ''),
             ];
         })->values()->all();
 

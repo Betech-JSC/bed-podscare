@@ -714,4 +714,128 @@ class TelegramTechTopicDispatchTest extends TestCase
         $this->assertStringNotContainsString('350.000', $detailText);
         $this->assertStringNotContainsString('350000', $detailText);
     }
+
+    /**
+     * 8. Khóa bảo mật chống KTV mạo danh SĐT Admin, chống chiếm quyền token đã kích hoạt, chống gộp chung chat 1-1 Admin-KTV và ẩn 100% giá trên LookupOrderTool.
+     */
+    public function test_security_prevents_ktv_impersonating_admin_phone_or_hijacking_admin_chat_and_redacts_lookup_order_prices(): void
+    {
+        Http::fake([
+            'api.telegram.org/*/sendMessage*' => Http::response(['ok' => true], 200),
+        ]);
+
+        // 8.1: Không cho phép tạo kết nối KTV bằng SĐT của Admin
+        $conflictRes = $this->actingAs($this->admin, 'sanctum')
+            ->postJson('/api/v1/telegram-recipients', [
+                'label'       => 'KTV giả mạo SĐT Admin',
+                'phone'       => $this->admin->phone,
+                'target_role' => 'technician',
+                'user_id'     => $this->tech1->id,
+                'branch_id'   => $this->branch1->id,
+            ]);
+        $conflictRes->assertStatus(422);
+
+        // 8.2: Khi Admin đã kết nối với chat_id 9990001, một chat_id khác (8880002) gửi /start adm_... bị chặn chiếm quyền
+        $adminRecipient = TelegramRecipient::create([
+            'tenant_id'         => $this->tenant->id,
+            'branch_id'         => $this->branch1->id,
+            'label'             => 'Admin Chủ Shop',
+            'phone'             => $this->admin->phone,
+            'target_role'       => 'admin',
+            'connect_token'     => 'adm_locked_owner_token',
+            'telegram_chat_id'  => '9990001',
+            'subscribed_events' => ['order.created'],
+            'is_active'         => true,
+            'connected_at'      => now(),
+        ]);
+
+        $this->postJson('/api/v1/webhooks/telegram', [
+            'update_id' => 90001,
+            'message'   => [
+                'message_id' => 1001,
+                'from'       => ['id' => 8880002],
+                'chat'       => ['id' => 8880002, 'type' => 'private'],
+                'text'       => '/start adm_locked_owner_token',
+            ],
+        ])->assertStatus(200);
+
+        $adminRecipient->refresh();
+        $this->assertEquals('9990001', $adminRecipient->telegram_chat_id);
+
+        // 8.3: Không cho phép kích hoạt mã ktv_... đè lên cùng đoạn hội thoại 1-1 cá nhân (9990001, không có Topic) của Admin
+        $pendingKtv = TelegramRecipient::create([
+            'tenant_id'         => $this->tenant->id,
+            'branch_id'         => $this->branch1->id,
+            'user_id'           => $this->tech1->id,
+            'label'             => 'KTV Hùng Riêng',
+            'phone'             => $this->tech1->phone,
+            'target_role'       => 'technician',
+            'connect_token'     => 'ktv_separate_device_token',
+            'subscribed_events' => ['order.created'],
+            'is_active'         => true,
+        ]);
+
+        $this->postJson('/api/v1/webhooks/telegram', [
+            'update_id' => 90002,
+            'message'   => [
+                'message_id' => 1002,
+                'from'       => ['id' => 9990001],
+                'chat'       => ['id' => 9990001, 'type' => 'private'],
+                'text'       => '/start ktv_separate_device_token',
+            ],
+        ])->assertStatus(200);
+
+        $pendingKtv->refresh();
+        $this->assertNull($pendingKtv->telegram_chat_id);
+
+        // Khi KTV Hùng mở trên thiết bị/tài khoản Telegram riêng (chat_id 7770001) -> Kết nối 1-1 độc lập thành công!
+        $this->postJson('/api/v1/webhooks/telegram', [
+            'update_id' => 90003,
+            'message'   => [
+                'message_id' => 1003,
+                'from'       => ['id' => 7770001],
+                'chat'       => ['id' => 7770001, 'type' => 'private'],
+                'text'       => '/start ktv_separate_device_token',
+            ],
+        ])->assertStatus(200);
+
+        $pendingKtv->refresh();
+        $this->assertEquals('7770001', $pendingKtv->telegram_chat_id);
+
+        // 8.4: Khi KTV tra cứu qua LookupOrderTool, toàn bộ giá đơn và giá dịch vụ bổ sung bị ẩn 100%
+        $customer = Customer::create([
+            'tenant_id' => $this->tenant->id,
+            'name'      => 'Trần Quốc Tuấn',
+            'phone'     => '0944555666',
+        ]);
+
+        RepairOrder::create([
+            'tenant_id'           => $this->tenant->id,
+            'branch_id'           => $this->branch1->id,
+            'order_code'          => 'PC0105112601',
+            'customer_id'         => $customer->id,
+            'device_model_id'     => $this->deviceModel->id,
+            'issue_description'   => 'Thay pin 2 tai AirPods Pro 2',
+            'status'              => 'in_repair',
+            'technician_id'       => $this->tech1->id,
+            'initial_price'       => 650000,
+            'total_price'         => 950000,
+            'additional_services' => [
+                ['name' => 'Vệ sinh lưới loa', 'price' => 300000],
+            ],
+            'created_by_user_id'  => $this->admin->id,
+        ]);
+
+        $lookupTool = new \App\Services\TelegramAi\Tools\LookupOrderTool();
+        $techResult = $lookupTool->execute(['order_code' => 'PC0105112601'], $pendingKtv);
+        $this->assertTrue($techResult['financial_fields_redacted']);
+        $this->assertNull($techResult['orders'][0]['total_price']);
+        $this->assertNull($techResult['orders'][0]['formatted_price']);
+        $this->assertStringNotContainsString('300.000', $techResult['orders'][0]['quote_items_summary']);
+
+        $techHtml = $lookupTool->formatHtml($techResult);
+        $this->assertStringNotContainsString('950.000', $techHtml);
+        $this->assertStringNotContainsString('300.000', $techHtml);
+        $this->assertStringNotContainsString('Chi phí:', $techHtml);
+    }
 }
