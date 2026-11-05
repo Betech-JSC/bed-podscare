@@ -33,7 +33,6 @@ import {
 import { useSilentPrint, PrintButtonDropdown } from '../components/print';
 import { RepairQueuePane } from './components/RepairQueuePane';
 import { RepairCanvasPane } from './components/RepairCanvasPane';
-import { exportPartsUsageExcel } from '../dashboard/utils/partsUsageExcelExport';
 import {
   inferLinkedPartsFromOrderText,
   formatLinkedPartsSummary,
@@ -962,40 +961,6 @@ function RepairsPageContent() {
             </p>
           </div>
           <div className="flex flex-wrap items-center gap-2">
-            {!isTechRole && (
-              <Button
-                variant="outline"
-                size="md"
-                data-testid="repairs-export-parts-excel-btn"
-                onClick={() => {
-                  const periodLbl = selectedDate
-                    ? `Ngày ${selectedDate}`
-                    : dateFilter === 'today'
-                    ? 'Hôm nay'
-                    : dateFilter === 'yesterday'
-                    ? 'Hôm qua'
-                    : dateFilter === '7_days'
-                    ? '7 ngày qua'
-                    : dateFilter === '30_days'
-                    ? '30 ngày qua'
-                    : 'Toàn bộ';
-                  const res = exportPartsUsageExcel({
-                    orders: filteredOrders,
-                    periodLabel: periodLbl,
-                    branchLabel: branchId === 'all' ? 'Toàn bộ chi nhánh' : branch,
-                    hideRevenue: role !== 'admin' && (role as string) !== 'super_admin',
-                  });
-                  toast(
-                    `Đã xuất file Linh kiện (.xls): ${res.totalPartQuantity} linh kiện tiêu hao / ${res.orderCount} đơn!`,
-                    'success'
-                  );
-                }}
-                className="bg-white text-[#176b51] border-[#cde4d8] hover:bg-[#e9f4ef] font-bold flex items-center gap-1.5"
-              >
-                <Icon name="download" size={14} />
-                <span>Xuất file Linh kiện (.xls)</span>
-              </Button>
-            )}
             <Button
               variant="outline"
               size="md"

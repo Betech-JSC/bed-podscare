@@ -628,6 +628,26 @@ class OrderController extends Controller
                 if ($order->isDirty('parts_needed')) {
                     $order->save();
                 }
+            } elseif (empty($order->parts_needed) && ! empty($order->issue_description)) {
+                $standardParts = $this->workflowService->resolveStandardPartsFromIssueDescription($order);
+                if ($standardParts->isNotEmpty()) {
+                    $linkedEntries = $standardParts->map(fn ($p) => [
+                        'part_id'   => $p->id,
+                        'part_sku'  => $p->sku,
+                        'part_name' => $p->name,
+                        'quantity'  => 1,
+                        'unit'      => $p->unit ?? 'cái',
+                    ])->all();
+                    $order->appendLinkedPartsToPartsNeeded($linkedEntries);
+                    if ($order->isDirty('parts_needed')) {
+                        $order->save();
+                    }
+                }
+            }
+
+            // Tự động trừ tồn kho linh kiện ngay khi tạo đơn sửa chữa
+            if (! in_array($order->status, ['cancelled', 'rejected'], true)) {
+                $this->workflowService->deductInventoryForOrder($order->fresh(), $creatorId);
             }
 
             // 4. Lưu checklists nếu có
@@ -967,8 +987,8 @@ class OrderController extends Controller
 
                     if (
                         ! $statusTransitioned
-                        && (isset($orderUpdates['parts_used_summary']) || isset($orderUpdates['parts_needed']))
-                        && in_array($order->status, ['in_repair', 'waiting_qc', 'qc_pending', 'qc_inspecting', 'ready_for_return', 'waiting_pickup', 'completed'], true)
+                        && (isset($orderUpdates['parts_used_summary']) || isset($orderUpdates['parts_needed']) || isset($orderUpdates['issue_description']))
+                        && ! in_array($order->status, ['cancelled', 'rejected'], true)
                     ) {
                         $this->workflowService->deductInventoryForOrder($order->fresh(), $user->id);
                     }
@@ -1301,7 +1321,7 @@ class OrderController extends Controller
             });
         }
 
-        if (in_array($order->status, ['in_repair', 'waiting_qc', 'qc_pending', 'qc_inspecting', 'ready_for_return', 'waiting_pickup', 'completed'], true)) {
+        if (! in_array($order->status, ['cancelled', 'rejected'], true)) {
             $this->workflowService->deductInventoryForOrder($order->fresh(), $request->user()?->id);
         }
 
@@ -1898,7 +1918,7 @@ class OrderController extends Controller
 
             $serviceItem = $lockedOrder->addAdditionalService($validated, $user);
 
-            if (in_array($lockedOrder->status, ['in_repair', 'waiting_qc', 'qc_pending', 'qc_inspecting', 'ready_for_return', 'waiting_pickup', 'completed'], true)) {
+            if (! in_array($lockedOrder->status, ['cancelled', 'rejected'], true)) {
                 $this->workflowService->deductInventoryForOrder($lockedOrder->fresh(), $user->id);
             }
 

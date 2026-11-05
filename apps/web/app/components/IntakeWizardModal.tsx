@@ -437,7 +437,6 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
   const [categoryIssues, setCategoryIssues] = useState<Record<string, CommonIssueItem[]>>({});
   const [checklistTemplate, setChecklistTemplate] = useState<string[]>([]);
   const [issueFilterByDevice, setIssueFilterByDevice] = useState<Record<string, string>>({});
-  const [showJsonByDevice, setShowJsonByDevice] = useState<Record<string, boolean>>({});
 
   // Validation errors
   const [errors, setErrors] = useState<Record<string, string>>({});
@@ -887,7 +886,8 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
     const targetDev = devices[devIndex];
     const devCategory = targetDev?.category || selectedCategory;
     const devWatchSize = targetDev?.watchSize;
-    const enrichedChip = enrichCommonIssueWithParts(chip, devCategory, devWatchSize);
+    const devModelName = targetDev?.device || selectedDevice;
+    const enrichedChip = enrichCommonIssueWithParts(chip, devCategory, devWatchSize, devModelName);
 
     const prev = targetDev ? targetDev.issue : issue;
     const isAlreadyInText = prev.includes(textToAdd);
@@ -926,10 +926,15 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
     const catalogForCat = categoryIssues[devCategory] || DEFAULT_COMMON_ISSUES[devCategory] || [];
     const matchedFromText = catalogForCat
       .filter((item) => newIssue.toLowerCase().includes(item.issue_name.toLowerCase()))
-      .map((item) => enrichCommonIssueWithParts(item, devCategory, devWatchSize));
+      .map((item) => enrichCommonIssueWithParts(item, devCategory, devWatchSize, devModelName));
 
     const combinedSelected = matchedFromText.length > 0 ? matchedFromText : nextSelectedIssues;
-    const mergedParts = mergeLinkedPartsFromIssues(combinedSelected, devCategory, devWatchSize);
+    const mergedParts = mergeLinkedPartsFromIssues(
+      combinedSelected,
+      devCategory,
+      devWatchSize,
+      devModelName
+    );
     const nextPartsNeeded = formatLinkedPartsSummary(mergedParts, devWatchSize);
 
     if (devIndex === 0) {
@@ -965,12 +970,21 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
     const catalogForCat = categoryIssues['Apple Watch'] || DEFAULT_COMMON_ISSUES['Apple Watch'] || [];
     const activeIssues =
       targetDev.selectedIssues && targetDev.selectedIssues.length > 0
-        ? targetDev.selectedIssues.map((iss) => enrichCommonIssueWithParts(iss, 'Apple Watch', size))
+        ? targetDev.selectedIssues.map((iss) =>
+            enrichCommonIssueWithParts(iss, 'Apple Watch', size, targetDev.device)
+          )
         : catalogForCat
             .filter((item) => nextIssue.toLowerCase().includes(item.issue_name.toLowerCase()))
-            .map((item) => enrichCommonIssueWithParts(item, 'Apple Watch', size));
+            .map((item) =>
+              enrichCommonIssueWithParts(item, 'Apple Watch', size, targetDev.device)
+            );
 
-    const mergedParts = mergeLinkedPartsFromIssues(activeIssues, 'Apple Watch', size);
+    const mergedParts = mergeLinkedPartsFromIssues(
+      activeIssues,
+      'Apple Watch',
+      size,
+      targetDev.device
+    );
     const nextPartsNeeded = formatLinkedPartsSummary(mergedParts, size);
 
     updateDevice(devIndex, {
@@ -1255,9 +1269,23 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
             ? applyWatchSizeTagToText(dev.issue.trim(), effectiveWatchSize)
             : dev.issue.trim();
 
+        const selectedPartsFromIssues =
+          Array.isArray(dev.selectedIssues) && dev.selectedIssues.length > 0
+            ? mergeLinkedPartsFromIssues(
+                dev.selectedIssues,
+                dev.category,
+                effectiveWatchSize,
+                dev.device
+              )
+            : [];
+        const inferredPartsFromText = inferLinkedPartsFromOrderText(
+          effectiveIssueText,
+          dev.category,
+          effectiveWatchSize,
+          dev.device
+        ).linkedParts;
         const computedPartsFromText = formatLinkedPartsSummary(
-          inferLinkedPartsFromOrderText(effectiveIssueText, dev.category, effectiveWatchSize)
-            .linkedParts,
+          selectedPartsFromIssues.length > 0 ? selectedPartsFromIssues : inferredPartsFromText,
           effectiveWatchSize
         );
         const effectivePartsNeeded =
@@ -2180,7 +2208,7 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
                         </div>
                       )}
 
-                      <div className="sm:col-span-2">
+                       <div className="sm:col-span-2">
                         <Textarea
                           label="Tình trạng lỗi khách báo *"
                           value={dev.issue}
@@ -2189,7 +2217,8 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
                             const inferred = inferLinkedPartsFromOrderText(
                               val,
                               dev.category,
-                              dev.watchSize
+                              dev.watchSize,
+                              dev.device
                             );
                             const nextPartsSummary = formatLinkedPartsSummary(
                               inferred.linkedParts,
@@ -2213,7 +2242,7 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
                           required
                         />
 
-                        {/* Interactive Quick Issue Chips + FE Filter + Sample Object Preview */}
+                        {/* Interactive Quick Issue Chips + FE Filter + Khu vực Linh kiện Kho gắn liền với lỗi */}
                         {(() => {
                           const rawList = devIdx === 0 ? commonIssues : issuesForDev;
                           const filterQuery = issueFilterByDevice[dev.id] || '';
@@ -2221,19 +2250,30 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
                             rawList,
                             filterQuery,
                             dev.category,
-                            dev.watchSize
+                            dev.watchSize,
+                            dev.device
                           );
                           const activeObjects = enrichedAndFiltered.filter((item) =>
                             dev.issue.toLowerCase().includes(item.issue_name.toLowerCase())
                           );
+                          const inferredFromTextObjects = dev.issue.trim()
+                            ? inferLinkedPartsFromOrderText(
+                                dev.issue,
+                                dev.category,
+                                dev.watchSize,
+                                dev.device
+                              ).matchedIssues
+                            : [];
                           const previewObjects =
                             activeObjects.length > 0
                               ? activeObjects
+                              : inferredFromTextObjects.length > 0
+                              ? inferredFromTextObjects
                               : enrichedAndFiltered.length > 0
                               ? [enrichedAndFiltered[0]]
                               : [];
-                          const isShowingSampleDefault = activeObjects.length === 0;
-                          const isJsonVisible = Boolean(showJsonByDevice[dev.id]);
+                          const isShowingSampleDefault =
+                            activeObjects.length === 0 && inferredFromTextObjects.length === 0;
 
                           return (
                             <div className="mt-3 space-y-3">
@@ -2241,7 +2281,7 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
                                 <div className="text-[11px] font-semibold text-[#6d7e75] flex items-center gap-1.5">
                                   <span>Lỗi thường gặp ({dev.category}):</span>
                                   <span className="text-[10px] text-[#91a098] font-normal">
-                                    (Bấm để chọn lỗi & tự động link linh kiện sang Kỹ thuật)
+                                    (Bấm để chọn lỗi &amp; tự động trừ linh kiện Kho khi tạo đơn)
                                   </span>
                                 </div>
                                 <span className="text-[11px] font-mono text-[#176b58] bg-[#eaf4ef] px-2 py-0.5 rounded">
@@ -2259,7 +2299,7 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
                                     [dev.id]: e.target.value,
                                   }))
                                 }
-                                placeholder="🔍 Gõ lọc nhanh lỗi hoặc linh kiện (VD: pin, rè ANC, vỡ kính, sập nguồn...)"
+                                placeholder="🔍 Gõ lọc nhanh lỗi hoặc mã SKU linh kiện kho (VD: BAT-APP2-01, MESH-APP-02, pin, rè ANC...)"
                               />
 
                               {enrichedAndFiltered.length > 0 ? (
@@ -2288,7 +2328,7 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
                                         </span>
                                         {firstPart && (
                                           <span className="px-1.5 py-0.5 rounded bg-[#f4faf7] border border-[#c6e0d2] text-[10px] font-mono text-[#176b58]">
-                                            🔧 {firstPart.part_name} ×{firstPart.quantity}
+                                            🔧 {firstPart.part_sku} (-{firstPart.quantity})
                                           </span>
                                         )}
                                       </button>
@@ -2301,7 +2341,7 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
                                 </div>
                               )}
 
-                              {/* Khung Render mẫu Object Lỗi & Linh kiện liên kết */}
+                              {/* Khu vực trực quan: Linh kiện Kho gắn liền với lỗi */}
                               {previewObjects.length > 0 && (
                                 <div
                                   data-testid="intake-issue-object-preview"
@@ -2310,27 +2350,17 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
                                   <div className="flex flex-wrap items-center justify-between gap-2 pb-2 border-b border-[#dfeee6]">
                                     <div className="flex items-center gap-2">
                                       <span className="px-2 py-0.5 rounded bg-[#176b58] text-white text-[10px] font-bold uppercase tracking-wider">
-                                        {isShowingSampleDefault ? 'Mẫu Object Lỗi' : `Đã chọn ${previewObjects.length} Object Lỗi`}
+                                        {isShowingSampleDefault
+                                          ? 'Định mức trừ kho'
+                                          : `Đã chọn ${previewObjects.length} lỗi trừ kho`}
                                       </span>
                                       <strong className="text-[#1c302b]">
-                                        Mẫu Object Lỗi & Linh kiện liên kết (Preview chuyển sang Kỹ thuật)
+                                        Linh kiện Kho gắn liền với lỗi (Tự động trừ tồn kho tại Kho &amp; Mua hàng ngay khi Tạo đơn)
                                       </strong>
                                     </div>
-                                    <button
-                                      type="button"
-                                      data-testid="toggle-issue-json-preview-btn"
-                                      onClick={() =>
-                                        setShowJsonByDevice((prev) => ({
-                                          ...prev,
-                                          [dev.id]: !prev[dev.id],
-                                        }))
-                                      }
-                                      className="text-[11px] font-bold text-[#176b58] hover:underline cursor-pointer"
-                                    >
-                                      {isJsonVisible
-                                        ? 'Ẩn cấu trúc JSON Object Lỗi'
-                                        : 'Xem cấu trúc JSON mẫu của Object Lỗi'}
-                                    </button>
+                                    <span className="text-[11px] font-semibold text-[#bc5b52] bg-[#fbefed] px-2 py-0.5 rounded border border-[#f5d5d0]">
+                                      Tự động xuất trừ kho khi lưu đơn
+                                    </span>
                                   </div>
 
                                   <div className="space-y-2">
@@ -2365,19 +2395,19 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
 
                                         <div className="pt-1 flex flex-wrap items-center gap-1.5">
                                           <span className="text-[11px] font-bold text-[#176b58]">
-                                            Linh kiện liên kết ({obj.linked_parts.length}):
+                                            Linh kiện Kho sẽ trừ ({obj.linked_parts.length}):
                                           </span>
                                           {obj.linked_parts.map((pt) => (
                                             <span
                                               key={`${obj.issue_code}-${pt.part_sku}`}
-                                              className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-[#eaf4ef] text-[#176b58] border border-[#c2dfd0] text-[11px] font-semibold"
+                                              className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-[#eaf4ef] text-[#176b58] border border-[#c2dfd0] text-[11px] font-semibold"
                                             >
                                               <span>🔧 {pt.part_name}</span>
-                                              <span className="font-mono text-[10px] text-[#4a6b5d]">
-                                                ({pt.part_sku})
+                                              <span className="font-mono text-[10px] font-bold px-1.5 py-0.2 rounded bg-white text-[#176b58] border border-[#b8d9cb]">
+                                                SKU: {pt.part_sku}
                                               </span>
-                                              <span className="font-mono font-bold">
-                                                ×{pt.quantity} {pt.unit}
+                                              <span className="font-mono font-bold text-[#bc5b52]">
+                                                -{pt.quantity} {pt.unit || 'cái'}
                                               </span>
                                             </span>
                                           ))}
@@ -2386,22 +2416,9 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
                                     ))}
                                   </div>
 
-                                  {isJsonVisible && (
-                                    <pre
-                                      data-testid="intake-issue-json-code"
-                                      className="p-3 rounded-[8px] bg-[#17231f] text-[#a7f3d0] text-[11px] font-mono overflow-x-auto max-h-52 leading-relaxed"
-                                    >
-                                      {JSON.stringify(
-                                        previewObjects.length === 1 ? previewObjects[0] : previewObjects,
-                                        null,
-                                        2
-                                      )}
-                                    </pre>
-                                  )}
-
                                   <div className="pt-2 border-t border-[#dfeee6] space-y-1">
                                     <label className="block text-[11px] font-bold text-[#176b58]">
-                                      Linh kiện lỗi tự động link sang phòng Kỹ thuật (parts_needed):
+                                      Linh kiện xuất trừ Kho &amp; Mua hàng ngay khi Tạo đơn (parts_needed):
                                     </label>
                                     <Input
                                       data-testid="intake-linked-parts-needed-input"
@@ -2409,7 +2426,7 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
                                       onChange={(e) =>
                                         updateDevice(devIdx, { partsNeeded: e.target.value })
                                       }
-                                      placeholder="Tự động điền khi chọn chip lỗi hoặc nhập bổ sung linh kiện dự kiến..."
+                                      placeholder="Tên linh kiện (SKU) x1 — tự động điền khi chọn lỗi để trừ kho..."
                                     />
                                   </div>
                                 </div>

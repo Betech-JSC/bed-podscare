@@ -30,6 +30,7 @@ import {
   mergeLinkedPartsFromIssues,
   formatLinkedPartsSummary,
   applyWatchSizeTagToText,
+  inferLinkedPartsFromOrderText,
   type CommonIssueCatalogItem,
 } from '../constants/commonIssueCatalog';
 
@@ -117,31 +118,47 @@ export const IntakeQuickConsole: React.FC<IntakeQuickConsoleProps> = ({
     return opts;
   })();
   const [quickIssueFilter, setQuickIssueFilter] = useState('');
-  const [showSampleJson, setShowSampleJson] = useState(false);
 
   const filteredIssues = filterCommonIssues(
     commonIssues,
     quickIssueFilter,
     device.category,
-    device.watchSize
+    device.watchSize,
+    device.device
   );
 
   const activeIssueObjects: CommonIssueCatalogItem[] = filteredIssues.filter((item) =>
     device.issue.toLowerCase().includes(item.issue_name.toLowerCase())
   );
+  const inferredFromFreeText = device.issue.trim()
+    ? inferLinkedPartsFromOrderText(
+        device.issue,
+        device.category,
+        device.watchSize,
+        device.device
+      ).matchedIssues
+    : [];
   const previewIssueObjects: CommonIssueCatalogItem[] =
     activeIssueObjects.length > 0
       ? activeIssueObjects
+      : inferredFromFreeText.length > 0
+      ? inferredFromFreeText
       : filteredIssues.length > 0
       ? [filteredIssues[0]]
       : [];
 
   const handleSelectWatchSize = (size: string) => {
     const nextAccessories = applyWatchSizeTagToText(device.accessories, size);
-    const enrichedSelected = (device.selectedIssues || activeIssueObjects).map((iss) =>
-      enrichCommonIssueWithParts(iss, 'Apple Watch', size)
+    const enrichedSelected = (device.selectedIssues && device.selectedIssues.length > 0
+      ? device.selectedIssues
+      : activeIssueObjects
+    ).map((iss) => enrichCommonIssueWithParts(iss, 'Apple Watch', size, device.device));
+    const mergedParts = mergeLinkedPartsFromIssues(
+      enrichedSelected,
+      'Apple Watch',
+      size,
+      device.device
     );
-    const mergedParts = mergeLinkedPartsFromIssues(enrichedSelected, 'Apple Watch', size);
     const nextPartsNeeded = formatLinkedPartsSummary(mergedParts, size);
     onUpdateDevice({
       watchSize: size,
@@ -375,7 +392,24 @@ export const IntakeQuickConsole: React.FC<IntakeQuickConsoleProps> = ({
             <Textarea
               label="Mô tả lỗi khách báo *"
               value={device.issue}
-              onChange={(e) => onUpdateDevice({ issue: e.target.value })}
+              onChange={(e) => {
+                const val = e.target.value;
+                const inferred = inferLinkedPartsFromOrderText(
+                  val,
+                  device.category,
+                  device.watchSize,
+                  device.device
+                );
+                const nextPartsSummary = formatLinkedPartsSummary(
+                  inferred.linkedParts,
+                  device.watchSize
+                );
+                onUpdateDevice({
+                  issue: val,
+                  selectedIssues: inferred.matchedIssues,
+                  partsNeeded: nextPartsSummary,
+                });
+              }}
               placeholder="Ví dụ: Tai trái mất nguồn, bật ANC rè..."
               error={errors.issue || errors[`issue_${device.id}`]}
             />
@@ -395,7 +429,7 @@ export const IntakeQuickConsole: React.FC<IntakeQuickConsoleProps> = ({
                 data-testid="quick-intake-issue-filter-input"
                 value={quickIssueFilter}
                 onChange={(e) => setQuickIssueFilter(e.target.value)}
-                placeholder="🔍 Gõ lọc nhanh lỗi hoặc linh kiện (VD: pin, rè ANC, vỡ kính, sập nguồn...)"
+                placeholder="🔍 Gõ lọc nhanh lỗi hoặc mã SKU linh kiện kho (VD: BAT-APP2-01, MESH-APP-02, pin, rè ANC...)"
               />
 
               {filteredIssues.length > 0 ? (
@@ -417,7 +451,7 @@ export const IntakeQuickConsole: React.FC<IntakeQuickConsoleProps> = ({
                         <span>{active ? '✓' : '+'} {chip.issue_name}</span>
                         {firstPart && (
                           <span className="px-1.5 py-0.5 rounded bg-white/90 border border-[#cde4d8] text-[10px] font-mono text-[#176b51]">
-                            🔧 {firstPart.part_name} ×{firstPart.quantity}
+                            🔧 {firstPart.part_sku} (-{firstPart.quantity})
                           </span>
                         )}
                       </button>
@@ -430,28 +464,21 @@ export const IntakeQuickConsole: React.FC<IntakeQuickConsoleProps> = ({
                 </div>
               )}
 
-              {/* Preview Mẫu Object Lỗi & Linh kiện liên kết */}
+              {/* Khu vực trực quan: Linh kiện Kho gắn liền với lỗi */}
               {previewIssueObjects.length > 0 && (
                 <div
                   data-testid="quick-intake-issue-object-preview"
                   className="p-3 rounded-[8px] bg-[#f8fbf9] border border-[#cde4d8] space-y-2 text-xs"
                 >
-                  <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div className="flex flex-wrap items-center justify-between gap-2 pb-1.5 border-b border-[#dcebe3]">
                     <div className="flex items-center gap-1.5">
                       <span className="px-2 py-0.5 rounded bg-[#176b51] text-white text-[10px] font-bold uppercase">
-                        Object Lỗi Mẫu
+                        Trừ Kho Tự Động
                       </span>
                       <strong className="text-[#17231f]">
-                        Mẫu Object Lỗi & Linh kiện liên kết (Preview chuyển sang Kỹ thuật)
+                        Linh kiện Kho gắn liền với lỗi (Tự động trừ tồn kho tại Kho &amp; Mua hàng ngay khi Tạo đơn)
                       </strong>
                     </div>
-                    <button
-                      type="button"
-                      onClick={() => setShowSampleJson((v) => !v)}
-                      className="text-[11px] font-bold text-[#176b51] underline cursor-pointer"
-                    >
-                      {showSampleJson ? 'Ẩn cấu trúc JSON' : 'Xem JSON Object lỗi'}
-                    </button>
                   </div>
 
                   {previewIssueObjects.map((obj) => (
@@ -472,39 +499,38 @@ export const IntakeQuickConsole: React.FC<IntakeQuickConsoleProps> = ({
                         </span>
                       </div>
                       <div className="flex flex-wrap items-center gap-1.5">
-                        <span className="text-[11px] text-[#81908a] font-semibold">
-                          Linh kiện liên kết ({obj.linked_parts.length}):
+                        <span className="text-[11px] text-[#176b51] font-bold">
+                          Linh kiện trừ kho ({obj.linked_parts.length}):
                         </span>
                         {obj.linked_parts.map((pt) => (
                           <span
                             key={`${obj.issue_code}-${pt.part_sku}`}
-                            className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-[#e9f4ef] text-[#176b51] border border-[#cde4d8] text-[11px] font-semibold"
+                            className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded bg-[#e9f4ef] text-[#176b51] border border-[#cde4d8] text-[11px] font-semibold"
                           >
                             <span>🔧 {pt.part_name}</span>
-                            <span className="font-mono text-[10px] opacity-80">({pt.part_sku})</span>
-                            <span className="font-mono font-bold">×{pt.quantity} {pt.unit}</span>
+                            <span className="font-mono text-[10px] font-bold px-1.5 py-0.2 rounded bg-white border border-[#b8d9cb]">
+                              SKU: {pt.part_sku}
+                            </span>
+                            <span className="font-mono font-bold text-[#bc5b52]">
+                              -{pt.quantity} {pt.unit || 'cái'}
+                            </span>
                           </span>
                         ))}
                       </div>
                     </div>
                   ))}
 
-                  {showSampleJson && (
-                    <pre className="p-2.5 rounded bg-[#17231f] text-[#a7f3d0] text-[11px] font-mono overflow-x-auto max-h-44">
-                      {JSON.stringify(
-                        previewIssueObjects.length === 1 ? previewIssueObjects[0] : previewIssueObjects,
-                        null,
-                        2
-                      )}
-                    </pre>
-                  )}
-
-                  {device.partsNeeded && (
-                    <div className="pt-1 border-t border-[#dcebe3] text-[11px] text-[#176b51]">
-                      <span className="font-bold">Linh kiện lỗi tự động gán theo đơn (parts_needed): </span>
-                      <span className="font-mono font-semibold text-[#17231f]">{device.partsNeeded}</span>
-                    </div>
-                  )}
+                  <div className="pt-1.5 border-t border-[#dcebe3] space-y-1">
+                    <label className="block text-[11px] font-bold text-[#176b51]">
+                      Linh kiện xuất trừ Kho &amp; Mua hàng khi bấm Lưu đơn (parts_needed):
+                    </label>
+                    <Input
+                      data-testid="quick-intake-linked-parts-needed-input"
+                      value={device.partsNeeded || ''}
+                      onChange={(e) => onUpdateDevice({ partsNeeded: e.target.value })}
+                      placeholder="Tên linh kiện (SKU) x1 — tự động điền khi chọn lỗi..."
+                    />
+                  </div>
                 </div>
               )}
             </div>

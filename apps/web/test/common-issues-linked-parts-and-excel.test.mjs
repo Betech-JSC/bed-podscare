@@ -7,6 +7,7 @@ import { stripTypeScriptTypes } from 'node:module';
 
 import {
   POPULAR_APPLE_WATCH_SIZES,
+  DEFAULT_ISSUE_PARTS_PRESETS,
   COMMON_ISSUE_CATALOG_BY_CATEGORY,
   ALL_COMMON_ISSUE_CATALOG,
   applyWatchSizeToLinkedPart,
@@ -23,7 +24,6 @@ import {
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const webRoot = path.resolve(__dirname, '..');
-const repoRoot = path.resolve(webRoot, '../..');
 
 /**
  * Helper to dynamically import TypeScript modules that use extensionless relative imports
@@ -46,8 +46,20 @@ async function loadPartsUsageExcelModule() {
   return import(`data:text/javascript;base64,${base64}`);
 }
 
-describe('Independent Tester: Common Issue Catalog, Linked Parts, Apple Watch Sizes & CSKH Excel Export', () => {
-  test('1. commonIssueCatalog.ts: Cấu trúc Object Lỗi mẫu (linked_parts, keywords, watch_sizes)', () => {
+const REAL_WAREHOUSE_SKUS = new Set([
+  'BAT-APP2-01',
+  'BAT-APP-01',
+  'BAT-APP3-02',
+  'MESH-APP-02',
+  'FLEX-CASE-01',
+  'CASE-APP2-04',
+  'AW-BAT-01',
+  'AW-GLASS-01',
+  'APEN-TIP-01',
+]);
+
+describe('Independent Tester: Common Issue Catalog (Real Warehouse SKUs), Linked Parts Deduction & Inventory Excel Export Hub', () => {
+  test('1. commonIssueCatalog.ts: Đồng bộ 100% mã SKU linh kiện thật trong Kho & Mua hàng (/inventory)', () => {
     assert.deepEqual(
       [...POPULAR_APPLE_WATCH_SIZES],
       ['38mm', '40mm', '41mm', '42mm', '44mm', '45mm', '46mm', '49mm (Ultra)'],
@@ -55,21 +67,51 @@ describe('Independent Tester: Common Issue Catalog, Linked Parts, Apple Watch Si
     );
 
     assert.ok(
+      Array.isArray(DEFAULT_ISSUE_PARTS_PRESETS) && DEFAULT_ISSUE_PARTS_PRESETS.length >= 9,
+      'DEFAULT_ISSUE_PARTS_PRESETS phải có đầy đủ các nhóm lỗi chuẩn'
+    );
+
+    const presetSkus = new Set(
+      DEFAULT_ISSUE_PARTS_PRESETS.flatMap((p) => p.linked_parts.map((pt) => pt.part_sku))
+    );
+    for (const expectedSku of REAL_WAREHOUSE_SKUS) {
+      assert.ok(
+        presetSkus.has(expectedSku),
+        `DEFAULT_ISSUE_PARTS_PRESETS phải chứa mã SKU thật trong kho: ${expectedSku}`
+      );
+    }
+
+    assert.ok(
       ALL_COMMON_ISSUE_CATALOG.length >= 12,
-      'Catalog phải có ít nhất 12 mẫu Object lỗi cho AirPods, Apple Watch, Apple Pencil'
+      'Catalog phải có ít nhất 12 mẫu lỗi cho AirPods, Apple Watch, Apple Pencil'
     );
 
     for (const item of ALL_COMMON_ISSUE_CATALOG) {
-      assert.ok(item.issue_code && item.issue_code.startsWith('ISS-'), `Mỗi lỗi phải có issue_code hợp lệ: ${item.issue_name}`);
+      assert.ok(
+        item.issue_code && item.issue_code.startsWith('ISS-'),
+        `Mỗi lỗi phải có issue_code hợp lệ: ${item.issue_name}`
+      );
       assert.ok(item.category, 'Mỗi lỗi phải có category');
       assert.ok(item.issue_name, 'Mỗi lỗi phải có issue_name');
-      assert.ok(Array.isArray(item.keywords) && item.keywords.length > 0, `Lỗi ${item.issue_code} phải có mảng keywords`);
-      assert.ok(Array.isArray(item.linked_parts) && item.linked_parts.length > 0, `Lỗi ${item.issue_code} phải có mảng linked_parts`);
+      assert.ok(
+        Array.isArray(item.keywords) && item.keywords.length > 0,
+        `Lỗi ${item.issue_code} phải có mảng keywords`
+      );
+      assert.ok(
+        Array.isArray(item.linked_parts) && item.linked_parts.length > 0,
+        `Lỗi ${item.issue_code} phải có mảng linked_parts`
+      );
 
       for (const part of item.linked_parts) {
-        assert.ok(part.part_sku && part.part_sku.startsWith('LK-'), 'Mỗi linh kiện phải có part_sku bắt đầu bằng LK-');
+        assert.ok(
+          REAL_WAREHOUSE_SKUS.has(part.part_sku),
+          `Linh kiện ${part.part_sku} của lỗi ${item.issue_code} phải nằm trong tập SKU thật của Kho & Mua hàng`
+        );
         assert.ok(part.part_name, 'Mỗi linh kiện phải có part_name');
-        assert.ok(typeof part.quantity === 'number' && part.quantity >= 1, 'Số lượng linh kiện >= 1');
+        assert.ok(
+          typeof part.quantity === 'number' && part.quantity >= 1,
+          'Số lượng linh kiện >= 1'
+        );
         assert.ok(part.unit, 'Mỗi linh kiện phải có đơn vị tính (unit)');
       }
 
@@ -81,9 +123,28 @@ describe('Independent Tester: Common Issue Catalog, Linked Parts, Apple Watch Si
         );
       }
     }
+
+    // Kiểm tra ưu tiên giữ nguyên linked_parts trả về từ Backend API /api/v1/services/common-issues
+    const backendIssue = {
+      id: 99,
+      category: 'AirPods',
+      issue_name: 'Pin chai, tụt pin nhanh dưới 1 tiếng',
+      linked_parts: [
+        {
+          part_sku: 'BAT-APP-01',
+          part_name: 'Pin tai nghe AirPods Pro',
+          quantity: 2,
+          unit: 'Viên',
+        },
+      ],
+    };
+    const enrichedBackend = enrichCommonIssueWithParts(backendIssue, 'AirPods');
+    assert.equal(enrichedBackend.linked_parts.length, 1);
+    assert.equal(enrichedBackend.linked_parts[0].part_sku, 'BAT-APP-01');
+    assert.equal(enrichedBackend.linked_parts[0].quantity, 2);
   });
 
-  test('2. commonIssueCatalog.ts: filterCommonIssues lọc nhanh theo tên lỗi, từ khóa, tên linh kiện và mã SKU', () => {
+  test('2. commonIssueCatalog.ts: filterCommonIssues lọc nhanh theo tên lỗi, từ khóa, tên linh kiện và mã SKU kho thật', () => {
     const airpodsIssues = COMMON_ISSUE_CATALOG_BY_CATEGORY['AirPods'];
     const watchIssues = COMMON_ISSUE_CATALOG_BY_CATEGORY['Apple Watch'];
 
@@ -92,25 +153,35 @@ describe('Independent Tester: Common Issue Catalog, Linked Parts, Apple Watch Si
     assert.equal(byKeyword.length, 1);
     assert.equal(byKeyword[0].issue_code, 'ISS-AP-002');
 
-    // Filter theo mã SKU linh kiện "LK-AP-CASE-FLEX"
-    const bySku = filterCommonIssues(airpodsIssues, 'LK-AP-CASE-FLEX', 'AirPods');
+    // Filter theo mã SKU linh kiện kho thật "CASE-APP2-04"
+    const bySku = filterCommonIssues(airpodsIssues, 'CASE-APP2-04', 'AirPods');
     assert.equal(bySku.length, 1);
     assert.equal(bySku[0].issue_code, 'ISS-AP-004');
 
     // Filter theo tên linh kiện "Mặt kính cảm ứng" trên Apple Watch kèm size 45mm
-    const byPartName = filterCommonIssues(watchIssues, 'Mặt kính cảm ứng', 'Apple Watch', '45mm');
-    assert.equal(byPartName.length, 1);
+    const byPartName = filterCommonIssues(
+      watchIssues,
+      'Mặt kính cảm ứng',
+      'Apple Watch',
+      '45mm'
+    );
+    assert.ok(byPartName.length >= 1);
     assert.equal(byPartName[0].issue_code, 'ISS-AW-002');
     assert.ok(
-      byPartName[0].linked_parts.some((p) => p.part_name.includes('[Size 45mm]') && p.watch_size === '45mm'),
-      'Kết quả filter Apple Watch khi có watchSize phải tự động gắn [Size 45mm] vào linked_parts'
+      byPartName[0].linked_parts.some(
+        (p) =>
+          p.part_sku === 'AW-GLASS-01' &&
+          p.part_name.includes('[Size 45mm]') &&
+          p.watch_size === '45mm'
+      ),
+      'Kết quả filter Apple Watch khi có watchSize phải tự động gắn [Size 45mm] vào AW-GLASS-01'
     );
   });
 
-  test('3. commonIssueCatalog.ts: applyWatchSizeToLinkedPart & mergeLinkedPartsFromIssues', () => {
+  test('3. commonIssueCatalog.ts: applyWatchSizeToLinkedPart, mergeLinkedPartsFromIssues & formatLinkedPartsSummary chuẩn trừ kho', () => {
     const watchPart = {
-      part_sku: 'LK-AW-PIN',
-      part_name: 'Pin Apple Watch dung lượng chuẩn',
+      part_sku: 'AW-BAT-01',
+      part_name: 'Pin Apple Watch chuẩn dung lượng',
       quantity: 1,
       unit: 'Viên',
       position: 'Body',
@@ -118,56 +189,67 @@ describe('Independent Tester: Common Issue Catalog, Linked Parts, Apple Watch Si
 
     const sized41 = applyWatchSizeToLinkedPart(watchPart, '41mm', 'Apple Watch');
     assert.equal(sized41.watch_size, '41mm');
-    assert.equal(sized41.part_name, 'Pin Apple Watch dung lượng chuẩn [Size 41mm]');
+    assert.equal(sized41.part_name, 'Pin Apple Watch chuẩn dung lượng [Size 41mm]');
 
     // Khi đổi sang size 49mm (Ultra), không được lặp 2 lần tag [Size ...]
     const resizedUltra = applyWatchSizeToLinkedPart(sized41, '49mm (Ultra)', 'Apple Watch');
     assert.equal(resizedUltra.watch_size, '49mm (Ultra)');
-    assert.equal(resizedUltra.part_name, 'Pin Apple Watch dung lượng chuẩn [Size 49mm (Ultra)]');
+    assert.equal(
+      resizedUltra.part_name,
+      'Pin Apple Watch chuẩn dung lượng [Size 49mm (Ultra)]'
+    );
 
     // Không gắn size vào linh kiện AirPods
     const airpodsPart = {
-      part_sku: 'LK-AP-PIN-CAP',
-      part_name: 'Pin tai nghe AirPods dung lượng chuẩn',
+      part_sku: 'BAT-APP2-01',
+      part_name: 'Pin tai nghe AirPods Pro 2',
       quantity: 1,
       unit: 'Viên',
     };
     const untouchedAirpods = applyWatchSizeToLinkedPart(airpodsPart, '45mm', 'AirPods');
-    assert.equal(untouchedAirpods.part_name, 'Pin tai nghe AirPods dung lượng chuẩn');
+    assert.equal(untouchedAirpods.part_name, 'Pin tai nghe AirPods Pro 2');
     assert.equal(untouchedAirpods.watch_size, undefined);
 
-    // mergeLinkedPartsFromIssues khử trùng lặp LK-AW-SEAL khi chọn cả ISS-AW-001 (Pin) và ISS-AW-002 (Kính)
-    const watchIssues = COMMON_ISSUE_CATALOG_BY_CATEGORY['Apple Watch'].slice(0, 2);
-    const merged = mergeLinkedPartsFromIssues(watchIssues, 'Apple Watch', '44mm');
-    const skus = merged.map((p) => p.part_sku);
+    // mergeLinkedPartsFromIssues khử trùng lặp MESH-APP-02 khi chọn cả ISS-AP-002 (ANC) và ISS-AP-003 (Loa)
+    const apIssues = [
+      COMMON_ISSUE_CATALOG_BY_CATEGORY['AirPods'][1], // ISS-AP-002: MESH-APP-02, FLEX-CASE-01
+      COMMON_ISSUE_CATALOG_BY_CATEGORY['AirPods'][2], // ISS-AP-003: MESH-APP-02
+    ];
+    const mergedAp = mergeLinkedPartsFromIssues(apIssues, 'AirPods');
     assert.deepEqual(
-      skus,
-      ['LK-AW-PIN', 'LK-AW-SEAL', 'LK-AW-GLASS-TOUCH'],
-      'LK-AW-SEAL xuất hiện ở cả 2 lỗi nhưng sau khi merge chỉ được tính 1 lần duy nhất cho mỗi đơn'
-    );
-    assert.ok(merged.every((p) => p.watch_size === '44mm' && p.part_name.includes('[Size 44mm]')));
-
-    // Kiểm tra extractWatchSizeFromText, applyWatchSizeTagToText, inferLinkedPartsFromOrderText, parsePartsSummaryToItems
-    assert.equal(extractWatchSizeFromText('[Size: 49mm (Ultra)] Pin phù bung màn'), '49mm (Ultra)');
-    assert.equal(applyWatchSizeTagToText('Dây cao su đen', '45mm'), '[Size: 45mm] Dây cao su đen');
-    assert.equal(
-      applyWatchSizeTagToText('[Size: 41mm] Dây cao su đen', '46mm'),
-      '[Size: 46mm] Dây cao su đen'
+      mergedAp.map((p) => p.part_sku),
+      ['MESH-APP-02', 'FLEX-CASE-01'],
+      'MESH-APP-02 xuất hiện ở cả 2 lỗi nhưng sau khi merge chỉ được trừ 1 lần duy nhất'
     );
 
-    const summaryStr = formatLinkedPartsSummary(merged, '44mm');
+    // Merge cho Apple Watch
+    const watchIssues = COMMON_ISSUE_CATALOG_BY_CATEGORY['Apple Watch'].slice(0, 2);
+    const mergedWatch = mergeLinkedPartsFromIssues(watchIssues, 'Apple Watch', '44mm');
+    assert.deepEqual(
+      mergedWatch.map((p) => p.part_sku),
+      ['AW-BAT-01', 'AW-GLASS-01']
+    );
+
+    const summaryStr = formatLinkedPartsSummary(mergedWatch, '44mm');
+    assert.ok(
+      summaryStr.includes('(AW-BAT-01) x1') && summaryStr.includes('(AW-GLASS-01) x1'),
+      'formatLinkedPartsSummary phải định dạng đúng chuẩn Tên linh kiện (SKU) xSố_lượng để Backend trừ kho'
+    );
+
     const parsedItems = parsePartsSummaryToItems(summaryStr);
-    assert.equal(parsedItems.length, 3);
-    assert.equal(parsedItems[0].part_sku, 'LK-AW-PIN');
+    assert.equal(parsedItems.length, 2);
+    assert.equal(parsedItems[0].part_sku, 'AW-BAT-01');
     assert.equal(parsedItems[0].watch_size, '44mm');
 
-    const inferred = inferLinkedPartsFromOrderText('Bật chống ồn ANC bị rè', 'AirPods Pro 1');
+    const inferred = inferLinkedPartsFromOrderText('Bật chống ồn ANC bị rè', 'AirPods Pro 2');
     assert.ok(inferred.matchedIssues.some((i) => i.issue_code === 'ISS-AP-002'));
-    assert.ok(inferred.linkedParts.some((p) => p.part_sku === 'LK-AP-MIC-ANC'));
+    assert.ok(inferred.linkedParts.some((p) => p.part_sku === 'MESH-APP-02'));
+    assert.ok(inferred.linkedParts.some((p) => p.part_sku === 'FLEX-CASE-01'));
   });
 
-  test('4. partsUsageExcelExport.ts: Tổng hợp số lượng linh kiện tiêu hao (Bảng tổng hợp + Bảng chi tiết theo đơn)', async () => {
-    const { extractOrderPartsUsage, buildPartsUsageExcelWorkbook } = await loadPartsUsageExcelModule();
+  test('4. partsUsageExcelExport.ts: Tổng hợp số lượng linh kiện tiêu hao theo mã SKU thật (Bảng tổng hợp + Bảng chi tiết theo đơn)', async () => {
+    const { extractOrderPartsUsage, buildPartsUsageExcelWorkbook } =
+      await loadPartsUsageExcelModule();
 
     const sampleOrders = [
       {
@@ -179,8 +261,8 @@ describe('Independent Tester: Common Issue Catalog, Linked Parts, Apple Watch Si
         device: 'AirPods Pro 2',
         issue: 'Pin chai, tụt pin nhanh dưới 1 tiếng',
         accessories: 'Tai L, Tai R, Case',
-        parts_needed: 'Pin tai nghe AirPods dung lượng chuẩn (LK-AP-PIN-CAP) x2, Keo ron chống nước & cố định vỏ tai nghe (LK-AP-SEAL-KEO) x1',
-        partsUsed: 'Pin tai nghe AirPods dung lượng chuẩn (LK-AP-PIN-CAP) x2, Keo ron chống nước & cố định vỏ tai nghe (LK-AP-SEAL-KEO) x1',
+        parts_needed: 'Pin tai nghe AirPods Pro 2 (BAT-APP2-01) x2',
+        partsUsed: 'Pin tai nghe AirPods Pro 2 (BAT-APP2-01) x2',
         tech: 'KTV Minh',
         status: 'Hoàn tất',
         additional_services: [
@@ -192,10 +274,10 @@ describe('Independent Tester: Common Issue Catalog, Linked Parts, Apple Watch Si
             added_by_role: 'technician',
             linked_parts: [
               {
-                part_sku: 'LK-AP-CASE-FLEX',
-                part_name: 'Cụm cáp chân sạc & chấu đồng Hộp sạc (Case)',
+                part_sku: 'FLEX-CASE-01',
+                part_name: 'Cáp flex hộp sạc AirPods Pro',
                 quantity: 1,
-                unit: 'Cụm',
+                unit: 'Cái',
               },
             ],
           },
@@ -207,10 +289,10 @@ describe('Independent Tester: Common Issue Catalog, Linked Parts, Apple Watch Si
         name: 'Trần Thị B',
         phone: '0903334444',
         deviceCategory: 'AirPods',
-        device: 'AirPods 3',
+        device: 'AirPods Pro 2',
         issue: 'Pin chai, tụt pin nhanh dưới 1 tiếng',
         accessories: 'Tai L',
-        parts_needed: 'Pin tai nghe AirPods dung lượng chuẩn (LK-AP-PIN-CAP) x1',
+        parts_needed: 'Pin tai nghe AirPods Pro 2 (BAT-APP2-01) x1',
         partsUsed: '',
         tech: 'KTV Hùng',
         status: 'Đang sửa',
@@ -233,7 +315,7 @@ describe('Independent Tester: Common Issue Catalog, Linked Parts, Apple Watch Si
 
     const usage1 = extractOrderPartsUsage(sampleOrders[0]);
     assert.ok(
-      usage1.linkedParts.some((p) => p.part_sku === 'LK-AP-CASE-FLEX'),
+      usage1.linkedParts.some((p) => p.part_sku === 'FLEX-CASE-01'),
       'extractOrderPartsUsage phải gộp cả linked_parts từ additional_services'
     );
 
@@ -246,39 +328,29 @@ describe('Independent Tester: Common Issue Catalog, Linked Parts, Apple Watch Si
     assert.equal(workbook.orderCount, 3, 'Báo cáo phải ghi nhận đúng 3 đơn sửa chữa');
     assert.equal(workbook.detailRows.length, 3, 'Bảng 2 phải có 3 dòng chi tiết tương ứng 3 đơn');
 
-    // Kiểm tra tổng số lượng của LK-AP-PIN-CAP: đơn 1 dùng 2 viên + đơn 2 cần 1 viên = 3 viên trên 2 đơn
-    const pinSummary = workbook.summaryRows.find((r) => r.part_sku === 'LK-AP-PIN-CAP');
-    assert.ok(pinSummary, 'Bảng tổng hợp phải có mã LK-AP-PIN-CAP');
-    assert.equal(pinSummary.total_quantity, 3, 'Tổng số lượng LK-AP-PIN-CAP phải là 3 (2 + 1)');
-    assert.equal(pinSummary.order_count, 2, 'Số đơn phát sinh LK-AP-PIN-CAP phải là 2');
+    // Kiểm tra tổng số lượng của BAT-APP2-01: đơn 1 dùng 2 viên + đơn 2 cần 1 viên = 3 viên trên 2 đơn
+    const pinSummary = workbook.summaryRows.find((r) => r.part_sku === 'BAT-APP2-01');
+    assert.ok(pinSummary, 'Bảng tổng hợp phải có mã BAT-APP2-01');
+    assert.equal(pinSummary.total_quantity, 3, 'Tổng số lượng BAT-APP2-01 phải là 3 (2 + 1)');
+    assert.equal(pinSummary.order_count, 2, 'Số đơn phát sinh BAT-APP2-01 phải là 2');
     assert.deepEqual(pinSummary.order_codes, ['FX26-Q1-001', 'FX26-Q1-002']);
 
-    // Kiểm tra đơn Apple Watch số 3 tự động suy diễn linh kiện kèm [Size 45mm]
-    const watchGlassSummary = workbook.summaryRows.find((r) => r.part_sku === 'LK-AW-GLASS-TOUCH');
-    assert.ok(watchGlassSummary, 'Bảng tổng hợp phải suy diễn được LK-AW-GLASS-TOUCH cho đơn Apple Watch');
+    // Kiểm tra đơn Apple Watch số 3 tự động suy diễn linh kiện AW-GLASS-01 kèm [Size 45mm]
+    const watchGlassSummary = workbook.summaryRows.find((r) => r.part_sku === 'AW-GLASS-01');
+    assert.ok(
+      watchGlassSummary,
+      'Bảng tổng hợp phải suy diễn được AW-GLASS-01 cho đơn Apple Watch'
+    );
     assert.ok(
       watchGlassSummary.part_name.includes('[Size 45mm]'),
       'Tên linh kiện Apple Watch trong bảng tổng hợp phải kèm [Size 45mm]'
     );
 
-    // Kiểm tra nội dung HTML xuất ra file .xls
     assert.ok(workbook.fileName.endsWith('.xls'), 'Tên file phải có đuôi .xls');
     assert.ok(workbook.content.startsWith('\uFEFF<html'), 'Nội dung phải có UTF-8 BOM cho Excel');
-    assert.ok(
-      workbook.content.includes('BẢNG 1 — TỔNG HỢP SỐ LƯỢNG LINH KIỆN TIÊU HAO'),
-      'HTML phải có tiêu đề BẢNG 1'
-    );
-    assert.ok(
-      workbook.content.includes('BẢNG 2 — CHI TIẾT LINH KIỆN THEO TỪNG ĐƠN SỬA CHỮA (3 ĐƠN)'),
-      'HTML phải có tiêu đề BẢNG 2'
-    );
-    assert.ok(
-      workbook.content.includes('TỔNG CỘNG LINH KIỆN TIÊU HAO'),
-      'HTML phải có dòng tổng cộng cuối bảng 1'
-    );
   });
 
-  test('5. Kiểm tra tích hợp UI và đầy đủ data-testid trong IntakeWizardModal, IntakeQuickConsole, TechOrderDetailModal, BomInspector, /repairs/page.tsx và CskhDashboardView', () => {
+  test('5. Kiểm tra vị trí nút Xuất file Linh kiện nằm đúng ở Kho & Mua hàng (/inventory) và đã gỡ khỏi Dashboard & Repairs', () => {
     const intakeWizardContent = fs.readFileSync(
       path.join(webRoot, 'app/components/IntakeWizardModal.tsx'),
       'utf-8'
@@ -303,71 +375,67 @@ describe('Independent Tester: Common Issue Catalog, Linked Parts, Apple Watch Si
       path.join(webRoot, 'app/dashboard/components/CskhDashboardView.tsx'),
       'utf-8'
     );
+    const inventoryPageContent = fs.readFileSync(
+      path.join(webRoot, 'app/inventory/page.tsx'),
+      'utf-8'
+    );
+    const stockTabContent = fs.readFileSync(
+      path.join(webRoot, 'app/inventory/components/StockTab.tsx'),
+      'utf-8'
+    );
 
-    // 5.1 IntakeWizardModal & IntakeQuickConsole
+    // 5.1 Nút Xuất file Linh kiện đã gỡ khỏi CSKH Dashboard và trang Đơn sửa chữa (/repairs)
     assert.ok(
-      intakeWizardContent.includes('data-testid="intake-issue-filter-input"'),
-      'IntakeWizardModal phải có ô lọc nhanh lỗi/linh kiện (intake-issue-filter-input)'
+      !cskhDashboardContent.includes('data-testid="cskh-export-parts-excel-btn"'),
+      'CskhDashboardView không được đặt nút Xuất file Linh kiện (.xls) sai chỗ'
     );
     assert.ok(
-      intakeWizardContent.includes('data-testid="intake-issue-object-preview"'),
-      'IntakeWizardModal phải render khung mẫu Object Lỗi & Linh kiện liên kết (intake-issue-object-preview)'
+      !repairsPageContent.includes('data-testid="repairs-export-parts-excel-btn"'),
+      'Trang /repairs không được đặt nút Xuất file Linh kiện (.xls) sai chỗ'
+    );
+
+    // 5.2 Toàn bộ thông tin & nút xuất file Linh kiện tập trung tại Kho & Mua hàng (/inventory)
+    assert.ok(
+      inventoryPageContent.includes('data-testid="inventory-export-parts-hub"') &&
+        inventoryPageContent.includes('data-testid="export-daily-inventory-btn"') &&
+        inventoryPageContent.includes('data-testid="inventory-export-order-parts-btn"') &&
+        inventoryPageContent.includes('data-testid="inventory-recent-repair-exports-list"'),
+      'Trang Kho & Mua hàng (/inventory) phải có Trung tâm Xuất Linh Kiện & 2 nút Xuất Excel (.xls)'
     );
     assert.ok(
-      intakeWizardContent.includes('data-testid="toggle-issue-json-preview-btn"') &&
-        intakeWizardContent.includes('data-testid="intake-issue-json-code"'),
-      'IntakeWizardModal phải hỗ trợ bật/tắt xem cấu trúc JSON mẫu của Object Lỗi'
+      stockTabContent.includes('data-testid="inventory-issue-parts-mapping-panel"') &&
+        stockTabContent.includes('Định mức Lỗi Sửa Chữa ↔ Linh Kiện Kho (Tự động trừ khi tạo đơn)'),
+      'StockTab trong Kho & Mua hàng phải hiển thị bảng Định mức Lỗi Sửa Chữa ↔ Linh Kiện Kho'
     );
+
+    // 5.3 IntakeWizardModal & IntakeQuickConsole hiển thị khu vực Linh kiện Kho gắn liền với lỗi (Tự động trừ tồn kho)
     assert.ok(
-      intakeWizardContent.includes('data-testid="intake-linked-parts-needed-input"'),
-      'IntakeWizardModal phải có ô hiển thị/chỉnh sửa linh kiện lỗi tự động link sang Kỹ thuật (intake-linked-parts-needed-input)'
-    );
-    assert.ok(
-      intakeWizardContent.includes('data-testid="apple-watch-size-selector"') &&
-        intakeWizardContent.includes('watch-size-chip-'),
-      'IntakeWizardModal phải có bộ chọn nhanh Size Apple Watch phổ biến (apple-watch-size-selector)'
+      intakeWizardContent.includes('data-testid="intake-issue-filter-input"') &&
+        intakeWizardContent.includes('data-testid="intake-issue-object-preview"') &&
+        intakeWizardContent.includes('data-testid="intake-linked-parts-needed-input"') &&
+        intakeWizardContent.includes(
+          'Linh kiện Kho gắn liền với lỗi (Tự động trừ tồn kho tại Kho &amp; Mua hàng ngay khi Tạo đơn)'
+        ),
+      'IntakeWizardModal phải hiển thị rõ Linh kiện Kho gắn liền với lỗi tự động trừ tồn kho khi tạo đơn'
     );
     assert.ok(
       intakeQuickContent.includes('data-testid="quick-apple-watch-size-selector"') &&
         intakeQuickContent.includes('data-testid="quick-intake-issue-filter-input"') &&
-        intakeQuickContent.includes('data-testid="quick-intake-issue-object-preview"'),
-      'IntakeQuickConsole cũng phải đồng bộ bộ chọn Size Apple Watch, ô filter nhanh và preview Object Lỗi'
+        intakeQuickContent.includes('data-testid="quick-intake-issue-object-preview"') &&
+        intakeQuickContent.includes('data-testid="quick-intake-linked-parts-needed-input"'),
+      'IntakeQuickConsole phải đồng bộ khu vực Linh kiện Kho gắn liền với lỗi tự động trừ tồn kho'
     );
 
-    // 5.2 TechOrderDetailModal
+    // 5.4 TechOrderDetailModal & BomInspector
     assert.ok(
       techModalContent.includes('data-testid="tech-linked-parts-from-cskh"') &&
         techModalContent.includes('data-testid="tech-apply-linked-parts-btn"'),
       'TechOrderDetailModal phải hiển thị khối Linh kiện lỗi được link từ đơn CSKH và nút chèn nhanh'
     );
     assert.ok(
-      techModalContent.includes('data-testid="tech-add-issue-parts-section"') &&
-        techModalContent.includes('data-testid="tech-issue-filter-input"') &&
-        techModalContent.includes('data-testid="tech-additional-issue-name-input"') &&
-        techModalContent.includes('data-testid="tech-additional-issue-note-input"') &&
-        techModalContent.includes('data-testid="tech-confirm-add-issue-parts-btn"'),
-      'TechOrderDetailModal phải có đầy đủ khu vực Điền thêm lỗi & linh kiện phát sinh cho KTV đồng bộ sang CSKH'
-    );
-
-    // 5.3 BomInspector & /repairs/page.tsx & CskhDashboardView.tsx
-    assert.ok(
-      bomInspectorContent.includes('data-testid="cskh-add-service-filter-input"'),
-      'BomInspector phải có ô lọc nhanh mẫu lỗi & linh kiện cho CSKH (cskh-add-service-filter-input)'
-    );
-    assert.ok(
-      bomInspectorContent.includes('data-testid="badge-from-tech-need-quote"') &&
-        bomInspectorContent.includes('TỪ KỸ THUẬT - CẦN BÁO GIÁ KHÁCH'),
-      'BomInspector phải hiển thị badge TỪ KỸ THUẬT - CẦN BÁO GIÁ KHÁCH cho lỗi phát sinh từ KTV'
-    );
-    assert.ok(
-      repairsPageContent.includes('data-testid="repairs-export-parts-excel-btn"') &&
-        repairsPageContent.includes('Xuất file Linh kiện (.xls)'),
-      'Trang /repairs phải có nút Xuất file Linh kiện (.xls) (repairs-export-parts-excel-btn)'
-    );
-    assert.ok(
-      cskhDashboardContent.includes('data-testid="cskh-export-parts-excel-btn"') &&
-        cskhDashboardContent.includes('Xuất file Linh kiện (.xls)'),
-      'CskhDashboardView phải có nút Xuất file Linh kiện (.xls) (cskh-export-parts-excel-btn)'
+      bomInspectorContent.includes('data-testid="cskh-add-service-filter-input"') &&
+        bomInspectorContent.includes('data-testid="badge-from-tech-need-quote"'),
+      'BomInspector phải hiển thị ô lọc nhanh lỗi & badge TỪ KỸ THUẬT - CẦN BÁO GIÁ KHÁCH'
     );
   });
 

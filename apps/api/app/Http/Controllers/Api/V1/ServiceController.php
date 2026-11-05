@@ -5,12 +5,47 @@ namespace App\Http\Controllers\Api\V1;
 use App\Http\Controllers\Controller;
 use App\Models\CommonIssue;
 use App\Models\DeviceModel;
+use App\Models\Part;
 use App\Models\RepairService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
 class ServiceController extends Controller
 {
+    /**
+     * Bảng ánh xạ mã SKU lịch sử sang mã SKU thật trong Kho (parts).
+     *
+     * @var array<string, array{sku: string, name: string}>
+     */
+    protected const WAREHOUSE_SKU_ALIASES = [
+        'LK-AP-PIN-CAP'     => ['sku' => 'BAT-APP2-01', 'name' => 'Pin tai nghe AirPods Pro 2'],
+        'LK-AP-SEAL-KEO'    => ['sku' => 'MESH-APP-02', 'name' => 'Lưới chống bụi AirPods Pro'],
+        'LK-AP-MIC-ANC'     => ['sku' => 'MESH-APP-02', 'name' => 'Lưới chống bụi AirPods Pro'],
+        'LK-AP-LOA-ANC'     => ['sku' => 'MESH-APP-02', 'name' => 'Lưới chống bụi AirPods Pro'],
+        'LK-AP-DRIVER'      => ['sku' => 'MESH-APP-02', 'name' => 'Lưới chống bụi AirPods Pro'],
+        'LK-AP-MESH'        => ['sku' => 'MESH-APP-02', 'name' => 'Lưới chống bụi AirPods Pro'],
+        'LK-AP-CASE-FLEX'   => ['sku' => 'FLEX-CASE-01', 'name' => 'Cáp flex hộp sạc AirPods Pro'],
+        'LK-AP-CASE-PIN'    => ['sku' => 'CASE-APP2-04', 'name' => 'Hộp sạc AirPods Pro 2 USB-C'],
+        'MIC-APP-ANC'       => ['sku' => 'MESH-APP-02', 'name' => 'Lưới chống bụi AirPods Pro'],
+        'DRV-APP-TITAN'     => ['sku' => 'MESH-APP-02', 'name' => 'Lưới chống bụi AirPods Pro'],
+        'CAP-FLEX-APP'      => ['sku' => 'FLEX-CASE-01', 'name' => 'Cáp flex hộp sạc AirPods Pro'],
+        'BAT-CASE-APP'      => ['sku' => 'CASE-APP2-04', 'name' => 'Hộp sạc AirPods Pro 2 USB-C'],
+        'IC-CHG-APP'        => ['sku' => 'CASE-APP2-04', 'name' => 'Hộp sạc AirPods Pro 2 USB-C'],
+        'LK-AW-PIN'         => ['sku' => 'AW-BAT-01', 'name' => 'Pin Apple Watch chuẩn dung lượng'],
+        'AW-PIN-STD'        => ['sku' => 'AW-BAT-01', 'name' => 'Pin Apple Watch chuẩn dung lượng'],
+        'BAT-AW-STD'        => ['sku' => 'AW-BAT-01', 'name' => 'Pin Apple Watch chuẩn dung lượng'],
+        'LK-AW-SEAL'        => ['sku' => 'AW-BAT-01', 'name' => 'Pin Apple Watch chuẩn dung lượng'],
+        'SEAL-AW-WP'        => ['sku' => 'AW-BAT-01', 'name' => 'Pin Apple Watch chuẩn dung lượng'],
+        'LK-AW-GLASS-TOUCH' => ['sku' => 'AW-GLASS-01', 'name' => 'Mặt kính cảm ứng Apple Watch'],
+        'AW-GLASS-TOUCH'    => ['sku' => 'AW-GLASS-01', 'name' => 'Mặt kính cảm ứng Apple Watch'],
+        'GLS-AW-OCA'        => ['sku' => 'AW-GLASS-01', 'name' => 'Mặt kính cảm ứng Apple Watch'],
+        'TP-AW-ZIN'         => ['sku' => 'AW-GLASS-01', 'name' => 'Mặt kính cảm ứng Apple Watch'],
+        'FLEX-AW-CROWN'     => ['sku' => 'AW-GLASS-01', 'name' => 'Mặt kính cảm ứng Apple Watch'],
+        'TAP-AW-ENG'        => ['sku' => 'AW-GLASS-01', 'name' => 'Mặt kính cảm ứng Apple Watch'],
+        'LK-PEN-TIP-COIL'   => ['sku' => 'APEN-TIP-01', 'name' => 'Linh kiện đầu ngòi & cell pin Apple Pencil'],
+        'PEN-BAT-CELL'      => ['sku' => 'APEN-TIP-01', 'name' => 'Linh kiện đầu ngòi & cell pin Apple Pencil'],
+        'PEN-TIP-COIL'      => ['sku' => 'APEN-TIP-01', 'name' => 'Linh kiện đầu ngòi & cell pin Apple Pencil'],
+    ];
     /**
      * Bảng giá & danh mục gói dịch vụ sửa chữa.
      */
@@ -55,8 +90,50 @@ class ServiceController extends Controller
             $query->where('category', 'AirPods');
         }
 
+        $tenantId = $request->user()?->tenant_id;
+        $partsQuery = Part::withoutGlobalScopes();
+        if ($tenantId) {
+            $partsQuery->where(function ($q) use ($tenantId) {
+                $q->where('tenant_id', $tenantId)->orWhereNull('tenant_id');
+            });
+        }
+        $partsBySku = $partsQuery->get()->keyBy(fn (Part $p) => strtoupper((string) $p->sku));
+
         $issues = $query->orderBy('order_index', 'asc')->get()
-            ->map(fn (CommonIssue $issue) => $this->enrichCommonIssueMetadata($issue))
+            ->map(function (CommonIssue $issue) use ($partsBySku) {
+                $item = $this->enrichCommonIssueMetadata($issue);
+                if (! empty($item['linked_parts']) && is_array($item['linked_parts'])) {
+                    $normalizedParts = [];
+                    $seenSkus = [];
+                    foreach ($item['linked_parts'] as $lp) {
+                        if (! is_array($lp)) {
+                            continue;
+                        }
+                        $rawSku = strtoupper(trim((string) ($lp['part_sku'] ?? ($lp['sku'] ?? ''))));
+                        if ($rawSku !== '' && isset(self::WAREHOUSE_SKU_ALIASES[$rawSku])) {
+                            $alias = self::WAREHOUSE_SKU_ALIASES[$rawSku];
+                            $rawSku = $alias['sku'];
+                            $lp['part_sku'] = $alias['sku'];
+                            $lp['part_name'] = $alias['name'];
+                        }
+                        if ($rawSku !== '' && isset($seenSkus[$rawSku])) {
+                            continue;
+                        }
+                        if ($rawSku !== '') {
+                            $seenSkus[$rawSku] = true;
+                        }
+                        if ($rawSku !== '' && $partsBySku->has($rawSku)) {
+                            /** @var Part $matchedPart */
+                            $matchedPart = $partsBySku->get($rawSku);
+                            $lp['part_id'] = $matchedPart->id;
+                            $lp['stock_quantity'] = (int) $matchedPart->stock_quantity;
+                        }
+                        $normalizedParts[] = $lp;
+                    }
+                    $item['linked_parts'] = $normalizedParts;
+                }
+                return $item;
+            })
             ->values();
 
         return $this->success($issues, 'Lấy danh mục lỗi thường gặp thành công.');
@@ -124,7 +201,7 @@ class ServiceController extends Controller
                     'linked_parts' => [
                         [
                             'part_sku'  => 'BAT-APP2-01',
-                            'part_name' => 'Pin tai nghe AirPods dung lượng cao',
+                            'part_name' => 'Pin tai nghe AirPods Pro 2',
                             'quantity'  => 1,
                             'unit'      => 'cái',
                             'position'  => 'Tai trái / Tai phải',
@@ -132,17 +209,10 @@ class ServiceController extends Controller
                     ],
                 ];
             }
-            if (str_contains($lowerName, 'anc') || str_contains($lowerName, 'chống ồn') || str_contains($lowerName, 'rít')) {
+            if (str_contains($lowerName, 'anc') || str_contains($lowerName, 'chống ồn') || str_contains($lowerName, 'rít') || str_contains($lowerName, 'xuyên âm') || str_contains($lowerName, 'mic')) {
                 return [
                     'keywords' => ['anc', 'chong on', 're', 'rit gio', 'micro', 'mang am'],
                     'linked_parts' => [
-                        [
-                            'part_sku'  => 'MIC-APP-ANC',
-                            'part_name' => 'Cụm micro chống ồn ANC AirPods',
-                            'quantity'  => 1,
-                            'unit'      => 'cái',
-                            'position'  => 'Tai trái / Tai phải',
-                        ],
                         [
                             'part_sku'  => 'MESH-APP-02',
                             'part_name' => 'Lưới chống bụi AirPods Pro',
@@ -150,20 +220,20 @@ class ServiceController extends Controller
                             'unit'      => 'bộ',
                             'position'  => 'Màng âm ngoài',
                         ],
+                        [
+                            'part_sku'  => 'FLEX-CASE-01',
+                            'part_name' => 'Cáp flex hộp sạc AirPods Pro',
+                            'quantity'  => 1,
+                            'unit'      => 'cái',
+                            'position'  => 'Tai trái / Tai phải',
+                        ],
                     ],
                 ];
             }
-            if (str_contains($lowerName, 'loa') || str_contains($lowerName, 'nhỏ tiếng') || str_contains($lowerName, 'bass')) {
+            if (str_contains($lowerName, 'loa') || str_contains($lowerName, 'nhỏ tiếng') || str_contains($lowerName, 'bass') || str_contains($lowerName, 'rè')) {
                 return [
                     'keywords' => ['loa', 'nho tieng', 're bass', 'driver', 'mang loa'],
                     'linked_parts' => [
-                        [
-                            'part_sku'  => 'DRV-APP-TITAN',
-                            'part_name' => 'Driver màng loa Titan AirPods',
-                            'quantity'  => 1,
-                            'unit'      => 'cái',
-                            'position'  => 'Buồng âm tai nghe',
-                        ],
                         [
                             'part_sku'  => 'MESH-APP-02',
                             'part_name' => 'Lưới chống bụi AirPods Pro',
@@ -180,14 +250,14 @@ class ServiceController extends Controller
                     'linked_parts' => [
                         [
                             'part_sku'  => 'FLEX-CASE-01',
-                            'part_name' => 'Cáp flex hộp sạc AirPods',
+                            'part_name' => 'Cáp flex hộp sạc AirPods Pro',
                             'quantity'  => 1,
                             'unit'      => 'cái',
                             'position'  => 'Hộp sạc (Dock)',
                         ],
                         [
-                            'part_sku'  => 'BAT-CASE-APP',
-                            'part_name' => 'Pin hộp sạc AirPods',
+                            'part_sku'  => 'CASE-APP2-04',
+                            'part_name' => 'Hộp sạc AirPods Pro 2 USB-C',
                             'quantity'  => 1,
                             'unit'      => 'cái',
                             'position'  => 'Hộp sạc (Dock)',
@@ -197,113 +267,50 @@ class ServiceController extends Controller
             }
 
             return [
-                'keywords' => ['ve sinh', 'bam ban', 'tac mang am', 'uv', 'airpods'],
+                'keywords' => ['ket noi', 'mat ket noi', 'pin', 'airpods'],
                 'linked_parts' => [
                     [
-                        'part_sku'  => 'MESH-APP-02',
-                        'part_name' => 'Lưới chống bụi & Bộ dung dịch vệ sinh UV',
+                        'part_sku'  => 'BAT-APP2-01',
+                        'part_name' => 'Pin tai nghe AirPods Pro 2',
                         'quantity'  => 1,
-                        'unit'      => 'bộ',
-                        'position'  => 'Toàn bộ tai nghe & Hộp sạc',
+                        'unit'      => 'cái',
+                        'position'  => 'Tai trái / Tai phải',
                     ],
                 ],
             ];
         }
 
         if ($category === 'Apple Watch') {
-            if (str_contains($lowerName, 'pin')) {
+            if (str_contains($lowerName, 'pin') || str_contains($lowerName, 'nguồn')) {
                 return [
                     'keywords' => ['pin', 'pin phong', 'phu man', 'tut nguon', 'apple watch'],
                     'linked_parts' => [
                         [
-                            'part_sku'  => 'BAT-AW-STD',
-                            'part_name' => 'Pin Apple Watch tiêu chuẩn chính hãng',
+                            'part_sku'  => 'AW-BAT-01',
+                            'part_name' => 'Pin Apple Watch chuẩn dung lượng',
                             'quantity'  => 1,
                             'unit'      => 'cái',
                             'position'  => 'Thân đồng hồ',
-                        ],
-                        [
-                            'part_sku'  => 'SEAL-AW-WP',
-                            'part_name' => 'Ron keo chống nước Apple Watch',
-                            'quantity'  => 1,
-                            'unit'      => 'bộ',
-                            'position'  => 'Viền màn hình',
-                        ],
-                    ],
-                ];
-            }
-            if (str_contains($lowerName, 'vỡ mặt kính') || str_contains($lowerName, 'ép kính')) {
-                return [
-                    'keywords' => ['vo kinh', 'ep kinh', 'tray xuoc', 'mat kinh', 'apple watch'],
-                    'linked_parts' => [
-                        [
-                            'part_sku'  => 'GLS-AW-OCA',
-                            'part_name' => 'Mặt kính Apple Watch liền keo OCA',
-                            'quantity'  => 1,
-                            'unit'      => 'cái',
-                            'position'  => 'Màn hình trên',
-                        ],
-                        [
-                            'part_sku'  => 'SEAL-AW-WP',
-                            'part_name' => 'Ron keo chống nước Apple Watch',
-                            'quantity'  => 1,
-                            'unit'      => 'bộ',
-                            'position'  => 'Viền màn hình',
-                        ],
-                    ],
-                ];
-            }
-            if (str_contains($lowerName, 'cảm ứng') || str_contains($lowerName, 'liệt')) {
-                return [
-                    'keywords' => ['liet cam ung', 'loan vuot', 'do man hinh', 'kinh cam ung', 'apple watch'],
-                    'linked_parts' => [
-                        [
-                            'part_sku'  => 'TP-AW-ZIN',
-                            'part_name' => 'Cụm kính cảm ứng zin Apple Watch',
-                            'quantity'  => 1,
-                            'unit'      => 'cái',
-                            'position'  => 'Màn hình cảm ứng',
-                        ],
-                        [
-                            'part_sku'  => 'SEAL-AW-WP',
-                            'part_name' => 'Ron keo chống nước Apple Watch',
-                            'quantity'  => 1,
-                            'unit'      => 'bộ',
-                            'position'  => 'Viền màn hình',
-                        ],
-                    ],
-                ];
-            }
-            if (str_contains($lowerName, 'crown') || str_contains($lowerName, 'nút nguồn')) {
-                return [
-                    'keywords' => ['digital crown', 'nut nguon', 'ket nut', 'cap crown', 'apple watch'],
-                    'linked_parts' => [
-                        [
-                            'part_sku'  => 'FLEX-AW-CROWN',
-                            'part_name' => 'Cụm cáp Digital Crown & Nút nguồn Apple Watch',
-                            'quantity'  => 1,
-                            'unit'      => 'cái',
-                            'position'  => 'Cạnh bên phải',
                         ],
                     ],
                 ];
             }
 
             return [
-                'keywords' => ['mat rung', 'taptic engine', 'loa re', 'apple watch'],
+                'keywords' => ['vo kinh', 'ep kinh', 'liet cam ung', 'digital crown', 'apple watch'],
                 'linked_parts' => [
                     [
-                        'part_sku'  => 'TAP-AW-ENG',
-                        'part_name' => 'Cục rung Taptic Engine / Loa trong Apple Watch',
+                        'part_sku'  => 'AW-GLASS-01',
+                        'part_name' => 'Mặt kính cảm ứng Apple Watch',
                         'quantity'  => 1,
                         'unit'      => 'cái',
-                        'position'  => 'Thân đồng hồ',
+                        'position'  => 'Màn hình cảm ứng',
                     ],
                 ],
             ];
         }
 
-        // Apple Pencil, MacBook, iPad hoặc danh mục khác
+        // Apple Pencil hoặc danh mục khác
         $words = array_values(array_filter(
             preg_split('/[\s,\/\-]+/u', mb_strtolower($issueName)),
             fn ($w) => mb_strlen($w) >= 2
@@ -313,8 +320,8 @@ class ServiceController extends Controller
             'keywords' => array_values(array_unique(array_merge([mb_strtolower($category)], array_slice($words, 0, 5)))),
             'linked_parts' => [
                 [
-                    'part_sku'  => sprintf('PRT-%s-%02d', $catPrefix, $index),
-                    'part_name' => $solution !== '' ? $solution : "Linh kiện {$issueName}",
+                    'part_sku'  => 'APEN-TIP-01',
+                    'part_name' => 'Linh kiện đầu ngòi & cell pin Apple Pencil',
                     'quantity'  => 1,
                     'unit'      => 'cái',
                     'position'  => 'Cụm linh kiện chính',

@@ -22,6 +22,14 @@ export interface LinkedPartItem {
   watch_size?: string;
 }
 
+export interface IssuePartsPresetItem {
+  id: string;
+  category: 'AirPods' | 'Apple Watch' | 'Apple Pencil';
+  issue_label: string;
+  keywords: string[];
+  linked_parts: LinkedPartItem[];
+}
+
 export interface CommonIssueCatalogItem extends CommonIssueItem {
   id?: number;
   issue_code: string;
@@ -35,6 +43,162 @@ export interface CommonIssueCatalogItem extends CommonIssueItem {
   linked_parts: LinkedPartItem[];
 }
 
+/**
+ * Định mức Lỗi phổ biến ↔ Mã SKU Linh kiện thật trong Kho & Mua hàng (/inventory)
+ * Tự động trừ tồn kho khi tạo đơn sửa chữa (POST /api/v1/orders)
+ */
+export const DEFAULT_ISSUE_PARTS_PRESETS: IssuePartsPresetItem[] = [
+  {
+    id: 'preset-ap-pin-pro2',
+    category: 'AirPods',
+    issue_label: 'Lỗi Pin AirPods Pro 2 (Chai pin, tụt pin nhanh)',
+    keywords: ['pin', 'chai pin', 'tụt pin', 'sụt pin', 'nhanh hết pin', 'airpods pro 2'],
+    linked_parts: [
+      {
+        part_sku: 'BAT-APP2-01',
+        part_name: 'Pin tai nghe AirPods Pro 2',
+        quantity: 1,
+        unit: 'Viên',
+        position: 'L/R',
+      },
+    ],
+  },
+  {
+    id: 'preset-ap-pin-pro1',
+    category: 'AirPods',
+    issue_label: 'Lỗi Pin AirPods Pro (Chai pin, báo ảo, sập nguồn)',
+    keywords: ['pin airpods pro', 'chai pin pro 1', 'thay pin airpods pro'],
+    linked_parts: [
+      {
+        part_sku: 'BAT-APP-01',
+        part_name: 'Pin tai nghe AirPods Pro',
+        quantity: 1,
+        unit: 'Viên',
+        position: 'L/R',
+      },
+    ],
+  },
+  {
+    id: 'preset-ap-pin-gen3',
+    category: 'AirPods',
+    issue_label: 'Lỗi Pin AirPods 3 / AirPods 2 (Tụt áp, ngắt kết nối sớm)',
+    keywords: ['pin airpods 3', 'pin airpods 2', 'thay pin airpods 3'],
+    linked_parts: [
+      {
+        part_sku: 'BAT-APP3-02',
+        part_name: 'Pin tai nghe AirPods 3',
+        quantity: 1,
+        unit: 'Viên',
+        position: 'L/R',
+      },
+    ],
+  },
+  {
+    id: 'preset-ap-anc-mic',
+    category: 'AirPods',
+    issue_label: 'Lỗi Mic / Chống ồn ANC / Xuyên âm',
+    keywords: ['anc', 'rè', 'rít gió', 'chống ồn', 'xuyên âm', 'mic', 'đàm thoại'],
+    linked_parts: [
+      {
+        part_sku: 'MESH-APP-02',
+        part_name: 'Lưới chống bụi AirPods Pro',
+        quantity: 1,
+        unit: 'Cái',
+        position: 'L/R',
+      },
+      {
+        part_sku: 'FLEX-CASE-01',
+        part_name: 'Cáp flex hộp sạc AirPods Pro',
+        quantity: 1,
+        unit: 'Cái',
+        position: 'Case',
+      },
+    ],
+  },
+  {
+    id: 'preset-ap-speaker',
+    category: 'AirPods',
+    issue_label: 'Lỗi Màng loa / Rè loa / Mất tiếng',
+    keywords: ['loa', 'màng loa', 'rè loa', 'nhỏ tiếng', 'mất tiếng', 'rè bass', 'tắc màng'],
+    linked_parts: [
+      {
+        part_sku: 'MESH-APP-02',
+        part_name: 'Lưới chống bụi AirPods Pro',
+        quantity: 1,
+        unit: 'Cái',
+        position: 'L/R',
+      },
+    ],
+  },
+  {
+    id: 'preset-ap-case',
+    category: 'AirPods',
+    issue_label: 'Lỗi Hộp sạc không nhận sạc / Đèn cam nhấp nháy',
+    keywords: ['hộp sạc', 'case', 'chân sạc', 'không nhận sạc', 'đèn cam', 'dock sạc'],
+    linked_parts: [
+      {
+        part_sku: 'FLEX-CASE-01',
+        part_name: 'Cáp flex hộp sạc AirPods Pro',
+        quantity: 1,
+        unit: 'Cái',
+        position: 'Case',
+      },
+      {
+        part_sku: 'CASE-APP2-04',
+        part_name: 'Hộp sạc AirPods Pro 2 USB-C',
+        quantity: 1,
+        unit: 'Cái',
+        position: 'Case',
+      },
+    ],
+  },
+  {
+    id: 'preset-aw-pin',
+    category: 'Apple Watch',
+    issue_label: 'Lỗi Pin Apple Watch (Pin phù, sụt nhanh, bung màn)',
+    keywords: ['pin', 'phù pin', 'bung màn', 'tụt pin', 'sập nguồn', 'pin apple watch'],
+    linked_parts: [
+      {
+        part_sku: 'AW-BAT-01',
+        part_name: 'Pin Apple Watch chuẩn dung lượng',
+        quantity: 1,
+        unit: 'Viên',
+        position: 'Body',
+      },
+    ],
+  },
+  {
+    id: 'preset-aw-glass',
+    category: 'Apple Watch',
+    issue_label: 'Lỗi Mặt kính / Cảm ứng Apple Watch (Liệt cảm ứng, vỡ mặt kính)',
+    keywords: ['cảm ứng', 'liệt cảm ứng', 'loạn cảm ứng', 'vỡ kính', 'ép kính', 'mặt kính', 'màn hình'],
+    linked_parts: [
+      {
+        part_sku: 'AW-GLASS-01',
+        part_name: 'Mặt kính cảm ứng Apple Watch',
+        quantity: 1,
+        unit: 'Cái',
+        position: 'Body',
+      },
+    ],
+  },
+  {
+    id: 'preset-apen-tip-pin',
+    category: 'Apple Pencil',
+    issue_label: 'Lỗi Apple Pencil (Ngòi mòn, đứt nét, kiệt pin không nhận sạc)',
+    keywords: ['apple pencil', 'pencil', 'pin', 'kiệt pin', 'ngòi', 'đứt nét', 'cảm ứng lực', 'đầu bút'],
+    linked_parts: [
+      {
+        part_sku: 'APEN-TIP-01',
+        part_name: 'Linh kiện đầu ngòi & cell pin Apple Pencil',
+        quantity: 1,
+        unit: 'Bộ',
+        position: 'Body',
+      },
+    ],
+  },
+];
+
 export const COMMON_ISSUE_CATALOG_BY_CATEGORY: Record<string, CommonIssueCatalogItem[]> = {
   AirPods: [
     {
@@ -43,22 +207,15 @@ export const COMMON_ISSUE_CATALOG_BY_CATEGORY: Record<string, CommonIssueCatalog
       category: 'AirPods',
       issue_name: 'Pin chai, tụt pin nhanh dưới 1 tiếng',
       keywords: ['pin', 'chai pin', 'tụt pin', 'sụt pin', 'sập nguồn', 'nhanh hết pin', 'thay pin airpods'],
-      solution: 'Thay cell pin dung lượng chuẩn cho tai nghe + vệ sinh lưới loa và dán lại ron keo chống nước.',
+      solution: 'Thay cell pin tai nghe AirPods chuẩn dung lượng trong kho và vệ sinh lưới loa.',
       estimated_cost: 250000,
       estimated_time: '45 - 60 phút',
       linked_parts: [
         {
-          part_sku: 'LK-AP-PIN-CAP',
-          part_name: 'Pin tai nghe AirPods dung lượng chuẩn',
+          part_sku: 'BAT-APP2-01',
+          part_name: 'Pin tai nghe AirPods Pro 2',
           quantity: 1,
           unit: 'Viên',
-          position: 'L/R',
-        },
-        {
-          part_sku: 'LK-AP-SEAL-KEO',
-          part_name: 'Keo ron chống nước & cố định vỏ tai nghe',
-          quantity: 1,
-          unit: 'Bộ',
           position: 'L/R',
         },
       ],
@@ -69,23 +226,23 @@ export const COMMON_ISSUE_CATALOG_BY_CATEGORY: Record<string, CommonIssueCatalog
       category: 'AirPods',
       issue_name: 'Bật chống ồn ANC bị rè, rít gió chói tai',
       keywords: ['anc', 'rè', 'rít gió', 'chống ồn', 'xuyên âm', 'màng loa', 'mic chống ồn'],
-      solution: 'Thay cụm mic cảm biến ANC hoặc màng loa Driver chống ồn, cân chỉnh lại áp suất buồng âm.',
+      solution: 'Thay lưới chống bụi buồng âm AirPods Pro và kiểm tra cáp flex hộp sạc.',
       estimated_cost: 350000,
       estimated_time: '60 - 90 phút',
       linked_parts: [
         {
-          part_sku: 'LK-AP-MIC-ANC',
-          part_name: 'Cụm Mic cảm biến chống ồn ANC AirPods Pro',
-          quantity: 1,
-          unit: 'Cụm',
-          position: 'L/R',
-        },
-        {
-          part_sku: 'LK-AP-LOA-ANC',
-          part_name: 'Màng loa Driver AirPods Pro',
+          part_sku: 'MESH-APP-02',
+          part_name: 'Lưới chống bụi AirPods Pro',
           quantity: 1,
           unit: 'Cái',
           position: 'L/R',
+        },
+        {
+          part_sku: 'FLEX-CASE-01',
+          part_name: 'Cáp flex hộp sạc AirPods Pro',
+          quantity: 1,
+          unit: 'Cái',
+          position: 'Case',
         },
       ],
     },
@@ -94,21 +251,14 @@ export const COMMON_ISSUE_CATALOG_BY_CATEGORY: Record<string, CommonIssueCatalog
       issue_code: 'ISS-AP-003',
       category: 'AirPods',
       issue_name: 'Loa một bên nhỏ tiếng hoặc rè bass',
-      keywords: ['loa', 'nhỏ tiếng', 'mất tiếng', 'rè bass', 'driver', 'âm thanh nhỏ'],
-      solution: 'Vệ sinh siêu âm màng loa và thay cụm màng loa Driver nếu rách gân loa.',
+      keywords: ['loa', 'nhỏ tiếng', 'mất tiếng', 'rè bass', 'driver', 'âm thanh nhỏ', 'màng loa', 'rè loa'],
+      solution: 'Vệ sinh siêu âm màng loa và thay lưới chống bụi AirPods Pro mới.',
       estimated_cost: 200000,
       estimated_time: '45 phút',
       linked_parts: [
         {
-          part_sku: 'LK-AP-DRIVER',
-          part_name: 'Cụm màng loa Driver AirPods',
-          quantity: 1,
-          unit: 'Cái',
-          position: 'L/R',
-        },
-        {
-          part_sku: 'LK-AP-MESH',
-          part_name: 'Lưới lọc âm chống bụi tai nghe',
+          part_sku: 'MESH-APP-02',
+          part_name: 'Lưới chống bụi AirPods Pro',
           quantity: 1,
           unit: 'Cái',
           position: 'L/R',
@@ -120,23 +270,23 @@ export const COMMON_ISSUE_CATALOG_BY_CATEGORY: Record<string, CommonIssueCatalog
       issue_code: 'ISS-AP-004',
       category: 'AirPods',
       issue_name: 'Hộp sạc không nhận sạc hoặc không sạc được cho tai',
-      keywords: ['hộp sạc', 'case', 'chân sạc', 'không nhận sạc', 'dock sạc', 'mất nguồn hộp', 'chấu đồng'],
-      solution: 'Xử lý chấu đồng tiếp xúc đáy dock sạc hoặc thay cụm chân sạc / pin hộp sạc.',
+      keywords: ['hộp sạc', 'case', 'chân sạc', 'không nhận sạc', 'dock sạc', 'mất nguồn hộp', 'chấu đồng', 'đèn cam'],
+      solution: 'Thay cáp flex hộp sạc AirPods Pro hoặc thay cụm hộp sạc AirPods Pro 2 USB-C.',
       estimated_cost: 300000,
       estimated_time: '60 - 90 phút',
       linked_parts: [
         {
-          part_sku: 'LK-AP-CASE-FLEX',
-          part_name: 'Cụm cáp chân sạc & chấu đồng Hộp sạc (Case)',
+          part_sku: 'FLEX-CASE-01',
+          part_name: 'Cáp flex hộp sạc AirPods Pro',
           quantity: 1,
-          unit: 'Cụm',
+          unit: 'Cái',
           position: 'Case',
         },
         {
-          part_sku: 'LK-AP-CASE-PIN',
-          part_name: 'Pin Hộp sạc (Charging Case) AirPods',
+          part_sku: 'CASE-APP2-04',
+          part_name: 'Hộp sạc AirPods Pro 2 USB-C',
           quantity: 1,
-          unit: 'Viên',
+          unit: 'Cái',
           position: 'Case',
         },
       ],
@@ -147,15 +297,15 @@ export const COMMON_ISSUE_CATALOG_BY_CATEGORY: Record<string, CommonIssueCatalog
       category: 'AirPods',
       issue_name: 'Bám bẩn lâu ngày, tắc màng âm thanh',
       keywords: ['vệ sinh', 'bẩn', 'tắc màng', 'lưới loa', 'nhỏ tiếng do bẩn'],
-      solution: 'Vệ sinh chuyên sâu bằng sóng siêu âm và thay lưới lọc âm mới.',
+      solution: 'Vệ sinh chuyên sâu bằng sóng siêu âm và thay lưới chống bụi AirPods Pro.',
       estimated_cost: 100000,
       estimated_time: '30 phút',
       linked_parts: [
         {
-          part_sku: 'LK-AP-CLEAN-KIT',
-          part_name: 'Bộ lưới lọc âm & dung dịch vệ sinh chuyên dụng',
+          part_sku: 'MESH-APP-02',
+          part_name: 'Lưới chống bụi AirPods Pro',
           quantity: 1,
-          unit: 'Bộ',
+          unit: 'Cái',
           position: 'L/R',
         },
       ],
@@ -166,15 +316,60 @@ export const COMMON_ISSUE_CATALOG_BY_CATEGORY: Record<string, CommonIssueCatalog
       category: 'AirPods',
       issue_name: 'Mic đàm thoại nhỏ, gọi điện bên kia không nghe',
       keywords: ['mic', 'đàm thoại', 'gọi điện', 'mất mic', 'thu âm'],
-      solution: 'Thay IC/Cụm mic đàm thoại đuôi tai nghe.',
+      solution: 'Thay lưới chống bụi mic và xử lý cáp flex tiếp xúc hộp sạc.',
       estimated_cost: 250000,
       estimated_time: '60 phút',
       linked_parts: [
         {
-          part_sku: 'LK-AP-MIC-CALL',
-          part_name: 'Cụm Mic đàm thoại đuôi tai AirPods',
+          part_sku: 'MESH-APP-02',
+          part_name: 'Lưới chống bụi AirPods Pro',
           quantity: 1,
-          unit: 'Cụm',
+          unit: 'Cái',
+          position: 'L/R',
+        },
+        {
+          part_sku: 'FLEX-CASE-01',
+          part_name: 'Cáp flex hộp sạc AirPods Pro',
+          quantity: 1,
+          unit: 'Cái',
+          position: 'Case',
+        },
+      ],
+    },
+    {
+      id: 7,
+      issue_code: 'ISS-AP-007',
+      category: 'AirPods',
+      issue_name: 'Pin AirPods Pro 1 chai, báo ảo hoặc sập nguồn',
+      keywords: ['pin airpods pro', 'chai pin pro 1', 'thay pin airpods pro 1', 'BAT-APP-01'],
+      solution: 'Thay cell pin tai nghe AirPods Pro chuẩn dung lượng.',
+      estimated_cost: 250000,
+      estimated_time: '45 - 60 phút',
+      linked_parts: [
+        {
+          part_sku: 'BAT-APP-01',
+          part_name: 'Pin tai nghe AirPods Pro',
+          quantity: 1,
+          unit: 'Viên',
+          position: 'L/R',
+        },
+      ],
+    },
+    {
+      id: 8,
+      issue_code: 'ISS-AP-008',
+      category: 'AirPods',
+      issue_name: 'Pin AirPods 3 / AirPods 2 tụt nhanh dưới 30 phút',
+      keywords: ['pin airpods 3', 'pin airpods 2', 'thay pin airpods 3', 'BAT-APP3-02'],
+      solution: 'Thay cell pin tai nghe AirPods 3 chuẩn dung lượng.',
+      estimated_cost: 220000,
+      estimated_time: '45 - 60 phút',
+      linked_parts: [
+        {
+          part_sku: 'BAT-APP3-02',
+          part_name: 'Pin tai nghe AirPods 3',
+          quantity: 1,
+          unit: 'Viên',
           position: 'L/R',
         },
       ],
@@ -187,23 +382,16 @@ export const COMMON_ISSUE_CATALOG_BY_CATEGORY: Record<string, CommonIssueCatalog
       category: 'Apple Watch',
       issue_name: 'Pin phù, sụt nhanh hoặc đẩy bung màn hình',
       keywords: ['pin', 'phù pin', 'bung màn', 'tụt pin', 'sập nguồn', 'pin apple watch'],
-      solution: 'Thay pin chuẩn dung lượng Apple Watch và đi lại ron keo áp suất chống nước.',
+      solution: 'Thay pin Apple Watch chuẩn dung lượng và đi lại ron keo áp suất chống nước.',
       estimated_cost: 350000,
       estimated_time: '60 - 90 phút',
       watch_sizes: [...POPULAR_APPLE_WATCH_SIZES],
       linked_parts: [
         {
-          part_sku: 'LK-AW-PIN',
-          part_name: 'Pin Apple Watch dung lượng chuẩn',
+          part_sku: 'AW-BAT-01',
+          part_name: 'Pin Apple Watch chuẩn dung lượng',
           quantity: 1,
           unit: 'Viên',
-          position: 'Body',
-        },
-        {
-          part_sku: 'LK-AW-SEAL',
-          part_name: 'Ron keo áp suất chống nước Apple Watch',
-          quantity: 1,
-          unit: 'Bộ',
           position: 'Body',
         },
       ],
@@ -214,23 +402,16 @@ export const COMMON_ISSUE_CATALOG_BY_CATEGORY: Record<string, CommonIssueCatalog
       category: 'Apple Watch',
       issue_name: 'Cảm ứng liệt hoặc loạn sau va đập / Vỡ mặt kính',
       keywords: ['cảm ứng', 'liệt cảm ứng', 'loạn cảm ứng', 'vỡ kính', 'ép kính', 'mặt kính', 'màn hình'],
-      solution: 'Ép lại mặt kính cảm ứng liền mạch trong phòng sạch và đóng ron chống nước.',
+      solution: 'Ép lại mặt kính cảm ứng Apple Watch liền mạch trong phòng sạch và đóng ron chống nước.',
       estimated_cost: 450000,
       estimated_time: '90 - 120 phút',
       watch_sizes: [...POPULAR_APPLE_WATCH_SIZES],
       linked_parts: [
         {
-          part_sku: 'LK-AW-GLASS-TOUCH',
+          part_sku: 'AW-GLASS-01',
           part_name: 'Mặt kính cảm ứng Apple Watch',
           quantity: 1,
           unit: 'Cái',
-          position: 'Body',
-        },
-        {
-          part_sku: 'LK-AW-SEAL',
-          part_name: 'Ron keo áp suất chống nước Apple Watch',
-          quantity: 1,
-          unit: 'Bộ',
           position: 'Body',
         },
       ],
@@ -241,23 +422,16 @@ export const COMMON_ISSUE_CATALOG_BY_CATEGORY: Record<string, CommonIssueCatalog
       category: 'Apple Watch',
       issue_name: 'Không nhận sạc không dây',
       keywords: ['không nhận sạc', 'sạc không dây', 'đế sạc', 'nóng máy khi sạc', 'ic nguồn', 'mâm sạc'],
-      solution: 'Thay mâm từ sạc không dây (NFC/Wireless Coil) hoặc xử lý IC nguồn sạc.',
+      solution: 'Kiểm tra nguồn sạc và thay pin Apple Watch chuẩn dung lượng nếu chạm cell.',
       estimated_cost: 300000,
       estimated_time: '90 phút',
       watch_sizes: [...POPULAR_APPLE_WATCH_SIZES],
       linked_parts: [
         {
-          part_sku: 'LK-AW-COIL-SAC',
-          part_name: 'Cụm mâm từ sạc không dây Apple Watch',
+          part_sku: 'AW-BAT-01',
+          part_name: 'Pin Apple Watch chuẩn dung lượng',
           quantity: 1,
-          unit: 'Cụm',
-          position: 'Body',
-        },
-        {
-          part_sku: 'LK-AW-IC-PWR',
-          part_name: 'IC Quản lý nguồn sạc Apple Watch',
-          quantity: 1,
-          unit: 'Con',
+          unit: 'Viên',
           position: 'Body',
         },
       ],
@@ -268,16 +442,16 @@ export const COMMON_ISSUE_CATALOG_BY_CATEGORY: Record<string, CommonIssueCatalog
       category: 'Apple Watch',
       issue_name: 'Lỗi nút xoay Digital Crown hoặc nút nguồn sườn',
       keywords: ['digital crown', 'nút xoay', 'nút nguồn', 'liệt nút', 'kẹt nút'],
-      solution: 'Vệ sinh cổ trục và thay cáp phím Digital Crown / nút nguồn.',
+      solution: 'Tháo mặt kính cảm ứng Apple Watch, vệ sinh cổ trục Digital Crown và đóng lại màn.',
       estimated_cost: 350000,
       estimated_time: '60 - 90 phút',
       watch_sizes: [...POPULAR_APPLE_WATCH_SIZES],
       linked_parts: [
         {
-          part_sku: 'LK-AW-CROWN-FLEX',
-          part_name: 'Cáp nút Digital Crown & Phím nguồn Apple Watch',
+          part_sku: 'AW-GLASS-01',
+          part_name: 'Mặt kính cảm ứng Apple Watch',
           quantity: 1,
-          unit: 'Sợi',
+          unit: 'Cái',
           position: 'Body',
         },
       ],
@@ -290,15 +464,15 @@ export const COMMON_ISSUE_CATALOG_BY_CATEGORY: Record<string, CommonIssueCatalog
       category: 'Apple Pencil',
       issue_name: 'Pin kiệt không nhận sạc từ iPad',
       keywords: ['pin', 'kiệt pin', 'không nhận sạc', 'bút không lên nguồn', 'pencil'],
-      solution: 'Kích áp hoặc thay cell pin Lithium chuyên dụng cho Apple Pencil.',
+      solution: 'Kích áp hoặc thay bộ linh kiện đầu ngòi & cell pin Apple Pencil.',
       estimated_cost: 250000,
       estimated_time: '60 phút',
       linked_parts: [
         {
-          part_sku: 'LK-PN-PIN',
-          part_name: 'Cell Pin Lithium Apple Pencil',
+          part_sku: 'APEN-TIP-01',
+          part_name: 'Linh kiện đầu ngòi & cell pin Apple Pencil',
           quantity: 1,
-          unit: 'Viên',
+          unit: 'Bộ',
           position: 'Body',
         },
       ],
@@ -309,15 +483,15 @@ export const COMMON_ISSUE_CATALOG_BY_CATEGORY: Record<string, CommonIssueCatalog
       category: 'Apple Pencil',
       issue_name: 'Ngòi mòn, đứt nét hoặc mất cảm ứng lực',
       keywords: ['ngòi', 'đứt nét', 'cảm ứng lực', 'mất nét', 'đầu bút'],
-      solution: 'Thay ngòi bút chính hãng và căn chỉnh đầu cảm biến áp lực.',
+      solution: 'Thay linh kiện đầu ngòi & cell pin Apple Pencil chính hãng và căn chỉnh áp lực.',
       estimated_cost: 150000,
       estimated_time: '30 phút',
       linked_parts: [
         {
-          part_sku: 'LK-PN-TIP',
-          part_name: 'Ngòi cảm ứng Apple Pencil chính hãng',
+          part_sku: 'APEN-TIP-01',
+          part_name: 'Linh kiện đầu ngòi & cell pin Apple Pencil',
           quantity: 1,
-          unit: 'Cái',
+          unit: 'Bộ',
           position: 'Body',
         },
       ],
@@ -340,6 +514,7 @@ export function applyWatchSizeToLinkedPart(
   const cleanSize = (watchSize || part.watch_size || '').trim();
   const isWatch =
     category === 'Apple Watch' ||
+    part.part_sku.startsWith('AW-') ||
     part.part_sku.includes('-AW-') ||
     part.part_name.toLowerCase().includes('apple watch');
 
@@ -357,12 +532,14 @@ export function applyWatchSizeToLinkedPart(
 }
 
 /**
- * Bổ sung tự động linked_parts và keywords cho cả dữ liệu từ API nếu API chưa có sẵn linked_parts
+ * Bổ sung tự động linked_parts và keywords cho cả dữ liệu từ API.
+ * Nếu API /api/v1/services/common-issues đã trả về linked_parts từ Backend thì ưu tiên giữ nguyên linked_parts từ Backend.
  */
 export function enrichCommonIssueWithParts(
   issue: CommonIssueItem | CommonIssueCatalogItem,
   category?: string,
-  watchSize?: string
+  watchSize?: string,
+  deviceModelName?: string
 ): CommonIssueCatalogItem {
   const resolvedCategory = (category || issue.category || 'AirPods').trim();
   const catalogList =
@@ -387,13 +564,54 @@ export function enrichCommonIssueWithParts(
             item.issue_name.toLowerCase().includes(issueNameLower)))
     );
 
-  const rawParts: LinkedPartItem[] =
-    Array.isArray((issue as CommonIssueCatalogItem).linked_parts) &&
-    (issue as CommonIssueCatalogItem).linked_parts.length > 0
-      ? (issue as CommonIssueCatalogItem).linked_parts
-      : matchedCatalog?.linked_parts && matchedCatalog.linked_parts.length > 0
-      ? matchedCatalog.linked_parts
-      : inferFallbackPartsByText(issue.issue_name, resolvedCategory);
+  const backendLinkedParts = (issue as CommonIssueCatalogItem).linked_parts;
+  const hasBackendLinkedParts =
+    Array.isArray(backendLinkedParts) && backendLinkedParts.length > 0;
+
+  let rawParts: LinkedPartItem[] = hasBackendLinkedParts
+    ? backendLinkedParts.map((p) => ({
+        part_sku: p.part_sku,
+        part_name: p.part_name,
+        quantity: Math.max(1, Number(p.quantity) || 1),
+        unit: p.unit || 'Cái',
+        position: p.position,
+        watch_size: p.watch_size,
+      }))
+    : matchedCatalog?.linked_parts && matchedCatalog.linked_parts.length > 0
+    ? matchedCatalog.linked_parts
+    : inferFallbackPartsByText(issue.issue_name, resolvedCategory, deviceModelName);
+
+  // Nếu là lỗi Pin AirPods mặc định (ISS-AP-001) và biết rõ dòng máy AirPods Pro 1 hoặc AirPods 3/2, tự động khớp mã SKU pin tương ứng
+  if (
+    !hasBackendLinkedParts &&
+    resolvedCategory === 'AirPods' &&
+    deviceModelName &&
+    rawParts.length === 1 &&
+    rawParts[0].part_sku === 'BAT-APP2-01'
+  ) {
+    const modelLower = deviceModelName.toLowerCase();
+    if (modelLower.includes('pro 1') || (modelLower.includes('pro') && !modelLower.includes('pro 2'))) {
+      rawParts = [
+        {
+          part_sku: 'BAT-APP-01',
+          part_name: 'Pin tai nghe AirPods Pro',
+          quantity: 1,
+          unit: 'Viên',
+          position: 'L/R',
+        },
+      ];
+    } else if (modelLower.includes('airpods 3') || modelLower.includes('airpods 2')) {
+      rawParts = [
+        {
+          part_sku: 'BAT-APP3-02',
+          part_name: 'Pin tai nghe AirPods 3',
+          quantity: 1,
+          unit: 'Viên',
+          position: 'L/R',
+        },
+      ];
+    }
+  }
 
   const enrichedParts = rawParts.map((p) =>
     applyWatchSizeToLinkedPart(p, watchSize, resolvedCategory)
@@ -430,13 +648,19 @@ export function enrichCommonIssueWithParts(
   };
 }
 
-function inferFallbackPartsByText(issueName: string, category: string): LinkedPartItem[] {
+export function inferFallbackPartsByText(
+  issueName: string,
+  category: string,
+  deviceModelName?: string
+): LinkedPartItem[] {
   const lower = (issueName || '').toLowerCase();
+  const modelLower = (deviceModelName || '').toLowerCase();
+
   if (category === 'Apple Watch' || lower.includes('watch')) {
     if (lower.includes('kính') || lower.includes('cảm ứng') || lower.includes('màn')) {
       return [
         {
-          part_sku: 'LK-AW-GLASS-TOUCH',
+          part_sku: 'AW-GLASS-01',
           part_name: 'Mặt kính cảm ứng Apple Watch',
           quantity: 1,
           unit: 'Cái',
@@ -444,21 +668,10 @@ function inferFallbackPartsByText(issueName: string, category: string): LinkedPa
         },
       ];
     }
-    if (lower.includes('sạc') || lower.includes('nguồn')) {
-      return [
-        {
-          part_sku: 'LK-AW-COIL-SAC',
-          part_name: 'Cụm mâm từ sạc không dây Apple Watch',
-          quantity: 1,
-          unit: 'Cụm',
-          position: 'Body',
-        },
-      ];
-    }
     return [
       {
-        part_sku: 'LK-AW-PIN',
-        part_name: 'Pin Apple Watch dung lượng chuẩn',
+        part_sku: 'AW-BAT-01',
+        part_name: 'Pin Apple Watch chuẩn dung lượng',
         quantity: 1,
         unit: 'Viên',
         position: 'Body',
@@ -467,77 +680,105 @@ function inferFallbackPartsByText(issueName: string, category: string): LinkedPa
   }
 
   if (category === 'Apple Pencil' || lower.includes('pencil') || lower.includes('bút')) {
-    if (lower.includes('ngòi') || lower.includes('nét')) {
-      return [
-        {
-          part_sku: 'LK-PN-TIP',
-          part_name: 'Ngòi cảm ứng Apple Pencil chính hãng',
-          quantity: 1,
-          unit: 'Cái',
-          position: 'Body',
-        },
-      ];
-    }
     return [
       {
-        part_sku: 'LK-PN-PIN',
-        part_name: 'Cell Pin Lithium Apple Pencil',
+        part_sku: 'APEN-TIP-01',
+        part_name: 'Linh kiện đầu ngòi & cell pin Apple Pencil',
         quantity: 1,
-        unit: 'Viên',
+        unit: 'Bộ',
         position: 'Body',
       },
     ];
   }
 
-  // Default AirPods inference
-  if (lower.includes('anc') || lower.includes('chống ồn') || lower.includes('rít')) {
+  // Default AirPods inference với mã SKU kho thật
+  if (lower.includes('anc') || lower.includes('chống ồn') || lower.includes('rít') || lower.includes('xuyên âm') || lower.includes('mic')) {
     return [
       {
-        part_sku: 'LK-AP-MIC-ANC',
-        part_name: 'Cụm Mic cảm biến chống ồn ANC AirPods Pro',
+        part_sku: 'MESH-APP-02',
+        part_name: 'Lưới chống bụi AirPods Pro',
         quantity: 1,
-        unit: 'Cụm',
+        unit: 'Cái',
         position: 'L/R',
+      },
+      {
+        part_sku: 'FLEX-CASE-01',
+        part_name: 'Cáp flex hộp sạc AirPods Pro',
+        quantity: 1,
+        unit: 'Cái',
+        position: 'Case',
       },
     ];
   }
-  if (lower.includes('loa') || lower.includes('nhỏ tiếng') || lower.includes('rè')) {
+  if (lower.includes('loa') || lower.includes('nhỏ tiếng') || lower.includes('rè') || lower.includes('mất tiếng') || lower.includes('bẩn') || lower.includes('vệ sinh')) {
     return [
       {
-        part_sku: 'LK-AP-DRIVER',
-        part_name: 'Cụm màng loa Driver AirPods',
+        part_sku: 'MESH-APP-02',
+        part_name: 'Lưới chống bụi AirPods Pro',
         quantity: 1,
         unit: 'Cái',
         position: 'L/R',
       },
     ];
   }
-  if (lower.includes('hộp') || lower.includes('case') || lower.includes('dock')) {
+  if (lower.includes('hộp') || lower.includes('case') || lower.includes('dock') || lower.includes('đèn cam') || lower.includes('không nhận sạc')) {
     return [
       {
-        part_sku: 'LK-AP-CASE-FLEX',
-        part_name: 'Cụm cáp chân sạc & chấu đồng Hộp sạc (Case)',
+        part_sku: 'FLEX-CASE-01',
+        part_name: 'Cáp flex hộp sạc AirPods Pro',
         quantity: 1,
-        unit: 'Cụm',
+        unit: 'Cái',
+        position: 'Case',
+      },
+      {
+        part_sku: 'CASE-APP2-04',
+        part_name: 'Hộp sạc AirPods Pro 2 USB-C',
+        quantity: 1,
+        unit: 'Cái',
         position: 'Case',
       },
     ];
   }
-  if (lower.includes('bẩn') || lower.includes('vệ sinh')) {
+
+  if (
+    lower.includes('pro 1') ||
+    modelLower.includes('pro 1') ||
+    ((lower.includes('airpods pro') || modelLower.includes('airpods pro')) &&
+      !lower.includes('pro 2') &&
+      !modelLower.includes('pro 2'))
+  ) {
     return [
       {
-        part_sku: 'LK-AP-CLEAN-KIT',
-        part_name: 'Bộ lưới lọc âm & dung dịch vệ sinh chuyên dụng',
+        part_sku: 'BAT-APP-01',
+        part_name: 'Pin tai nghe AirPods Pro',
         quantity: 1,
-        unit: 'Bộ',
+        unit: 'Viên',
         position: 'L/R',
       },
     ];
   }
+
+  if (
+    lower.includes('airpods 3') ||
+    lower.includes('airpods 2') ||
+    modelLower.includes('airpods 3') ||
+    modelLower.includes('airpods 2')
+  ) {
+    return [
+      {
+        part_sku: 'BAT-APP3-02',
+        part_name: 'Pin tai nghe AirPods 3',
+        quantity: 1,
+        unit: 'Viên',
+        position: 'L/R',
+      },
+    ];
+  }
+
   return [
     {
-      part_sku: 'LK-AP-PIN-CAP',
-      part_name: 'Pin tai nghe AirPods dung lượng chuẩn',
+      part_sku: 'BAT-APP2-01',
+      part_name: 'Pin tai nghe AirPods Pro 2',
       quantity: 1,
       unit: 'Viên',
       position: 'L/R',
@@ -547,7 +788,7 @@ function inferFallbackPartsByText(issueName: string, category: string): LinkedPa
 
 /**
  * Định dạng danh sách linh kiện thành chuỗi tóm tắt chuẩn gửi lên API parts_needed / parts_used
- * Ví dụ: "Pin AirPods (LK-AP-PIN-CAP) x1, Keo ron (LK-AP-SEAL-KEO) x1"
+ * Ví dụ: "Pin tai nghe AirPods Pro 2 (BAT-APP2-01) x1"
  */
 export function formatLinkedPartsSummary(parts: LinkedPartItem[], watchSize?: string): string {
   if (!Array.isArray(parts) || parts.length === 0) return '';
@@ -566,11 +807,12 @@ export function formatLinkedPartsSummary(parts: LinkedPartItem[], watchSize?: st
 export function mergeLinkedPartsFromIssues(
   issues: (CommonIssueItem | CommonIssueCatalogItem)[],
   category?: string,
-  watchSize?: string
+  watchSize?: string,
+  deviceModelName?: string
 ): LinkedPartItem[] {
   const map = new Map<string, LinkedPartItem>();
   for (const rawIssue of issues) {
-    const enriched = enrichCommonIssueWithParts(rawIssue, category, watchSize);
+    const enriched = enrichCommonIssueWithParts(rawIssue, category, watchSize, deviceModelName);
     for (const part of enriched.linked_parts) {
       const key = `${part.part_sku}__${part.watch_size || ''}`;
       if (!map.has(key)) {
@@ -588,10 +830,11 @@ export function filterCommonIssues(
   issues: (CommonIssueItem | CommonIssueCatalogItem)[],
   query: string,
   category?: string,
-  watchSize?: string
+  watchSize?: string,
+  deviceModelName?: string
 ): CommonIssueCatalogItem[] {
   const enrichedList = issues.map((item) =>
-    enrichCommonIssueWithParts(item, category, watchSize)
+    enrichCommonIssueWithParts(item, category, watchSize, deviceModelName)
   );
   const cleanQ = (query || '').trim().toLowerCase();
   if (!cleanQ) return enrichedList;
@@ -655,7 +898,8 @@ export function applyWatchSizeTagToText(text: string, watchSize: string): string
 export function inferLinkedPartsFromOrderText(
   issueText?: string | null,
   categoryOrDevice?: string | null,
-  explicitWatchSize?: string | null
+  explicitWatchSize?: string | null,
+  deviceModelName?: string | null
 ): {
   matchedIssues: CommonIssueCatalogItem[];
   linkedParts: LinkedPartItem[];
@@ -686,6 +930,7 @@ export function inferLinkedPartsFromOrderText(
     COMMON_ISSUE_CATALOG_BY_CATEGORY[resolvedCategory] || ALL_COMMON_ISSUE_CATALOG;
 
   const matchedIssues: CommonIssueCatalogItem[] = [];
+  const effectiveModel = deviceModelName || categoryOrDevice || undefined;
 
   for (const item of candidateCatalog) {
     const itemLower = item.issue_name.toLowerCase();
@@ -694,7 +939,7 @@ export function inferLinkedPartsFromOrderText(
     );
     if (lowerText.includes(itemLower) || keywordHit) {
       matchedIssues.push(
-        enrichCommonIssueWithParts(item, resolvedCategory, detectedWatchSize)
+        enrichCommonIssueWithParts(item, resolvedCategory, detectedWatchSize, effectiveModel)
       );
     }
   }
@@ -704,7 +949,8 @@ export function inferLinkedPartsFromOrderText(
     const fallbackIssue = enrichCommonIssueWithParts(
       { issue_name: text, category: resolvedCategory },
       resolvedCategory,
-      detectedWatchSize
+      detectedWatchSize,
+      effectiveModel
     );
     matchedIssues.push(fallbackIssue);
   }
@@ -712,7 +958,8 @@ export function inferLinkedPartsFromOrderText(
   const linkedParts = mergeLinkedPartsFromIssues(
     matchedIssues,
     resolvedCategory,
-    detectedWatchSize
+    detectedWatchSize,
+    effectiveModel
   );
 
   return {
@@ -723,7 +970,7 @@ export function inferLinkedPartsFromOrderText(
 }
 
 /**
- * Phân tách chuỗi parts_needed / partsUsed ("Pin AirPods (LK-AP-PIN-CAP) x2, ...") thành mảng LinkedPartItem
+ * Phân tách chuỗi parts_needed / partsUsed ("Pin tai nghe AirPods Pro 2 (BAT-APP2-01) x1, ...") thành mảng LinkedPartItem
  */
 export function parsePartsSummaryToItems(
   summaryText?: string | null
@@ -766,7 +1013,7 @@ export function parsePartsSummaryToItems(
           p.part_name.toLowerCase().includes(partName.toLowerCase())
       );
       items.push({
-        part_sku: catalogHit?.part_sku || `LK-CUSTOM-${String(idx + 1).padStart(2, '0')}`,
+        part_sku: catalogHit?.part_sku || `BAT-CUSTOM-${String(idx + 1).padStart(2, '0')}`,
         part_name: partName,
         quantity: qty,
         unit: catalogHit?.unit || 'Cái',
@@ -783,7 +1030,7 @@ export function parsePartsSummaryToItems(
     );
 
     items.push({
-      part_sku: catalogHit?.part_sku || `LK-GEN-${String(idx + 1).padStart(2, '0')}`,
+      part_sku: catalogHit?.part_sku || `BAT-GEN-${String(idx + 1).padStart(2, '0')}`,
       part_name: seg,
       quantity: 1,
       unit: catalogHit?.unit || 'Cái',

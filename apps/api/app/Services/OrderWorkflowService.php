@@ -716,7 +716,37 @@ class OrderWorkflowService extends BaseWorkflowService
             $extractCandidates($order->parts_needed),
         ];
 
-        $resolveEntriesToPartQuantities = function (array $entries) use ($order): array {
+        $skuAliases = [
+            'LK-AP-PIN-CAP'     => 'BAT-APP2-01',
+            'LK-AP-SEAL-KEO'    => 'MESH-APP-02',
+            'LK-AP-MIC-ANC'     => 'MESH-APP-02',
+            'LK-AP-LOA-ANC'     => 'MESH-APP-02',
+            'LK-AP-DRIVER'      => 'MESH-APP-02',
+            'LK-AP-MESH'        => 'MESH-APP-02',
+            'LK-AP-CASE-FLEX'   => 'FLEX-CASE-01',
+            'LK-AP-CASE-PIN'    => 'CASE-APP2-04',
+            'MIC-APP-ANC'       => 'MESH-APP-02',
+            'DRV-APP-TITAN'     => 'MESH-APP-02',
+            'CAP-FLEX-APP'      => 'FLEX-CASE-01',
+            'BAT-CASE-APP'      => 'CASE-APP2-04',
+            'IC-CHG-APP'        => 'CASE-APP2-04',
+            'LK-AW-PIN'         => 'AW-BAT-01',
+            'AW-PIN-STD'        => 'AW-BAT-01',
+            'BAT-AW-STD'        => 'AW-BAT-01',
+            'LK-AW-SEAL'        => 'AW-BAT-01',
+            'SEAL-AW-WP'        => 'AW-BAT-01',
+            'LK-AW-GLASS-TOUCH' => 'AW-GLASS-01',
+            'AW-GLASS-TOUCH'    => 'AW-GLASS-01',
+            'GLS-AW-OCA'        => 'AW-GLASS-01',
+            'TP-AW-ZIN'         => 'AW-GLASS-01',
+            'FLEX-AW-CROWN'     => 'AW-GLASS-01',
+            'TAP-AW-ENG'        => 'AW-GLASS-01',
+            'LK-PEN-TIP-COIL'   => 'APEN-TIP-01',
+            'PEN-BAT-CELL'      => 'APEN-TIP-01',
+            'PEN-TIP-COIL'      => 'APEN-TIP-01',
+        ];
+
+        $resolveEntriesToPartQuantities = function (array $entries) use ($order, $skuAliases): array {
             if (empty($entries)) {
                 return [];
             }
@@ -729,7 +759,11 @@ class OrderWorkflowService extends BaseWorkflowService
                     $partIds[] = (int) $e['part_id'];
                 }
                 if (! empty($e['sku']) && is_string($e['sku'])) {
-                    $skus[] = trim($e['sku']);
+                    $upperSku = strtoupper(trim($e['sku']));
+                    $skus[] = $upperSku;
+                    if (isset($skuAliases[$upperSku])) {
+                        $skus[] = $skuAliases[$upperSku];
+                    }
                 }
                 if (empty($e['part_id']) && empty($e['sku']) && ! empty($e['name']) && is_string($e['name'])) {
                     $names[] = trim($e['name']);
@@ -772,7 +806,11 @@ class OrderWorkflowService extends BaseWorkflowService
                     $part = $byId->get((int) $e['part_id']);
                 }
                 if (! $part && ! empty($e['sku'])) {
-                    $part = $bySku->get(strtoupper(trim((string) $e['sku'])));
+                    $upperSku = strtoupper(trim((string) $e['sku']));
+                    $part = $bySku->get($upperSku);
+                    if (! $part && isset($skuAliases[$upperSku])) {
+                        $part = $bySku->get($skuAliases[$upperSku]);
+                    }
                 }
                 if (! $part && ! empty($e['name'])) {
                     $part = $byName->get(mb_strtolower(trim((string) $e['name'])));
@@ -798,7 +836,60 @@ class OrderWorkflowService extends BaseWorkflowService
             }
         }
 
+        if (empty($requiredByPartId) && $quoteItems->isEmpty()) {
+            $standardParts = $this->resolveStandardPartsFromIssueDescription($order);
+            foreach ($standardParts as $stdPart) {
+                $requiredByPartId[(int) $stdPart->id] = 1;
+            }
+        }
+
         return $requiredByPartId;
+    }
+
+    /**
+     * Tự động tra cứu Linh kiện Kho chuẩn (parts) theo mô tả lỗi phổ biến (issue_description) của đơn hàng thuộc đúng tenant.
+     *
+     * @return \Illuminate\Support\Collection<int, \App\Models\Part>
+     */
+    public function resolveStandardPartsFromIssueDescription(RepairOrder $order): \Illuminate\Support\Collection
+    {
+        $issueText = mb_strtolower(trim((string) ($order->issue_description ?? '')));
+        if ($issueText === '' || str_contains($issueText, 'vệ sinh') || empty($order->tenant_id)) {
+            return collect();
+        }
+
+        $order->loadMissing('deviceModel');
+        $category = mb_strtolower((string) ($order->deviceModel?->category ?? ''));
+
+        $candidateSkus = [];
+        if (str_contains($category, 'watch') || str_contains($issueText, 'apple watch') || str_contains($issueText, 'crown') || str_contains($issueText, 'ép kính') || str_contains($issueText, 'vỡ mặt kính')) {
+            if (str_contains($issueText, 'pin') || str_contains($issueText, 'nguồn')) {
+                $candidateSkus = ['AW-BAT-01'];
+            } elseif (str_contains($issueText, 'kính') || str_contains($issueText, 'cảm ứng') || str_contains($issueText, 'liệt') || str_contains($issueText, 'crown') || str_contains($issueText, 'nút') || str_contains($issueText, 'màn hình')) {
+                $candidateSkus = ['AW-GLASS-01'];
+            }
+        } elseif (str_contains($category, 'pencil') || str_contains($issueText, 'pencil') || str_contains($issueText, 'đầu ngòi')) {
+            $candidateSkus = ['APEN-TIP-01'];
+        } else {
+            if (str_contains($issueText, 'hộp sạc') || str_contains($issueText, 'case') || str_contains($issueText, 'chân tiếp xúc') || str_contains($issueText, 'không nhận sạc')) {
+                $candidateSkus = ['FLEX-CASE-01', 'CASE-APP2-04'];
+            } elseif (str_contains($issueText, 'anc') || str_contains($issueText, 'chống ồn') || str_contains($issueText, 'rít') || str_contains($issueText, 'xuyên âm') || str_contains($issueText, 'mic')) {
+                $candidateSkus = ['MESH-APP-02', 'FLEX-CASE-01'];
+            } elseif (str_contains($issueText, 'loa') || str_contains($issueText, 'nhỏ tiếng') || str_contains($issueText, 'bass') || str_contains($issueText, 'rè')) {
+                $candidateSkus = ['MESH-APP-02'];
+            } elseif (str_contains($issueText, 'pin') || str_contains($issueText, 'chai') || str_contains($issueText, 'tụt')) {
+                $candidateSkus = ['BAT-APP2-01'];
+            }
+        }
+
+        if (empty($candidateSkus)) {
+            return collect();
+        }
+
+        return \App\Models\Part::withoutGlobalScopes()
+            ->where('tenant_id', $order->tenant_id)
+            ->whereIn('sku', $candidateSkus)
+            ->get();
     }
 
     /**

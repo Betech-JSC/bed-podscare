@@ -7,11 +7,9 @@ import {
   StatusTag,
   Icon,
   Modal,
-  useToast,
 } from '@podscare/ui';
 import type { RepairOrder } from '@podscare/types';
 import { normalizeStatusCode } from '../../repairs/fsm';
-import { exportPartsUsageExcel } from '../utils/partsUsageExcelExport';
 
 export interface CskhDashboardViewProps {
   currentUser?: any;
@@ -27,7 +25,6 @@ export interface CskhDashboardViewProps {
   onOpenRegularIntake: () => void;
   onOpenCheckout: (order: RepairOrder) => void;
   onNavigateToRepairs: () => void;
-  onExportPartsUsage?: () => void;
   moneyFormatted: (n: number) => string;
 }
 
@@ -45,35 +42,8 @@ export const CskhDashboardView: React.FC<CskhDashboardViewProps> = ({
   onOpenRegularIntake,
   onOpenCheckout,
   onNavigateToRepairs,
-  onExportPartsUsage,
   moneyFormatted,
 }) => {
-  const { toast } = useToast();
-
-  const handleExportPartsClick = () => {
-    if (onExportPartsUsage) {
-      onExportPartsUsage();
-      return;
-    }
-    const ordersToExport =
-      Array.isArray(branchOrders) && branchOrders.length > 0
-        ? branchOrders
-        : Array.from(
-            new Map(
-              [...cskhReadyOrders, ...cskhPendingOrders].map((o) => [o.id, o])
-            ).values()
-          );
-    const res = exportPartsUsageExcel({
-      orders: ordersToExport,
-      periodLabel: 'Ca làm việc CSKH hôm nay',
-      branchLabel: currentUser?.branch || 'Chi nhánh hiện tại',
-      hideRevenue: currentUser?.role !== 'admin' && currentUser?.role !== 'super_admin',
-    });
-    toast(
-      `Đã xuất file Linh kiện (.xls): ${res.totalPartQuantity} linh kiện tiêu hao / ${res.orderCount} đơn!`,
-      'success'
-    );
-  };
 
   const handedOverCount = React.useMemo(() => {
     if (!Array.isArray(branchOrders)) return 0;
@@ -125,16 +95,6 @@ export const CskhDashboardView: React.FC<CskhDashboardViewProps> = ({
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
-          <Button
-            variant="outline"
-            size="md"
-            icon="download"
-            data-testid="cskh-export-parts-excel-btn"
-            onClick={handleExportPartsClick}
-            className="bg-white text-[#176b51] border-[#cde4d8] hover:bg-[#e9f4ef] font-bold"
-          >
-            Xuất file Linh kiện (.xls)
-          </Button>
           <Button
             variant="outline"
             size="md"

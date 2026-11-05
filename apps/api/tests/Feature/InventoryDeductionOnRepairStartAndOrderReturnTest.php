@@ -447,4 +447,94 @@ class InventoryDeductionOnRepairStartAndOrderReturnTest extends TestCase
             $this->assertEquals($newPrice, (float) $order->fresh()->total_price);
         }
     }
+
+    /**
+     * (e) Trừ kho tức thì ngay khi tạo đơn sửa chữa mới (POST /api/v1/orders) với lỗi phổ biến gắn linh kiện Kho,
+     * đảm bảo không trừ trùng khi chuyển sang in_repair / completed và tự động hoàn kho khi hủy đơn.
+     */
+    public function test_inventory_is_immediately_deducted_when_order_is_created_with_common_issue(): void
+    {
+        [$part, $branchPart] = $this->createPartWithStock('Pin tai nghe AirPods Pro 2', 'BAT-APP2-01', 15);
+
+        // 1. Tạo đơn sửa chữa mới với lỗi phổ biến kèm parts_needed (hoặc tự động ánh xạ từ issue_description)
+        $createRes = $this->actingAs($this->cskhUser, 'sanctum')->postJson('/api/v1/orders', [
+            'branch_id'         => $this->branch->id,
+            'customer_id'       => $this->customer->id,
+            'device_model_id'   => $this->device->id,
+            'issue_description' => 'Pin chai, tụt pin nhanh',
+            'parts_needed'      => 'Pin tai nghe AirPods Pro 2 (BAT-APP2-01) x1',
+            'estimated_price'   => 350000,
+            'order_type'        => 'in_store',
+        ]);
+
+        $createRes->assertStatus(201)
+            ->assertJsonPath('data.status', 'waiting_tech');
+
+        $orderId = (int) $createRes->json('data.id');
+
+        // Ngay lập tức sau khi tạo đơn (waiting_tech), tồn kho giảm từ 15 xuống 14
+        $this->assertEquals(14, $branchPart->fresh()->stock_quantity);
+        $this->assertEquals(14, $part->fresh()->stock_quantity);
+
+        $exportTx = InventoryTransaction::where('repair_order_id', $orderId)
+            ->where('part_id', $part->id)
+            ->where('transaction_type', 'export_repair')
+            ->first();
+        $this->assertNotNull($exportTx);
+        $this->assertEquals(-1, (int) $exportTx->quantity);
+
+        // 2. Khi KTV chuyển sang in_repair -> ready_for_return -> completed, không bị trừ kho trùng lần 2
+        $this->actingAs($this->techUser, 'sanctum')
+            ->patchJson("/api/v1/orders/{$orderId}/status", ['status' => 'in_repair'])
+            ->assertStatus(200);
+
+        $this->assertEquals(14, $branchPart->fresh()->stock_quantity);
+        $this->assertEquals(14, $part->fresh()->stock_quantity);
+
+        $this->actingAs($this->cskhUser, 'sanctum')
+            ->patchJson("/api/v1/orders/{$orderId}/status", [
+                'status'        => 'ready_for_return',
+                'technician_id' => $this->techUser->id,
+            ])
+            ->assertStatus(200);
+
+        $this->actingAs($this->cskhUser, 'sanctum')
+            ->postJson('/api/v1/payments', [
+                'repair_order_id' => $orderId,
+                'amount'          => 350000,
+                'payment_method'  => 'cash',
+                'notes'           => 'Thu tiền bàn giao máy',
+            ])
+            ->assertStatus(201);
+
+        $this->assertEquals(14, $branchPart->fresh()->stock_quantity);
+        $this->assertEquals(14, $part->fresh()->stock_quantity);
+        $this->assertEquals(1, InventoryTransaction::where('repair_order_id', $orderId)->where('transaction_type', 'export_repair')->count());
+
+        // 3. Tạo đơn thứ 2 chỉ truyền issue_description -> tự động gắn linh kiện chuẩn BAT-APP2-01 và trừ kho ngay (14 -> 13)
+        $createRes2 = $this->actingAs($this->cskhUser, 'sanctum')->postJson('/api/v1/orders', [
+            'branch_id'         => $this->branch->id,
+            'customer_id'       => $this->customer->id,
+            'device_model_id'   => $this->device->id,
+            'issue_description' => 'Pin chai, tụt pin nhanh',
+            'estimated_price'   => 350000,
+            'order_type'        => 'in_store',
+        ]);
+        $createRes2->assertStatus(201);
+        $order2Id = (int) $createRes2->json('data.id');
+
+        $this->assertEquals(13, $branchPart->fresh()->stock_quantity);
+        $this->assertEquals(13, $part->fresh()->stock_quantity);
+
+        // Hủy đơn thứ 2 ngay ở trạng thái waiting_tech -> tự động hoàn lại tồn kho từ 13 về 14
+        $this->actingAs($this->cskhUser, 'sanctum')
+            ->patchJson("/api/v1/orders/{$order2Id}/status", [
+                'status'         => 'cancelled',
+                'decline_reason' => 'Khách đổi ý hủy đơn ngay sau khi tạo',
+            ])
+            ->assertStatus(200);
+
+        $this->assertEquals(14, $branchPart->fresh()->stock_quantity);
+        $this->assertEquals(14, $part->fresh()->stock_quantity);
+    }
 }

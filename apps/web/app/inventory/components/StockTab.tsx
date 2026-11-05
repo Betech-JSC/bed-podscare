@@ -12,6 +12,10 @@ import {
 import { inventoryService } from '@podscare/api-client';
 import { useQuery } from '@tanstack/react-query';
 import { CreatePartTransactionModal } from './CreatePartTransactionModal';
+import {
+  DEFAULT_ISSUE_PARTS_PRESETS,
+  ALL_COMMON_ISSUE_CATALOG,
+} from '../../constants/commonIssueCatalog';
 
 export interface BranchOption {
   id: string | number;
@@ -64,6 +68,7 @@ export const StockTab: React.FC<StockTabProps> = ({
   const [page, setPage] = useState<number>(1);
   const [perPage, setPerPage] = useState<number | 'all'>(15);
   const [transactionModalOpen, setTransactionModalOpen] = useState(false);
+  const [presetCategoryFilter, setPresetCategoryFilter] = useState<string>('all');
 
   // Sync warehouse filter when context branchId changes or for non-admin
   React.useEffect(() => {
@@ -513,6 +518,134 @@ export const StockTab: React.FC<StockTabProps> = ({
           onPerPageChange={setPerPage}
           isLoading={isLoading}
         />
+      </div>
+
+      {/* Bảng Định mức Lỗi Sửa Chữa ↔ Linh Kiện Kho (Tự động trừ khi tạo đơn) */}
+      <div
+        data-testid="inventory-issue-parts-mapping-panel"
+        className="bg-white rounded-[10px] border border-[#cde2d6] p-4 sm:p-5 shadow-xs space-y-4"
+      >
+        <div className="flex flex-wrap items-center justify-between gap-3 pb-3 border-b border-[#eaf1ed]">
+          <div>
+            <div className="flex items-center gap-2 mb-1">
+              <span className="px-2 py-0.5 rounded bg-[#176b58] text-white text-[10px] font-bold uppercase tracking-wider">
+                BOM ĐỊNH MỨC TRỪ KHO
+              </span>
+              <span className="text-xs font-bold text-[#176b58]">
+                {DEFAULT_ISSUE_PARTS_PRESETS.length} nhóm lỗi chuẩn · {ALL_COMMON_ISSUE_CATALOG.length} mã lỗi
+              </span>
+            </div>
+            <h3 className="font-heading font-bold text-base text-[#1c302b] m-0">
+              Định mức Lỗi Sửa Chữa ↔ Linh Kiện Kho (Tự động trừ khi tạo đơn)
+            </h3>
+            <p className="text-xs text-[#6e7f77] mt-0.5 mb-0">
+              Mỗi lỗi khách báo khi tạo đơn sửa chữa sẽ tự động gắn liền với mã SKU linh kiện tương ứng và trừ trực tiếp khỏi tồn kho chi nhánh.
+            </p>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-1.5">
+            {(['all', 'AirPods', 'Apple Watch', 'Apple Pencil'] as const).map((cat) => {
+              const active = presetCategoryFilter === cat;
+              return (
+                <button
+                  key={cat}
+                  type="button"
+                  data-testid={`issue-parts-preset-filter-${cat.toLowerCase().replace(/\s+/g, '-')}`}
+                  onClick={() => setPresetCategoryFilter(cat)}
+                  className={`px-3 py-1.5 rounded-[8px] text-xs font-bold transition-all cursor-pointer border ${
+                    active
+                      ? 'bg-[#176b58] text-white border-[#176b58]'
+                      : 'bg-[#f7faf8] text-[#4c5c54] border-[#dce6e0] hover:bg-[#eaf4ef]'
+                  }`}
+                >
+                  {cat === 'all' ? 'Tất cả thiết bị' : cat}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+
+        <div className="overflow-x-auto -mx-4 sm:mx-0">
+          <table className="w-full text-left border-collapse min-w-[740px]">
+            <thead>
+              <tr className="border-y border-[#f0f3f1] bg-[#f8fbf9] text-xs font-bold text-[#6e7f77] uppercase tracking-wider h-9">
+                <th className="px-3">Thiết bị</th>
+                <th className="px-3">Lỗi sửa chữa phổ biến</th>
+                <th className="px-3">Linh kiện Kho gắn liền (Mã SKU &amp; Tên)</th>
+                <th className="px-3 text-center">Định mức trừ / đơn</th>
+                <th className="px-3 text-right">Tồn kho hiện tại</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-[#f1f3f2] text-sm">
+              {DEFAULT_ISSUE_PARTS_PRESETS.filter(
+                (p) => presetCategoryFilter === 'all' || p.category === presetCategoryFilter
+              ).map((preset) => (
+                <tr key={preset.id} className="hover:bg-[#fafcfa] transition-colors">
+                  <td className="px-3 py-3 whitespace-nowrap">
+                    <span className="px-2.5 py-1 rounded-[6px] bg-[#eaf4ef] text-[#176b58] text-xs font-bold border border-[#cde2d6]">
+                      {preset.category}
+                    </span>
+                  </td>
+                  <td className="px-3 py-3 font-semibold text-[#1c302b]">
+                    {preset.issue_label}
+                  </td>
+                  <td className="px-3 py-3">
+                    <div className="flex flex-wrap gap-1.5">
+                      {preset.linked_parts.map((pt) => (
+                        <span
+                          key={`${preset.id}-${pt.part_sku}`}
+                          className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-[6px] bg-[#f4faf7] border border-[#c6e0d2] text-xs font-semibold text-[#1c302b]"
+                        >
+                          <span className="font-mono font-bold text-[#176b58]">{pt.part_sku}</span>
+                          <span>· {pt.part_name}</span>
+                        </span>
+                      ))}
+                    </div>
+                  </td>
+                  <td className="px-3 py-3 text-center whitespace-nowrap">
+                    {preset.linked_parts.map((pt) => (
+                      <span
+                        key={`${preset.id}-qty-${pt.part_sku}`}
+                        className="inline-block font-mono text-xs font-bold text-[#bc5b52] bg-[#fbefed] border border-[#f5d5d0] px-2 py-0.5 rounded mx-0.5"
+                      >
+                        -{pt.quantity} {pt.unit}
+                      </span>
+                    ))}
+                  </td>
+                  <td className="px-3 py-3 text-right whitespace-nowrap">
+                    <div className="flex flex-col items-end gap-1">
+                      {preset.linked_parts.map((pt) => {
+                        const matchedStock = allParts.find(
+                          (item) => item.sku.toUpperCase() === pt.part_sku.toUpperCase()
+                        );
+                        const stockVal = matchedStock ? matchedStock.stock : undefined;
+                        const isLow =
+                          matchedStock !== undefined && matchedStock.stock <= matchedStock.min;
+                        return (
+                          <span
+                            key={`${preset.id}-stock-${pt.part_sku}`}
+                            className={`inline-flex items-center gap-1 text-xs font-mono font-bold ${
+                              stockVal === undefined
+                                ? 'text-[#556960]'
+                                : isLow
+                                ? 'text-[#bc5b52]'
+                                : 'text-[#28805e]'
+                            }`}
+                          >
+                            <span>{pt.part_sku}:</span>
+                            <span>
+                              {stockVal !== undefined ? `${stockVal} cái` : 'Sẵn sàng trong kho'}
+                            </span>
+                          </span>
+                        );
+                      })}
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       </div>
 
       {/* Transaction Modal */}
