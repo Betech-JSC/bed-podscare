@@ -174,15 +174,32 @@ class RepairOrder extends Model
         $current = trim((string) ($this->parts_needed ?? ''));
 
         foreach ($linkedParts as $part) {
-            $partName = '';
+            $label = '';
+            $dedupeKey = '';
             if (is_array($part)) {
-                $partName = trim((string) ($part['part_name'] ?? $part['name'] ?? $part['part_sku'] ?? ''));
+                $name = trim((string) ($part['part_name'] ?? $part['name'] ?? ''));
+                $sku = strtoupper(trim((string) ($part['part_sku'] ?? $part['sku'] ?? '')));
+                $qty = max(1, (int) ($part['quantity'] ?? ($part['qty'] ?? 1)));
+
+                if ($name !== '' && $sku !== '') {
+                    $label = mb_stripos($name, $sku) === false
+                        ? "{$name} ({$sku}) x{$qty}"
+                        : "{$name} x{$qty}";
+                    $dedupeKey = $sku;
+                } elseif ($name !== '') {
+                    $label = $qty > 1 ? "{$name} x{$qty}" : $name;
+                    $dedupeKey = $name;
+                } elseif ($sku !== '') {
+                    $label = "{$sku} x{$qty}";
+                    $dedupeKey = $sku;
+                }
             } elseif (is_string($part)) {
-                $partName = trim($part);
+                $label = trim($part);
+                $dedupeKey = $label;
             }
 
-            if ($partName !== '' && ($current === '' || mb_stripos($current, $partName) === false)) {
-                $current = $current === '' ? $partName : ($current . ', ' . $partName);
+            if ($label !== '' && ($current === '' || ($dedupeKey !== '' && mb_stripos($current, $dedupeKey) === false))) {
+                $current = $current === '' ? $label : ($current . ', ' . $label);
             }
         }
 

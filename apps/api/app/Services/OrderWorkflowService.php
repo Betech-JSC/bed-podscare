@@ -649,9 +649,9 @@ class OrderWorkflowService extends BaseWorkflowService
                 if (is_array($decoded)) {
                     $raw = $decoded;
                 } else {
-                    // Hỗ trợ chuỗi chứa mã SKU (ví dụ: "LK-AP-PIN-CAP (x2)", "PART-AP2-BAT-L", "CAP-APP2-123 x1")
+                    // Hỗ trợ chuỗi chứa mã SKU (ví dụ: "Pin tai nghe (BAT-APP2C-L) x2", "LK-AP-PIN-CAP (x2)", "[BAT-APP2-01] x2")
                     $matches = [];
-                    if (preg_match_all('/\b([A-Z0-9]{2,}(?:-[A-Z0-9]+)+)\b(?:\s*(?:\(\s*x?(\d+)\s*\)|x(\d+)))?/i', $raw, $matches, PREG_SET_ORDER)) {
+                    if (preg_match_all('/\b([A-Z0-9]{2,}(?:-[A-Z0-9]+)+)\b[\)\]]?(?:\s*(?:\(\s*[x×*]?(\d+)\s*\)|[x×*]\s*(\d+)))?/iu', $raw, $matches, PREG_SET_ORDER)) {
                         $items = [];
                         foreach ($matches as $m) {
                             $qty = ! empty($m[2]) ? (int) $m[2] : (! empty($m[3]) ? (int) $m[3] : 1);
@@ -673,11 +673,14 @@ class OrderWorkflowService extends BaseWorkflowService
             $entries = [];
             foreach ($raw as $entry) {
                 if (! is_array($entry)) {
-                    if (is_string($entry) && preg_match('/\b((?:LK|PART)-[A-Z0-9\-]+)\b/i', $entry, $m)) {
-                        $entries[] = [
-                            'sku'      => strtoupper(trim($m[1])),
-                            'quantity' => 1,
-                        ];
+                    if (is_string($entry) && preg_match_all('/\b([A-Z0-9]{2,}(?:-[A-Z0-9]+)+)\b[\)\]]?(?:\s*(?:\(\s*[x×*]?(\d+)\s*\)|[x×*]\s*(\d+)))?/iu', $entry, $entryMatches, PREG_SET_ORDER)) {
+                        foreach ($entryMatches as $m) {
+                            $qty = ! empty($m[2]) ? (int) $m[2] : (! empty($m[3]) ? (int) $m[3] : 1);
+                            $entries[] = [
+                                'sku'      => strtoupper(trim($m[1])),
+                                'quantity' => max(1, $qty),
+                            ];
+                        }
                     }
                     continue;
                 }
@@ -839,7 +842,8 @@ class OrderWorkflowService extends BaseWorkflowService
         if (empty($requiredByPartId) && $quoteItems->isEmpty()) {
             $standardParts = $this->resolveStandardPartsFromIssueDescription($order);
             foreach ($standardParts as $stdPart) {
-                $requiredByPartId[(int) $stdPart->id] = 1;
+                $qty = max(1, (int) ($stdPart->resolved_quantity ?? 1));
+                $requiredByPartId[(int) $stdPart->id] = ($requiredByPartId[(int) $stdPart->id] ?? 0) + $qty;
             }
         }
 
@@ -848,48 +852,223 @@ class OrderWorkflowService extends BaseWorkflowService
 
     /**
      * Tự động tra cứu Linh kiện Kho chuẩn (parts) theo mô tả lỗi phổ biến (issue_description) của đơn hàng thuộc đúng tenant.
+     * Hỗ trợ phân biệt rõ dòng máy và 3 phạm vi Tai Trái (L), Tai Phải (R), Cả 2 tai (L + R).
      *
      * @return \Illuminate\Support\Collection<int, \App\Models\Part>
      */
     public function resolveStandardPartsFromIssueDescription(RepairOrder $order): \Illuminate\Support\Collection
     {
         $issueText = mb_strtolower(trim((string) ($order->issue_description ?? '')));
-        if ($issueText === '' || str_contains($issueText, 'vệ sinh') || empty($order->tenant_id)) {
+        if ($issueText === '' || (str_contains($issueText, 'vệ sinh') && ! str_contains($issueText, 'lưới')) || empty($order->tenant_id)) {
             return collect();
         }
 
         $order->loadMissing('deviceModel');
         $category = mb_strtolower((string) ($order->deviceModel?->category ?? ''));
+        $modelName = mb_strtolower((string) ($order->deviceModel?->name ?? ''));
+        $modelCode = mb_strtolower((string) ($order->deviceModel?->model_code ?? ''));
+        $combinedModel = $modelName . ' ' . $modelCode . ' ' . $issueText;
 
-        $candidateSkus = [];
-        if (str_contains($category, 'watch') || str_contains($issueText, 'apple watch') || str_contains($issueText, 'crown') || str_contains($issueText, 'ép kính') || str_contains($issueText, 'vỡ mặt kính')) {
+        $primarySkuQuantities = [];
+        $fallbackSkuQuantities = [];
+
+        if (
+            str_contains($category, 'watch')
+            || str_contains($issueText, 'apple watch')
+            || str_contains($issueText, 'digital crown')
+            || str_contains($issueText, 'taptic')
+            || str_contains($issueText, 'ép kính')
+            || str_contains($issueText, 'ép mặt kính')
+            || str_contains($issueText, 'vỡ mặt kính')
+        ) {
+            $watchPrefix = null;
+            if (str_contains($combinedModel, 'ultra 2') || str_contains($combinedModel, 'mreg3')) {
+                $watchPrefix = 'AWU2-49';
+            } elseif (str_contains($combinedModel, 'ultra') || str_contains($combinedModel, 'a2622')) {
+                $watchPrefix = 'AWU1-49';
+            } elseif (str_contains($combinedModel, 'series 9') || str_contains($combinedModel, 's9') || str_contains($combinedModel, 'mr993')) {
+                $watchPrefix = 'AWS9-45';
+            } elseif (str_contains($combinedModel, 'series 8') || str_contains($combinedModel, 's8') || str_contains($combinedModel, 'a2771')) {
+                $watchPrefix = 'AWS8-45';
+            } elseif (str_contains($combinedModel, 'series 7') || str_contains($combinedModel, 's7') || str_contains($combinedModel, 'a2474')) {
+                $watchPrefix = 'AWS7-45';
+            }
+
             if (str_contains($issueText, 'pin') || str_contains($issueText, 'nguồn')) {
-                $candidateSkus = ['AW-BAT-01'];
-            } elseif (str_contains($issueText, 'kính') || str_contains($issueText, 'cảm ứng') || str_contains($issueText, 'liệt') || str_contains($issueText, 'crown') || str_contains($issueText, 'nút') || str_contains($issueText, 'màn hình')) {
-                $candidateSkus = ['AW-GLASS-01'];
+                $primarySkuQuantities = $watchPrefix ? ["BAT-{$watchPrefix}" => 1] : ['AW-BAT-01' => 1];
+                $fallbackSkuQuantities = ['AW-BAT-01' => 1];
+            } elseif (str_contains($issueText, 'oled') || str_contains($issueText, 'nguyên bộ')) {
+                $primarySkuQuantities = $watchPrefix ? ["SCR-{$watchPrefix}" => 1] : ['AW-GLASS-01' => 1];
+                $fallbackSkuQuantities = ['AW-GLASS-01' => 1];
+            } elseif (str_contains($issueText, 'crown') || str_contains($issueText, 'nút xoay')) {
+                $primarySkuQuantities = $watchPrefix ? ["CRW-{$watchPrefix}" => 1] : ['AW-GLASS-01' => 1];
+                $fallbackSkuQuantities = ['AW-GLASS-01' => 1];
+            } elseif (str_contains($issueText, 'taptic') || str_contains($issueText, 'cục rung')) {
+                $primarySkuQuantities = $watchPrefix ? ["TAP-{$watchPrefix}" => 1] : ['AW-GLASS-01' => 1];
+                $fallbackSkuQuantities = ['AW-GLASS-01' => 1];
+            } elseif (str_contains($issueText, 'kính') || str_contains($issueText, 'cảm ứng') || str_contains($issueText, 'liệt') || str_contains($issueText, 'nút') || str_contains($issueText, 'màn hình')) {
+                $primarySkuQuantities = $watchPrefix ? ["GLS-{$watchPrefix}" => 1] : ['AW-GLASS-01' => 1];
+                $fallbackSkuQuantities = ['AW-GLASS-01' => 1];
             }
         } elseif (str_contains($category, 'pencil') || str_contains($issueText, 'pencil') || str_contains($issueText, 'đầu ngòi')) {
-            $candidateSkus = ['APEN-TIP-01'];
+            $penPrefix = null;
+            if (str_contains($combinedModel, 'pencil pro') || str_contains($combinedModel, 'mx2d3')) {
+                $penPrefix = 'PENPRO';
+            } elseif (str_contains($combinedModel, 'pencil 2') || str_contains($combinedModel, 'mu8f2')) {
+                $penPrefix = 'PEN2';
+            }
+
+            if ($penPrefix && (str_contains($issueText, 'pin') || str_contains($issueText, 'sập nguồn'))) {
+                $primarySkuQuantities = ["BAT-{$penPrefix}" => 1];
+                $fallbackSkuQuantities = ['APEN-TIP-01' => 1];
+            } elseif ($penPrefix && (str_contains($issueText, 'bluetooth') || str_contains($issueText, 'cuộn sạc') || str_contains($issueText, 'mạch'))) {
+                $primarySkuQuantities = ["PCB-{$penPrefix}" => 1];
+                $fallbackSkuQuantities = ['APEN-TIP-01' => 1];
+            } elseif ($penPrefix) {
+                $primarySkuQuantities = ["TIP-{$penPrefix}" => 1];
+                $fallbackSkuQuantities = ['APEN-TIP-01' => 1];
+            } else {
+                $primarySkuQuantities = ['APEN-TIP-01' => 1];
+            }
         } else {
-            if (str_contains($issueText, 'hộp sạc') || str_contains($issueText, 'case') || str_contains($issueText, 'chân tiếp xúc') || str_contains($issueText, 'không nhận sạc')) {
-                $candidateSkus = ['FLEX-CASE-01', 'CASE-APP2-04'];
-            } elseif (str_contains($issueText, 'anc') || str_contains($issueText, 'chống ồn') || str_contains($issueText, 'rít') || str_contains($issueText, 'xuyên âm') || str_contains($issueText, 'mic')) {
-                $candidateSkus = ['MESH-APP-02', 'FLEX-CASE-01'];
-            } elseif (str_contains($issueText, 'loa') || str_contains($issueText, 'nhỏ tiếng') || str_contains($issueText, 'bass') || str_contains($issueText, 'rè')) {
-                $candidateSkus = ['MESH-APP-02'];
-            } elseif (str_contains($issueText, 'pin') || str_contains($issueText, 'chai') || str_contains($issueText, 'tụt')) {
-                $candidateSkus = ['BAT-APP2-01'];
+            // AirPods
+            $apPrefix = 'APP2C';
+            if (str_contains($combinedModel, 'airpods max') || str_contains($combinedModel, 'a2096') || str_contains($combinedModel, 'mgyh3')) {
+                $apPrefix = 'APM';
+            } elseif (
+                str_contains($combinedModel, 'pro 2')
+                || str_contains($combinedModel, 'a2698')
+                || str_contains($combinedModel, 'a2699')
+                || str_contains($combinedModel, 'a3047')
+                || str_contains($combinedModel, 'a3048')
+                || str_contains($combinedModel, 'mtjv3')
+                || str_contains($combinedModel, 'mqd83')
+            ) {
+                $apPrefix = (str_contains($combinedModel, 'lightning') || str_contains($combinedModel, 'a2698') || str_contains($combinedModel, 'a2699') || str_contains($combinedModel, 'mqd83'))
+                    ? 'APP2L'
+                    : 'APP2C';
+            } elseif (str_contains($combinedModel, 'airpods pro') || str_contains($combinedModel, 'a2083') || str_contains($combinedModel, 'a2084') || str_contains($combinedModel, 'mlwk3')) {
+                $apPrefix = 'APP1';
+            } elseif (str_contains($combinedModel, 'airpods 3') || str_contains($combinedModel, 'a2564') || str_contains($combinedModel, 'a2565') || str_contains($combinedModel, 'mme73')) {
+                $apPrefix = 'AP3';
+            } elseif (str_contains($combinedModel, 'airpods 2') || str_contains($combinedModel, 'a2031') || str_contains($combinedModel, 'a2032') || str_contains($combinedModel, 'mv7n2')) {
+                $apPrefix = 'AP2';
+            }
+
+            $scope = 'GENERIC';
+            if (
+                str_contains($issueText, 'cả 2 tai')
+                || str_contains($issueText, '2 tai')
+                || str_contains($issueText, 'hai tai')
+                || str_contains($issueText, 'cả hai tai')
+                || str_contains($issueText, 'cả 2 bên')
+                || str_contains($issueText, '2 bên')
+                || str_contains($issueText, 'l + r')
+                || str_contains($issueText, 'l+r')
+            ) {
+                $scope = 'LR';
+            } elseif (str_contains($issueText, 'tai trái') || str_contains($issueText, 'bên trái') || preg_match('/\(\s*l\s*\)/i', $issueText)) {
+                $scope = 'L';
+            } elseif (str_contains($issueText, 'tai phải') || str_contains($issueText, 'bên phải') || preg_match('/\(\s*r\s*\)/i', $issueText)) {
+                $scope = 'R';
+            }
+
+            if (str_contains($issueText, 'xoay') || str_contains($issueText, 'headband')) {
+                $primarySkuQuantities = ['FLEX-SWIVEL-APM' => 1];
+                $fallbackSkuQuantities = ['FLEX-CASE-01' => 1];
+            } elseif ($apPrefix === 'APM' && (str_contains($issueText, 'chân sạc') || str_contains($issueText, 'cổng sạc'))) {
+                $primarySkuQuantities = ['FLEX-PORT-APM' => 1];
+                $fallbackSkuQuantities = ['FLEX-CASE-01' => 1];
+            } elseif (str_contains($issueText, 'hộp sạc') || str_contains($issueText, 'case') || str_contains($issueText, 'chân tiếp xúc') || str_contains($issueText, 'không nhận sạc')) {
+                $casePrefix = $apPrefix === 'APM' ? 'APP2C' : $apPrefix;
+                if (str_contains($issueText, 'pin hộp sạc') || (str_contains($issueText, 'pin') && ! str_contains($issueText, 'cáp'))) {
+                    $primarySkuQuantities = ["BAT-CASE-{$casePrefix}" => 1];
+                    $fallbackSkuQuantities = ['CASE-APP2-04' => 1];
+                } elseif (str_contains($issueText, 'cáp flex') || str_contains($issueText, 'chân tiếp xúc')) {
+                    $primarySkuQuantities = ["FLEX-CASE-{$casePrefix}" => 1];
+                    $fallbackSkuQuantities = ['FLEX-CASE-01' => 1];
+                } else {
+                    $primarySkuQuantities = ['FLEX-CASE-01' => 1, 'CASE-APP2-04' => 1];
+                    $fallbackSkuQuantities = ["BAT-CASE-{$casePrefix}" => 1, "FLEX-CASE-{$casePrefix}" => 1];
+                }
+            } else {
+                $partType = null;
+                $legacyFallback = [];
+
+                if (str_contains($issueText, 'lưới')) {
+                    $partType = 'MESH';
+                    $legacyFallback = ['MESH-APP-02' => 1];
+                } elseif (str_contains($issueText, 'mic') && ! str_contains($issueText, 'loa')) {
+                    $partType = 'MIC';
+                    $legacyFallback = ['MESH-APP-02' => 1, 'FLEX-CASE-01' => 1];
+                } elseif (
+                    str_contains($issueText, 'loa')
+                    || str_contains($issueText, 'anc')
+                    || str_contains($issueText, 'chống ồn')
+                    || str_contains($issueText, 'rít')
+                    || str_contains($issueText, 'xuyên âm')
+                    || str_contains($issueText, 'nhỏ tiếng')
+                    || str_contains($issueText, 'bass')
+                    || str_contains($issueText, 'rè')
+                ) {
+                    $partType = 'SPK';
+                    $legacyFallback = (str_contains($issueText, 'anc') || str_contains($issueText, 'chống ồn') || str_contains($issueText, 'rít') || str_contains($issueText, 'xuyên âm'))
+                        ? ['MESH-APP-02' => 1, 'FLEX-CASE-01' => 1]
+                        : ['MESH-APP-02' => 1];
+                } elseif (str_contains($issueText, 'pin') || str_contains($issueText, 'chai') || str_contains($issueText, 'tụt')) {
+                    $partType = 'BAT';
+                    $legacyFallback = ['BAT-APP2-01' => 1];
+                }
+
+                if ($partType !== null) {
+                    if ($scope === 'L') {
+                        $primarySkuQuantities = ["{$partType}-{$apPrefix}-L" => 1];
+                        $fallbackSkuQuantities = $legacyFallback;
+                    } elseif ($scope === 'R') {
+                        $primarySkuQuantities = ["{$partType}-{$apPrefix}-R" => 1];
+                        $fallbackSkuQuantities = $legacyFallback;
+                    } elseif ($scope === 'LR') {
+                        $primarySkuQuantities = [
+                            "{$partType}-{$apPrefix}-L" => 1,
+                            "{$partType}-{$apPrefix}-R" => 1,
+                        ];
+                        $fallbackSkuQuantities = array_map(fn () => 2, $legacyFallback);
+                    } else {
+                        $primarySkuQuantities = $legacyFallback;
+                        $fallbackSkuQuantities = ["{$partType}-{$apPrefix}-L" => 1];
+                    }
+                }
             }
         }
 
-        if (empty($candidateSkus)) {
+        if (empty($primarySkuQuantities) && empty($fallbackSkuQuantities)) {
             return collect();
         }
 
-        return \App\Models\Part::withoutGlobalScopes()
-            ->where('tenant_id', $order->tenant_id)
-            ->whereIn('sku', $candidateSkus)
-            ->get();
+        $fetchBySkuMap = function (array $skuQtyMap) use ($order): \Illuminate\Support\Collection {
+            if (empty($skuQtyMap)) {
+                return collect();
+            }
+
+            $parts = \App\Models\Part::withoutGlobalScopes()
+                ->where('tenant_id', $order->tenant_id)
+                ->whereIn('sku', array_keys($skuQtyMap))
+                ->get();
+
+            foreach ($parts as $p) {
+                $upper = strtoupper((string) $p->sku);
+                $p->setAttribute('resolved_quantity', max(1, (int) ($skuQtyMap[$upper] ?? 1)));
+            }
+
+            return $parts;
+        };
+
+        $matchedPrimary = $fetchBySkuMap($primarySkuQuantities);
+        if ($matchedPrimary->isNotEmpty()) {
+            return $matchedPrimary;
+        }
+
+        return $fetchBySkuMap($fallbackSkuQuantities);
     }
 
     /**

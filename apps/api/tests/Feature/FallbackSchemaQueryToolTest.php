@@ -235,7 +235,7 @@ class FallbackSchemaQueryToolTest extends TestCase
         $issueRes = $this->tool->execute([
             'entity'  => 'common_issues',
             'keyword' => 'sôi rè',
-        ], $this->techRecipientA1);
+        ], $this->receptionistRecipientA1);
 
         $this->assertArrayNotHasKey('error', $issueRes);
         $this->assertSame(1, $issueRes['total_matched']);

@@ -1328,7 +1328,7 @@ class QueryPerformanceOptimizationTest extends TestCase
             ->pluck('quantity')
             ->map(fn ($v) => (int) $v)
             ->all();
-        $this->assertSame([-1, -2], $part0ExportQuantities, 'Hai giao dịch xuất kho liên tiếp của cùng 1 part_id phải ghi nhận đúng quantity (-1 và -2).');
+        $this->assertSame([-3], $part0ExportQuantities, 'Hai dòng QuoteItem của cùng 1 part_id phải được gộp ròng thành 1 giao dịch xuất kho (-3).');
 
         // 4. Kiểm tra reverseInventoryForOrder() với 4 giao dịch xuất kho chỉ chạy 1 SELECT parts & 1 SELECT branch_parts
         DB::flushQueryLog();

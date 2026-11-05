@@ -407,6 +407,34 @@ class InventoryController extends Controller
                 ? (float) $validated['unit_cost']
                 : (float) $part->cost_price;
 
+            if ($validated['transaction_type'] === 'export_repair' && ! empty($validated['repair_order_id'])) {
+                $existingAutoExport = InventoryTransaction::where('repair_order_id', $validated['repair_order_id'])
+                    ->where('branch_id', $validated['branch_id'])
+                    ->where('part_id', $part->id)
+                    ->where('transaction_type', 'export_repair')
+                    ->where('quantity', $qty)
+                    ->where('notes', 'like', 'Xuất kho tự động cho đơn sửa chữa%')
+                    ->lockForUpdate()
+                    ->first();
+
+                if ($existingAutoExport) {
+                    $existingAutoExport->update([
+                        'notes'              => $validated['notes'] ?? $existingAutoExport->notes,
+                        'created_by_user_id' => $request->user()->id,
+                    ]);
+
+                    $loadedTx = $existingAutoExport->setRelation('part', $part)->load('branch');
+                    if (! $isAdmin) {
+                        $loadedTx->makeHidden('unit_cost');
+                        if ($loadedTx->part) {
+                            $loadedTx->part->makeHidden('cost_price');
+                        }
+                    }
+
+                    return $this->success($loadedTx, 'Tạo phiếu giao dịch kho thành công.', 201);
+                }
+            }
+
             $tx = InventoryTransaction::create([
                 'transaction_code'   => $txCode,
                 'part_id'            => $part->id,

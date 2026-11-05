@@ -50,6 +50,10 @@ import {
   inferLinkedPartsFromOrderText,
   buildDeviceIssueSelectionKey,
   toggleIssueNameInDescription,
+  detectAirPodsPartTypeFromIssue,
+  detectAirPodsEarScopeFromIssue,
+  switchAirPodsIssueEarScope,
+  type AirPodsEarScope,
   type CommonIssueCatalogItem,
 } from '../constants/commonIssueCatalog';
 
@@ -441,6 +445,9 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
   const [categoryIssues, setCategoryIssues] = useState<Record<string, CommonIssueItem[]>>({});
   const [checklistTemplate, setChecklistTemplate] = useState<string[]>([]);
   const [issueFilterByDevice, setIssueFilterByDevice] = useState<Record<string, string>>({});
+  const [airpodsScopeFilterByDevice, setAirpodsScopeFilterByDevice] = useState<
+    Record<string, 'ALL' | 'L' | 'R' | 'LR' | 'CASE'>
+  >({});
 
   // Validation errors
   const [errors, setErrors] = useState<Record<string, string>>({});
@@ -709,9 +716,12 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
           const res: any = await serviceService.getCommonIssues({ category: cat });
           const raw = res?.data || res;
           const list = Array.isArray(raw) ? raw : (raw?.data || []);
+          const fallbackList = DEFAULT_COMMON_ISSUES[cat] || [];
+          const mergedList =
+            Array.isArray(list) && list.length > 0 ? [...list, ...fallbackList] : fallbackList;
           return {
             cat,
-            list: Array.isArray(list) && list.length > 0 ? list : (DEFAULT_COMMON_ISSUES[cat] || []),
+            list: mergedList,
           };
         })
       );
@@ -894,16 +904,60 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
     const enrichedChip = enrichCommonIssueWithParts(chip, devCategory, devWatchSize, devModelName);
     const chipKey = buildDeviceIssueSelectionKey(devCategory, devModelName, enrichedChip.issue_name);
 
-    const prev = targetDev ? targetDev.issue : issue;
+    let prev = targetDev ? targetDev.issue : issue;
+    let nextSelectedIssues: CommonIssueCatalogItem[] = [...(targetDev?.selectedIssues || [])];
+    let nextSelectedKeys: string[] = [...(targetDev?.selectedIssueKeys || [])];
+
+    // Nếu đang chọn lỗi tai nghe AirPods có phạm vi (L / R / LR), tự động thay thế lỗi cùng nhóm linh kiện khác phạm vi trước đó
+    const clickedPartType =
+      devCategory === 'AirPods' ? detectAirPodsPartTypeFromIssue(enrichedChip) : null;
+    const clickedScope =
+      devCategory === 'AirPods' ? detectAirPodsEarScopeFromIssue(enrichedChip) : null;
+    const isAlreadyInText = prev.toLowerCase().includes(textToAdd.toLowerCase());
+
+    if (
+      !isAlreadyInText &&
+      devCategory === 'AirPods' &&
+      clickedPartType &&
+      clickedPartType !== 'CASE_BAT' &&
+      clickedPartType !== 'CASE_FLEX' &&
+      (clickedScope === 'L' || clickedScope === 'R' || clickedScope === 'LR')
+    ) {
+      const conflictingIssues = nextSelectedIssues.filter((existingIss) => {
+        const existingType = detectAirPodsPartTypeFromIssue(existingIss);
+        return (
+          existingType === clickedPartType &&
+          existingIss.issue_name.toLowerCase() !== enrichedChip.issue_name.toLowerCase()
+        );
+      });
+      for (const conflict of conflictingIssues) {
+        const removedRes = toggleIssueNameInDescription(
+          prev,
+          conflict.issue_name,
+          devCategory,
+          devWatchSize
+        );
+        if (!removedRes.isNowSelected) {
+          prev = removedRes.nextText;
+        }
+        const conflictKey = buildDeviceIssueSelectionKey(
+          devCategory,
+          devModelName,
+          conflict.issue_name
+        );
+        nextSelectedIssues = nextSelectedIssues.filter(
+          (i) => i.issue_name !== conflict.issue_name
+        );
+        nextSelectedKeys = nextSelectedKeys.filter((k) => k !== conflictKey);
+      }
+    }
+
     const { nextText: newIssue, isNowSelected } = toggleIssueNameInDescription(
       prev,
       textToAdd,
       devCategory,
       devWatchSize
     );
-
-    let nextSelectedIssues: CommonIssueCatalogItem[] = [...(targetDev?.selectedIssues || [])];
-    let nextSelectedKeys: string[] = [...(targetDev?.selectedIssueKeys || [])];
 
     if (isNowSelected) {
       if (!nextSelectedIssues.some((i) => i.issue_name === enrichedChip.issue_name)) {
@@ -926,9 +980,11 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
       : [];
 
     const combinedSelected = newIssue.trim()
-      ? matchedFromText.length > 0
-        ? matchedFromText
-        : nextSelectedIssues
+      ? nextSelectedIssues.length > 0
+        ? nextSelectedIssues.map((iss) =>
+            enrichCommonIssueWithParts(iss, devCategory, devWatchSize, devModelName)
+          )
+        : matchedFromText
       : [];
     const combinedKeys = combinedSelected.map((iss) =>
       buildDeviceIssueSelectionKey(devCategory, devModelName, iss.issue_name)
@@ -961,6 +1017,70 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
 
   const handleChipClick = (chip: CommonIssueItem) => {
     handleChipClickForDevice(chip, 0);
+  };
+
+  const handleSwitchAirPodsIssueScope = (
+    devIndex: number,
+    targetIssue: CommonIssueCatalogItem,
+    nextScope: AirPodsEarScope
+  ) => {
+    const targetDev = devices[devIndex];
+    if (!targetDev) return;
+
+    const devCategory = targetDev.category || 'AirPods';
+    const devModelName = targetDev.device || selectedDevice;
+    const switchedIssue = switchAirPodsIssueEarScope(targetIssue, nextScope, devModelName);
+
+    let nextIssueText = targetDev.issue || '';
+    const escapedOld = targetIssue.issue_name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    if (new RegExp(escapedOld, 'i').test(nextIssueText)) {
+      nextIssueText = nextIssueText.replace(new RegExp(escapedOld, 'gi'), switchedIssue.issue_name);
+    } else {
+      const toggled = toggleIssueNameInDescription(
+        nextIssueText,
+        switchedIssue.issue_name,
+        devCategory,
+        targetDev.watchSize
+      );
+      nextIssueText = toggled.nextText;
+    }
+
+    const baseSelected =
+      targetDev.selectedIssues && targetDev.selectedIssues.length > 0
+        ? targetDev.selectedIssues
+        : inferLinkedPartsFromOrderText(
+            targetDev.issue,
+            devCategory,
+            targetDev.watchSize,
+            devModelName
+          ).matchedIssues;
+
+    const updatedSelectedIssues = baseSelected.map((iss) =>
+      iss.issue_name === targetIssue.issue_name || iss.issue_code === targetIssue.issue_code
+        ? switchedIssue
+        : enrichCommonIssueWithParts(iss, devCategory, targetDev.watchSize, devModelName)
+    );
+
+    const updatedKeys = updatedSelectedIssues.map((iss) =>
+      buildDeviceIssueSelectionKey(devCategory, devModelName, iss.issue_name)
+    );
+    const mergedParts = mergeLinkedPartsFromIssues(
+      updatedSelectedIssues,
+      devCategory,
+      targetDev.watchSize,
+      devModelName
+    );
+    const selectedLinkedPartsSummary = formatLinkedPartsSummary(mergedParts, targetDev.watchSize);
+
+    if (devIndex === 0) {
+      setIssue(nextIssueText);
+    }
+    updateDevice(devIndex, {
+      issue: nextIssueText,
+      selectedIssues: updatedSelectedIssues,
+      selectedIssueKeys: updatedKeys,
+      partsNeeded: selectedLinkedPartsSummary,
+    });
   };
 
   const handleSelectWatchSizeForDevice = (size: string, devIndex: number) => {
@@ -2190,6 +2310,14 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
                             selectedParts={parseHardwarePartsFromText(dev.accessories)}
                             onChange={(parts) => {
                               const formatted = formatHardwarePartsToText(parts);
+                              const hasL = parts.includes('L');
+                              const hasR = parts.includes('R');
+                              const autoScope: 'ALL' | 'L' | 'R' | 'LR' =
+                                hasL && hasR ? 'LR' : hasL ? 'L' : hasR ? 'R' : 'ALL';
+                              setAirpodsScopeFilterByDevice((prev) => ({
+                                ...prev,
+                                [dev.id]: autoScope,
+                              }));
                               updateDevice(devIdx, { accessories: formatted });
                               if (devIdx === 0) setAccessories(formatted);
                             }}
@@ -2304,13 +2432,50 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
                         {(() => {
                           const rawList = devIdx === 0 ? commonIssues : issuesForDev;
                           const filterQuery = issueFilterByDevice[dev.id] || '';
-                          const enrichedAndFiltered = filterCommonIssues(
+                          const activeScopeFilter = airpodsScopeFilterByDevice[dev.id] || 'ALL';
+                          const baseEnriched = filterCommonIssues(
                             rawList,
                             filterQuery,
                             dev.category,
                             dev.watchSize,
                             dev.device
                           );
+                          const enrichedAndFiltered =
+                            dev.category === 'AirPods' && activeScopeFilter !== 'ALL'
+                              ? baseEnriched.filter((item) => {
+                                  const itemScope = detectAirPodsEarScopeFromIssue(item);
+                                  return itemScope === activeScopeFilter;
+                                })
+                              : baseEnriched;
+
+                          const activeSelectedIssues: CommonIssueCatalogItem[] =
+                            dev.issue.trim()
+                              ? dev.selectedIssues && dev.selectedIssues.length > 0
+                                ? dev.selectedIssues.map((iss) =>
+                                    enrichCommonIssueWithParts(
+                                      iss,
+                                      dev.category,
+                                      dev.watchSize,
+                                      dev.device
+                                    )
+                                  )
+                                : inferLinkedPartsFromOrderText(
+                                    dev.issue,
+                                    dev.category,
+                                    dev.watchSize,
+                                    dev.device
+                                  ).matchedIssues
+                              : [];
+
+                          const selectedLinkedParts = mergeLinkedPartsFromIssues(
+                            activeSelectedIssues,
+                            dev.category,
+                            dev.watchSize,
+                            dev.device
+                          );
+                          const selectedLinkedPartsSummary =
+                            (dev.partsNeeded || '').trim() ||
+                            formatLinkedPartsSummary(selectedLinkedParts, dev.watchSize);
 
                           return (
                             <div className="mt-3 space-y-2.5">
@@ -2325,6 +2490,49 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
                                   {enrichedAndFiltered.length} lỗi mẫu
                                 </span>
                               </div>
+
+                              {/* Bộ lọc nhanh phạm vi sửa chữa AirPods: Tai Trái (L) | Tai Phải (R) | Cả 2 tai (L + R) | Hộp sạc */}
+                              {dev.category === 'AirPods' && (
+                                <div
+                                  data-testid="airpods-ear-scope-selector"
+                                  className="flex flex-wrap items-center gap-1.5 p-2 rounded-[8px] bg-[#f6f8f6] border border-[#e9eeeb]"
+                                >
+                                  <span className="text-[11px] font-bold text-[#17231f] mr-1">
+                                    Phạm vi sửa AirPods:
+                                  </span>
+                                  {(
+                                    [
+                                      { key: 'ALL', label: 'Tất cả' },
+                                      { key: 'L', label: 'Tai Trái (L)' },
+                                      { key: 'R', label: 'Tai Phải (R)' },
+                                      { key: 'LR', label: 'Cả 2 tai (L + R)' },
+                                      { key: 'CASE', label: 'Hộp sạc (Case)' },
+                                    ] as const
+                                  ).map((scopeOpt) => {
+                                    const isScopeActive = activeScopeFilter === scopeOpt.key;
+                                    return (
+                                      <button
+                                        key={scopeOpt.key}
+                                        type="button"
+                                        data-testid={`airpods-scope-filter-${scopeOpt.key}`}
+                                        onClick={() =>
+                                          setAirpodsScopeFilterByDevice((prev) => ({
+                                            ...prev,
+                                            [dev.id]: scopeOpt.key,
+                                          }))
+                                        }
+                                        className={`px-2.5 py-1 rounded-[6px] text-[11px] font-bold border transition-colors cursor-pointer ${
+                                          isScopeActive
+                                            ? 'bg-[#176b51] text-white border-[#176b51]'
+                                            : 'bg-white text-[#5c6964] border-[#e9eeeb] hover:bg-[#e9f4ef] hover:text-[#176b51]'
+                                        }`}
+                                      >
+                                        {scopeOpt.label}
+                                      </button>
+                                    );
+                                  })}
+                                </div>
+                              )}
 
                               {/* Ô input Filter nhanh ở FE */}
                               <Input
@@ -2341,7 +2549,8 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
 
                               {enrichedAndFiltered.length > 0 ? (
                                 <div className="flex flex-wrap gap-1.5">
-                                  {enrichedAndFiltered.map((chip) => {
+                                  {enrichedAndFiltered.map((chip, idx) => {
+                                    void idx;
                                     const chipKey = buildDeviceIssueSelectionKey(
                                       dev.category,
                                       dev.device,
@@ -2379,6 +2588,83 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
                               ) : (
                                 <div className="p-2.5 rounded-[8px] bg-[#fafcfa] border border-dashed border-[#d8e2dc] text-xs text-[#718279]">
                                   Không tìm thấy mẫu lỗi nào khớp từ khóa &ldquo;{filterQuery}&rdquo;.
+                                </div>
+                              )}
+
+                              {/* Khối chuyển nhanh phạm vi Tai L | Tai R | 2 Tai (L+R) ngay trên thẻ lỗi AirPods đã chọn */}
+                              {dev.category === 'AirPods' && activeSelectedIssues.length > 0 && (
+                                <div
+                                  data-testid="selected-airpods-issues-scope-panel"
+                                  className="p-3 rounded-[8px] bg-[#f6f8f6] border border-[#e9eeeb] space-y-2"
+                                >
+                                  <div className="flex flex-wrap items-center justify-between gap-2">
+                                    <span className="text-[11px] font-bold text-[#17231f] uppercase tracking-wide">
+                                      Lỗi đã chọn & Chuyển nhanh phạm vi (Tai L / Tai R / 2 Tai):
+                                    </span>
+                                    {selectedLinkedPartsSummary && (
+                                      <span
+                                        data-testid="selected-linked-parts-summary"
+                                        className="text-[11px] font-mono text-[#176b51] bg-[#e9f4ef] px-2 py-0.5 rounded border border-[#c8eadb]"
+                                      >
+                                        BOM: {selectedLinkedPartsSummary}
+                                      </span>
+                                    )}
+                                  </div>
+                                  <div className="space-y-1.5">
+                                    {activeSelectedIssues.map((selIss, selIdx) => {
+                                      const partType = detectAirPodsPartTypeFromIssue(selIss);
+                                      const isEarIssue =
+                                        partType === 'BAT' ||
+                                        partType === 'SPK' ||
+                                        partType === 'MIC' ||
+                                        partType === 'MESH';
+                                      const currentScope = detectAirPodsEarScopeFromIssue(selIss);
+                                      return (
+                                        <div
+                                          key={`${selIss.issue_code}-${selIdx}`}
+                                          className="flex flex-wrap items-center justify-between gap-2 p-2 rounded-[7px] bg-white border border-[#e9eeeb]"
+                                        >
+                                          <div className="text-xs font-semibold text-[#17231f]">
+                                            {selIss.issue_name}
+                                          </div>
+                                          {isEarIssue && (
+                                            <div className="inline-flex items-center gap-1">
+                                              {(
+                                                [
+                                                  { scope: 'L', label: 'Tai L' },
+                                                  { scope: 'R', label: 'Tai R' },
+                                                  { scope: 'LR', label: '2 Tai (L+R)' },
+                                                ] as const
+                                              ).map((btn) => {
+                                                const isActiveScope = currentScope === btn.scope;
+                                                return (
+                                                  <button
+                                                    key={btn.scope}
+                                                    type="button"
+                                                    data-testid={`switch-issue-scope-${btn.scope}-${selIdx}`}
+                                                    onClick={() =>
+                                                      handleSwitchAirPodsIssueScope(
+                                                        devIdx,
+                                                        selIss,
+                                                        btn.scope
+                                                      )
+                                                    }
+                                                    className={`px-2 py-1 rounded-[6px] text-[10px] font-bold border transition-colors cursor-pointer ${
+                                                      isActiveScope
+                                                        ? 'bg-[#176b51] text-white border-[#176b51]'
+                                                        : 'bg-[#f6f8f6] text-[#5c6964] border-[#e9eeeb] hover:bg-[#e9f4ef] hover:text-[#176b51]'
+                                                    }`}
+                                                  >
+                                                    {btn.label}
+                                                  </button>
+                                                );
+                                              })}
+                                            </div>
+                                          )}
+                                        </div>
+                                      );
+                                    })}
+                                  </div>
                                 </div>
                               )}
                             </div>

@@ -635,7 +635,7 @@ class OrderController extends Controller
                         'part_id'   => $p->id,
                         'part_sku'  => $p->sku,
                         'part_name' => $p->name,
-                        'quantity'  => 1,
+                        'quantity'  => max(1, (int) ($p->resolved_quantity ?? 1)),
                         'unit'      => $p->unit ?? 'cái',
                     ])->all();
                     $order->appendLinkedPartsToPartsNeeded($linkedEntries);

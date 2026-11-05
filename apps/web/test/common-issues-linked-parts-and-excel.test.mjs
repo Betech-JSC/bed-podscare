@@ -21,6 +21,9 @@ import {
   parsePartsSummaryToItems,
   buildDeviceIssueSelectionKey,
   toggleIssueNameInDescription,
+  resolveAirPodsModelPrefix,
+  resolveAirPodsLRPartsForModel,
+  switchAirPodsIssueEarScope,
 } from '../app/constants/commonIssueCatalog.ts';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -58,6 +61,16 @@ const REAL_WAREHOUSE_SKUS = new Set([
   'AW-BAT-01',
   'AW-GLASS-01',
   'APEN-TIP-01',
+  'BAT-APP2C-L',
+  'BAT-APP2C-R',
+  'SPK-APP2C-L',
+  'SPK-APP2C-R',
+  'MIC-APP2C-L',
+  'MIC-APP2C-R',
+  'MESH-APP2C-L',
+  'MESH-APP2C-R',
+  'BAT-CASE-APP2C',
+  'FLEX-CASE-APP2C',
 ]);
 
 describe('Independent Tester: Common Issue Catalog (Real Warehouse SKUs), Linked Parts Deduction & Inventory Excel Export Hub', () => {
@@ -526,6 +539,97 @@ describe('Independent Tester: Common Issue Catalog (Real Warehouse SKUs), Linked
       intakeQuickContent.includes("device.category === 'AirPods'") &&
         intakeQuickContent.includes('data-testid="quick-category-handover-parts-selector"'),
       'IntakeQuickConsole cũng chỉ hiển thị L / R / Case cho AirPods và hiển thị thành phần bàn giao đúng danh mục cho thiết bị khác'
+    );
+  });
+
+  test('7. AirPods L/R/LR BOM: Phân giải mã đời máy (AP2, AP3, APP1, APP2L, APP2C, APM) và tách 2 dòng độc lập SKU-L x1 + SKU-R x1 khi chọn Cả 2 tai (L + R)', () => {
+    assert.equal(resolveAirPodsModelPrefix('AirPods 2'), 'AP2');
+    assert.equal(resolveAirPodsModelPrefix('AirPods 3'), 'AP3');
+    assert.equal(resolveAirPodsModelPrefix('AirPods Pro'), 'APP1');
+    assert.equal(resolveAirPodsModelPrefix('AirPods Pro 2 (Lightning)'), 'APP2L');
+    assert.equal(resolveAirPodsModelPrefix('AirPods Pro 2 (USB-C)'), 'APP2C');
+    assert.equal(resolveAirPodsModelPrefix('AirPods Pro 2'), 'APP2C');
+    assert.equal(resolveAirPodsModelPrefix('AirPods Max'), 'APM');
+
+    // Kiểm tra resolveAirPodsLRPartsForModel cho cả 4 nhóm BAT, SPK, MIC, MESH theo 3 phạm vi L, R, LR
+    for (const partType of ['BAT', 'SPK', 'MIC', 'MESH']) {
+      const leftOnly = resolveAirPodsLRPartsForModel('AirPods 2', partType, 'L');
+      assert.equal(leftOnly.length, 1);
+      assert.equal(leftOnly[0].part_sku, `${partType}-AP2-L`);
+      assert.equal(leftOnly[0].quantity, 1);
+
+      const rightOnly = resolveAirPodsLRPartsForModel('AirPods 2', partType, 'R');
+      assert.equal(rightOnly.length, 1);
+      assert.equal(rightOnly[0].part_sku, `${partType}-AP2-R`);
+      assert.equal(rightOnly[0].quantity, 1);
+
+      const bothEars = resolveAirPodsLRPartsForModel('AirPods 2', partType, 'LR');
+      assert.equal(bothEars.length, 2, `${partType} Cả 2 tai (L + R) phải trả về đúng 2 phần tử riêng biệt`);
+      assert.deepEqual(
+        bothEars.map((p) => `${p.part_sku} x${p.quantity}`),
+        [`${partType}-AP2-L x1`, `${partType}-AP2-R x1`]
+      );
+    }
+
+    // Kiểm tra enrichCommonIssueWithParts(issue, modelName) tự động đồng bộ sang đúng đời máy và phạm vi L / R / LR
+    const ap2BothBattery = enrichCommonIssueWithParts(
+      {
+        issue_code: 'ISS-APP2C-BAT-LR',
+        category: 'AirPods',
+        issue_name: 'Thay pin AirPods - Cả 2 tai (L + R)',
+        linked_parts: [
+          {
+            part_sku: 'BAT-APP2-01',
+            part_name: 'Pin tai nghe AirPods Pro 2',
+            quantity: 1,
+            unit: 'Viên',
+          },
+        ],
+      },
+      'AirPods 2'
+    );
+    assert.equal(ap2BothBattery.linked_parts.length, 2);
+    assert.equal(
+      formatLinkedPartsSummary(ap2BothBattery.linked_parts),
+      'Pin tai nghe AirPods 2 - Tai Trái (L) (BAT-AP2-L) x1, Pin tai nghe AirPods 2 - Tai Phải (R) (BAT-AP2-R) x1'
+    );
+
+    // Kiểm tra switchAirPodsIssueEarScope chuyển nhanh L -> R -> LR
+    const switchedToLeft = switchAirPodsIssueEarScope(ap2BothBattery, 'L', 'AirPods 3');
+    assert.equal(switchedToLeft.linked_parts.length, 1);
+    assert.equal(switchedToLeft.linked_parts[0].part_sku, 'BAT-AP3-L');
+
+    const switchedToBoth = switchAirPodsIssueEarScope(switchedToLeft, 'LR', 'AirPods 3');
+    assert.deepEqual(
+      switchedToBoth.linked_parts.map((p) => p.part_sku),
+      ['BAT-AP3-L', 'BAT-AP3-R']
+    );
+
+    // Kiểm tra mergeLinkedPartsFromIssues cộng dồn quantity nếu trùng SKU và giữ 2 dòng độc lập L / R
+    const mergedBothAndLeft = mergeLinkedPartsFromIssues(
+      [switchedToBoth, switchedToLeft],
+      'AirPods',
+      undefined,
+      'AirPods 3'
+    );
+    assert.equal(mergedBothAndLeft.length, 2);
+    assert.equal(
+      mergedBothAndLeft.find((p) => p.part_sku === 'BAT-AP3-L')?.quantity,
+      2,
+      'Nếu cùng một part_sku xuất hiện ở nhiều lỗi thì cộng dồn quantity'
+    );
+    assert.equal(mergedBothAndLeft.find((p) => p.part_sku === 'BAT-AP3-R')?.quantity, 1);
+
+    // Kiểm tra IntakeWizardModal có thanh chọn phạm vi L / R / L+R và nút chuyển nhanh trên thẻ lỗi đã chọn
+    const intakeWizardContent = fs.readFileSync(
+      path.join(webRoot, 'app/components/IntakeWizardModal.tsx'),
+      'utf-8'
+    );
+    assert.ok(
+      intakeWizardContent.includes('data-testid="airpods-ear-scope-selector"') &&
+        intakeWizardContent.includes('data-testid="selected-airpods-issues-scope-panel"') &&
+        intakeWizardContent.includes('data-testid="selected-linked-parts-summary"'),
+      'IntakeWizardModal phải có bộ chọn phạm vi Tai Trái (L) / Tai Phải (R) / Cả 2 tai (L + R) và hiển thị đầy đủ 2 mã *-L (x1), *-R (x1)'
     );
   });
 });

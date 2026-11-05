@@ -10,7 +10,9 @@ class DeviceModelSeeder extends Seeder
     public function run(): void
     {
         $devices = [
-            // AirPods
+            // =========================================================================
+            // 1. AirPods (6 dòng chuẩn theo docs/device-issue-parts-mapping.csv + AirPods 4)
+            // =========================================================================
             [
                 'name' => 'AirPods 2',
                 'category' => 'AirPods',
@@ -32,16 +34,6 @@ class DeviceModelSeeder extends Seeder
                 'is_active' => true,
             ],
             [
-                'name' => 'AirPods 4',
-                'category' => 'AirPods',
-                'model_code' => 'MXP63VN/A',
-                'release_year' => 2024,
-                'manufacturer' => 'Apple',
-                'has_anc' => false,
-                'image_url' => 'https://store.storeimages.cdn-apple.com/8756/as-images.apple.com/is/airpods-4-anc-select-202409?wid=572&hei=572&fmt=jpeg',
-                'is_active' => true,
-            ],
-            [
                 'name' => 'AirPods Pro',
                 'category' => 'AirPods',
                 'model_code' => 'MLWK3VN/A',
@@ -52,7 +44,17 @@ class DeviceModelSeeder extends Seeder
                 'is_active' => true,
             ],
             [
-                'name' => 'AirPods Pro 2',
+                'name' => 'AirPods Pro 2 (Lightning)',
+                'category' => 'AirPods',
+                'model_code' => 'A2698/A2699',
+                'release_year' => 2022,
+                'manufacturer' => 'Apple',
+                'has_anc' => true,
+                'image_url' => 'https://store.storeimages.cdn-apple.com/8756/as-images.apple.com/is/MQD83?wid=572&hei=572&fmt=jpeg',
+                'is_active' => true,
+            ],
+            [
+                'name' => 'AirPods Pro 2 (USB-C)',
                 'category' => 'AirPods',
                 'model_code' => 'MTJV3VN/A',
                 'release_year' => 2023,
@@ -71,10 +73,42 @@ class DeviceModelSeeder extends Seeder
                 'image_url' => 'https://store.storeimages.cdn-apple.com/8756/as-images.apple.com/is/airpods-max-select-silver-202011?wid=572&hei=572&fmt=jpeg',
                 'is_active' => true,
             ],
-
-            // Apple Watch
             [
-                'name' => 'Apple Watch Series 9',
+                'name' => 'AirPods 4',
+                'category' => 'AirPods',
+                'model_code' => 'MXP63VN/A',
+                'release_year' => 2024,
+                'manufacturer' => 'Apple',
+                'has_anc' => false,
+                'image_url' => 'https://store.storeimages.cdn-apple.com/8756/as-images.apple.com/is/airpods-4-anc-select-202409?wid=572&hei=572&fmt=jpeg',
+                'is_active' => true,
+            ],
+
+            // =========================================================================
+            // 2. Apple Watch (5 dòng chuẩn theo docs/device-issue-parts-mapping.csv)
+            // =========================================================================
+            [
+                'name' => 'Apple Watch Series 7 45mm',
+                'category' => 'Apple Watch',
+                'model_code' => 'A2474',
+                'release_year' => 2021,
+                'manufacturer' => 'Apple',
+                'has_anc' => false,
+                'image_url' => 'https://store.storeimages.cdn-apple.com/8756/as-images.apple.com/is/watch-s7-midnight?wid=572&hei=572&fmt=jpeg',
+                'is_active' => true,
+            ],
+            [
+                'name' => 'Apple Watch Series 8 45mm',
+                'category' => 'Apple Watch',
+                'model_code' => 'A2771',
+                'release_year' => 2022,
+                'manufacturer' => 'Apple',
+                'has_anc' => false,
+                'image_url' => 'https://store.storeimages.cdn-apple.com/8756/as-images.apple.com/is/watch-s8-midnight?wid=572&hei=572&fmt=jpeg',
+                'is_active' => true,
+            ],
+            [
+                'name' => 'Apple Watch Series 9 45mm',
                 'category' => 'Apple Watch',
                 'model_code' => 'MR993VN/A',
                 'release_year' => 2023,
@@ -84,7 +118,17 @@ class DeviceModelSeeder extends Seeder
                 'is_active' => true,
             ],
             [
-                'name' => 'Apple Watch Ultra 2',
+                'name' => 'Apple Watch Ultra 49mm',
+                'category' => 'Apple Watch',
+                'model_code' => 'A2622',
+                'release_year' => 2022,
+                'manufacturer' => 'Apple',
+                'has_anc' => false,
+                'image_url' => 'https://store.storeimages.cdn-apple.com/8756/as-images.apple.com/is/watch-ultra-1?wid=572&hei=572&fmt=jpeg',
+                'is_active' => true,
+            ],
+            [
+                'name' => 'Apple Watch Ultra 2 49mm',
                 'category' => 'Apple Watch',
                 'model_code' => 'MREG3VN/A',
                 'release_year' => 2023,
@@ -94,7 +138,9 @@ class DeviceModelSeeder extends Seeder
                 'is_active' => true,
             ],
 
-            // Apple Pencil
+            // =========================================================================
+            // 3. Apple Pencil (2 dòng chuẩn theo docs/device-issue-parts-mapping.csv)
+            // =========================================================================
             [
                 'name' => 'Apple Pencil 2',
                 'category' => 'Apple Pencil',
@@ -116,7 +162,9 @@ class DeviceModelSeeder extends Seeder
                 'is_active' => true,
             ],
 
-            // MacBook
+            // =========================================================================
+            // 4. MacBook & iPad (Giữ tương thích ngược cho bộ test danh mục)
+            // =========================================================================
             [
                 'name' => 'MacBook Air M2',
                 'category' => 'MacBook',
@@ -137,8 +185,6 @@ class DeviceModelSeeder extends Seeder
                 'image_url' => 'https://store.storeimages.cdn-apple.com/8756/as-images.apple.com/is/mbp14-spaceblack-select-202310?wid=572&hei=572&fmt=jpeg',
                 'is_active' => true,
             ],
-
-            // iPad
             [
                 'name' => 'iPad Air 5',
                 'category' => 'iPad',

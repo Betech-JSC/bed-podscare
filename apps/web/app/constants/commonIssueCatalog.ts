@@ -13,12 +13,16 @@ export const POPULAR_APPLE_WATCH_SIZES = [
 
 export type AppleWatchSizeOption = (typeof POPULAR_APPLE_WATCH_SIZES)[number] | string;
 
+export type AirPodsModelPrefix = 'AP2' | 'AP3' | 'APP1' | 'APP2L' | 'APP2C' | 'APM';
+export type AirPodsPartType = 'BAT' | 'SPK' | 'MIC' | 'MESH';
+export type AirPodsEarScope = 'L' | 'R' | 'LR';
+
 export interface LinkedPartItem {
   part_sku: string;
   part_name: string;
   quantity: number;
   unit: string;
-  position?: string; // 'L' | 'R' | 'L/R' | 'Case' | 'Body' | ...
+  position?: string; // 'Tai trái (L)' | 'Tai phải (R)' | 'L' | 'R' | 'L/R' | 'Case' | 'Body' | ...
   watch_size?: string;
 }
 
@@ -41,6 +45,560 @@ export interface CommonIssueCatalogItem extends CommonIssueItem {
   estimated_time?: string;
   watch_sizes?: string[];
   linked_parts: LinkedPartItem[];
+}
+
+export const AIRPODS_MODEL_META: Record<
+  AirPodsModelPrefix,
+  {
+    prefix: AirPodsModelPrefix;
+    displayName: string;
+    modelCode: string;
+    prices: {
+      BAT_SINGLE: number;
+      BAT_LR: number;
+      SPK_SINGLE: number;
+      SPK_LR: number;
+      MIC_SINGLE: number;
+      MIC_LR: number;
+      MESH_SINGLE: number;
+      MESH_LR: number;
+      CASE_BAT: number;
+      CASE_FLEX: number;
+    };
+  }
+> = {
+  AP2: {
+    prefix: 'AP2',
+    displayName: 'AirPods 2',
+    modelCode: 'A2031/A2032',
+    prices: {
+      BAT_SINGLE: 220000,
+      BAT_LR: 400000,
+      SPK_SINGLE: 250000,
+      SPK_LR: 450000,
+      MIC_SINGLE: 220000,
+      MIC_LR: 400000,
+      MESH_SINGLE: 60000,
+      MESH_LR: 100000,
+      CASE_BAT: 300000,
+      CASE_FLEX: 250000,
+    },
+  },
+  AP3: {
+    prefix: 'AP3',
+    displayName: 'AirPods 3',
+    modelCode: 'A2564/A2565',
+    prices: {
+      BAT_SINGLE: 250000,
+      BAT_LR: 450000,
+      SPK_SINGLE: 280000,
+      SPK_LR: 520000,
+      MIC_SINGLE: 250000,
+      MIC_LR: 460000,
+      MESH_SINGLE: 70000,
+      MESH_LR: 120000,
+      CASE_BAT: 350000,
+      CASE_FLEX: 280000,
+    },
+  },
+  APP1: {
+    prefix: 'APP1',
+    displayName: 'AirPods Pro',
+    modelCode: 'A2083/A2084',
+    prices: {
+      BAT_SINGLE: 260000,
+      BAT_LR: 480000,
+      SPK_SINGLE: 350000,
+      SPK_LR: 650000,
+      MIC_SINGLE: 280000,
+      MIC_LR: 520000,
+      MESH_SINGLE: 70000,
+      MESH_LR: 120000,
+      CASE_BAT: 380000,
+      CASE_FLEX: 300000,
+    },
+  },
+  APP2L: {
+    prefix: 'APP2L',
+    displayName: 'AirPods Pro 2 (Lightning)',
+    modelCode: 'A2698/A2699',
+    prices: {
+      BAT_SINGLE: 280000,
+      BAT_LR: 520000,
+      SPK_SINGLE: 380000,
+      SPK_LR: 700000,
+      MIC_SINGLE: 300000,
+      MIC_LR: 560000,
+      MESH_SINGLE: 80000,
+      MESH_LR: 140000,
+      CASE_BAT: 420000,
+      CASE_FLEX: 320000,
+    },
+  },
+  APP2C: {
+    prefix: 'APP2C',
+    displayName: 'AirPods Pro 2 (USB-C)',
+    modelCode: 'A3047/A3048',
+    prices: {
+      BAT_SINGLE: 300000,
+      BAT_LR: 550000,
+      SPK_SINGLE: 400000,
+      SPK_LR: 750000,
+      MIC_SINGLE: 320000,
+      MIC_LR: 600000,
+      MESH_SINGLE: 80000,
+      MESH_LR: 140000,
+      CASE_BAT: 450000,
+      CASE_FLEX: 350000,
+    },
+  },
+  APM: {
+    prefix: 'APM',
+    displayName: 'AirPods Max',
+    modelCode: 'A2096',
+    prices: {
+      BAT_SINGLE: 650000,
+      BAT_LR: 1200000,
+      SPK_SINGLE: 800000,
+      SPK_LR: 1500000,
+      MIC_SINGLE: 500000,
+      MIC_LR: 900000,
+      MESH_SINGLE: 250000,
+      MESH_LR: 450000,
+      CASE_BAT: 600000,
+      CASE_FLEX: 550000,
+    },
+  },
+};
+
+/**
+ * Phân giải tên dòng máy AirPods sang mã tiền tố SKU chuẩn (AP2, AP3, APP1, APP2L, APP2C, APM)
+ */
+export function resolveAirPodsModelPrefix(modelName?: string | null): AirPodsModelPrefix {
+  const lower = (modelName || '').trim().toLowerCase();
+  if (!lower) return 'APP2C';
+
+  if (lower.includes('max') || lower.includes('a2096') || lower === 'apm') {
+    return 'APM';
+  }
+  if (
+    lower.includes('app2l') ||
+    (lower.includes('pro 2') && lower.includes('lightning')) ||
+    lower.includes('a2698') ||
+    lower.includes('a2699')
+  ) {
+    return 'APP2L';
+  }
+  if (
+    lower.includes('app2c') ||
+    lower.includes('pro 2') ||
+    lower.includes('a3047') ||
+    lower.includes('a3048')
+  ) {
+    return 'APP2C';
+  }
+  if (
+    lower.includes('app1') ||
+    lower.includes('pro 1') ||
+    lower.includes('airpods pro') ||
+    lower.includes('a2083') ||
+    lower.includes('a2084')
+  ) {
+    return 'APP1';
+  }
+  if (
+    lower.includes('ap3') ||
+    lower.includes('airpods 3') ||
+    lower.includes('airpods 4') ||
+    lower.includes('gen 3') ||
+    lower.includes('a2564') ||
+    lower.includes('a2565')
+  ) {
+    return 'AP3';
+  }
+  if (
+    lower.includes('ap2') ||
+    lower.includes('airpods 2') ||
+    lower.includes('gen 2') ||
+    lower.includes('a2031') ||
+    lower.includes('a2032')
+  ) {
+    return 'AP2';
+  }
+
+  return 'APP2C';
+}
+
+/**
+ * Chuẩn hóa phạm vi sửa chữa tai nghe AirPods về 'L' | 'R' | 'LR'
+ */
+export function normalizeAirPodsEarScope(side?: string | null): AirPodsEarScope {
+  const raw = (side || '').trim().toLowerCase();
+  if (!raw) return 'LR';
+
+  if (
+    raw === 'lr' ||
+    raw === 'l/r' ||
+    raw.includes('l + r') ||
+    raw.includes('l+r') ||
+    raw.includes('cả 2') ||
+    raw.includes('2 tai') ||
+    raw.includes('hai tai') ||
+    raw.includes('both') ||
+    raw.includes('cặp')
+  ) {
+    return 'LR';
+  }
+  if (
+    raw === 'r' ||
+    raw.includes('tai phải') ||
+    raw.includes('(r)') ||
+    raw.includes('bên phải') ||
+    raw.endsWith('-r')
+  ) {
+    return 'R';
+  }
+  if (
+    raw === 'l' ||
+    raw.includes('tai trái') ||
+    raw.includes('(l)') ||
+    raw.includes('bên trái') ||
+    raw.endsWith('-l')
+  ) {
+    return 'L';
+  }
+
+  return 'LR';
+}
+
+/**
+ * Sinh danh sách linked_parts chuẩn BOM tách rời Trái (*-L) và Phải (*-R) cho 4 nhóm linh kiện AirPods
+ * (BAT, SPK, MIC, MESH) theo 3 phạm vi: Tai Trái (L), Tai Phải (R), hoặc Cả 2 tai (L + R).
+ */
+export function resolveAirPodsLRPartsForModel(
+  modelName?: string | null,
+  partType: AirPodsPartType | string = 'BAT',
+  side: AirPodsEarScope | string = 'LR'
+): LinkedPartItem[] {
+  const prefix = resolveAirPodsModelPrefix(modelName);
+  const meta = AIRPODS_MODEL_META[prefix];
+  const rawModelTrimmed = (modelName || '').trim();
+  const displayName =
+    prefix === 'APP2C' &&
+    rawModelTrimmed.toLowerCase() === 'airpods pro 2'
+      ? 'AirPods Pro 2 (USB-C)'
+      : meta.displayName;
+
+  const normType = (partType || 'BAT').trim().toUpperCase() as AirPodsPartType;
+  const scope = normalizeAirPodsEarScope(side);
+
+  const baseNameByType: Record<AirPodsPartType, string> = {
+    BAT: prefix === 'APM' ? `Pin củ tai ${displayName}` : `Pin tai nghe ${displayName}`,
+    SPK: `Cụm loa Driver ${displayName}`,
+    MIC: `Cụm cáp Mic ${displayName}`,
+    MESH: `Lưới chống bụi âm thanh ${displayName}`,
+  };
+
+  const unitByType: Record<AirPodsPartType, string> = {
+    BAT: 'Viên',
+    SPK: 'Cái',
+    MIC: 'Cái',
+    MESH: 'Cái',
+  };
+
+  const effectiveType: AirPodsPartType = baseNameByType[normType] ? normType : 'BAT';
+  const basePartName = baseNameByType[effectiveType];
+  const unit = unitByType[effectiveType];
+
+  const leftItem: LinkedPartItem = {
+    part_sku: `${effectiveType}-${prefix}-L`,
+    part_name: `${basePartName} - Tai Trái (L)`,
+    quantity: 1,
+    unit,
+    position: 'Tai trái (L)',
+  };
+
+  const rightItem: LinkedPartItem = {
+    part_sku: `${effectiveType}-${prefix}-R`,
+    part_name: `${basePartName} - Tai Phải (R)`,
+    quantity: 1,
+    unit,
+    position: 'Tai phải (R)',
+  };
+
+  if (scope === 'L') return [leftItem];
+  if (scope === 'R') return [rightItem];
+  return [leftItem, rightItem];
+}
+
+/**
+ * Sinh linh kiện Hộp sạc (Case) / Khớp nối theo đúng dòng máy AirPods
+ */
+export function resolveAirPodsCasePartForModel(
+  modelName?: string | null,
+  caseType: 'CASE_BAT' | 'CASE_FLEX' = 'CASE_BAT'
+): LinkedPartItem {
+  const prefix = resolveAirPodsModelPrefix(modelName);
+  const meta = AIRPODS_MODEL_META[prefix];
+
+  if (prefix === 'APM') {
+    if (caseType === 'CASE_BAT') {
+      return {
+        part_sku: 'FLEX-SWIVEL-APM',
+        part_name: 'Cáp flex xoay khớp nối AirPods Max',
+        quantity: 1,
+        unit: 'Bộ',
+        position: 'Khung Headband',
+      };
+    }
+    return {
+      part_sku: 'FLEX-PORT-APM',
+      part_name: 'Cáp cụm chân sạc Lightning AirPods Max',
+      quantity: 1,
+      unit: 'Cái',
+      position: 'Cổng sạc',
+    };
+  }
+
+  if (caseType === 'CASE_BAT') {
+    return {
+      part_sku: `BAT-CASE-${prefix}`,
+      part_name: `Pin hộp sạc ${meta.displayName}`,
+      quantity: 1,
+      unit: 'Viên',
+      position: 'Hộp sạc (Case)',
+    };
+  }
+
+  return {
+    part_sku: `FLEX-CASE-${prefix}`,
+    part_name: `Cáp flex chân sạc hộp sạc ${meta.displayName}`,
+    quantity: 1,
+    unit: 'Cái',
+    position: 'Hộp sạc (Case)',
+  };
+}
+
+/**
+ * Nhận diện nhóm linh kiện AirPods (BAT | SPK | MIC | MESH | CASE_BAT | CASE_FLEX) từ object lỗi hoặc chuỗi
+ */
+export function detectAirPodsPartTypeFromIssue(
+  issueOrText?: CommonIssueItem | CommonIssueCatalogItem | string | null
+): AirPodsPartType | 'CASE_BAT' | 'CASE_FLEX' | null {
+  if (!issueOrText) return null;
+
+  const isString = typeof issueOrText === 'string';
+  const code = isString
+    ? ''
+    : ((issueOrText as CommonIssueCatalogItem).issue_code || '').toUpperCase();
+  const name = (isString ? issueOrText : issueOrText.issue_name || '').toLowerCase();
+  const parts = isString
+    ? []
+    : Array.isArray((issueOrText as CommonIssueCatalogItem).linked_parts)
+    ? (issueOrText as CommonIssueCatalogItem).linked_parts
+    : [];
+
+  if (code.includes('-CASE-BAT') || code.includes('FLEX-SWIVEL')) return 'CASE_BAT';
+  if (code.includes('-CASE-FLEX') || code.includes('FLEX-PORT')) return 'CASE_FLEX';
+  if (code.includes('-BAT-')) return 'BAT';
+  if (code.includes('-SPK-')) return 'SPK';
+  if (code.includes('-MIC-')) return 'MIC';
+  if (code.includes('-MESH-')) return 'MESH';
+
+  if (name.includes('hộp sạc') || name.includes('(case)') || name.includes('dock sạc')) {
+    if (name.includes('pin')) return 'CASE_BAT';
+    return 'CASE_FLEX';
+  }
+  if (name.includes('khớp nối') || name.includes('headband')) return 'CASE_BAT';
+  if (name.includes('chân sạc') || name.includes('cáp flex chân')) return 'CASE_FLEX';
+
+  if (
+    name.includes('lưới chống bụi') ||
+    name.includes('thay lưới') ||
+    name.includes('vệ sinh & thay lưới') ||
+    name.includes('tắc màng')
+  ) {
+    return 'MESH';
+  }
+  if (name.includes('mic đàm thoại') || name.includes('thay mic') || name.includes('mất mic')) {
+    return 'MIC';
+  }
+  if (
+    name.includes('loa & anc') ||
+    name.includes('thay loa') ||
+    name.includes('sửa/thay loa') ||
+    name.includes('rè loa') ||
+    name.includes('rè bass') ||
+    name.includes('bật chống ồn anc')
+  ) {
+    return 'SPK';
+  }
+  if (name.includes('thay pin') || name.includes('pin chai') || name.includes('tụt pin')) {
+    return 'BAT';
+  }
+
+  for (const p of parts) {
+    const sku = (p.part_sku || '').toUpperCase();
+    if (sku.startsWith('BAT-CASE-') || sku.startsWith('FLEX-SWIVEL-')) return 'CASE_BAT';
+    if (sku.startsWith('FLEX-CASE-') || sku.startsWith('CASE-') || sku.startsWith('FLEX-PORT-')) {
+      return 'CASE_FLEX';
+    }
+    if (sku.startsWith('BAT-')) return 'BAT';
+    if (sku.startsWith('SPK-')) return 'SPK';
+    if (sku.startsWith('MIC-')) return 'MIC';
+    if (sku.startsWith('MESH-')) return 'MESH';
+  }
+
+  return null;
+}
+
+/**
+ * Nhận diện phạm vi tai nghe AirPods ('L' | 'R' | 'LR' | 'CASE') từ object lỗi hoặc chuỗi
+ */
+export function detectAirPodsEarScopeFromIssue(
+  issueOrText?: CommonIssueItem | CommonIssueCatalogItem | string | null
+): AirPodsEarScope | 'CASE' | null {
+  if (!issueOrText) return null;
+
+  const isString = typeof issueOrText === 'string';
+  const code = isString
+    ? ''
+    : ((issueOrText as CommonIssueCatalogItem).issue_code || '').toUpperCase();
+  const name = (isString ? issueOrText : issueOrText.issue_name || '').toLowerCase();
+  const parts = isString
+    ? []
+    : Array.isArray((issueOrText as CommonIssueCatalogItem).linked_parts)
+    ? (issueOrText as CommonIssueCatalogItem).linked_parts
+    : [];
+
+  if (code.includes('-CASE-') || code.includes('FLEX-SWIVEL') || code.includes('FLEX-PORT')) {
+    return 'CASE';
+  }
+  if (code.endsWith('-LR')) return 'LR';
+  if (code.endsWith('-L')) return 'L';
+  if (code.endsWith('-R')) return 'R';
+
+  if (
+    name.includes('hộp sạc') ||
+    name.includes('(case)') ||
+    name.includes('khớp nối') ||
+    name.includes('cổng sạc')
+  ) {
+    return 'CASE';
+  }
+  if (
+    name.includes('cả 2 tai') ||
+    name.includes('2 tai') ||
+    name.includes('l + r') ||
+    name.includes('l+r') ||
+    name.includes('hai tai')
+  ) {
+    return 'LR';
+  }
+  if (name.includes('tai trái') || name.includes('(l)') || name.includes('bên trái')) {
+    return 'L';
+  }
+  if (name.includes('tai phải') || name.includes('(r)') || name.includes('bên phải')) {
+    return 'R';
+  }
+
+  const hasL = parts.some(
+    (p) =>
+      (p.part_sku || '').toUpperCase().endsWith('-L') ||
+      (p.position || '').toLowerCase().includes('trái') ||
+      (p.position || '').toUpperCase() === 'L'
+  );
+  const hasR = parts.some(
+    (p) =>
+      (p.part_sku || '').toUpperCase().endsWith('-R') ||
+      (p.position || '').toLowerCase().includes('phải') ||
+      (p.position || '').toUpperCase() === 'R'
+  );
+  if (hasL && hasR) return 'LR';
+  if (hasL) return 'L';
+  if (hasR) return 'R';
+
+  if (parts.some((p) => (p.position || '').toUpperCase() === 'L/R')) {
+    return 'LR';
+  }
+
+  return null;
+}
+
+/**
+ * Dựng object CommonIssueCatalogItem chuẩn BOM cho 1 nhóm linh kiện tai nghe AirPods (BAT/SPK/MIC/MESH)
+ * và phạm vi (L / R / LR) theo dòng máy cụ thể.
+ */
+export function buildAirPodsScopedIssue(
+  partType: AirPodsPartType,
+  scope: AirPodsEarScope,
+  deviceModelName?: string | null
+): CommonIssueCatalogItem {
+  const prefix = resolveAirPodsModelPrefix(deviceModelName);
+  const meta = AIRPODS_MODEL_META[prefix];
+  const normScope = normalizeAirPodsEarScope(scope);
+  const scopeLabel =
+    normScope === 'L'
+      ? '1 bên Tai Trái (L)'
+      : normScope === 'R'
+      ? '1 bên Tai Phải (R)'
+      : 'Cả 2 tai (L + R)';
+
+  const titlePrefixByType: Record<AirPodsPartType, string> = {
+    BAT: 'Thay pin',
+    SPK: 'Sửa/Thay loa & ANC',
+    MIC: 'Thay Mic đàm thoại / Mic ANC',
+    MESH: 'Vệ sinh & Thay lưới chống bụi âm thanh',
+  };
+
+  const solutionByType: Record<AirPodsPartType, string> = {
+    BAT: `Thay pin ${meta.displayName} (${scopeLabel}) chuẩn dung lượng và vệ sinh buồng âm.`,
+    SPK: `Thay cụm loa Driver & xử lý chống ồn ANC ${meta.displayName} (${scopeLabel}).`,
+    MIC: `Thay cụm cáp Mic đàm thoại / Mic ANC ${meta.displayName} (${scopeLabel}).`,
+    MESH: `Vệ sinh siêu âm và thay lưới chống bụi âm thanh ${meta.displayName} (${scopeLabel}).`,
+  };
+
+  const costByType: Record<AirPodsPartType, number> = {
+    BAT: normScope === 'LR' ? meta.prices.BAT_LR : meta.prices.BAT_SINGLE,
+    SPK: normScope === 'LR' ? meta.prices.SPK_LR : meta.prices.SPK_SINGLE,
+    MIC: normScope === 'LR' ? meta.prices.MIC_LR : meta.prices.MIC_SINGLE,
+    MESH: normScope === 'LR' ? meta.prices.MESH_LR : meta.prices.MESH_SINGLE,
+  };
+
+  const linkedParts = resolveAirPodsLRPartsForModel(deviceModelName, partType, normScope);
+  const modelLabelInIssue = deviceModelName?.trim() ? meta.displayName : 'AirPods';
+
+  return {
+    issue_code: `ISS-${prefix}-${partType}-${normScope}`,
+    category: 'AirPods',
+    issue_name: `${titlePrefixByType[partType]} ${modelLabelInIssue} - ${scopeLabel}`,
+    keywords: [
+      partType.toLowerCase(),
+      meta.displayName.toLowerCase(),
+      scopeLabel.toLowerCase(),
+      ...linkedParts.map((p) => p.part_sku.toLowerCase()),
+    ],
+    solution: solutionByType[partType],
+    estimated_cost: costByType[partType],
+    estimated_time: normScope === 'LR' ? '60 - 90 phút' : '45 - 60 phút',
+    linked_parts: linkedParts,
+  };
+}
+
+/**
+ * Chuyển nhanh phạm vi (Tai L | Tai R | 2 Tai L+R) cho một lỗi AirPods đang chọn
+ */
+export function switchAirPodsIssueEarScope(
+  issue: CommonIssueItem | CommonIssueCatalogItem,
+  nextScope: AirPodsEarScope,
+  deviceModelName?: string | null
+): CommonIssueCatalogItem {
+  const detectedType = detectAirPodsPartTypeFromIssue(issue);
+  const effectiveType: AirPodsPartType =
+    detectedType === 'SPK' || detectedType === 'MIC' || detectedType === 'MESH'
+      ? detectedType
+      : 'BAT';
+  return buildAirPodsScopedIssue(effectiveType, nextScope, deviceModelName);
 }
 
 /**
@@ -92,6 +650,48 @@ export const DEFAULT_ISSUE_PARTS_PRESETS: IssuePartsPresetItem[] = [
         position: 'L/R',
       },
     ],
+  },
+  {
+    id: 'preset-ap-bat-l',
+    category: 'AirPods',
+    issue_label: 'Thay pin AirPods - 1 bên Tai Trái (L)',
+    keywords: ['pin tai trái', 'thay pin tai l', 'bat-app2c-l', 'bat-ap2-l', 'bat-ap3-l', 'bat-app1-l'],
+    linked_parts: resolveAirPodsLRPartsForModel('AirPods Pro 2 (USB-C)', 'BAT', 'L'),
+  },
+  {
+    id: 'preset-ap-bat-r',
+    category: 'AirPods',
+    issue_label: 'Thay pin AirPods - 1 bên Tai Phải (R)',
+    keywords: ['pin tai phải', 'thay pin tai r', 'bat-app2c-r', 'bat-ap2-r', 'bat-ap3-r', 'bat-app1-r'],
+    linked_parts: resolveAirPodsLRPartsForModel('AirPods Pro 2 (USB-C)', 'BAT', 'R'),
+  },
+  {
+    id: 'preset-ap-bat-lr',
+    category: 'AirPods',
+    issue_label: 'Thay pin AirPods - Cả 2 tai (L + R)',
+    keywords: ['thay pin 2 tai', 'pin cả 2 tai', 'pin l + r', 'bat-app2c-l', 'bat-app2c-r'],
+    linked_parts: resolveAirPodsLRPartsForModel('AirPods Pro 2 (USB-C)', 'BAT', 'LR'),
+  },
+  {
+    id: 'preset-ap-spk-lr',
+    category: 'AirPods',
+    issue_label: 'Sửa/Thay loa & ANC AirPods (L / R / Cả 2 tai)',
+    keywords: ['thay loa airpods', 'loa anc', 'spk-app2c-l', 'spk-app2c-r'],
+    linked_parts: resolveAirPodsLRPartsForModel('AirPods Pro 2 (USB-C)', 'SPK', 'LR'),
+  },
+  {
+    id: 'preset-ap-mic-lr',
+    category: 'AirPods',
+    issue_label: 'Thay Mic đàm thoại / Mic ANC AirPods (L / R / Cả 2 tai)',
+    keywords: ['thay mic airpods', 'mic đàm thoại', 'mic-app2c-l', 'mic-app2c-r'],
+    linked_parts: resolveAirPodsLRPartsForModel('AirPods Pro 2 (USB-C)', 'MIC', 'LR'),
+  },
+  {
+    id: 'preset-ap-mesh-lr',
+    category: 'AirPods',
+    issue_label: 'Vệ sinh & Thay lưới chống bụi âm thanh AirPods (L / R / Cả 2 tai)',
+    keywords: ['thay lưới chống bụi', 'mesh-app2c-l', 'mesh-app2c-r'],
+    linked_parts: resolveAirPodsLRPartsForModel('AirPods Pro 2 (USB-C)', 'MESH', 'LR'),
   },
   {
     id: 'preset-ap-anc-mic',
@@ -149,6 +749,20 @@ export const DEFAULT_ISSUE_PARTS_PRESETS: IssuePartsPresetItem[] = [
         quantity: 1,
         unit: 'Cái',
         position: 'Case',
+      },
+      {
+        part_sku: 'BAT-CASE-APP2C',
+        part_name: 'Pin hộp sạc AirPods Pro 2 (USB-C)',
+        quantity: 1,
+        unit: 'Viên',
+        position: 'Hộp sạc (Case)',
+      },
+      {
+        part_sku: 'FLEX-CASE-APP2C',
+        part_name: 'Cáp flex chân sạc hộp sạc AirPods Pro 2 (USB-C)',
+        quantity: 1,
+        unit: 'Cái',
+        position: 'Hộp sạc (Case)',
       },
     ],
   },
@@ -374,6 +988,161 @@ export const COMMON_ISSUE_CATALOG_BY_CATEGORY: Record<string, CommonIssueCatalog
         },
       ],
     },
+    // --- Bộ danh mục lỗi AirPods chuẩn BOM phân tách rõ L / R / Cả 2 tai (L + R) ---
+    {
+      id: 101,
+      issue_code: 'ISS-APP2C-BAT-L',
+      category: 'AirPods',
+      issue_name: 'Thay pin AirPods - 1 bên Tai Trái (L)',
+      keywords: ['thay pin tai trái', 'pin tai l', '1 bên tai trái', 'tai trái (l)'],
+      solution: 'Thay cell pin tai nghe AirPods bên Tai Trái (L) chuẩn dung lượng.',
+      estimated_cost: 300000,
+      estimated_time: '45 phút',
+      linked_parts: resolveAirPodsLRPartsForModel('AirPods Pro 2 (USB-C)', 'BAT', 'L'),
+    },
+    {
+      id: 102,
+      issue_code: 'ISS-APP2C-BAT-R',
+      category: 'AirPods',
+      issue_name: 'Thay pin AirPods - 1 bên Tai Phải (R)',
+      keywords: ['thay pin tai phải', 'pin tai r', '1 bên tai phải', 'tai phải (r)'],
+      solution: 'Thay cell pin tai nghe AirPods bên Tai Phải (R) chuẩn dung lượng.',
+      estimated_cost: 300000,
+      estimated_time: '45 phút',
+      linked_parts: resolveAirPodsLRPartsForModel('AirPods Pro 2 (USB-C)', 'BAT', 'R'),
+    },
+    {
+      id: 103,
+      issue_code: 'ISS-APP2C-BAT-LR',
+      category: 'AirPods',
+      issue_name: 'Thay pin AirPods - Cả 2 tai (L + R)',
+      keywords: ['thay pin cả 2 tai', 'thay pin 2 tai', 'cả 2 tai (l + r)', 'pin 2 bên'],
+      solution: 'Thay đồng bộ 2 viên pin tai nghe AirPods (1 Tai Trái L + 1 Tai Phải R).',
+      estimated_cost: 550000,
+      estimated_time: '60 phút',
+      linked_parts: resolveAirPodsLRPartsForModel('AirPods Pro 2 (USB-C)', 'BAT', 'LR'),
+    },
+    {
+      id: 104,
+      issue_code: 'ISS-APP2C-SPK-L',
+      category: 'AirPods',
+      issue_name: 'Sửa/Thay loa & ANC AirPods - 1 bên Tai Trái (L)',
+      keywords: ['thay loa tai trái', 'loa tai l', 'anc tai trái', '1 bên tai trái'],
+      solution: 'Thay cụm loa Driver & xử lý chống ồn ANC bên Tai Trái (L).',
+      estimated_cost: 400000,
+      estimated_time: '60 phút',
+      linked_parts: resolveAirPodsLRPartsForModel('AirPods Pro 2 (USB-C)', 'SPK', 'L'),
+    },
+    {
+      id: 105,
+      issue_code: 'ISS-APP2C-SPK-R',
+      category: 'AirPods',
+      issue_name: 'Sửa/Thay loa & ANC AirPods - 1 bên Tai Phải (R)',
+      keywords: ['thay loa tai phải', 'loa tai r', 'anc tai phải', '1 bên tai phải'],
+      solution: 'Thay cụm loa Driver & xử lý chống ồn ANC bên Tai Phải (R).',
+      estimated_cost: 400000,
+      estimated_time: '60 phút',
+      linked_parts: resolveAirPodsLRPartsForModel('AirPods Pro 2 (USB-C)', 'SPK', 'R'),
+    },
+    {
+      id: 106,
+      issue_code: 'ISS-APP2C-SPK-LR',
+      category: 'AirPods',
+      issue_name: 'Sửa/Thay loa & ANC AirPods - Cả 2 tai (L + R)',
+      keywords: ['thay loa cả 2 tai', 'thay loa 2 tai', 'anc cả 2 tai', 'cả 2 tai (l + r)'],
+      solution: 'Thay đồng bộ 2 cụm loa Driver & cân chỉnh ANC cả 2 tai (1 L + 1 R).',
+      estimated_cost: 750000,
+      estimated_time: '60 - 90 phút',
+      linked_parts: resolveAirPodsLRPartsForModel('AirPods Pro 2 (USB-C)', 'SPK', 'LR'),
+    },
+    {
+      id: 107,
+      issue_code: 'ISS-APP2C-MIC-L',
+      category: 'AirPods',
+      issue_name: 'Thay Mic đàm thoại / Mic ANC AirPods - 1 bên Tai Trái (L)',
+      keywords: ['thay mic tai trái', 'mic tai l', '1 bên tai trái'],
+      solution: 'Thay cụm cáp Mic đàm thoại / Mic ANC bên Tai Trái (L).',
+      estimated_cost: 320000,
+      estimated_time: '60 phút',
+      linked_parts: resolveAirPodsLRPartsForModel('AirPods Pro 2 (USB-C)', 'MIC', 'L'),
+    },
+    {
+      id: 108,
+      issue_code: 'ISS-APP2C-MIC-R',
+      category: 'AirPods',
+      issue_name: 'Thay Mic đàm thoại / Mic ANC AirPods - 1 bên Tai Phải (R)',
+      keywords: ['thay mic tai phải', 'mic tai r', '1 bên tai phải'],
+      solution: 'Thay cụm cáp Mic đàm thoại / Mic ANC bên Tai Phải (R).',
+      estimated_cost: 320000,
+      estimated_time: '60 phút',
+      linked_parts: resolveAirPodsLRPartsForModel('AirPods Pro 2 (USB-C)', 'MIC', 'R'),
+    },
+    {
+      id: 109,
+      issue_code: 'ISS-APP2C-MIC-LR',
+      category: 'AirPods',
+      issue_name: 'Thay Mic đàm thoại / Mic ANC AirPods - Cả 2 tai (L + R)',
+      keywords: ['thay mic cả 2 tai', 'thay mic 2 tai', 'cả 2 tai (l + r)'],
+      solution: 'Thay đồng bộ 2 cụm cáp Mic đàm thoại / Mic ANC cả 2 tai (1 L + 1 R).',
+      estimated_cost: 600000,
+      estimated_time: '60 - 90 phút',
+      linked_parts: resolveAirPodsLRPartsForModel('AirPods Pro 2 (USB-C)', 'MIC', 'LR'),
+    },
+    {
+      id: 110,
+      issue_code: 'ISS-APP2C-MESH-L',
+      category: 'AirPods',
+      issue_name: 'Vệ sinh & Thay lưới chống bụi âm thanh AirPods - 1 bên Tai Trái (L)',
+      keywords: ['thay lưới tai trái', 'lưới tai l', '1 bên tai trái'],
+      solution: 'Vệ sinh siêu âm và thay lưới chống bụi âm thanh bên Tai Trái (L).',
+      estimated_cost: 80000,
+      estimated_time: '30 phút',
+      linked_parts: resolveAirPodsLRPartsForModel('AirPods Pro 2 (USB-C)', 'MESH', 'L'),
+    },
+    {
+      id: 111,
+      issue_code: 'ISS-APP2C-MESH-R',
+      category: 'AirPods',
+      issue_name: 'Vệ sinh & Thay lưới chống bụi âm thanh AirPods - 1 bên Tai Phải (R)',
+      keywords: ['thay lưới tai phải', 'lưới tai r', '1 bên tai phải'],
+      solution: 'Vệ sinh siêu âm và thay lưới chống bụi âm thanh bên Tai Phải (R).',
+      estimated_cost: 80000,
+      estimated_time: '30 phút',
+      linked_parts: resolveAirPodsLRPartsForModel('AirPods Pro 2 (USB-C)', 'MESH', 'R'),
+    },
+    {
+      id: 112,
+      issue_code: 'ISS-APP2C-MESH-LR',
+      category: 'AirPods',
+      issue_name: 'Vệ sinh & Thay lưới chống bụi âm thanh AirPods - Cả 2 tai (L + R)',
+      keywords: ['thay lưới cả 2 tai', 'thay lưới 2 tai', 'cả 2 tai (l + r)'],
+      solution: 'Vệ sinh siêu âm và thay đồng bộ 2 lưới chống bụi âm thanh cả 2 tai (1 L + 1 R).',
+      estimated_cost: 140000,
+      estimated_time: '30 - 45 phút',
+      linked_parts: resolveAirPodsLRPartsForModel('AirPods Pro 2 (USB-C)', 'MESH', 'LR'),
+    },
+    {
+      id: 113,
+      issue_code: 'ISS-APP2C-CASE-BAT',
+      category: 'AirPods',
+      issue_name: 'Thay pin hộp sạc (Case) AirPods',
+      keywords: ['thay pin hộp sạc', 'pin case airpods', 'bat-case-app2c'],
+      solution: 'Thay pin hộp sạc (Case) AirPods chuẩn dung lượng.',
+      estimated_cost: 450000,
+      estimated_time: '60 phút',
+      linked_parts: [resolveAirPodsCasePartForModel('AirPods Pro 2 (USB-C)', 'CASE_BAT')],
+    },
+    {
+      id: 114,
+      issue_code: 'ISS-APP2C-CASE-FLEX',
+      category: 'AirPods',
+      issue_name: 'Thay cáp flex chân tiếp xúc sạc (Case) AirPods',
+      keywords: ['thay cáp flex chân tiếp xúc', 'cáp flex hộp sạc', 'flex-case-app2c'],
+      solution: 'Thay cáp flex chân tiếp xúc sạc trong hộp sạc (Case) AirPods.',
+      estimated_cost: 350000,
+      estimated_time: '60 - 90 phút',
+      linked_parts: [resolveAirPodsCasePartForModel('AirPods Pro 2 (USB-C)', 'CASE_FLEX')],
+    },
   ],
   'Apple Watch': [
     {
@@ -499,9 +1268,67 @@ export const COMMON_ISSUE_CATALOG_BY_CATEGORY: Record<string, CommonIssueCatalog
   ],
 };
 
+// Hỗ trợ truy cập qua cả key 'AirPods' lẫn 'AIRPODS' mà không làm nhân đôi Object.values()
+Object.defineProperty(COMMON_ISSUE_CATALOG_BY_CATEGORY, 'AIRPODS', {
+  get() {
+    return COMMON_ISSUE_CATALOG_BY_CATEGORY.AirPods;
+  },
+  enumerable: false,
+  configurable: true,
+});
+
 export const ALL_COMMON_ISSUE_CATALOG: CommonIssueCatalogItem[] = Object.values(
   COMMON_ISSUE_CATALOG_BY_CATEGORY
 ).flat();
+
+const KNOWN_CATEGORY_NAMES = new Set([
+  'airpods',
+  'apple watch',
+  'apple pencil',
+  'macbook',
+  'ipad',
+  'khác',
+]);
+
+function normalizeCategoryAndModelInputs(
+  issueCategory?: string | null,
+  categoryOrModelName?: string | null,
+  watchSize?: string | null,
+  deviceModelName?: string | null
+): {
+  resolvedCategory: string;
+  effectiveWatchSize?: string;
+  effectiveModelName?: string;
+} {
+  const rawArg2 = (categoryOrModelName || '').trim();
+  const rawModel = (deviceModelName || '').trim();
+  const isArg2KnownCategory = rawArg2 ? KNOWN_CATEGORY_NAMES.has(rawArg2.toLowerCase()) : false;
+
+  const effectiveModelName = rawModel || (!isArg2KnownCategory && rawArg2 ? rawArg2 : undefined);
+
+  let resolvedCategory = isArg2KnownCategory
+    ? rawArg2 === 'AIRPODS'
+      ? 'AirPods'
+      : rawArg2
+    : (issueCategory || '').trim();
+
+  if (!resolvedCategory || resolvedCategory.toUpperCase() === 'AIRPODS') {
+    const modelLower = (effectiveModelName || '').toLowerCase();
+    if (modelLower.includes('watch')) {
+      resolvedCategory = 'Apple Watch';
+    } else if (modelLower.includes('pencil') || modelLower.includes('bút')) {
+      resolvedCategory = 'Apple Pencil';
+    } else {
+      resolvedCategory = 'AirPods';
+    }
+  }
+
+  return {
+    resolvedCategory,
+    effectiveWatchSize: (watchSize || '').trim() || undefined,
+    effectiveModelName,
+  };
+}
 
 /**
  * Gắn thông tin watch_size vào tên linh kiện nếu là Apple Watch và đã chọn size
@@ -515,7 +1342,7 @@ export function applyWatchSizeToLinkedPart(
   const isWatch =
     category === 'Apple Watch' ||
     part.part_sku.startsWith('AW-') ||
-    part.part_sku.includes('-AW-') ||
+    part.part_sku.includes('-AW') ||
     part.part_name.toLowerCase().includes('apple watch');
 
   if (!cleanSize || !isWatch) {
@@ -531,9 +1358,21 @@ export function applyWatchSizeToLinkedPart(
   };
 }
 
+const LEGACY_UNSCOPED_AIRPODS_CODES = new Set([
+  'ISS-AP-002',
+  'ISS-AP-003',
+  'ISS-AP-004',
+  'ISS-AP-005',
+  'ISS-AP-006',
+]);
+
 /**
  * Bổ sung tự động linked_parts và keywords cho cả dữ liệu từ API.
- * Nếu API /api/v1/services/common-issues đã trả về linked_parts từ Backend thì ưu tiên giữ nguyên linked_parts từ Backend.
+ * Hỗ trợ gọi theo cả 2 dạng:
+ * - enrichCommonIssueWithParts(issue, modelName)
+ * - enrichCommonIssueWithParts(issue, category, watchSize, deviceModelName)
+ * Khi có modelName (ví dụ 'AirPods 2'), tự động đồng bộ mã SKU và tên linh kiện sang đúng đời máy đó
+ * (BAT-AP2-L, BAT-AP2-R, SPK-AP2-L/R, MIC-AP2-L/R, MESH-AP2-L/R) và đúng phạm vi (L, R, hoặc L + R).
  */
 export function enrichCommonIssueWithParts(
   issue: CommonIssueItem | CommonIssueCatalogItem,
@@ -541,16 +1380,23 @@ export function enrichCommonIssueWithParts(
   watchSize?: string,
   deviceModelName?: string
 ): CommonIssueCatalogItem {
-  const resolvedCategory = (category || issue.category || 'AirPods').trim();
+  const {
+    resolvedCategory,
+    effectiveWatchSize,
+    effectiveModelName,
+  } = normalizeCategoryAndModelInputs(issue.category, category, watchSize, deviceModelName);
+
   const catalogList =
     COMMON_ISSUE_CATALOG_BY_CATEGORY[resolvedCategory] || ALL_COMMON_ISSUE_CATALOG;
 
   const issueNameLower = (issue.issue_name || '').trim().toLowerCase();
 
-  // 1. Tìm trong catalog theo id hoặc tên lỗi hoặc từ khóa
+  // 1. Tìm trong catalog theo id, issue_code hoặc tên lỗi
+  const rawIssueCode = ((issue as CommonIssueCatalogItem).issue_code || '').trim().toUpperCase();
   const matchedCatalog =
     catalogList.find(
       (item) =>
+        (rawIssueCode && item.issue_code.toUpperCase() === rawIssueCode) ||
         (issue.id !== undefined && item.id === issue.id && item.category === resolvedCategory) ||
         item.issue_name.toLowerCase() === issueNameLower ||
         issueNameLower.includes(item.issue_name.toLowerCase()) ||
@@ -558,6 +1404,7 @@ export function enrichCommonIssueWithParts(
     ) ||
     ALL_COMMON_ISSUE_CATALOG.find(
       (item) =>
+        (rawIssueCode && item.issue_code.toUpperCase() === rawIssueCode) ||
         item.issue_name.toLowerCase() === issueNameLower ||
         (issueNameLower.length > 5 &&
           (issueNameLower.includes(item.issue_name.toLowerCase()) ||
@@ -578,43 +1425,87 @@ export function enrichCommonIssueWithParts(
         watch_size: p.watch_size,
       }))
     : matchedCatalog?.linked_parts && matchedCatalog.linked_parts.length > 0
-    ? matchedCatalog.linked_parts
-    : inferFallbackPartsByText(issue.issue_name, resolvedCategory, deviceModelName);
+    ? matchedCatalog.linked_parts.map((p) => ({ ...p }))
+    : inferFallbackPartsByText(issue.issue_name, resolvedCategory, effectiveModelName);
 
-  // Nếu là lỗi Pin AirPods mặc định (ISS-AP-001) và biết rõ dòng máy AirPods Pro 1 hoặc AirPods 3/2, tự động khớp mã SKU pin tương ứng
-  if (
-    !hasBackendLinkedParts &&
-    resolvedCategory === 'AirPods' &&
-    deviceModelName &&
-    rawParts.length === 1 &&
-    rawParts[0].part_sku === 'BAT-APP2-01'
-  ) {
-    const modelLower = deviceModelName.toLowerCase();
-    if (modelLower.includes('pro 1') || (modelLower.includes('pro') && !modelLower.includes('pro 2'))) {
-      rawParts = [
-        {
-          part_sku: 'BAT-APP-01',
-          part_name: 'Pin tai nghe AirPods Pro',
-          quantity: 1,
-          unit: 'Viên',
-          position: 'L/R',
-        },
-      ];
-    } else if (modelLower.includes('airpods 3') || modelLower.includes('airpods 2')) {
-      rawParts = [
-        {
-          part_sku: 'BAT-APP3-02',
-          part_name: 'Pin tai nghe AirPods 3',
-          quantity: 1,
-          unit: 'Viên',
-          position: 'L/R',
-        },
-      ];
+  let resolvedIssueCode =
+    rawIssueCode ||
+    matchedCatalog?.issue_code ||
+    `ISS-${resolvedCategory.slice(0, 2).toUpperCase()}-${String(issue.id || 99).padStart(3, '0')}`;
+
+  let resolvedEstimatedCost = issue.estimated_cost ?? matchedCatalog?.estimated_cost;
+
+  // Đồng bộ SKU + tên linh kiện theo đúng đời máy AirPods và phạm vi (L / R / L + R) khi biết effectiveModelName
+  if (resolvedCategory === 'AirPods' && effectiveModelName) {
+    const candidateForDetect: CommonIssueCatalogItem = {
+      ...(matchedCatalog || {}),
+      ...issue,
+      issue_code: resolvedIssueCode,
+      category: 'AirPods',
+      issue_name: issue.issue_name,
+      keywords: [],
+      linked_parts: rawParts,
+    };
+
+    const detectedScope = detectAirPodsEarScopeFromIssue(candidateForDetect);
+    const detectedType = detectAirPodsPartTypeFromIssue(candidateForDetect);
+    const hasExplicitScopeInNameOrCode =
+      resolvedIssueCode.endsWith('-L') ||
+      resolvedIssueCode.endsWith('-R') ||
+      resolvedIssueCode.endsWith('-LR') ||
+      issueNameLower.includes('tai trái') ||
+      issueNameLower.includes('tai phải') ||
+      issueNameLower.includes('cả 2 tai') ||
+      issueNameLower.includes('2 tai') ||
+      issueNameLower.includes('l + r') ||
+      issueNameLower.includes('(l)') ||
+      issueNameLower.includes('(r)');
+
+    const isUnscopedLegacyNonBattery =
+      LEGACY_UNSCOPED_AIRPODS_CODES.has(resolvedIssueCode) && !hasExplicitScopeInNameOrCode;
+
+    if (!isUnscopedLegacyNonBattery && detectedType) {
+      const prefix = resolveAirPodsModelPrefix(effectiveModelName);
+      const meta = AIRPODS_MODEL_META[prefix];
+
+      if (detectedType === 'CASE_BAT' || detectedType === 'CASE_FLEX') {
+        rawParts = [resolveAirPodsCasePartForModel(effectiveModelName, detectedType)];
+        if (resolvedIssueCode.includes('-CASE-')) {
+          resolvedIssueCode =
+            detectedType === 'CASE_BAT' ? `ISS-${prefix}-CASE-BAT` : `ISS-${prefix}-CASE-FLEX`;
+        }
+        resolvedEstimatedCost =
+          detectedType === 'CASE_BAT' ? meta.prices.CASE_BAT : meta.prices.CASE_FLEX;
+      } else {
+        const effectiveScope: AirPodsEarScope =
+          detectedScope === 'L' || detectedScope === 'R' || detectedScope === 'LR'
+            ? detectedScope
+            : 'LR';
+        rawParts = resolveAirPodsLRPartsForModel(
+          effectiveModelName,
+          detectedType,
+          effectiveScope
+        );
+        if (
+          resolvedIssueCode.endsWith('-L') ||
+          resolvedIssueCode.endsWith('-R') ||
+          resolvedIssueCode.endsWith('-LR')
+        ) {
+          resolvedIssueCode = `ISS-${prefix}-${detectedType}-${effectiveScope}`;
+        }
+        const costMap: Record<AirPodsPartType, number> = {
+          BAT: effectiveScope === 'LR' ? meta.prices.BAT_LR : meta.prices.BAT_SINGLE,
+          SPK: effectiveScope === 'LR' ? meta.prices.SPK_LR : meta.prices.SPK_SINGLE,
+          MIC: effectiveScope === 'LR' ? meta.prices.MIC_LR : meta.prices.MIC_SINGLE,
+          MESH: effectiveScope === 'LR' ? meta.prices.MESH_LR : meta.prices.MESH_SINGLE,
+        };
+        resolvedEstimatedCost = costMap[detectedType];
+      }
     }
   }
 
   const enrichedParts = rawParts.map((p) =>
-    applyWatchSizeToLinkedPart(p, watchSize, resolvedCategory)
+    applyWatchSizeToLinkedPart(p, effectiveWatchSize, resolvedCategory)
   );
 
   const keywords =
@@ -630,15 +1521,12 @@ export function enrichCommonIssueWithParts(
     ...matchedCatalog,
     ...issue,
     id: issue.id ?? matchedCatalog?.id,
-    issue_code:
-      (issue as CommonIssueCatalogItem).issue_code ||
-      matchedCatalog?.issue_code ||
-      `ISS-${resolvedCategory.slice(0, 2).toUpperCase()}-${String(issue.id || 99).padStart(3, '0')}`,
+    issue_code: resolvedIssueCode,
     category: resolvedCategory,
     issue_name: issue.issue_name,
     keywords,
     solution: issue.solution || matchedCatalog?.solution,
-    estimated_cost: issue.estimated_cost ?? matchedCatalog?.estimated_cost,
+    estimated_cost: resolvedEstimatedCost,
     estimated_time: issue.estimated_time || matchedCatalog?.estimated_time,
     watch_sizes:
       resolvedCategory === 'Apple Watch'
@@ -650,13 +1538,19 @@ export function enrichCommonIssueWithParts(
 
 export function inferFallbackPartsByText(
   issueName: string,
-  category: string,
+  category?: string,
   deviceModelName?: string
 ): LinkedPartItem[] {
   const lower = (issueName || '').toLowerCase();
-  const modelLower = (deviceModelName || '').toLowerCase();
+  const { resolvedCategory, effectiveModelName } = normalizeCategoryAndModelInputs(
+    undefined,
+    category,
+    undefined,
+    deviceModelName
+  );
+  const modelTarget = effectiveModelName || issueName;
 
-  if (category === 'Apple Watch' || lower.includes('watch')) {
+  if (resolvedCategory === 'Apple Watch' || lower.includes('watch')) {
     if (lower.includes('kính') || lower.includes('cảm ứng') || lower.includes('màn')) {
       return [
         {
@@ -679,7 +1573,7 @@ export function inferFallbackPartsByText(
     ];
   }
 
-  if (category === 'Apple Pencil' || lower.includes('pencil') || lower.includes('bút')) {
+  if (resolvedCategory === 'Apple Pencil' || lower.includes('pencil') || lower.includes('bút')) {
     return [
       {
         part_sku: 'APEN-TIP-01',
@@ -691,7 +1585,46 @@ export function inferFallbackPartsByText(
     ];
   }
 
-  // Default AirPods inference với mã SKU kho thật
+  const hasExplicitEarScope =
+    lower.includes('tai trái') ||
+    lower.includes('tai phải') ||
+    lower.includes('cả 2 tai') ||
+    lower.includes('2 tai') ||
+    lower.includes('l + r') ||
+    lower.includes('l+r') ||
+    lower.includes('(l)') ||
+    lower.includes('(r)');
+
+  if (effectiveModelName || hasExplicitEarScope) {
+    if (lower.includes('hộp') || lower.includes('case') || lower.includes('dock')) {
+      if (lower.includes('pin')) {
+        return [resolveAirPodsCasePartForModel(modelTarget, 'CASE_BAT')];
+      }
+      return [resolveAirPodsCasePartForModel(modelTarget, 'CASE_FLEX')];
+    }
+
+    const scope = normalizeAirPodsEarScope(issueName);
+    if (lower.includes('lưới') || lower.includes('vệ sinh') || lower.includes('bẩn') || lower.includes('tắc màng')) {
+      return resolveAirPodsLRPartsForModel(modelTarget, 'MESH', scope);
+    }
+    if (lower.includes('mic') || lower.includes('đàm thoại') || lower.includes('gọi điện')) {
+      return resolveAirPodsLRPartsForModel(modelTarget, 'MIC', scope);
+    }
+    if (
+      lower.includes('loa') ||
+      lower.includes('anc') ||
+      lower.includes('chống ồn') ||
+      lower.includes('xuyên âm') ||
+      lower.includes('rè') ||
+      lower.includes('nhỏ tiếng') ||
+      lower.includes('mất tiếng')
+    ) {
+      return resolveAirPodsLRPartsForModel(modelTarget, 'SPK', scope);
+    }
+    return resolveAirPodsLRPartsForModel(modelTarget, 'BAT', scope);
+  }
+
+  // Fallback tương thích ngược khi không truyền modelName và không ghi rõ bên L/R
   if (lower.includes('anc') || lower.includes('chống ồn') || lower.includes('rít') || lower.includes('xuyên âm') || lower.includes('mic')) {
     return [
       {
@@ -740,55 +1673,12 @@ export function inferFallbackPartsByText(
     ];
   }
 
-  if (
-    lower.includes('pro 1') ||
-    modelLower.includes('pro 1') ||
-    ((lower.includes('airpods pro') || modelLower.includes('airpods pro')) &&
-      !lower.includes('pro 2') &&
-      !modelLower.includes('pro 2'))
-  ) {
-    return [
-      {
-        part_sku: 'BAT-APP-01',
-        part_name: 'Pin tai nghe AirPods Pro',
-        quantity: 1,
-        unit: 'Viên',
-        position: 'L/R',
-      },
-    ];
-  }
-
-  if (
-    lower.includes('airpods 3') ||
-    lower.includes('airpods 2') ||
-    modelLower.includes('airpods 3') ||
-    modelLower.includes('airpods 2')
-  ) {
-    return [
-      {
-        part_sku: 'BAT-APP3-02',
-        part_name: 'Pin tai nghe AirPods 3',
-        quantity: 1,
-        unit: 'Viên',
-        position: 'L/R',
-      },
-    ];
-  }
-
-  return [
-    {
-      part_sku: 'BAT-APP2-01',
-      part_name: 'Pin tai nghe AirPods Pro 2',
-      quantity: 1,
-      unit: 'Viên',
-      position: 'L/R',
-    },
-  ];
+  return resolveAirPodsLRPartsForModel(modelTarget, 'BAT', 'LR');
 }
 
 /**
  * Định dạng danh sách linh kiện thành chuỗi tóm tắt chuẩn gửi lên API parts_needed / parts_used
- * Ví dụ: "Pin tai nghe AirPods Pro 2 (BAT-APP2-01) x1"
+ * Ví dụ: "Pin tai nghe AirPods 2 - Tai Trái (L) (BAT-AP2-L) x1, Pin tai nghe AirPods 2 - Tai Phải (R) (BAT-AP2-R) x1"
  */
 export function formatLinkedPartsSummary(parts: LinkedPartItem[], watchSize?: string): string {
   if (!Array.isArray(parts) || parts.length === 0) return '';
@@ -802,7 +1692,9 @@ export function formatLinkedPartsSummary(parts: LinkedPartItem[], watchSize?: st
 }
 
 /**
- * Hợp nhất các linked_parts từ nhiều lỗi đang chọn (khử trùng lặp theo SKU + watch_size)
+ * Hợp nhất các linked_parts từ nhiều lỗi đang chọn:
+ * - Giữ nguyên 2 dòng độc lập SKU-L x1 và SKU-R x1 khi chọn lỗi Cả 2 tai (L + R).
+ * - Nếu cùng một part_sku xuất hiện ở nhiều lỗi khác nhau thì cộng dồn quantity (ngoại trừ các mã legacy dùng chung MESH-APP-02 / FLEX-CASE-01).
  */
 export function mergeLinkedPartsFromIssues(
   issues: (CommonIssueItem | CommonIssueCatalogItem)[],
@@ -815,8 +1707,12 @@ export function mergeLinkedPartsFromIssues(
     const enriched = enrichCommonIssueWithParts(rawIssue, category, watchSize, deviceModelName);
     for (const part of enriched.linked_parts) {
       const key = `${part.part_sku}__${part.watch_size || ''}`;
-      if (!map.has(key)) {
-        map.set(key, { ...part });
+      const qty = Math.max(1, Number(part.quantity) || 1);
+      const existing = map.get(key);
+      if (!existing) {
+        map.set(key, { ...part, quantity: qty });
+      } else {
+        existing.quantity = Math.max(1, Number(existing.quantity) || 1) + qty;
       }
     }
   }
@@ -886,6 +1782,20 @@ export function toggleIssueNameInDescription(
   return { nextText: removed, isNowSelected: false };
 }
 
+function extractExplicitAirPodsPrefixFromIssueName(
+  issueName?: string | null
+): AirPodsModelPrefix | null {
+  const lower = (issueName || '').trim().toLowerCase();
+  if (!lower) return null;
+  if (lower.includes('airpods max')) return 'APM';
+  if (lower.includes('airpods pro 2') && lower.includes('lightning')) return 'APP2L';
+  if (lower.includes('airpods pro 2')) return 'APP2C';
+  if (lower.includes('airpods pro')) return 'APP1';
+  if (lower.includes('airpods 3') || lower.includes('airpods 4')) return 'AP3';
+  if (lower.includes('airpods 2')) return 'AP2';
+  return null;
+}
+
 /**
  * Lọc danh sách lỗi thường gặp theo từ khóa (tên lỗi, mã lỗi, keywords, tên linh kiện, SKU)
  */
@@ -896,17 +1806,45 @@ export function filterCommonIssues(
   watchSize?: string,
   deviceModelName?: string
 ): CommonIssueCatalogItem[] {
-  const modelLower = (deviceModelName || '').trim().toLowerCase();
+  const {
+    resolvedCategory,
+    effectiveWatchSize,
+    effectiveModelName,
+  } = normalizeCategoryAndModelInputs(undefined, category, watchSize, deviceModelName);
+
+  const modelLower = (effectiveModelName || '').trim().toLowerCase();
+  const targetPrefix =
+    resolvedCategory === 'AirPods' && effectiveModelName
+      ? resolveAirPodsModelPrefix(effectiveModelName)
+      : null;
+
+  const seenCodes = new Set<string>();
   const enrichedList = issues
-    .map((item) => enrichCommonIssueWithParts(item, category, watchSize, deviceModelName))
+    .filter((rawItem) => {
+      if (!modelLower || resolvedCategory !== 'AirPods') return true;
+      const code = ((rawItem as CommonIssueCatalogItem).issue_code || '').toUpperCase();
+      if (code === 'ISS-AP-007' || code === 'ISS-AP-008') return false;
+      const explicitPrefix = extractExplicitAirPodsPrefixFromIssueName(rawItem.issue_name);
+      if (explicitPrefix && targetPrefix && explicitPrefix !== targetPrefix) {
+        return false;
+      }
+      return true;
+    })
+    .map((item) =>
+      enrichCommonIssueWithParts(
+        item,
+        resolvedCategory,
+        effectiveWatchSize,
+        effectiveModelName
+      )
+    )
     .filter((item) => {
-      if (!modelLower || item.category !== 'AirPods') return true;
-      // Khi đã chọn dòng máy cụ thể trên form tiếp nhận, ISS-AP-001 đã tự động map đúng mã pin theo dòng máy,
-      // ẩn bớt 2 chip pin chuyên biệt của dòng khác để danh sách chip gọn sạch
-      if (item.issue_code === 'ISS-AP-007') return false;
-      if (item.issue_code === 'ISS-AP-008') return false;
+      const dedupKey = `${item.issue_code}__${item.issue_name.toLowerCase()}`;
+      if (seenCodes.has(dedupKey)) return false;
+      seenCodes.add(dedupKey);
       return true;
     });
+
   const cleanQ = (query || '').trim().toLowerCase();
   if (!cleanQ) return enrichedList;
 
@@ -1025,7 +1963,7 @@ export function inferLinkedPartsFromOrderText(
       if (matchedIssues.some((m) => m.issue_code === item.issue_code)) continue;
       if (
         (item.issue_code === 'ISS-AP-007' || item.issue_code === 'ISS-AP-008') &&
-        matchedIssues.some((m) => m.issue_code === 'ISS-AP-001')
+        matchedIssues.some((m) => m.issue_code === 'ISS-AP-001' || m.issue_code.includes('-BAT-'))
       ) {
         continue;
       }
@@ -1040,7 +1978,7 @@ export function inferLinkedPartsFromOrderText(
     }
   }
 
-  // Nếu không khớp catalog cụ thể nào nhưng có nội dung lỗi, suy diễn 1 linh kiện mặc định theo ngữ cảnh
+  // Nếu không khớp catalog cụ thể nào nhưng có nội dung lỗi, suy diễn linh kiện mặc định theo ngữ cảnh
   if (matchedIssues.length === 0 && text.length > 2) {
     const fallbackIssue = enrichCommonIssueWithParts(
       { issue_name: text, category: resolvedCategory },
