@@ -824,6 +824,69 @@ export function mergeLinkedPartsFromIssues(
 }
 
 /**
+ * Tạo khóa định danh duy nhất cho mỗi lỗi theo Danh mục + Mã dòng máy + Tên lỗi
+ * Đảm bảo khi đổi sang mã sản phẩm khác không bao giờ mang theo trạng thái chọn lỗi cũ do trùng index/id.
+ */
+export function buildDeviceIssueSelectionKey(
+  category?: string | null,
+  deviceModel?: string | number | null,
+  issueName?: string | null
+): string {
+  const normCat = (category || 'AirPods').trim().toLowerCase();
+  const normModel = String(deviceModel || 'all').trim().toLowerCase();
+  const normIssue = (issueName || '').trim().toLowerCase();
+  return `${normCat}::${normModel}::${normIssue}`;
+}
+
+/**
+ * Bật/tắt nhanh một lỗi trong ô mô tả lỗi (hỗ trợ tên lỗi có chứa dấu phẩy và tag [Size: ...])
+ */
+export function toggleIssueNameInDescription(
+  prevText: string | undefined | null,
+  issueName: string,
+  category?: string,
+  watchSize?: string
+): { nextText: string; isNowSelected: boolean } {
+  const current = (prevText || '').trim();
+  const target = (issueName || '').trim();
+  if (!target) {
+    return { nextText: current, isNowSelected: false };
+  }
+
+  const isAlreadySelected = current.toLowerCase().includes(target.toLowerCase());
+  if (!isAlreadySelected) {
+    if (!current) {
+      const firstText =
+        category === 'Apple Watch' && watchSize
+          ? applyWatchSizeTagToText(target, watchSize)
+          : target;
+      return { nextText: firstText, isNowSelected: true };
+    }
+    const base = current.replace(/[,\s;]+$/, '');
+    const joined = `${base}, ${target}`;
+    const finalJoined =
+      category === 'Apple Watch' && watchSize
+        ? applyWatchSizeTagToText(joined, watchSize)
+        : joined;
+    return { nextText: finalJoined, isNowSelected: true };
+  }
+
+  const escaped = target.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const removed = current
+    .replace(new RegExp(escaped, 'gi'), '')
+    .replace(/\s*,\s*,\s*/g, ', ')
+    .replace(/^(\[Size:\s*[^\]]+\]\s*)[,\s;]+/i, '$1')
+    .replace(/^[,\s;]+|[,\s;]+$/g, '')
+    .trim();
+
+  if (!removed || /^\[Size:\s*[^\]]+\]$/i.test(removed)) {
+    return { nextText: '', isNowSelected: false };
+  }
+
+  return { nextText: removed, isNowSelected: false };
+}
+
+/**
  * Lọc danh sách lỗi thường gặp theo từ khóa (tên lỗi, mã lỗi, keywords, tên linh kiện, SKU)
  */
 export function filterCommonIssues(
@@ -833,9 +896,17 @@ export function filterCommonIssues(
   watchSize?: string,
   deviceModelName?: string
 ): CommonIssueCatalogItem[] {
-  const enrichedList = issues.map((item) =>
-    enrichCommonIssueWithParts(item, category, watchSize, deviceModelName)
-  );
+  const modelLower = (deviceModelName || '').trim().toLowerCase();
+  const enrichedList = issues
+    .map((item) => enrichCommonIssueWithParts(item, category, watchSize, deviceModelName))
+    .filter((item) => {
+      if (!modelLower || item.category !== 'AirPods') return true;
+      // Khi đã chọn dòng máy cụ thể trên form tiếp nhận, ISS-AP-001 đã tự động map đúng mã pin theo dòng máy,
+      // ẩn bớt 2 chip pin chuyên biệt của dòng khác để danh sách chip gọn sạch
+      if (item.issue_code === 'ISS-AP-007') return false;
+      if (item.issue_code === 'ISS-AP-008') return false;
+      return true;
+    });
   const cleanQ = (query || '').trim().toLowerCase();
   if (!cleanQ) return enrichedList;
 
@@ -931,16 +1002,41 @@ export function inferLinkedPartsFromOrderText(
 
   const matchedIssues: CommonIssueCatalogItem[] = [];
   const effectiveModel = deviceModelName || categoryOrDevice || undefined;
+  let remainingLowerText = lowerText.replace(/\[size[:\s]*[^\]]+\]/gi, '').trim();
 
+  // 1. Ưu tiên khớp chính xác tên lỗi (chip đã chọn) trước để tránh khớp tràn sang lỗi khác do trùng từ khóa
   for (const item of candidateCatalog) {
     const itemLower = item.issue_name.toLowerCase();
-    const keywordHit = item.keywords.some(
-      (kw) => kw.length >= 3 && lowerText.includes(kw.toLowerCase())
-    );
-    if (lowerText.includes(itemLower) || keywordHit) {
+    if (remainingLowerText.includes(itemLower)) {
       matchedIssues.push(
         enrichCommonIssueWithParts(item, resolvedCategory, detectedWatchSize, effectiveModel)
       );
+      const escaped = itemLower.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      remainingLowerText = remainingLowerText
+        .replace(new RegExp(escaped, 'gi'), ' ')
+        .replace(/[,\s;]+/g, ' ')
+        .trim();
+    }
+  }
+
+  // 2. Nếu phần văn bản còn lại vẫn có mô tả tự do (> 2 ký tự), mới đối chiếu theo keywords
+  if (remainingLowerText.length > 2) {
+    for (const item of candidateCatalog) {
+      if (matchedIssues.some((m) => m.issue_code === item.issue_code)) continue;
+      if (
+        (item.issue_code === 'ISS-AP-007' || item.issue_code === 'ISS-AP-008') &&
+        matchedIssues.some((m) => m.issue_code === 'ISS-AP-001')
+      ) {
+        continue;
+      }
+      const keywordHit = item.keywords.some(
+        (kw) => kw.length >= 3 && remainingLowerText.includes(kw.toLowerCase())
+      );
+      if (keywordHit) {
+        matchedIssues.push(
+          enrichCommonIssueWithParts(item, resolvedCategory, detectedWatchSize, effectiveModel)
+        );
+      }
     }
   }
 

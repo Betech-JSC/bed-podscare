@@ -48,6 +48,8 @@ import {
   formatLinkedPartsSummary,
   applyWatchSizeTagToText,
   inferLinkedPartsFromOrderText,
+  buildDeviceIssueSelectionKey,
+  toggleIssueNameInDescription,
   type CommonIssueCatalogItem,
 } from '../constants/commonIssueCatalog';
 
@@ -61,6 +63,7 @@ export interface IntakeDeviceItem {
   watchSize?: string;
   partsNeeded?: string;
   selectedIssues?: CommonIssueCatalogItem[];
+  selectedIssueKeys?: string[];
   testAnswers: Record<string, ChecklistStatus>;
   testNote: string;
   appearance: string;
@@ -329,6 +332,7 @@ const createDefaultDevice = (id = 'dev-1', defaultCategory = 'AirPods', defaultM
   watchSize: undefined,
   partsNeeded: '',
   selectedIssues: [],
+  selectedIssueKeys: [],
   testAnswers: {},
   testNote: '',
   appearance: '',
@@ -888,47 +892,47 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
     const devWatchSize = targetDev?.watchSize;
     const devModelName = targetDev?.device || selectedDevice;
     const enrichedChip = enrichCommonIssueWithParts(chip, devCategory, devWatchSize, devModelName);
+    const chipKey = buildDeviceIssueSelectionKey(devCategory, devModelName, enrichedChip.issue_name);
 
     const prev = targetDev ? targetDev.issue : issue;
-    const isAlreadyInText = prev.includes(textToAdd);
+    const { nextText: newIssue, isNowSelected } = toggleIssueNameInDescription(
+      prev,
+      textToAdd,
+      devCategory,
+      devWatchSize
+    );
 
-    let newIssue = prev;
     let nextSelectedIssues: CommonIssueCatalogItem[] = [...(targetDev?.selectedIssues || [])];
+    let nextSelectedKeys: string[] = [...(targetDev?.selectedIssueKeys || [])];
 
-    if (!prev.trim()) {
-      newIssue = devCategory === 'Apple Watch' && devWatchSize
-        ? applyWatchSizeTagToText(textToAdd, devWatchSize)
-        : textToAdd;
+    if (isNowSelected) {
       if (!nextSelectedIssues.some((i) => i.issue_name === enrichedChip.issue_name)) {
         nextSelectedIssues.push(enrichedChip);
       }
-    } else if (isAlreadyInText) {
-      // Nếu chưa có trong selectedIssues thì đồng bộ vào selectedIssues, ngược lại cho phép bỏ chọn
-      if (!nextSelectedIssues.some((i) => i.issue_name === enrichedChip.issue_name)) {
-        nextSelectedIssues.push(enrichedChip);
-      } else {
-        const cleaned = prev
-          .split(',')
-          .map((s) => s.trim())
-          .filter((s) => s && s !== textToAdd && !s.endsWith(textToAdd))
-          .join(', ');
-        newIssue = cleaned || prev;
-        nextSelectedIssues = nextSelectedIssues.filter((i) => i.issue_name !== enrichedChip.issue_name);
+      if (!nextSelectedKeys.includes(chipKey)) {
+        nextSelectedKeys.push(chipKey);
       }
     } else {
-      newIssue = `${prev}, ${textToAdd}`;
-      if (!nextSelectedIssues.some((i) => i.issue_name === enrichedChip.issue_name)) {
-        nextSelectedIssues.push(enrichedChip);
-      }
+      nextSelectedIssues = nextSelectedIssues.filter((i) => i.issue_name !== enrichedChip.issue_name);
+      nextSelectedKeys = nextSelectedKeys.filter((k) => k !== chipKey);
     }
 
-    // Luôn đồng bộ tất cả lỗi khớp trong newIssue để tổng hợp linked_parts
+    // Luôn đồng bộ tất cả lỗi khớp trong newIssue để ngầm tổng hợp linked_parts khi lưu đơn
     const catalogForCat = categoryIssues[devCategory] || DEFAULT_COMMON_ISSUES[devCategory] || [];
-    const matchedFromText = catalogForCat
-      .filter((item) => newIssue.toLowerCase().includes(item.issue_name.toLowerCase()))
-      .map((item) => enrichCommonIssueWithParts(item, devCategory, devWatchSize, devModelName));
+    const matchedFromText = newIssue.trim()
+      ? catalogForCat
+          .filter((item) => newIssue.toLowerCase().includes(item.issue_name.toLowerCase()))
+          .map((item) => enrichCommonIssueWithParts(item, devCategory, devWatchSize, devModelName))
+      : [];
 
-    const combinedSelected = matchedFromText.length > 0 ? matchedFromText : nextSelectedIssues;
+    const combinedSelected = newIssue.trim()
+      ? matchedFromText.length > 0
+        ? matchedFromText
+        : nextSelectedIssues
+      : [];
+    const combinedKeys = combinedSelected.map((iss) =>
+      buildDeviceIssueSelectionKey(devCategory, devModelName, iss.issue_name)
+    );
     const mergedParts = mergeLinkedPartsFromIssues(
       combinedSelected,
       devCategory,
@@ -943,6 +947,7 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
     updateDevice(devIndex, {
       issue: newIssue,
       selectedIssues: combinedSelected,
+      selectedIssueKeys: combinedKeys,
       partsNeeded: nextPartsNeeded,
     });
 
@@ -968,8 +973,8 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
       : targetDev.issue;
 
     const catalogForCat = categoryIssues['Apple Watch'] || DEFAULT_COMMON_ISSUES['Apple Watch'] || [];
-    const activeIssues =
-      targetDev.selectedIssues && targetDev.selectedIssues.length > 0
+    const activeIssues = nextIssue.trim()
+      ? targetDev.selectedIssues && targetDev.selectedIssues.length > 0
         ? targetDev.selectedIssues.map((iss) =>
             enrichCommonIssueWithParts(iss, 'Apple Watch', size, targetDev.device)
           )
@@ -977,7 +982,8 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
             .filter((item) => nextIssue.toLowerCase().includes(item.issue_name.toLowerCase()))
             .map((item) =>
               enrichCommonIssueWithParts(item, 'Apple Watch', size, targetDev.device)
-            );
+            )
+      : [];
 
     const mergedParts = mergeLinkedPartsFromIssues(
       activeIssues,
@@ -992,7 +998,7 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
       accessories: nextAccessories,
       issue: nextIssue,
       selectedIssues: activeIssues,
-      partsNeeded: nextPartsNeeded || targetDev.partsNeeded,
+      partsNeeded: nextPartsNeeded,
     });
     if (devIndex === 0) {
       setAccessories(nextAccessories);
@@ -1019,12 +1025,15 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
       nextWatchSize
     );
 
+    // Khi đổi danh mục thiết bị: xóa sạch toàn bộ lỗi đã chọn của sản phẩm cũ
     updateDevice(devIndex, {
       category: cat,
       device: firstModel,
       watchSize: nextWatchSize,
       accessories: cleanedAccessories,
+      issue: '',
       selectedIssues: [],
+      selectedIssueKeys: [],
       partsNeeded: '',
     });
 
@@ -1032,6 +1041,15 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
       setSelectedCategory(cat);
       setSelectedDevice(firstModel);
       setAccessories(cleanedAccessories);
+      setIssue('');
+    }
+
+    if (targetDev) {
+      setIssueFilterByDevice((prev) => {
+        const next = { ...prev };
+        delete next[targetDev.id];
+        return next;
+      });
     }
 
     setErrors((prev) => {
@@ -1040,10 +1058,66 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
       if (dev) {
         delete next[`category_${dev.id}`];
         delete next[`device_${dev.id}`];
+        delete next[`issue_${dev.id}`];
       }
       if (devIndex === 0) {
         delete next.category;
         delete next.device;
+        delete next.issue;
+      }
+      return next;
+    });
+  };
+
+  const handleDeviceModelChangeForDevice = (
+    nextModel: string,
+    devIndex: number,
+    nextCategory?: string
+  ) => {
+    const targetDev = devices[devIndex];
+    const resolvedCategory = nextCategory || targetDev?.category || selectedCategory;
+    const isModelOrCategoryChanged =
+      !targetDev ||
+      !isSameDeviceModel(targetDev.device, nextModel) ||
+      targetDev.category !== resolvedCategory;
+
+    if (!isModelOrCategoryChanged) return;
+
+    // Khi đổi sang mã sản phẩm / dòng máy khác: lập tức reset sạch các lỗi cũ
+    updateDevice(devIndex, {
+      category: resolvedCategory,
+      device: nextModel,
+      issue: '',
+      selectedIssues: [],
+      selectedIssueKeys: [],
+      partsNeeded: '',
+    });
+
+    if (devIndex === 0) {
+      setSelectedCategory(resolvedCategory);
+      setSelectedDevice(nextModel);
+      setIssue('');
+    }
+
+    if (targetDev) {
+      setIssueFilterByDevice((prev) => {
+        const next = { ...prev };
+        delete next[targetDev.id];
+        return next;
+      });
+    }
+
+    setErrors((prev) => {
+      const next = { ...prev };
+      if (targetDev) {
+        delete next[`category_${targetDev.id}`];
+        delete next[`device_${targetDev.id}`];
+        delete next[`issue_${targetDev.id}`];
+      }
+      if (devIndex === 0) {
+        delete next.category;
+        delete next.device;
+        delete next.issue;
       }
       return next;
     });
@@ -1624,6 +1698,7 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
               device={devices[0] || createDefaultDevice('dev-1')}
               onUpdateDevice={(updater) => updateDevice(0, updater)}
               onCategoryChange={(cat) => handleCategoryChangeForDevice(cat, 0)}
+              onDeviceModelChange={(model) => handleDeviceModelChangeForDevice(model, 0)}
               commonIssues={commonIssues}
               onChipClick={handleChipClick}
               effectiveChecks={effectiveChecks}
@@ -1989,24 +2064,11 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
                                 } else {
                                   const targetCategory = item.category || dev.category;
                                   const targetModel = item.resolvedName || item.name;
-                                  updateDevice(devIdx, {
-                                    category: targetCategory,
-                                    device: targetModel,
-                                  });
-                                  if (devIdx === 0) {
-                                    setSelectedCategory(targetCategory);
-                                    setSelectedDevice(targetModel);
-                                  }
-                                  setErrors((prev) => {
-                                    const next = { ...prev };
-                                    delete next[`category_${dev.id}`];
-                                    delete next[`device_${dev.id}`];
-                                    if (devIdx === 0) {
-                                      delete next.category;
-                                      delete next.device;
-                                    }
-                                    return next;
-                                  });
+                                  handleDeviceModelChangeForDevice(
+                                    targetModel,
+                                    devIdx,
+                                    targetCategory
+                                  );
                                 }
                               }}
                               className={`p-2.5 rounded-[9px] border text-center transition-all cursor-pointer flex flex-col items-center justify-center gap-1 ${
@@ -2043,15 +2105,7 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
                         label="Dòng sản phẩm *"
                         value={canonicalSelectedModel}
                         onChange={(e) => {
-                          const val = e.target.value;
-                          updateDevice(devIdx, { device: val });
-                          if (devIdx === 0) setSelectedDevice(val);
-                          setErrors((prev) => {
-                            const next = { ...prev };
-                            delete next[`device_${dev.id}`];
-                            if (devIdx === 0) delete next.device;
-                            return next;
-                          });
+                          handleDeviceModelChangeForDevice(e.target.value, devIdx, dev.category);
                         }}
                         options={selectModelOptions}
                         error={errors[`device_${dev.id}`] || (devIdx === 0 ? errors.device : undefined)}
@@ -2224,9 +2278,13 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
                               inferred.linkedParts,
                               dev.watchSize
                             );
+                            const nextKeys = inferred.matchedIssues.map((iss) =>
+                              buildDeviceIssueSelectionKey(dev.category, dev.device, iss.issue_name)
+                            );
                             updateDevice(devIdx, {
                               issue: val,
                               selectedIssues: inferred.matchedIssues,
+                              selectedIssueKeys: nextKeys,
                               partsNeeded: nextPartsSummary,
                             });
                             if (devIdx === 0) setIssue(val);
@@ -2242,7 +2300,7 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
                           required
                         />
 
-                        {/* Interactive Quick Issue Chips + FE Filter + Khu vực Linh kiện Kho gắn liền với lỗi */}
+                        {/* Interactive Quick Issue Chips + FE Filter (Chỉ note nhanh lỗi, không hiển thị giải thích kho) */}
                         {(() => {
                           const rawList = devIdx === 0 ? commonIssues : issuesForDev;
                           const filterQuery = issueFilterByDevice[dev.id] || '';
@@ -2253,35 +2311,14 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
                             dev.watchSize,
                             dev.device
                           );
-                          const activeObjects = enrichedAndFiltered.filter((item) =>
-                            dev.issue.toLowerCase().includes(item.issue_name.toLowerCase())
-                          );
-                          const inferredFromTextObjects = dev.issue.trim()
-                            ? inferLinkedPartsFromOrderText(
-                                dev.issue,
-                                dev.category,
-                                dev.watchSize,
-                                dev.device
-                              ).matchedIssues
-                            : [];
-                          const previewObjects =
-                            activeObjects.length > 0
-                              ? activeObjects
-                              : inferredFromTextObjects.length > 0
-                              ? inferredFromTextObjects
-                              : enrichedAndFiltered.length > 0
-                              ? [enrichedAndFiltered[0]]
-                              : [];
-                          const isShowingSampleDefault =
-                            activeObjects.length === 0 && inferredFromTextObjects.length === 0;
 
                           return (
-                            <div className="mt-3 space-y-3">
+                            <div className="mt-3 space-y-2.5">
                               <div className="flex flex-wrap items-center justify-between gap-2">
                                 <div className="text-[11px] font-semibold text-[#6d7e75] flex items-center gap-1.5">
-                                  <span>Lỗi thường gặp ({dev.category}):</span>
+                                  <span>Lỗi thường gặp ({dev.category} · {dev.device}):</span>
                                   <span className="text-[10px] text-[#91a098] font-normal">
-                                    (Bấm để chọn lỗi &amp; tự động trừ linh kiện Kho khi tạo đơn)
+                                    (Bấm để note nhanh vào tình trạng lỗi)
                                   </span>
                                 </div>
                                 <span className="text-[11px] font-mono text-[#176b58] bg-[#eaf4ef] px-2 py-0.5 rounded">
@@ -2299,18 +2336,27 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
                                     [dev.id]: e.target.value,
                                   }))
                                 }
-                                placeholder="🔍 Gõ lọc nhanh lỗi hoặc mã SKU linh kiện kho (VD: BAT-APP2-01, MESH-APP-02, pin, rè ANC...)"
+                                placeholder="Gõ lọc nhanh lỗi thường gặp (VD: pin, rè ANC, nhỏ tiếng, cảm ứng...)"
                               />
 
                               {enrichedAndFiltered.length > 0 ? (
                                 <div className="flex flex-wrap gap-1.5">
-                                  {enrichedAndFiltered.map((chip, idx) => {
-                                    const isSelected = dev.issue.includes(chip.issue_name);
-                                    const firstPart = chip.linked_parts?.[0];
+                                  {enrichedAndFiltered.map((chip) => {
+                                    const chipKey = buildDeviceIssueSelectionKey(
+                                      dev.category,
+                                      dev.device,
+                                      chip.issue_name
+                                    );
+                                    const isSelected =
+                                      Boolean(dev.issue.trim()) &&
+                                      ((Array.isArray(dev.selectedIssueKeys) &&
+                                        dev.selectedIssueKeys.includes(chipKey)) ||
+                                        dev.issue.toLowerCase().includes(chip.issue_name.toLowerCase()));
                                     return (
                                       <button
-                                        key={chip.id || `chip-${devIdx}-${idx}`}
+                                        key={chipKey}
                                         type="button"
+                                        data-issue-key={chipKey}
                                         onClick={() =>
                                           devIdx === 0
                                             ? handleChipClick(chip)
@@ -2326,109 +2372,13 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
                                           {isSelected ? '✓ ' : '+ '}
                                           {chip.issue_name}
                                         </span>
-                                        {firstPart && (
-                                          <span className="px-1.5 py-0.5 rounded bg-[#f4faf7] border border-[#c6e0d2] text-[10px] font-mono text-[#176b58]">
-                                            🔧 {firstPart.part_sku} (-{firstPart.quantity})
-                                          </span>
-                                        )}
                                       </button>
                                     );
                                   })}
                                 </div>
                               ) : (
                                 <div className="p-2.5 rounded-[8px] bg-[#fafcfa] border border-dashed border-[#d8e2dc] text-xs text-[#718279]">
-                                  Không tìm thấy mẫu lỗi hoặc linh kiện nào khớp từ khóa &ldquo;{filterQuery}&rdquo;.
-                                </div>
-                              )}
-
-                              {/* Khu vực trực quan: Linh kiện Kho gắn liền với lỗi */}
-                              {previewObjects.length > 0 && (
-                                <div
-                                  data-testid="intake-issue-object-preview"
-                                  className="p-3.5 rounded-[10px] bg-[#f7fbf9] border border-[#c5dfd1] space-y-2.5 text-xs"
-                                >
-                                  <div className="flex flex-wrap items-center justify-between gap-2 pb-2 border-b border-[#dfeee6]">
-                                    <div className="flex items-center gap-2">
-                                      <span className="px-2 py-0.5 rounded bg-[#176b58] text-white text-[10px] font-bold uppercase tracking-wider">
-                                        {isShowingSampleDefault
-                                          ? 'Định mức trừ kho'
-                                          : `Đã chọn ${previewObjects.length} lỗi trừ kho`}
-                                      </span>
-                                      <strong className="text-[#1c302b]">
-                                        Linh kiện Kho gắn liền với lỗi (Tự động trừ tồn kho tại Kho &amp; Mua hàng ngay khi Tạo đơn)
-                                      </strong>
-                                    </div>
-                                    <span className="text-[11px] font-semibold text-[#bc5b52] bg-[#fbefed] px-2 py-0.5 rounded border border-[#f5d5d0]">
-                                      Tự động xuất trừ kho khi lưu đơn
-                                    </span>
-                                  </div>
-
-                                  <div className="space-y-2">
-                                    {previewObjects.map((obj) => (
-                                      <div
-                                        key={obj.issue_code}
-                                        className="p-2.5 rounded-[8px] bg-white border border-[#e2ede7] space-y-1.5"
-                                      >
-                                        <div className="flex flex-wrap items-center justify-between gap-2">
-                                          <div className="flex items-center gap-1.5">
-                                            <span className="font-mono text-[11px] font-bold text-[#176b58] bg-[#eaf4ef] px-2 py-0.5 rounded border border-[#cbe3d6]">
-                                              {obj.issue_code}
-                                            </span>
-                                            <b className="text-[#1c302b] text-xs">{obj.issue_name}</b>
-                                          </div>
-                                          <div className="flex items-center gap-1.5 text-[11px] text-[#5f7067]">
-                                            <span>Thiết bị: <b>{obj.category}</b></span>
-                                            {dev.category === 'Apple Watch' && dev.watchSize && (
-                                              <span className="px-1.5 py-0.5 rounded bg-[#eaf4ef] text-[#176b58] font-bold">
-                                                Size: {dev.watchSize}
-                                              </span>
-                                            )}
-                                          </div>
-                                        </div>
-
-                                        {obj.solution && (
-                                          <div className="text-[11px] text-[#55665d]">
-                                            <span>Hướng xử lý KT: </span>
-                                            <span className="font-medium text-[#243830]">{obj.solution}</span>
-                                          </div>
-                                        )}
-
-                                        <div className="pt-1 flex flex-wrap items-center gap-1.5">
-                                          <span className="text-[11px] font-bold text-[#176b58]">
-                                            Linh kiện Kho sẽ trừ ({obj.linked_parts.length}):
-                                          </span>
-                                          {obj.linked_parts.map((pt) => (
-                                            <span
-                                              key={`${obj.issue_code}-${pt.part_sku}`}
-                                              className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-[#eaf4ef] text-[#176b58] border border-[#c2dfd0] text-[11px] font-semibold"
-                                            >
-                                              <span>🔧 {pt.part_name}</span>
-                                              <span className="font-mono text-[10px] font-bold px-1.5 py-0.2 rounded bg-white text-[#176b58] border border-[#b8d9cb]">
-                                                SKU: {pt.part_sku}
-                                              </span>
-                                              <span className="font-mono font-bold text-[#bc5b52]">
-                                                -{pt.quantity} {pt.unit || 'cái'}
-                                              </span>
-                                            </span>
-                                          ))}
-                                        </div>
-                                      </div>
-                                    ))}
-                                  </div>
-
-                                  <div className="pt-2 border-t border-[#dfeee6] space-y-1">
-                                    <label className="block text-[11px] font-bold text-[#176b58]">
-                                      Linh kiện xuất trừ Kho &amp; Mua hàng ngay khi Tạo đơn (parts_needed):
-                                    </label>
-                                    <Input
-                                      data-testid="intake-linked-parts-needed-input"
-                                      value={dev.partsNeeded || ''}
-                                      onChange={(e) =>
-                                        updateDevice(devIdx, { partsNeeded: e.target.value })
-                                      }
-                                      placeholder="Tên linh kiện (SKU) x1 — tự động điền khi chọn lỗi để trừ kho..."
-                                    />
-                                  </div>
+                                  Không tìm thấy mẫu lỗi nào khớp từ khóa &ldquo;{filterQuery}&rdquo;.
                                 </div>
                               )}
                             </div>

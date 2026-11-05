@@ -31,7 +31,7 @@ import {
   formatLinkedPartsSummary,
   applyWatchSizeTagToText,
   inferLinkedPartsFromOrderText,
-  type CommonIssueCatalogItem,
+  buildDeviceIssueSelectionKey,
 } from '../constants/commonIssueCatalog';
 
 export interface IntakeQuickConsoleProps {
@@ -51,6 +51,7 @@ export interface IntakeQuickConsoleProps {
   device: IntakeDeviceItem;
   onUpdateDevice: (updater: Partial<IntakeDeviceItem> | ((prev: IntakeDeviceItem) => IntakeDeviceItem)) => void;
   onCategoryChange: (cat: string) => void;
+  onDeviceModelChange?: (model: string) => void;
   commonIssues: CommonIssueItem[];
   onChipClick: (chip: CommonIssueItem) => void;
   effectiveChecks: string[];
@@ -77,6 +78,7 @@ export const IntakeQuickConsole: React.FC<IntakeQuickConsoleProps> = ({
   device,
   onUpdateDevice,
   onCategoryChange,
+  onDeviceModelChange,
   commonIssues,
   onChipClick,
   effectiveChecks,
@@ -127,25 +129,11 @@ export const IntakeQuickConsole: React.FC<IntakeQuickConsoleProps> = ({
     device.device
   );
 
-  const activeIssueObjects: CommonIssueCatalogItem[] = filteredIssues.filter((item) =>
-    device.issue.toLowerCase().includes(item.issue_name.toLowerCase())
-  );
-  const inferredFromFreeText = device.issue.trim()
-    ? inferLinkedPartsFromOrderText(
-        device.issue,
-        device.category,
-        device.watchSize,
-        device.device
-      ).matchedIssues
+  const activeIssueObjects = device.issue.trim()
+    ? filteredIssues.filter((item) =>
+        device.issue.toLowerCase().includes(item.issue_name.toLowerCase())
+      )
     : [];
-  const previewIssueObjects: CommonIssueCatalogItem[] =
-    activeIssueObjects.length > 0
-      ? activeIssueObjects
-      : inferredFromFreeText.length > 0
-      ? inferredFromFreeText
-      : filteredIssues.length > 0
-      ? [filteredIssues[0]]
-      : [];
 
   const handleSelectWatchSize = (size: string) => {
     const nextAccessories = applyWatchSizeTagToText(device.accessories, size);
@@ -257,13 +245,30 @@ export const IntakeQuickConsole: React.FC<IntakeQuickConsoleProps> = ({
             <Select
               label="Danh mục *"
               value={device.category}
-              onChange={(e) => onCategoryChange(e.target.value)}
+              onChange={(e) => {
+                setQuickIssueFilter('');
+                onCategoryChange(e.target.value);
+              }}
               options={categories.map((c) => ({ value: c, label: c }))}
             />
             <Select
               label="Dòng máy *"
               value={canonicalSelectedModel}
-              onChange={(e) => onUpdateDevice({ device: e.target.value })}
+              onChange={(e) => {
+                const nextModel = e.target.value;
+                setQuickIssueFilter('');
+                if (onDeviceModelChange) {
+                  onDeviceModelChange(nextModel);
+                } else {
+                  onUpdateDevice({
+                    device: nextModel,
+                    issue: '',
+                    selectedIssues: [],
+                    selectedIssueKeys: [],
+                    partsNeeded: '',
+                  });
+                }
+              }}
               options={selectModelOptions}
             />
             <Input
@@ -404,9 +409,13 @@ export const IntakeQuickConsole: React.FC<IntakeQuickConsoleProps> = ({
                   inferred.linkedParts,
                   device.watchSize
                 );
+                const nextKeys = inferred.matchedIssues.map((iss) =>
+                  buildDeviceIssueSelectionKey(device.category, device.device, iss.issue_name)
+                );
                 onUpdateDevice({
                   issue: val,
                   selectedIssues: inferred.matchedIssues,
+                  selectedIssueKeys: nextKeys,
                   partsNeeded: nextPartsSummary,
                 });
               }}
@@ -414,11 +423,11 @@ export const IntakeQuickConsole: React.FC<IntakeQuickConsoleProps> = ({
               error={errors.issue || errors[`issue_${device.id}`]}
             />
 
-            {/* Filter nhanh lỗi hoặc linh kiện */}
+            {/* Chọn nhanh lỗi thường gặp (Chỉ note nhanh lỗi, không hiển thị giải thích kho) */}
             <div className="space-y-2 pt-1">
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <span className="text-[11px] font-bold text-[#176b51] uppercase tracking-wide">
-                  Lỗi thường gặp ({device.category}) & Linh kiện đi kèm:
+                  Lỗi thường gặp ({device.category} · {device.device}):
                 </span>
                 <span className="text-[11px] text-[#81908a]">
                   ({filteredIssues.length} mẫu lỗi)
@@ -429,18 +438,27 @@ export const IntakeQuickConsole: React.FC<IntakeQuickConsoleProps> = ({
                 data-testid="quick-intake-issue-filter-input"
                 value={quickIssueFilter}
                 onChange={(e) => setQuickIssueFilter(e.target.value)}
-                placeholder="🔍 Gõ lọc nhanh lỗi hoặc mã SKU linh kiện kho (VD: BAT-APP2-01, MESH-APP-02, pin, rè ANC...)"
+                placeholder="Gõ lọc nhanh lỗi thường gặp (VD: pin, rè ANC, nhỏ tiếng, cảm ứng...)"
               />
 
               {filteredIssues.length > 0 ? (
                 <div className="flex flex-wrap gap-1.5">
-                  {filteredIssues.map((chip, idx) => {
-                    const active = device.issue.includes(chip.issue_name);
-                    const firstPart = chip.linked_parts?.[0];
+                  {filteredIssues.map((chip) => {
+                    const chipKey = buildDeviceIssueSelectionKey(
+                      device.category,
+                      device.device,
+                      chip.issue_name
+                    );
+                    const active =
+                      Boolean(device.issue.trim()) &&
+                      ((Array.isArray(device.selectedIssueKeys) &&
+                        device.selectedIssueKeys.includes(chipKey)) ||
+                        device.issue.toLowerCase().includes(chip.issue_name.toLowerCase()));
                     return (
                       <button
-                        key={chip.id || idx}
+                        key={chipKey}
                         type="button"
+                        data-issue-key={chipKey}
                         onClick={() => onChipClick(chip)}
                         className={`text-[11px] px-2.5 py-1.5 rounded-[12px] border transition-colors cursor-pointer flex items-center gap-1.5 text-left ${
                           active
@@ -449,11 +467,6 @@ export const IntakeQuickConsole: React.FC<IntakeQuickConsoleProps> = ({
                         }`}
                       >
                         <span>{active ? '✓' : '+'} {chip.issue_name}</span>
-                        {firstPart && (
-                          <span className="px-1.5 py-0.5 rounded bg-white/90 border border-[#cde4d8] text-[10px] font-mono text-[#176b51]">
-                            🔧 {firstPart.part_sku} (-{firstPart.quantity})
-                          </span>
-                        )}
                       </button>
                     );
                   })}
@@ -461,76 +474,6 @@ export const IntakeQuickConsole: React.FC<IntakeQuickConsoleProps> = ({
               ) : (
                 <div className="text-xs text-[#81908a] italic py-1">
                   Không tìm thấy mẫu lỗi khớp từ khóa &ldquo;{quickIssueFilter}&rdquo;.
-                </div>
-              )}
-
-              {/* Khu vực trực quan: Linh kiện Kho gắn liền với lỗi */}
-              {previewIssueObjects.length > 0 && (
-                <div
-                  data-testid="quick-intake-issue-object-preview"
-                  className="p-3 rounded-[8px] bg-[#f8fbf9] border border-[#cde4d8] space-y-2 text-xs"
-                >
-                  <div className="flex flex-wrap items-center justify-between gap-2 pb-1.5 border-b border-[#dcebe3]">
-                    <div className="flex items-center gap-1.5">
-                      <span className="px-2 py-0.5 rounded bg-[#176b51] text-white text-[10px] font-bold uppercase">
-                        Trừ Kho Tự Động
-                      </span>
-                      <strong className="text-[#17231f]">
-                        Linh kiện Kho gắn liền với lỗi (Tự động trừ tồn kho tại Kho &amp; Mua hàng ngay khi Tạo đơn)
-                      </strong>
-                    </div>
-                  </div>
-
-                  {previewIssueObjects.map((obj) => (
-                    <div
-                      key={obj.issue_code}
-                      className="p-2.5 rounded-[6px] bg-white border border-[#e3ece7] space-y-1.5"
-                    >
-                      <div className="flex flex-wrap items-center justify-between gap-1">
-                        <div className="flex items-center gap-1.5">
-                          <span className="font-mono text-[11px] font-bold text-[#176b51] bg-[#e9f4ef] px-1.5 py-0.5 rounded">
-                            {obj.issue_code}
-                          </span>
-                          <b className="text-[#17231f]">{obj.issue_name}</b>
-                        </div>
-                        <span className="text-[11px] text-[#5c6964]">
-                          Danh mục: <b>{obj.category}</b>
-                          {device.watchSize ? ` · Size: ${device.watchSize}` : ''}
-                        </span>
-                      </div>
-                      <div className="flex flex-wrap items-center gap-1.5">
-                        <span className="text-[11px] text-[#176b51] font-bold">
-                          Linh kiện trừ kho ({obj.linked_parts.length}):
-                        </span>
-                        {obj.linked_parts.map((pt) => (
-                          <span
-                            key={`${obj.issue_code}-${pt.part_sku}`}
-                            className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded bg-[#e9f4ef] text-[#176b51] border border-[#cde4d8] text-[11px] font-semibold"
-                          >
-                            <span>🔧 {pt.part_name}</span>
-                            <span className="font-mono text-[10px] font-bold px-1.5 py-0.2 rounded bg-white border border-[#b8d9cb]">
-                              SKU: {pt.part_sku}
-                            </span>
-                            <span className="font-mono font-bold text-[#bc5b52]">
-                              -{pt.quantity} {pt.unit || 'cái'}
-                            </span>
-                          </span>
-                        ))}
-                      </div>
-                    </div>
-                  ))}
-
-                  <div className="pt-1.5 border-t border-[#dcebe3] space-y-1">
-                    <label className="block text-[11px] font-bold text-[#176b51]">
-                      Linh kiện xuất trừ Kho &amp; Mua hàng khi bấm Lưu đơn (parts_needed):
-                    </label>
-                    <Input
-                      data-testid="quick-intake-linked-parts-needed-input"
-                      value={device.partsNeeded || ''}
-                      onChange={(e) => onUpdateDevice({ partsNeeded: e.target.value })}
-                      placeholder="Tên linh kiện (SKU) x1 — tự động điền khi chọn lỗi..."
-                    />
-                  </div>
                 </div>
               )}
             </div>

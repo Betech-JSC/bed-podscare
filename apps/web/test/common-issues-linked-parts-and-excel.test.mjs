@@ -19,6 +19,8 @@ import {
   applyWatchSizeTagToText,
   inferLinkedPartsFromOrderText,
   parsePartsSummaryToItems,
+  buildDeviceIssueSelectionKey,
+  toggleIssueNameInDescription,
 } from '../app/constants/commonIssueCatalog.ts';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -408,22 +410,23 @@ describe('Independent Tester: Common Issue Catalog (Real Warehouse SKUs), Linked
       'StockTab trong Kho & Mua hàng phải hiển thị bảng Định mức Lỗi Sửa Chữa ↔ Linh Kiện Kho'
     );
 
-    // 5.3 IntakeWizardModal & IntakeQuickConsole hiển thị khu vực Linh kiện Kho gắn liền với lỗi (Tự động trừ tồn kho)
+    // 5.3 IntakeWizardModal & IntakeQuickConsole:
+    // - Ẩn hoàn toàn khung giải thích kho trên form tạo đơn (không hiển thị intake-issue-object-preview / quick-intake-issue-object-preview / parts_needed input)
+    // - Chỉ hiển thị gọn tên lỗi trên các chip chọn nhanh để note nhanh lỗi
+    // - Vẫn giữ logic ngầm tổng hợp parts_needed khi Lưu đơn (handleSave) để Backend tự động trừ kho
     assert.ok(
       intakeWizardContent.includes('data-testid="intake-issue-filter-input"') &&
-        intakeWizardContent.includes('data-testid="intake-issue-object-preview"') &&
-        intakeWizardContent.includes('data-testid="intake-linked-parts-needed-input"') &&
-        intakeWizardContent.includes(
-          'Linh kiện Kho gắn liền với lỗi (Tự động trừ tồn kho tại Kho &amp; Mua hàng ngay khi Tạo đơn)'
-        ),
-      'IntakeWizardModal phải hiển thị rõ Linh kiện Kho gắn liền với lỗi tự động trừ tồn kho khi tạo đơn'
+        !intakeWizardContent.includes('data-testid="intake-issue-object-preview"') &&
+        !intakeWizardContent.includes('data-testid="intake-linked-parts-needed-input"') &&
+        intakeWizardContent.includes('parts_needed: effectivePartsNeeded'),
+      'IntakeWizardModal không hiển thị khung giải thích kho trên form tiếp nhận nhưng vẫn ngầm tính parts_needed khi Lưu đơn'
     );
     assert.ok(
       intakeQuickContent.includes('data-testid="quick-apple-watch-size-selector"') &&
         intakeQuickContent.includes('data-testid="quick-intake-issue-filter-input"') &&
-        intakeQuickContent.includes('data-testid="quick-intake-issue-object-preview"') &&
-        intakeQuickContent.includes('data-testid="quick-intake-linked-parts-needed-input"'),
-      'IntakeQuickConsole phải đồng bộ khu vực Linh kiện Kho gắn liền với lỗi tự động trừ tồn kho'
+        !intakeQuickContent.includes('data-testid="quick-intake-issue-object-preview"') &&
+        !intakeQuickContent.includes('data-testid="quick-intake-linked-parts-needed-input"'),
+      'IntakeQuickConsole chỉ note nhanh các lỗi trên giao diện tiếp nhận, không hiển thị khung giải thích kho'
     );
 
     // 5.4 TechOrderDetailModal & BomInspector
@@ -439,7 +442,7 @@ describe('Independent Tester: Common Issue Catalog (Real Warehouse SKUs), Linked
     );
   });
 
-  test('6. Đồng bộ 2 chiều giữa Chọn nhanh thiết bị & Loại thiết bị / Dòng sản phẩm / Thành phần bàn giao', () => {
+  test('6. Mặc định không chọn lỗi & Khi đổi sang mã sản phẩm/thiết bị khác thì xóa sạch lỗi cũ (không mang theo lỗi do index)', () => {
     const intakeWizardContent = fs.readFileSync(
       path.join(webRoot, 'app/components/IntakeWizardModal.tsx'),
       'utf-8'
@@ -447,6 +450,54 @@ describe('Independent Tester: Common Issue Catalog (Real Warehouse SKUs), Linked
     const intakeQuickContent = fs.readFileSync(
       path.join(webRoot, 'app/components/IntakeQuickConsole.tsx'),
       'utf-8'
+    );
+
+    // 6.1 Kiểm tra hàm buildDeviceIssueSelectionKey tạo key duy nhất theo Danh mục + Mã sản phẩm + Tên lỗi
+    const keyPro2 = buildDeviceIssueSelectionKey(
+      'AirPods',
+      'AirPods Pro 2',
+      'Pin chai, tụt pin nhanh dưới 1 tiếng'
+    );
+    const keyGen3 = buildDeviceIssueSelectionKey(
+      'AirPods',
+      'AirPods 3',
+      'Pin chai, tụt pin nhanh dưới 1 tiếng'
+    );
+    const keyWatch = buildDeviceIssueSelectionKey(
+      'Apple Watch',
+      'Apple Watch Series 9',
+      'Pin phù, sụt nhanh hoặc đẩy bung màn hình'
+    );
+    assert.notEqual(
+      keyPro2,
+      keyGen3,
+      'Cùng một tên lỗi nhưng khác mã sản phẩm (AirPods Pro 2 vs AirPods 3) phải có key hoàn toàn khác nhau'
+    );
+    assert.notEqual(keyPro2, keyWatch);
+
+    // 6.2 Kiểm tra toggleIssueNameInDescription bật/tắt chính xác lỗi có dấu phẩy và trả về chuỗi rỗng khi bỏ chọn hết
+    const step1 = toggleIssueNameInDescription(
+      '',
+      'Pin chai, tụt pin nhanh dưới 1 tiếng',
+      'AirPods'
+    );
+    assert.equal(step1.isNowSelected, true);
+    assert.equal(step1.nextText, 'Pin chai, tụt pin nhanh dưới 1 tiếng');
+
+    const step2 = toggleIssueNameInDescription(
+      step1.nextText,
+      'Pin chai, tụt pin nhanh dưới 1 tiếng',
+      'AirPods'
+    );
+    assert.equal(step2.isNowSelected, false);
+    assert.equal(step2.nextText, '', 'Khi bỏ chọn lỗi duy nhất thì mô tả lỗi phải về rỗng hoàn toàn');
+
+    // 6.3 Kiểm tra handleDeviceModelChangeForDevice và handleCategoryChangeForDevice reset sạch lỗi cũ
+    assert.ok(
+      intakeWizardContent.includes('handleDeviceModelChangeForDevice') &&
+        intakeWizardContent.includes('buildDeviceIssueSelectionKey') &&
+        intakeQuickContent.includes('buildDeviceIssueSelectionKey'),
+      'IntakeWizardModal và IntakeQuickConsole phải định danh chip lỗi bằng buildDeviceIssueSelectionKey và có handleDeviceModelChangeForDevice để xóa lỗi cũ khi đổi mã sản phẩm'
     );
 
     assert.ok(
