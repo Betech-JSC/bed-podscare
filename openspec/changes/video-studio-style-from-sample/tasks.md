@@ -16,13 +16,13 @@
 
 ## 2. Giai đoạn S2 — Bộ hợp nhất tham số 4 tầng & truy vết (`ps2_style_applier.py`)
 
-- [ ] S2.1 Xây dựng `tools/video-pipeline/phases/ps2_style_applier.py` giải quyết thứ tự ưu tiên 4 tầng (`user_override > sample_style > template > default_profile`) theo trạng thái bật/tắt của từng công tắc nhóm.
-- [ ] S2.2 Thực thi đầy đủ các quy tắc bảo vệ (giữ tốc độ phát `1.0x`, không tự đổi tỉ lệ khung hình khi khác video mới, kẹp `target_lufs` trong `[-23.0, -9.0]` LUFS và `true_peak_max_db <= -1.0` dBTP, kiểm tra họ chữ tiếng Việt, chỉ bật `punchin` khi `confidence >= estimated` có `evidence`), xuất `work/effective_profile.json` và `work/profile_trace.json`.
+- [x] S2.1 Xây dựng `tools/video-pipeline/phases/ps2_style_applier.py` giải quyết thứ tự ưu tiên 4 tầng (`user_override > sample_style > template > default_profile`) theo trạng thái bật/tắt của từng công tắc nhóm.
+- [x] S2.2 Thực thi đầy đủ các quy tắc bảo vệ (giữ tốc độ phát `1.0x`, không tự đổi tỉ lệ khung hình khi khác video mới, kẹp `target_lufs` trong `[-23.0, -9.0]` LUFS và `true_peak_max_db <= -1.0` dBTP, kiểm tra họ chữ tiếng Việt, chỉ bật `punchin` khi `confidence >= estimated` có `evidence`), xuất `work/effective_profile.json` và `work/profile_trace.json`.
 
 ## 3. Giai đoạn S3 — Tích hợp Pipeline & Kiểm tra độ khớp (`style_match.json`)
 
-- [ ] S3.1 Kết nối `effective_profile.json` vào `p3_acoustic_detect.py`, `p5_hook_agent.py`, `p6_cutlist.py`, `p6a_audio_clean.py`, `p6b_captions.py`, `p6c_punchin.py`, `p6d_titlecard.py` và `cli.py`.
-- [ ] S3.2 Bổ sung bộ đối chiếu sau xuất bản để đo đạc và sinh `work/style_match.json` theo đúng bảng dung sai S0.5, tích hợp vào `p8_qa.py` và kết quả trả về của job.
+- [x] S3.1 Kết nối `effective_profile.json` vào `p3_acoustic_detect.py`, `p5_hook_agent.py`, `p6_cutlist.py`, `p6a_audio_clean.py`, `p6b_captions.py`, `p6c_punchin.py`, `p6d_titlecard.py` và `cli.py`.
+- [x] S3.2 Bổ sung bộ đối chiếu sau xuất bản để đo đạc và sinh `work/style_match.json` theo đúng bảng dung sai S0.5, tích hợp vào `p8_qa.py` và kết quả trả về của job.
 
 ## 4. Giai đoạn S4 — Giao diện `/video-studio`, API Phong cách mẫu & Gỡ công tắc Chế độ chuyên sâu
 
