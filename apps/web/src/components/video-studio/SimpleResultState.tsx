@@ -59,6 +59,8 @@ export interface SimpleResultStateProps {
   ) => Promise<Partial<SimpleStudioResult | VideoStudioJobResult> | void> | void;
   /** Callback khi người dùng tải/mở dự án CapCut */
   onOpenOrDownloadCapCutDraft?: () => Promise<void> | void;
+  /** Callback khi khôi phục / giữ lại một đoạn đã cắt (tùy chọn) */
+  onRestoreCut?: (cutId: string, restore?: boolean) => Promise<void> | void;
   /** Callback khi bấm "Cắt video khác" để quay về Trạng thái 1 (Chuẩn bị) */
   onResetToPrepare?: () => void;
   /** Cho phép điều khiển chỉ số đoạn cắt đang chọn từ bên ngoài nếu cần */
@@ -156,7 +158,7 @@ export function SimpleResultState({
       ? result.hooks
       : [];
 
-    return rawHooks.slice(0, 3).map((h, idx) => {
+    return rawHooks.slice(0, 4).map((h, idx) => {
       const id = String(
         h.id ||
           (h as VideoStudioResultHookItem).hook_id ||
@@ -175,7 +177,9 @@ export function SimpleResultState({
       ).trim();
       const label = getHookStyleLabelVi(
         h.style,
-        (h as SimpleHookItem).label || (h as VideoStudioResultHookItem).title,
+        (h as SimpleHookItem).label ||
+          (h as VideoStudioResultHookItem).title ||
+          (h as Record<string, any>).style_label_vi,
         idx
       );
       const isSelected = Boolean(
@@ -327,7 +331,11 @@ export function SimpleResultState({
 
     if (
       localPromptWarning &&
-      !rows.some((r) => r.message === localPromptWarning.message)
+      !rows.some(
+        (r) =>
+          r.code === localPromptWarning.code ||
+          r.message === localPromptWarning.message
+      )
     ) {
       rows.unshift({
         id: 'local_prompt_warning',

@@ -957,11 +957,89 @@ export default function VideoStudioPage() {
               selectedCutIndex={safeSelectedCutIndex >= 0 ? safeSelectedCutIndex : 0}
               onSelectCutIndex={(idx) => setSelectedCutIndex(idx)}
               onSelectHook={handleSelectHookOption}
-              onApplyHook={async ({ selectedHookId }) => {
-                handleSelectHookOption(selectedHookId);
-                await new Promise((resolve) => setTimeout(resolve, 350));
+              onApplyHook={async ({
+                selectedHookId: nextHookId,
+                hookPrompt: nextHookPrompt,
+                customHookClipFile,
+              }) => {
+                handleSelectHookOption(nextHookId);
+                let uploadedClipPath: string | undefined;
+
+                try {
+                  if (customHookClipFile) {
+                    const formData = new FormData();
+                    formData.append('projectId', prepareData.project_id);
+                    formData.append('role', 'hook_clip');
+                    formData.append('file', customHookClipFile);
+                    const uploadRes = await fetch('/api/video-studio/upload', {
+                      method: 'POST',
+                      body: formData,
+                    });
+                    if (uploadRes.ok) {
+                      const uploadJson = await uploadRes.json().catch(() => null);
+                      if (uploadJson?.savedPath) {
+                        uploadedClipPath = String(uploadJson.savedPath);
+                      }
+                    }
+                  }
+
+                  const targetId = activeJobId || prepareData.project_id;
+                  const rehookRes = await fetch(
+                    `/api/video-studio/jobs/${encodeURIComponent(targetId)}/rehook`,
+                    {
+                      method: 'POST',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({
+                        selected_hook_id: nextHookId,
+                        hook_prompt: nextHookPrompt || undefined,
+                        hook_clip_path: uploadedClipPath,
+                      }),
+                    }
+                  );
+
+                  if (rehookRes.ok) {
+                    const updated = await rehookRes.json().catch(() => null);
+                    if (updated && typeof updated === 'object') {
+                      setResultData((prev) => ({
+                        ...prev,
+                        selected_hook_id: updated.selected_hook_id || nextHookId,
+                        out_duration_ms:
+                          typeof updated.out_duration_ms === 'number'
+                            ? updated.out_duration_ms
+                            : prev.out_duration_ms,
+                        hooks:
+                          Array.isArray(updated.hooks) && updated.hooks.length > 0
+                            ? updated.hooks
+                            : prev.hooks.map((h) => ({
+                                ...h,
+                                selected: h.id === nextHookId,
+                              })),
+                        files: updated.files
+                          ? { ...prev.files, ...updated.files }
+                          : prev.files,
+                        warnings: Array.isArray(updated.warnings)
+                          ? updated.warnings
+                          : prev.warnings,
+                      }));
+                    }
+                  }
+                } catch {
+                  // Giữ cập nhật tại chỗ nếu môi trường kiểm thử ngoại tuyến
+                }
               }}
-              onOpenOrDownloadCapCutDraft={() => {
+              onOpenOrDownloadCapCutDraft={async () => {
+                try {
+                  await fetch('/api/video-studio/capcut-sync', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                      action: 'push_to_capcut',
+                      projectId: prepareData.project_id,
+                    }),
+                  });
+                } catch {
+                  // Ignore network error in offline preview
+                }
                 setStatusFeedback(
                   `Đã đồng bộ gói dự án sang thư mục CapCut (${capcutDraftDir}).`
                 );
