@@ -9,7 +9,6 @@ import {
 } from './types';
 
 export const SIMPLE_STUDIO_STORAGE_KEYS = {
-  advancedMode: 'podscare_video_studio_advanced_mode',
   capcutDraftDir: 'podscare_video_studio_capcut_dir',
 } as const;
 
