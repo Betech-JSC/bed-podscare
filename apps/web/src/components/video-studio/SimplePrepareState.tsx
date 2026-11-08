@@ -1,7 +1,24 @@
 'use client';
 
-import React, { useCallback, useEffect, useId, useRef, useState } from 'react';
-import type { AgentProfileConfig, CutPreset } from '@/src/lib/video-studio/types';
+import React, { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
+import type {
+  AgentProfileConfig,
+  CutPreset,
+  SavedStyleListItem,
+  StyleAnalyzeResponse,
+  StyleConfidenceLevel,
+  StyleGroupKey,
+  StyleProfile,
+  StyleSummaryItem,
+  StyleToggles,
+  VideoStudioAppliedStyle,
+  VideoStudioWarningItem,
+} from '@/src/lib/video-studio/types';
+import {
+  DEFAULT_STYLE_TOGGLES,
+  MOCK_APPLIED_STYLE,
+  MOCK_SAVED_STYLES_LIST,
+} from '@/src/lib/video-studio/mock-simple-data';
 import {
   formatDurationClock,
   formatFileSizeVi,
@@ -46,9 +63,13 @@ export interface SimplePrepareSubmitPayload {
   mergeGapMs: number;
   silenceThresholdMs: number;
   keepLaughter: boolean;
+  styleId?: string | null;
+  styleToggles?: StyleToggles | null;
+  appliedStyle?: VideoStudioAppliedStyle | null;
 }
 
 export interface SimplePrepareStateProps {
+  projectId?: string;
   video?: SelectedVideoInfo | null;
   onVideoChange?: (video: SelectedVideoInfo | null) => void;
   scriptText?: string;
@@ -67,6 +88,12 @@ export interface SimplePrepareStateProps {
   onPadEndMsChange?: (ms: number) => void;
   keepLaughter?: boolean;
   onKeepLaughterChange?: (keep: boolean) => void;
+  styleId?: string | null;
+  onStyleIdChange?: (styleId: string | null) => void;
+  styleToggles?: StyleToggles | null;
+  onStyleTogglesChange?: (toggles: StyleToggles) => void;
+  appliedStyle?: VideoStudioAppliedStyle | null;
+  onAppliedStyleChange?: (style: VideoStudioAppliedStyle | null) => void;
   profile?: Partial<AgentProfileConfig> | null;
   expertMode?: boolean;
   isSubmitting?: boolean;
@@ -235,7 +262,213 @@ function probeVideoFileClientOnly(file: File): Promise<{
   });
 }
 
+function inferClientAspectRatio(width?: number, height?: number): string {
+  const w = Number(width || 0);
+  const h = Number(height || 0);
+  if (w <= 0 || h <= 0) return '16:9';
+  const ratio = w / h;
+  const known: Array<[string, number]> = [
+    ['9:16', 9 / 16],
+    ['16:9', 16 / 9],
+    ['1:1', 1],
+    ['4:5', 4 / 5],
+    ['4:3', 4 / 3],
+    ['3:4', 3 / 4],
+  ];
+  for (const [label, target] of known) {
+    if (Math.abs(ratio - target) <= 0.05) return label;
+  }
+  return w >= h ? '16:9' : '9:16';
+}
+
+function formatViDecimal(value: number, digits = 1): string {
+  if (!Number.isFinite(value)) return '0';
+  const fixed = value.toFixed(digits).replace(/\.0+$/, '');
+  return fixed.replace('.', ',');
+}
+
+function getConfidenceBadgeMeta(conf?: StyleConfidenceLevel | string | null): {
+  label: string;
+  symbol: string;
+  className: string;
+} {
+  const norm = String(conf || 'estimated').trim().toLowerCase();
+  if (norm === 'measured') {
+    return {
+      label: 'Chắc chắn',
+      symbol: '●',
+      className: 'bg-[#e9f4ef] border-[#176b51]/40 text-[#176b51]',
+    };
+  }
+  if (norm === 'assumed') {
+    return {
+      label: 'Giả định',
+      symbol: '○',
+      className: 'bg-[#faf3e7] border-[#d5c19a] text-[#8f5d14]',
+    };
+  }
+  return {
+    label: 'Ước lượng',
+    symbol: '◐',
+    className: 'bg-[#f6f8f6] border-[#d5e0d7] text-[#4a5d54]',
+  };
+}
+
+export const ORDERED_STYLE_GROUPS: readonly StyleGroupKey[] = [
+  'pacing',
+  'captions',
+  'hook',
+  'audio',
+  'punchin',
+] as const;
+
+function buildLearnedStyleRows(
+  style: VideoStudioAppliedStyle,
+  hasUserHookPrompt: boolean
+): Array<{
+  key: StyleGroupKey;
+  title: string;
+  sentence: string;
+  confidence: StyleConfidenceLevel;
+}> {
+  const profile: Partial<StyleProfile> = style.profile || {};
+  const confMap = profile.confidence || {};
+  const summaryByKey = new Map<string, StyleSummaryItem>();
+  for (const item of style.summary || []) {
+    if (item && item.key) {
+      summaryByKey.set(String(item.key), item);
+    }
+  }
+
+  // 1. Pacing
+  const pauseMedMs = Math.round(Number(profile.pacing?.pause_median_ms ?? 240));
+  const maxSilMs = Math.round(Number(profile.pacing?.max_silence_kept_ms ?? 650));
+  const wpm = Number(profile.pacing?.words_per_min ?? 168);
+  const pacingConf = (confMap.pacing ||
+    summaryByKey.get('pacing')?.confidence ||
+    'measured') as StyleConfidenceLevel;
+  const speedVi =
+    pauseMedMs <= 280 || Number(profile.pacing?.shots_per_min ?? 18) >= 15
+      ? 'nhanh'
+      : pauseMedMs <= 450
+      ? 'vừa'
+      : 'chậm rãi';
+  const pauseSecVi = formatViDecimal(pauseMedMs / 1000, 2);
+  const maxSilSecVi = formatViDecimal(maxSilMs / 1000, 2);
+  const pacingSentence =
+    pacingConf === 'assumed' && wpm <= 1
+      ? 'Nhịp cắt: chưa phát hiện lời thoại rõ, giữ nhịp nghỉ mặc định khoảng 0,24 giây'
+      : `Nhịp cắt: ${speedVi}, nghỉ giữa câu khoảng ${pauseSecVi} giây (tối đa ${maxSilSecVi} giây)`;
+
+  // 2. Captions
+  const captionsConf = (confMap.captions ||
+    summaryByKey.get('captions')?.confidence ||
+    'estimated') as StyleConfidenceLevel;
+  let captionsSentence = 'Phụ đề: không đốt sẵn phụ đề trên khung hình';
+  if (profile.captions?.present !== false) {
+    const wpl = Math.max(1, Math.round(Number(profile.captions?.words_per_line ?? 3)));
+    const posRaw = String(profile.captions?.position || 'bottom_center').toLowerCase();
+    const posVi =
+      posRaw === 'middle_center'
+        ? 'giữa màn hình'
+        : posRaw === 'top_center'
+        ? 'giữa phía trên'
+        : posRaw === 'lower_third'
+        ? '1/3 phía dưới'
+        : 'giữa phía dưới';
+    const hlRaw = String(profile.captions?.highlight || 'keyword_color').toLowerCase();
+    const hlVi =
+      hlRaw === 'box'
+        ? 'từ khóa đóng khung'
+        : hlRaw === 'none'
+        ? 'chữ đồng màu'
+        : 'từ khóa tô vàng';
+    captionsSentence = `Phụ đề: ${wpl} từ mỗi dòng, ${posVi}, ${hlVi}`;
+  }
+
+  // 3. Hook
+  const hookConf = (confMap.hook ||
+    summaryByKey.get('hook')?.confidence ||
+    'estimated') as StyleConfidenceLevel;
+  const hookDurSecVi = formatViDecimal(
+    Number(profile.hook?.duration_ms ?? 6200) / 1000,
+    1
+  );
+  const hookStyleRaw = String(profile.hook?.style || 'question').toLowerCase();
+  const hookStyleVi =
+    hookStyleRaw === 'teaser'
+      ? 'nhá hàng kết quả'
+      : hookStyleRaw === 'statement'
+      ? 'khẳng định'
+      : 'câu hỏi';
+  const hasOverlay = Boolean(
+    profile.hook?.text_overlay ?? profile.titlecard?.present ?? true
+  );
+  const baseHookSentence = `Phần mở đầu: ${hookStyleVi}, khoảng ${hookDurSecVi} giây${
+    hasOverlay ? ', có chữ tiêu đề đầu' : ''
+  }`;
+  const hookSentence = hasUserHookPrompt
+    ? `${baseHookSentence} — Đang ưu tiên theo yêu cầu riêng bạn đã nhập bên dưới`
+    : baseHookSentence;
+
+  // 4. Audio
+  const audioConf = (confMap.audio ||
+    summaryByKey.get('audio')?.confidence ||
+    'measured') as StyleConfidenceLevel;
+  const rawLufs = Number(profile.audio?.lufs ?? -14.2);
+  const clampedLufs = Math.max(-23.0, Math.min(-9.0, rawLufs));
+  const audioSentence = `Âm lượng: ${formatViDecimal(
+    clampedLufs,
+    1
+  )} LUFS (đỉnh tối đa -1,0 dBTP)`;
+
+  // 5. Punch-in
+  const punchConf = (confMap.punchin ||
+    summaryByKey.get('punchin')?.confidence ||
+    'estimated') as StyleConfidenceLevel;
+  let punchSentence = 'Nhấn khung hình: không phát hiện phóng nhẹ khung hình';
+  if (profile.punchin?.detected !== false) {
+    const scalePct = Math.round(Number(profile.punchin?.scale ?? 1.08) * 100);
+    const gapSecVi = formatViDecimal(Number(profile.punchin?.min_gap_s ?? 5.5), 1);
+    punchSentence = `Nhấn khung hình: phóng nhẹ ${scalePct}%, cách nhau tối thiểu ${gapSecVi} giây`;
+  }
+
+  return [
+    {
+      key: 'pacing',
+      title: 'Nhịp cắt & khoảng lặng',
+      sentence: pacingSentence,
+      confidence: pacingConf,
+    },
+    {
+      key: 'captions',
+      title: 'Phụ đề',
+      sentence: captionsSentence,
+      confidence: captionsConf,
+    },
+    {
+      key: 'hook',
+      title: 'Phần mở đầu',
+      sentence: hookSentence,
+      confidence: hookConf,
+    },
+    {
+      key: 'audio',
+      title: 'Âm lượng',
+      sentence: audioSentence,
+      confidence: audioConf,
+    },
+    {
+      key: 'punchin',
+      title: 'Nhấn khung hình',
+      sentence: punchSentence,
+      confidence: punchConf,
+    },
+  ];
+}
+
 export function SimplePrepareState({
+  projectId,
   video: controlledVideo,
   onVideoChange,
   scriptText: controlledScript,
@@ -254,6 +487,12 @@ export function SimplePrepareState({
   onPadEndMsChange,
   keepLaughter: controlledKeepLaughter,
   onKeepLaughterChange,
+  styleId: controlledStyleId,
+  onStyleIdChange,
+  styleToggles: controlledStyleToggles,
+  onStyleTogglesChange,
+  appliedStyle: controlledAppliedStyle,
+  onAppliedStyleChange,
   profile,
   expertMode = false,
   isSubmitting = false,
@@ -264,6 +503,7 @@ export function SimplePrepareState({
   const formId = useId();
   const videoInputRef = useRef<HTMLInputElement | null>(null);
   const hookClipInputRef = useRef<HTMLInputElement | null>(null);
+  const sampleVideoInputRef = useRef<HTMLInputElement | null>(null);
   const activeObjectUrlRef = useRef<string | null>(null);
 
   const [internalVideo, setInternalVideo] = useState<SelectedVideoInfo | null>(
@@ -285,6 +525,36 @@ export function SimplePrepareState({
   const [internalHookClip, setInternalHookClip] =
     useState<SelectedHookClipInfo | null>(controlledHookClip ?? null);
   const [hookClipError, setHookClipError] = useState<string | null>(null);
+
+  // State cho khối "Phong cách theo video mẫu (không bắt buộc)"
+  const [isStyleSectionExpanded, setIsStyleSectionExpanded] =
+    useState<boolean>(true);
+  const [styleSourceMode, setStyleSourceMode] = useState<'upload' | 'saved'>(
+    'upload'
+  );
+  const [savedStylesList, setSavedStylesList] = useState<SavedStyleListItem[]>(
+    MOCK_SAVED_STYLES_LIST
+  );
+  const [internalStyleId, setInternalStyleId] = useState<string | null>(
+    controlledStyleId ?? null
+  );
+  const [internalStyleToggles, setInternalStyleToggles] = useState<StyleToggles>(
+    controlledStyleToggles ?? { ...DEFAULT_STYLE_TOGGLES }
+  );
+  const [internalAppliedStyle, setInternalAppliedStyle] =
+    useState<VideoStudioAppliedStyle | null>(controlledAppliedStyle ?? null);
+  const [isAnalyzingSample, setIsAnalyzingSample] = useState<boolean>(false);
+  const [sampleProgressMessage, setSampleProgressMessage] = useState<
+    string | null
+  >(null);
+  const [sampleErrorMessage, setSampleErrorMessage] = useState<string | null>(
+    null
+  );
+  const [styleNameInput, setStyleNameInput] = useState<string>('');
+  const [isSavingStyle, setIsSavingStyle] = useState<boolean>(false);
+  const [styleSaveFeedback, setStyleSaveFeedback] = useState<string | null>(
+    null
+  );
 
   const [showAdvanced, setShowAdvanced] = useState<boolean>(false);
   const [internalTemplate, setInternalTemplate] =
@@ -368,6 +638,27 @@ export function SimplePrepareState({
     }
   }, [controlledKeepLaughter]);
 
+  useEffect(() => {
+    if (controlledStyleId !== undefined) {
+      setInternalStyleId(controlledStyleId);
+    }
+  }, [controlledStyleId]);
+
+  useEffect(() => {
+    if (controlledStyleToggles !== undefined && controlledStyleToggles !== null) {
+      setInternalStyleToggles(controlledStyleToggles);
+    }
+  }, [controlledStyleToggles]);
+
+  useEffect(() => {
+    if (controlledAppliedStyle !== undefined) {
+      setInternalAppliedStyle(controlledAppliedStyle);
+      if (controlledAppliedStyle?.name) {
+        setStyleNameInput(controlledAppliedStyle.name);
+      }
+    }
+  }, [controlledAppliedStyle]);
+
   // Revoke object URL on unmount
   useEffect(() => {
     return () => {
@@ -396,6 +687,435 @@ export function SimplePrepareState({
     controlledKeepLaughter !== undefined
       ? controlledKeepLaughter
       : internalKeepLaughter;
+  const currentStyleId =
+    controlledStyleId !== undefined ? controlledStyleId : internalStyleId;
+  const currentStyleToggles =
+    controlledStyleToggles !== undefined && controlledStyleToggles !== null
+      ? controlledStyleToggles
+      : internalStyleToggles;
+  const currentAppliedStyle =
+    controlledAppliedStyle !== undefined
+      ? controlledAppliedStyle
+      : internalAppliedStyle;
+
+  // Tải danh sách phong cách đã lưu từ `GET /api/video-studio/styles`
+  const refreshSavedStylesList = useCallback(async () => {
+    try {
+      const res = await fetch('/api/video-studio/styles', { cache: 'no-store' });
+      if (res.ok) {
+        const data = await res.json().catch(() => null);
+        const list: SavedStyleListItem[] = Array.isArray(data?.styles)
+          ? data.styles
+          : Array.isArray(data?.items)
+          ? data.items
+          : [];
+        if (list.length > 0) {
+          setSavedStylesList(list);
+        }
+      }
+    } catch {
+      // Giữ danh sách mẫu mặc định nếu ngoại tuyến
+    }
+  }, []);
+
+  useEffect(() => {
+    void refreshSavedStylesList();
+  }, [refreshSavedStylesList]);
+
+  const applyAnalyzeResponseToState = useCallback(
+    (resp: StyleAnalyzeResponse | null | undefined, isFromSaved = false) => {
+      if (!resp || !resp.style) return;
+      const nextStyle = resp.style;
+      const nextId = resp.style_id || nextStyle.id;
+      const nextToggles: StyleToggles = {
+        ...DEFAULT_STYLE_TOGGLES,
+        ...(resp.toggles || nextStyle.toggles || {}),
+      };
+
+      setInternalStyleId(nextId);
+      onStyleIdChange?.(nextId);
+
+      setInternalStyleToggles(nextToggles);
+      onStyleTogglesChange?.(nextToggles);
+
+      setInternalAppliedStyle(nextStyle);
+      onAppliedStyleChange?.(nextStyle);
+
+      setStyleNameInput(resp.name || nextStyle.name || '');
+      setStyleSaveFeedback(null);
+      setSampleErrorMessage(null);
+      setSampleProgressMessage(
+        isFromSaved
+          ? `Đã áp dụng phong cách đã lưu “${resp.name || nextStyle.name}”.`
+          : `Đã phân tích xong video mẫu (${Math.round(
+              (nextStyle.analyzed_ms || 60000) / 1000
+            )} giây đầu).`
+      );
+    },
+    [onAppliedStyleChange, onStyleIdChange, onStyleTogglesChange]
+  );
+
+  const handleSelectSavedStyleById = useCallback(
+    async (selectedId: string) => {
+      const trimmedId = (selectedId || '').trim();
+      if (!trimmedId) {
+        setInternalStyleId(null);
+        onStyleIdChange?.(null);
+        setInternalAppliedStyle(null);
+        onAppliedStyleChange?.(null);
+        setSampleProgressMessage(null);
+        setStyleSaveFeedback(null);
+        return;
+      }
+
+      setIsAnalyzingSample(true);
+      setSampleErrorMessage(null);
+      setStyleSaveFeedback(null);
+      setSampleProgressMessage('Đang tải hồ sơ phong cách đã lưu...');
+
+      const sourceAspect = currentVideo
+        ? inferClientAspectRatio(currentVideo.width, currentVideo.height)
+        : '';
+      const query = new URLSearchParams();
+      if (projectId) query.set('projectId', projectId);
+      if (sourceAspect) query.set('sourceAspect', sourceAspect);
+      if (currentVideo?.width) query.set('source_width', String(currentVideo.width));
+      if (currentVideo?.height) query.set('source_height', String(currentVideo.height));
+
+      try {
+        const qs = query.toString();
+        const url = `/api/video-studio/style/${encodeURIComponent(trimmedId)}${
+          qs ? `?${qs}` : ''
+        }`;
+        const res = await fetch(url, { cache: 'no-store' });
+        if (res.ok) {
+          const data: StyleAnalyzeResponse = await res.json();
+          applyAnalyzeResponseToState(data, true);
+          return;
+        }
+      } catch {
+        // Fallback sang danh sách đã có trong bộ nhớ client
+      } finally {
+        setIsAnalyzingSample(false);
+      }
+
+      const localFound = savedStylesList.find(
+        (it) => it.style_id === trimmedId || it.id === trimmedId
+      );
+      if (localFound) {
+        const fallbackApplied: VideoStudioAppliedStyle = {
+          ...MOCK_APPLIED_STYLE,
+          id: localFound.style_id,
+          style_id: localFound.style_id,
+          name: localFound.name,
+          filename: localFound.filename || `${localFound.style_id}.mp4`,
+          analyzed_ms: localFound.analyzed_ms,
+          duration_ms: localFound.duration_ms,
+          aspect: localFound.aspect,
+          resolution: localFound.resolution,
+          summary: localFound.summary,
+          toggles: localFound.toggles,
+          profile: localFound.profile,
+          saved: true,
+        };
+        setInternalStyleId(localFound.style_id);
+        onStyleIdChange?.(localFound.style_id);
+        setInternalStyleToggles(localFound.toggles);
+        onStyleTogglesChange?.(localFound.toggles);
+        setInternalAppliedStyle(fallbackApplied);
+        onAppliedStyleChange?.(fallbackApplied);
+        setStyleNameInput(localFound.name);
+        setSampleProgressMessage(`Đã áp dụng phong cách đã lưu “${localFound.name}”.`);
+      } else {
+        setSampleErrorMessage('Không tải được phong cách đã chọn.');
+      }
+    },
+    [
+      applyAnalyzeResponseToState,
+      currentVideo,
+      onAppliedStyleChange,
+      onStyleIdChange,
+      onStyleTogglesChange,
+      projectId,
+      savedStylesList,
+    ]
+  );
+
+  const handleAnalyzeSampleVideoFile = useCallback(
+    async (file: File | null | undefined) => {
+      if (!file) return;
+      if (!isSupportedVideoFile(file)) {
+        setSampleErrorMessage(INVALID_FILE_MESSAGE);
+        return;
+      }
+
+      setIsAnalyzingSample(true);
+      setSampleErrorMessage(null);
+      setStyleSaveFeedback(null);
+      setSampleProgressMessage(
+        `Đang phân tích video mẫu “${file.name}” (tối đa 90 giây đầu): đo nhịp cắt, phụ đề, mở đầu và âm lượng...`
+      );
+
+      try {
+        const formData = new FormData();
+        formData.append('sample_video', file);
+        formData.append('filename', file.name);
+        if (projectId) {
+          formData.append('project_id', projectId);
+        }
+        if (currentVideo) {
+          formData.append(
+            'source_aspect',
+            inferClientAspectRatio(currentVideo.width, currentVideo.height)
+          );
+          formData.append('source_width', String(currentVideo.width));
+          formData.append('source_height', String(currentVideo.height));
+        }
+
+        const res = await fetch('/api/video-studio/style/analyze', {
+          method: 'POST',
+          body: formData,
+        });
+
+        if (res.ok) {
+          const data: StyleAnalyzeResponse = await res.json();
+          applyAnalyzeResponseToState(data, false);
+        } else {
+          const errJson = await res.json().catch(() => ({}));
+          setSampleErrorMessage(
+            errJson?.error || 'Không thể phân tích video mẫu này. Hãy thử file khác.'
+          );
+          setSampleProgressMessage(null);
+        }
+      } catch {
+        // Fallback phân tích mẫu chuẩn khi chạy ngoại tuyến
+        const fallbackStyle: VideoStudioAppliedStyle = {
+          ...MOCK_APPLIED_STYLE,
+          filename: file.name,
+          name: `Phong cách từ ${file.name.replace(/\.[^.]+$/, '')}`,
+          saved: false,
+        };
+        setInternalStyleId(fallbackStyle.id);
+        onStyleIdChange?.(fallbackStyle.id);
+        setInternalStyleToggles({ ...DEFAULT_STYLE_TOGGLES });
+        onStyleTogglesChange?.({ ...DEFAULT_STYLE_TOGGLES });
+        setInternalAppliedStyle(fallbackStyle);
+        onAppliedStyleChange?.(fallbackStyle);
+        setStyleNameInput(fallbackStyle.name);
+        setSampleProgressMessage(`Đã phân tích xong phong cách từ “${file.name}”.`);
+      } finally {
+        setIsAnalyzingSample(false);
+      }
+    },
+    [
+      applyAnalyzeResponseToState,
+      currentVideo,
+      onAppliedStyleChange,
+      onStyleIdChange,
+      onStyleTogglesChange,
+      projectId,
+    ]
+  );
+
+  const handleAnalyzePresetSample = useCallback(async () => {
+    setIsAnalyzingSample(true);
+    setSampleErrorMessage(null);
+    setStyleSaveFeedback(null);
+    setSampleProgressMessage(
+      'Đang phân tích video mẫu “mau_reels_podscare_chuan.mp4” (tối đa 90 giây đầu)...'
+    );
+
+    try {
+      const res = await fetch('/api/video-studio/style/analyze', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          filename: 'mau_reels_podscare_chuan.mp4',
+          name: 'Podcast dọc nhịp nhanh PodsCare',
+          project_id: projectId,
+          source_aspect: currentVideo
+            ? inferClientAspectRatio(currentVideo.width, currentVideo.height)
+            : undefined,
+          source_width: currentVideo?.width,
+          source_height: currentVideo?.height,
+        }),
+      });
+      if (res.ok) {
+        const data: StyleAnalyzeResponse = await res.json();
+        applyAnalyzeResponseToState(data, false);
+        return;
+      }
+    } catch {
+      // Fallback sang dữ liệu mẫu chuẩn
+    } finally {
+      setIsAnalyzingSample(false);
+    }
+
+    setInternalStyleId(MOCK_APPLIED_STYLE.id);
+    onStyleIdChange?.(MOCK_APPLIED_STYLE.id);
+    setInternalStyleToggles({ ...DEFAULT_STYLE_TOGGLES });
+    onStyleTogglesChange?.({ ...DEFAULT_STYLE_TOGGLES });
+    setInternalAppliedStyle(MOCK_APPLIED_STYLE);
+    onAppliedStyleChange?.(MOCK_APPLIED_STYLE);
+    setStyleNameInput(MOCK_APPLIED_STYLE.name);
+    setSampleProgressMessage(
+      'Đã phân tích xong video mẫu “mau_reels_podscare_chuan.mp4” (62 giây đầu).'
+    );
+  }, [
+    applyAnalyzeResponseToState,
+    currentVideo,
+    onAppliedStyleChange,
+    onStyleIdChange,
+    onStyleTogglesChange,
+    projectId,
+  ]);
+
+  const handleToggleStyleGroup = useCallback(
+    (groupKey: StyleGroupKey, checked: boolean) => {
+      const nextToggles: StyleToggles = {
+        ...currentStyleToggles,
+        [groupKey]: checked,
+      };
+      setInternalStyleToggles(nextToggles);
+      onStyleTogglesChange?.(nextToggles);
+
+      if (currentAppliedStyle) {
+        const nextApplied: VideoStudioAppliedStyle = {
+          ...currentAppliedStyle,
+          toggles: nextToggles,
+        };
+        setInternalAppliedStyle(nextApplied);
+        onAppliedStyleChange?.(nextApplied);
+      }
+    },
+    [
+      currentAppliedStyle,
+      currentStyleToggles,
+      onAppliedStyleChange,
+      onStyleTogglesChange,
+    ]
+  );
+
+  const handleClearSampleStyle = useCallback(() => {
+    setInternalStyleId(null);
+    onStyleIdChange?.(null);
+    setInternalAppliedStyle(null);
+    onAppliedStyleChange?.(null);
+    setSampleProgressMessage('Đã bỏ phong cách mẫu, dùng cấu hình cắt mặc định.');
+    setSampleErrorMessage(null);
+    setStyleSaveFeedback(null);
+  }, [onAppliedStyleChange, onStyleIdChange]);
+
+  const handleSaveCurrentStyle = useCallback(async () => {
+    if (!currentAppliedStyle || isSavingStyle) return;
+    const targetId = currentStyleId || currentAppliedStyle.id || 'style_ab12';
+    const resolvedName =
+      styleNameInput.trim() || currentAppliedStyle.name || 'Phong cách đã lưu';
+
+    setIsSavingStyle(true);
+    setStyleSaveFeedback(null);
+
+    try {
+      const res = await fetch(
+        `/api/video-studio/style/${encodeURIComponent(targetId)}/save`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            name: resolvedName,
+            profile: currentAppliedStyle.profile,
+            project_id: projectId,
+          }),
+        }
+      );
+
+      if (res.ok) {
+        const savedData = await res.json().catch(() => null);
+        const updatedName = savedData?.name || resolvedName;
+        const nextApplied: VideoStudioAppliedStyle = {
+          ...(savedData?.style || currentAppliedStyle),
+          name: updatedName,
+          saved: true,
+          toggles: currentStyleToggles,
+        };
+        setInternalAppliedStyle(nextApplied);
+        onAppliedStyleChange?.(nextApplied);
+        setStyleNameInput(updatedName);
+        setStyleSaveFeedback(
+          `Đã lưu phong cách “${updatedName}” vào danh sách dùng lại.`
+        );
+        await refreshSavedStylesList();
+        return;
+      }
+    } catch {
+      // Fallback cập nhật tại chỗ nếu ngoại tuyến
+    } finally {
+      setIsSavingStyle(false);
+    }
+
+    const updatedApplied: VideoStudioAppliedStyle = {
+      ...currentAppliedStyle,
+      name: resolvedName,
+      saved: true,
+    };
+    setInternalAppliedStyle(updatedApplied);
+    onAppliedStyleChange?.(updatedApplied);
+    setStyleSaveFeedback(
+      `Đã lưu phong cách “${resolvedName}” vào danh sách dùng lại.`
+    );
+  }, [
+    currentAppliedStyle,
+    currentStyleId,
+    currentStyleToggles,
+    isSavingStyle,
+    onAppliedStyleChange,
+    projectId,
+    refreshSavedStylesList,
+    styleNameInput,
+  ]);
+
+  const hasUserHookPrompt = currentHookPrompt.trim().length > 0;
+
+  const learnedStyleRows = useMemo(() => {
+    if (!currentAppliedStyle) return [];
+    return buildLearnedStyleRows(currentAppliedStyle, hasUserHookPrompt);
+  }, [currentAppliedStyle, hasUserHookPrompt]);
+
+  // Cảnh báo trong khối phong cách (bao gồm lệch tỉ lệ khung hình với video đang chọn, mẫu > 5 phút, không có lời nói, thiếu OCR...)
+  const activeStyleWarnings = useMemo(() => {
+    if (!currentAppliedStyle) return [];
+    const list: VideoStudioWarningItem[] = Array.isArray(
+      currentAppliedStyle.warnings
+    )
+      ? [...currentAppliedStyle.warnings]
+      : [];
+
+    if (currentVideo && currentVideo.width > 0 && currentVideo.height > 0) {
+      const userAspect = inferClientAspectRatio(
+        currentVideo.width,
+        currentVideo.height
+      );
+      const sampleAspect = String(
+        currentAppliedStyle.aspect ||
+          currentAppliedStyle.profile?.format?.aspect ||
+          '9:16'
+      ).trim();
+
+      if (
+        userAspect !== sampleAspect &&
+        !list.some((w) => w.code === 'aspect_mismatch')
+      ) {
+        list.unshift({
+          code: 'aspect_mismatch',
+          message:
+            'Chưa hỗ trợ đổi tỉ lệ khung hình, giữ nguyên khung của video bạn',
+          action: `Video mẫu có tỉ lệ ${sampleAspect} khác với video của bạn (${userAspect}).`,
+        });
+      }
+    }
+
+    return list;
+  }, [currentAppliedStyle, currentVideo]);
 
   const updateVideo = useCallback(
     (next: SelectedVideoInfo | null) => {
@@ -624,6 +1344,9 @@ export function SimplePrepareState({
       mergeGapMs,
       silenceThresholdMs,
       keepLaughter: currentKeepLaughter,
+      styleId: currentAppliedStyle ? currentStyleId || currentAppliedStyle.id : null,
+      styleToggles: currentAppliedStyle ? currentStyleToggles : null,
+      appliedStyle: currentAppliedStyle,
     });
   };
 
@@ -767,17 +1490,418 @@ export function SimplePrepareState({
           </div>
         )}
 
-        {/* Nút phụ: Dùng video mẫu để thử */}
-        <div className="mt-2.5 flex items-center justify-end">
+        {/* Nút phụ: Dùng video mẫu để thử (chỉ hiện khi chưa chọn video nào) */}
+        {!hasValidVideo && !currentVideo && (
+          <div className="mt-2.5 flex items-center justify-end">
+            <button
+              type="button"
+              onClick={() => void handleUseDemoClick()}
+              disabled={isSubmitting}
+              className="min-h-[44px] px-3 py-1.5 rounded-[7px] text-[13px] leading-[20px] font-medium text-[#4a5d54] hover:text-[#176b51] hover:bg-[#f6f8f6] transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#176b51]"
+            >
+              Dùng video mẫu để thử
+            </button>
+          </div>
+        )}
+      </div>
+
+      {/* PHẦN 1.5: KHỐI THU GỌN "PHONG CÁCH THEO VIDEO MẪU (KHÔNG BẮT BUỘC)" */}
+      <div
+        data-testid="sample-style-section"
+        className="p-5 sm:p-6 space-y-4 bg-[#f6f8f6]/60"
+      >
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div className="space-y-1 min-w-0">
+            <div className="flex flex-wrap items-center gap-2">
+              <h2 className="font-heading text-[15px] leading-[22px] font-semibold text-[#17231f]">
+                Phong cách theo video mẫu (không bắt buộc)
+              </h2>
+              {currentAppliedStyle && (
+                <span className="px-2 py-0.5 rounded-[5px] bg-[#e9f4ef] border border-[#176b51]/40 text-[12px] leading-[18px] font-medium text-[#176b51]">
+                  Đang áp dụng: {currentAppliedStyle.name}
+                </span>
+              )}
+            </div>
+            <p className="text-[13px] leading-[20px] text-[#4a5d54] max-w-[68ch]">
+              Học nhịp cắt, phụ đề, kiểu mở đầu và âm lượng từ một video bạn thích.
+            </p>
+          </div>
+
           <button
             type="button"
-            onClick={() => void handleUseDemoClick()}
-            disabled={isSubmitting}
-            className="min-h-[44px] px-3 py-1.5 rounded-[7px] text-[13px] leading-[20px] font-medium text-[#4a5d54] hover:text-[#176b51] hover:bg-[#f6f8f6] transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#176b51]"
+            data-testid="toggle-sample-style-button"
+            aria-expanded={isStyleSectionExpanded}
+            aria-controls={`${formId}-sample-style-panel`}
+            onClick={() => setIsStyleSectionExpanded((prev) => !prev)}
+            className="min-h-[44px] px-3 py-1.5 rounded-[7px] border border-[#d5e0d7] bg-[#ffffff] hover:bg-[#f6f8f6] text-[13px] leading-[20px] font-medium text-[#17231f] inline-flex items-center gap-1.5 shrink-0 transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#176b51]"
           >
-            Dùng video mẫu để thử
+            <span>{isStyleSectionExpanded ? 'Thu gọn' : 'Mở rộng'}</span>
+            <span aria-hidden="true">{isStyleSectionExpanded ? '▲' : '▾'}</span>
           </button>
         </div>
+
+        {isStyleSectionExpanded && (
+          <div
+            id={`${formId}-sample-style-panel`}
+            className="space-y-4 pt-1"
+          >
+            {/* Hai lựa chọn nguồn phong cách: Tải video mẫu hoặc Chọn phong cách đã lưu */}
+            <div className="space-y-3">
+              <div
+                role="radiogroup"
+                aria-label="Nguồn phong cách mẫu"
+                className="flex flex-wrap items-center gap-2"
+              >
+                <button
+                  type="button"
+                  role="radio"
+                  aria-checked={styleSourceMode === 'upload'}
+                  data-testid="style-mode-upload"
+                  onClick={() => setStyleSourceMode('upload')}
+                  disabled={isSubmitting || isAnalyzingSample}
+                  className={`min-h-[44px] px-3.5 py-2 rounded-[7px] border text-[13px] leading-[20px] font-medium inline-flex items-center gap-2 transition-colors ${
+                    styleSourceMode === 'upload'
+                      ? 'bg-[#e9f4ef] border-[#176b51] text-[#17231f]'
+                      : 'bg-[#ffffff] border-[#d5e0d7] text-[#4a5d54] hover:border-[#176b51] hover:text-[#17231f]'
+                  }`}
+                >
+                  <span
+                    aria-hidden="true"
+                    className={`w-3.5 h-3.5 rounded-full border inline-flex items-center justify-center ${
+                      styleSourceMode === 'upload'
+                        ? 'border-[#176b51] bg-[#176b51]'
+                        : 'border-[#4a5d54] bg-transparent'
+                    }`}
+                  >
+                    {styleSourceMode === 'upload' && (
+                      <span className="w-1.5 h-1.5 rounded-full bg-[#ffffff]" />
+                    )}
+                  </span>
+                  <span>Tải video mẫu</span>
+                </button>
+
+                <button
+                  type="button"
+                  role="radio"
+                  aria-checked={styleSourceMode === 'saved'}
+                  data-testid="style-mode-saved"
+                  onClick={() => {
+                    setStyleSourceMode('saved');
+                    void refreshSavedStylesList();
+                  }}
+                  disabled={isSubmitting || isAnalyzingSample}
+                  className={`min-h-[44px] px-3.5 py-2 rounded-[7px] border text-[13px] leading-[20px] font-medium inline-flex items-center gap-2 transition-colors ${
+                    styleSourceMode === 'saved'
+                      ? 'bg-[#e9f4ef] border-[#176b51] text-[#17231f]'
+                      : 'bg-[#ffffff] border-[#d5e0d7] text-[#4a5d54] hover:border-[#176b51] hover:text-[#17231f]'
+                  }`}
+                >
+                  <span
+                    aria-hidden="true"
+                    className={`w-3.5 h-3.5 rounded-full border inline-flex items-center justify-center ${
+                      styleSourceMode === 'saved'
+                        ? 'border-[#176b51] bg-[#176b51]'
+                        : 'border-[#4a5d54] bg-transparent'
+                    }`}
+                  >
+                    {styleSourceMode === 'saved' && (
+                      <span className="w-1.5 h-1.5 rounded-full bg-[#ffffff]" />
+                    )}
+                  </span>
+                  <span>Chọn phong cách đã lưu</span>
+                </button>
+              </div>
+
+              {styleSourceMode === 'upload' ? (
+                <div className="flex flex-wrap items-center gap-2.5">
+                  <input
+                    ref={sampleVideoInputRef}
+                    type="file"
+                    accept="video/mp4,video/quicktime,.mp4,.mov"
+                    onChange={(e) => {
+                      const f = e.target.files?.[0];
+                      if (f) {
+                        void handleAnalyzeSampleVideoFile(f);
+                      }
+                      e.target.value = '';
+                    }}
+                    className="sr-only"
+                    tabIndex={-1}
+                    aria-hidden="true"
+                  />
+
+                  <button
+                    type="button"
+                    data-testid="upload-sample-video-button"
+                    onClick={() => sampleVideoInputRef.current?.click()}
+                    disabled={isSubmitting || isAnalyzingSample}
+                    className="min-h-[44px] px-4 py-2 rounded-[7px] border border-[#176b51] bg-[#ffffff] hover:bg-[#e9f4ef] text-[13px] leading-[20px] font-medium text-[#176b51] transition-colors disabled:opacity-60"
+                  >
+                    {currentAppliedStyle ? 'Đổi video mẫu khác' : 'Tải video mẫu'}
+                  </button>
+
+                  {!currentAppliedStyle && (
+                    <button
+                      type="button"
+                      data-testid="analyze-preset-sample-button"
+                      onClick={() => void handleAnalyzePresetSample()}
+                      disabled={isSubmitting || isAnalyzingSample}
+                      className="min-h-[44px] px-3.5 py-2 rounded-[7px] border border-[#d5e0d7] bg-[#ffffff] hover:bg-[#f6f8f6] text-[13px] leading-[20px] font-medium text-[#4a5d54] hover:text-[#17231f] transition-colors disabled:opacity-60"
+                    >
+                      Dùng thử phong cách mẫu có sẵn
+                    </button>
+                  )}
+                </div>
+              ) : (
+                <div className="flex flex-col sm:flex-row sm:items-center gap-2.5 max-w-[68ch]">
+                  <label
+                    htmlFor={`${formId}-saved-style-select`}
+                    className="sr-only"
+                  >
+                    Chọn phong cách đã lưu
+                  </label>
+                  <select
+                    id={`${formId}-saved-style-select`}
+                    data-testid="saved-style-select"
+                    value={currentStyleId || currentAppliedStyle?.id || ''}
+                    onChange={(e) => void handleSelectSavedStyleById(e.target.value)}
+                    disabled={isSubmitting || isAnalyzingSample}
+                    className="w-full sm:flex-1 min-h-[44px] px-3.5 py-2 rounded-[7px] border border-[#d5e0d7] bg-[#ffffff] text-[14px] leading-[22px] text-[#17231f] focus:outline-none focus:border-[#176b51]"
+                  >
+                    <option value="">-- Chọn phong cách đã lưu --</option>
+                    {savedStylesList.map((item) => (
+                      <option key={item.style_id} value={item.style_id}>
+                        {item.name} ({item.aspect || '9:16'} ·{' '}
+                        {Math.round((item.analyzed_ms || 60000) / 1000)}s)
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
+            </div>
+
+            {/* Thông báo tiến trình phân tích qua aria-live="polite" */}
+            {(isAnalyzingSample || sampleProgressMessage) && (
+              <div
+                role="status"
+                aria-live="polite"
+                data-testid="sample-style-progress"
+                className="px-3.5 py-2.5 rounded-[7px] bg-[#ffffff] border border-[#d5e0d7] text-[13px] leading-[20px] text-[#17231f] flex items-center justify-between gap-2"
+              >
+                <span className="font-medium">
+                  {sampleProgressMessage || 'Đang phân tích video mẫu...'}
+                </span>
+                {currentAppliedStyle && !isAnalyzingSample && (
+                  <button
+                    type="button"
+                    data-testid="clear-sample-style-button"
+                    onClick={handleClearSampleStyle}
+                    disabled={isSubmitting}
+                    className="min-h-[44px] px-3 py-1.5 rounded-[6px] text-[13px] leading-[20px] font-medium text-[#993f37] hover:bg-[#fbefed] shrink-0 transition-colors"
+                  >
+                    Bỏ phong cách mẫu
+                  </button>
+                )}
+              </div>
+            )}
+
+            {sampleErrorMessage && (
+              <div
+                role="alert"
+                className="px-3.5 py-2.5 rounded-[7px] bg-[#fbefed] border border-[#e4aca6] text-[13px] leading-[20px] font-medium text-[#993f37]"
+              >
+                {sampleErrorMessage}
+              </div>
+            )}
+
+            {/* Khối "Phong cách học được" khi đã phân tích hoặc đã chọn một phong cách */}
+            {currentAppliedStyle && (
+              <div
+                data-testid="learned-style-card"
+                className="p-4 rounded-[8px] bg-[#ffffff] border border-[#d5e0d7] space-y-4"
+              >
+                <div className="flex flex-wrap items-center justify-between gap-2 pb-2.5 border-b border-[#e9eeeb]">
+                  <div className="space-y-0.5 min-w-0">
+                    <h3 className="font-heading text-[15px] leading-[22px] font-semibold text-[#17231f]">
+                      Phong cách học được
+                    </h3>
+                    <p className="text-[13px] leading-[20px] text-[#4a5d54]">
+                      Nguồn mẫu:{' '}
+                      <strong className="font-mono font-medium text-[#17231f]">
+                        {currentAppliedStyle.filename || currentAppliedStyle.name}
+                      </strong>{' '}
+                      · Đã đo{' '}
+                      <span className="font-mono tabular-nums">
+                        {Math.round((currentAppliedStyle.analyzed_ms || 60000) / 1000)}s
+                      </span>{' '}
+                      đầu · Khung{' '}
+                      <span className="font-mono tabular-nums">
+                        {currentAppliedStyle.resolution || '1080×1920'} (
+                        {currentAppliedStyle.aspect || '9:16'})
+                      </span>
+                    </p>
+                  </div>
+
+                  {!sampleProgressMessage && (
+                    <button
+                      type="button"
+                      onClick={handleClearSampleStyle}
+                      disabled={isSubmitting}
+                      className="min-h-[44px] px-3 py-1.5 rounded-[6px] border border-[#d5e0d7] bg-[#ffffff] hover:bg-[#fbefed] text-[13px] leading-[20px] font-medium text-[#993f37] shrink-0 transition-colors"
+                    >
+                      Bỏ phong cách mẫu
+                    </button>
+                  )}
+                </div>
+
+                {/* Danh sách ngắn 5 dòng công tắc (pacing, captions, hook, audio, punchin) */}
+                <ul
+                  data-testid="learned-style-toggles-list"
+                  className="space-y-2"
+                >
+                  {learnedStyleRows.map((row) => {
+                    const isChecked = Boolean(currentStyleToggles[row.key]);
+                    const confMeta = getConfidenceBadgeMeta(row.confidence);
+                    return (
+                      <li key={row.key}>
+                        <label
+                          data-testid={`style-toggle-row-${row.key}`}
+                          className={`flex flex-col sm:flex-row sm:items-center justify-between gap-2 px-3.5 py-2.5 min-h-[44px] rounded-[7px] border cursor-pointer select-none transition-colors ${
+                            isChecked
+                              ? 'bg-[#e9f4ef]/45 border-[#176b51]/50 text-[#17231f]'
+                              : 'bg-[#f6f8f6] border-[#d5e0d7] text-[#4a5d54]'
+                          }`}
+                        >
+                          <div className="flex items-start sm:items-center gap-2.5 min-w-0">
+                            <input
+                              type="checkbox"
+                              checked={isChecked}
+                              onChange={(e) =>
+                                handleToggleStyleGroup(row.key, e.target.checked)
+                              }
+                              disabled={isSubmitting}
+                              className="sr-only"
+                            />
+                            <span
+                              aria-hidden="true"
+                              className={`mt-0.5 sm:mt-0 w-5 h-5 rounded-[5px] border inline-flex items-center justify-center shrink-0 transition-colors ${
+                                isChecked
+                                  ? 'bg-[#176b51] border-[#176b51] text-[#ffffff]'
+                                  : 'bg-[#ffffff] border-[#4a5d54] text-transparent'
+                              }`}
+                            >
+                              ✓
+                            </span>
+                            <span className="text-[14px] leading-[22px] font-medium text-[#17231f]">
+                              {row.sentence}
+                            </span>
+                          </div>
+
+                          <span
+                            data-testid={`style-confidence-${row.key}`}
+                            className={`self-start sm:self-center inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-[5px] border text-[12px] leading-[18px] font-medium shrink-0 ${confMeta.className}`}
+                          >
+                            <span aria-hidden="true">{confMeta.symbol}</span>
+                            <span>{confMeta.label}</span>
+                          </span>
+                        </label>
+                      </li>
+                    );
+                  })}
+                </ul>
+
+                {/* Thông báo rõ khi người dùng đã nhập hook_prompt riêng */}
+                {hasUserHookPrompt && (
+                  <div
+                    role="status"
+                    aria-live="polite"
+                    data-testid="hook-prompt-override-notice"
+                    className="px-3.5 py-2.5 rounded-[7px] bg-[#e9f4ef] border border-[#176b51]/40 text-[13px] leading-[20px] font-medium text-[#17231f]"
+                  >
+                    Bạn đã nhập yêu cầu riêng cho phần mở đầu nên sẽ ưu tiên theo yêu cầu của bạn thay vì kiểu mở đầu của video mẫu.
+                  </div>
+                )}
+
+                {/* Các cảnh báo từ phân tích mẫu (khác khung hình, > 5 phút, không có lời nói, thiếu OCR...) */}
+                {activeStyleWarnings.length > 0 && (
+                  <div
+                    role="status"
+                    data-testid="sample-style-warnings"
+                    className="px-3.5 py-2.5 rounded-[7px] bg-[#faf3e7] border border-[#ebd6b2] space-y-1.5"
+                  >
+                    {activeStyleWarnings.map((warn, idx) => (
+                      <p
+                        key={`${warn.code || 'warn'}_${idx}`}
+                        className="text-[13px] leading-[20px] text-[#8f5d14]"
+                      >
+                        <strong className="font-semibold">Lưu ý: </strong>
+                        <span>{warn.message}</span>
+                        {warn.action ? (
+                          <span className="ml-1 text-[#4a5d54]">
+                            ({warn.action})
+                          </span>
+                        ) : null}
+                      </p>
+                    ))}
+                  </div>
+                )}
+
+                {/* Ô đặt tên + nút "Lưu phong cách này" */}
+                <div className="pt-2 border-t border-[#e9eeeb] space-y-2">
+                  <label
+                    htmlFor={`${formId}-style-save-name`}
+                    className="block text-[13px] leading-[20px] font-medium text-[#17231f]"
+                  >
+                    Đặt tên để dùng lại phong cách này cho các video sau
+                  </label>
+                  <div className="flex flex-col sm:flex-row sm:items-center gap-2.5 max-w-[68ch]">
+                    <input
+                      id={`${formId}-style-save-name`}
+                      data-testid="save-style-name-input"
+                      type="text"
+                      value={styleNameInput}
+                      onChange={(e) => {
+                        setStyleNameInput(e.target.value);
+                        setStyleSaveFeedback(null);
+                      }}
+                      disabled={isSubmitting || isSavingStyle}
+                      placeholder="Ví dụ: Podcast dọc nhịp nhanh PodsCare..."
+                      className="flex-1 min-h-[44px] px-3.5 py-2 rounded-[7px] bg-[#ffffff] border border-[#d5e0d7] text-[14px] leading-[22px] text-[#17231f] placeholder:text-[#4a5d54]/70 focus:outline-none focus:border-[#176b51]"
+                    />
+                    <button
+                      type="button"
+                      data-testid="save-style-button"
+                      onClick={() => void handleSaveCurrentStyle()}
+                      disabled={isSubmitting || isSavingStyle}
+                      className="min-h-[44px] px-4 py-2 rounded-[7px] bg-[#176b51] hover:bg-[#10583f] text-[#ffffff] text-[13px] leading-[20px] font-medium shrink-0 transition-colors disabled:opacity-60"
+                    >
+                      {isSavingStyle ? 'Đang lưu...' : 'Lưu phong cách này'}
+                    </button>
+                  </div>
+
+                  {styleSaveFeedback && (
+                    <p
+                      role="status"
+                      aria-live="polite"
+                      data-testid="save-style-feedback"
+                      className="text-[13px] leading-[20px] font-medium text-[#176b51]"
+                    >
+                      {styleSaveFeedback}
+                    </p>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {/* Dòng luôn hiển thị rõ ràng trong khối phong cách */}
+            <p
+              data-testid="unsupported-style-notice"
+              className="text-[13px] leading-[20px] text-[#4a5d54]"
+            >
+              Chưa áp dụng được: nhạc nền, hiệu ứng, màu phim. Hệ thống luôn giữ tốc độ nói tự nhiên (1.0x) và không tự cắt đổi tỉ lệ khung hình.
+            </p>
+          </div>
+        )}
       </div>
 
       {/* PHẦN 2: KỊCH BẢN, MỨC CẮT, GỢI Ý PHẦN MỞ ĐẦU, NÚT BẮT ĐẦU & TÙY CHỈNH NÂNG CAO */}
@@ -918,7 +2042,7 @@ export function SimplePrepareState({
                 type="button"
                 onClick={() => updateHookClip(null)}
                 disabled={isSubmitting}
-                className="ml-auto text-[13px] leading-[20px] font-medium text-[#993f37] hover:underline px-2 py-1 min-h-[36px]"
+                className="ml-auto inline-flex items-center justify-center text-[13px] leading-[20px] font-medium text-[#993f37] hover:underline px-3 min-h-[44px] rounded-[6px]"
               >
                 Bỏ clip riêng
               </button>
@@ -1153,19 +2277,26 @@ export function SimplePrepareState({
 
               {/* Giữ tiếng cười */}
               <div className="pt-1">
-                <label className="inline-flex items-center gap-2.5 min-h-[44px] cursor-pointer select-none">
+                <label className="inline-flex items-center gap-2.5 min-h-[44px] py-1.5 cursor-pointer select-none">
                   <input
                     type="checkbox"
                     checked={currentKeepLaughter}
                     onChange={(e) => updateKeepLaughter(e.target.checked)}
                     disabled={isSubmitting}
-                    className="w-4 h-4 rounded border-[#d5e0d7] text-[#176b51] focus:ring-[#176b51]"
+                    className="sr-only"
                   />
-                  <span className="text-[13px] leading-[20px] font-medium text-[#17231f]">
-                    Giữ tiếng cười
+                  <span
+                    aria-hidden="true"
+                    className={`w-5 h-5 rounded-[5px] border inline-flex items-center justify-center transition-colors shrink-0 ${
+                      currentKeepLaughter
+                        ? 'bg-[#176b51] border-[#176b51] text-[#ffffff]'
+                        : 'bg-[#ffffff] border-[#d5e0d7] text-transparent'
+                    }`}
+                  >
+                    ✓
                   </span>
-                  <span className="text-[13px] leading-[20px] text-[#4a5d54]">
-                    (Không cắt nhầm tiếng cười tự nhiên giữa cuộc trò chuyện)
+                  <span className="text-[13px] leading-[20px] font-medium text-[#17231f]">
+                    Giữ tiếng cười tự nhiên và nhịp thở cảm xúc
                   </span>
                 </label>
               </div>

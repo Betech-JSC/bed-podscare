@@ -25,7 +25,9 @@ import {
 } from '@/src/components/video-studio/SimpleResultState';
 import {
   DEFAULT_MAC_CAPCUT_DRAFT_DIR,
+  DEFAULT_STYLE_TOGGLES,
   MOCK_APPLIED_LEARNING_RULES,
+  MOCK_APPLIED_STYLE,
   MOCK_CUT_SCENARIOS,
   MOCK_SIMPLE_LEARNING_PROPOSALS,
   MOCK_SIMPLE_PREPARE_DATA,
@@ -44,6 +46,8 @@ import {
   type SimplePrepareData,
   type SimpleStudioResult,
   type SimpleStudioScreenState,
+  type StyleToggles,
+  type VideoStudioAppliedStyle,
   type VideoStudioJobResult,
   type VideoStudioStepEvent,
   type VideoStudioStepNumber,
@@ -156,6 +160,9 @@ export default function VideoStudioPage() {
   const [padStartMs, setPadStartMs] = useState<number>(PROFILE_DEFAULT_TIMING.pad_start_ms);
   const [padEndMs, setPadEndMs] = useState<number>(PROFILE_DEFAULT_TIMING.pad_end_ms);
   const [keepLaughter, setKeepLaughter] = useState<boolean>(true);
+  const [styleId, setStyleId] = useState<string | null>(null);
+  const [styleToggles, setStyleToggles] = useState<StyleToggles>(DEFAULT_STYLE_TOGGLES);
+  const [appliedStyle, setAppliedStyle] = useState<VideoStudioAppliedStyle | null>(null);
 
   const [isUploadingVideo, setIsUploadingVideo] = useState<boolean>(false);
   const [uploadProgressPercent, setUploadProgressPercent] = useState<number | null>(null);
@@ -447,6 +454,21 @@ export default function VideoStudioPage() {
             },
           },
           warnings: Array.isArray(data.warnings) ? data.warnings : prev.warnings,
+          style:
+            typeof data.style !== 'undefined'
+              ? (data.style as VideoStudioAppliedStyle | null)
+              : prev.style,
+          style_match: Array.isArray(data.style_match)
+            ? data.style_match
+            : prev.style_match,
+          style_match_report:
+            typeof data.style_match_report !== 'undefined'
+              ? data.style_match_report
+              : prev.style_match_report,
+          profile_trace:
+            typeof data.profile_trace !== 'undefined'
+              ? data.profile_trace
+              : prev.profile_trace,
         };
       });
     },
@@ -629,6 +651,11 @@ export default function VideoStudioPage() {
       setPadStartMs(payload.padStartMs);
       setPadEndMs(payload.padEndMs);
       setKeepLaughter(payload.keepLaughter);
+      setStyleId(payload.styleId ?? null);
+      if (payload.styleToggles) {
+        setStyleToggles(payload.styleToggles);
+      }
+      setAppliedStyle(payload.appliedStyle ?? null);
 
       const nextPacingMode: SimpleCutPacingMode =
         payload.cutPreset === 'strong' ? 'tight' : 'natural';
@@ -742,6 +769,11 @@ export default function VideoStudioPage() {
             pad_start_ms: payload.padStartMs,
             pad_end_ms: payload.padEndMs,
             keepLaughter: payload.keepLaughter,
+            style_id: payload.styleId,
+            styleId: payload.styleId,
+            style_toggles: payload.styleToggles,
+            styleToggles: payload.styleToggles,
+            style_profile: payload.appliedStyle?.profile || null,
           }),
         });
 
@@ -822,6 +854,11 @@ export default function VideoStudioPage() {
             pad_start_ms: padStartMs,
             pad_end_ms: padEndMs,
             keepLaughter,
+            style_id: styleId,
+            styleId: styleId,
+            style_toggles: styleToggles,
+            styleToggles: styleToggles,
+            style_profile: appliedStyle?.profile || null,
             retry_from: safeRetryStep,
           }),
         });
@@ -864,6 +901,9 @@ export default function VideoStudioPage() {
       prepareData.source_path,
       prepareTemplate,
       selectedVideo,
+      styleId,
+      styleToggles,
+      appliedStyle?.profile,
     ]
   );
 
@@ -1333,6 +1373,8 @@ export default function VideoStudioPage() {
                   data-testid="qa-state-prepare-empty"
                   onClick={() => {
                     setSelectedVideo(null);
+                    setAppliedStyle(null);
+                    setStyleId(null);
                     setScreenState('prepare');
                   }}
                   className={`px-3 min-h-[44px] rounded-[6px] border text-[13px] leading-[20px] font-medium transition-colors ${
@@ -1348,6 +1390,9 @@ export default function VideoStudioPage() {
                   data-testid="qa-state-prepare-filled"
                   onClick={() => {
                     handleUseDemoVideo();
+                    setAppliedStyle(MOCK_APPLIED_STYLE);
+                    setStyleId(MOCK_APPLIED_STYLE.id);
+                    setStyleToggles({ ...MOCK_APPLIED_STYLE.toggles });
                     setScreenState('prepare');
                   }}
                   className={`px-3 min-h-[44px] rounded-[6px] border text-[13px] leading-[20px] font-medium transition-colors ${
@@ -1484,6 +1529,12 @@ export default function VideoStudioPage() {
             onPadEndMsChange={setPadEndMs}
             keepLaughter={keepLaughter}
             onKeepLaughterChange={setKeepLaughter}
+            styleId={styleId}
+            onStyleIdChange={setStyleId}
+            styleToggles={styleToggles}
+            onStyleTogglesChange={setStyleToggles}
+            appliedStyle={appliedStyle}
+            onAppliedStyleChange={setAppliedStyle}
             onUseDemoVideo={handleUseDemoVideo}
             onStartCutting={handleStartCutting}
           />

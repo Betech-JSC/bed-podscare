@@ -1,0 +1,6 @@
+import { GET } from '../../../../../../src/app/api/video-studio/jobs/[id]/events/route';
+
+export const runtime = 'nodejs';
+export const dynamic = 'force-dynamic';
+
+export { GET };

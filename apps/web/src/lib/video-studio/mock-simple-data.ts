@@ -1,11 +1,17 @@
 import {
   DEFAULT_PROJECT_ID,
+  type SavedStyleListItem,
   type SimpleCutItem,
   type SimpleHookItem,
   type SimpleLearningProposalItem,
   type SimplePrepareData,
   type SimpleSseStepEvent,
   type SimpleStudioResult,
+  type StyleMatchReport,
+  type StyleProfile,
+  type StyleToggles,
+  type VideoStudioAppliedStyle,
+  type VideoStudioStyleMatchItem,
 } from './types';
 
 export const SIMPLE_STUDIO_STORAGE_KEYS = {
@@ -405,6 +411,288 @@ export const MOCK_SIMPLE_HOOKS: SimpleHookItem[] = [
   },
 ];
 
+export const DEFAULT_STYLE_TOGGLES: StyleToggles = {
+  pacing: true,
+  captions: true,
+  hook: true,
+  audio: true,
+  punchin: true,
+};
+
+export const MOCK_DEFAULT_STYLE_PROFILE: StyleProfile = {
+  style_id: 'style_ab12',
+  name: 'Podcast dọc nhịp nhanh PodsCare',
+  source: {
+    sha256: 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855',
+    duration_ms: 62400,
+    analyzed_ms: 62400,
+    filename: 'mau_reels_podscare_chuan.mp4',
+  },
+  format: {
+    width: 1080,
+    height: 1920,
+    fps: 30,
+    aspect: '9:16',
+    template: 'podcast_vertical',
+  },
+  pacing: {
+    words_per_min: 168.5,
+    pause_median_ms: 240,
+    pause_p90_ms: 520,
+    max_silence_kept_ms: 650,
+    shots_per_min: 18.2,
+    jump_cut_ratio: 0.65,
+  },
+  hook: {
+    duration_ms: 6200,
+    style: 'question',
+    text_overlay: true,
+    repeated_later: true,
+    time_to_first_word_ms: 180,
+  },
+  captions: {
+    present: true,
+    position: 'bottom_center',
+    words_per_line: 3,
+    lines: 1,
+    highlight: 'keyword_color',
+    font_class: 'sans_bold',
+    text_color: '#FFFFFF',
+    highlight_color: '#FFD60A',
+  },
+  audio: {
+    lufs: -14.2,
+    true_peak_db: -1.2,
+    lra: 6.4,
+    music_detected: false,
+  },
+  titlecard: {
+    present: true,
+  },
+  punchin: {
+    detected: true,
+    min_gap_s: 5.5,
+    scale: 1.08,
+  },
+  confidence: {
+    format: 'measured',
+    pacing: 'measured',
+    hook: 'estimated',
+    captions: 'estimated',
+    audio: 'measured',
+    titlecard: 'estimated',
+    punchin: 'estimated',
+  },
+  evidence: {
+    format: {
+      stream_index: 0,
+      codec_name: 'h264',
+      sample_frames: [0],
+    },
+    pacing: {
+      pause_samples_ms: [180, 220, 240, 310, 520],
+      cut_timestamps_ms: [3200, 6200, 9800, 14100],
+    },
+    hook: {
+      start_ms: 0,
+      end_ms: 6200,
+      matched_repeat_ms: [24500, 30700],
+      first_sentence: 'Tai nghe AirPods Pro bị rè một bên có sửa được không?',
+    },
+    captions: {
+      sample_timestamps_ms: [1200, 4500, 8900],
+      bbox_norm: [0.12, 0.76, 0.88, 0.86],
+    },
+    audio: {
+      window_ms: [0, 62400],
+      filter: 'ebur128',
+    },
+    titlecard: {
+      start_ms: 0,
+      end_ms: 2800,
+      sample_frames: [15, 45],
+    },
+    punchin: {
+      events: [
+        { start_ms: 6200, end_ms: 9400, estimated_scale: 1.08, frame_pair: [185, 190] },
+        { start_ms: 15800, end_ms: 18900, estimated_scale: 1.07, frame_pair: [473, 478] },
+      ],
+    },
+  },
+  saved: true,
+};
+
+export const MOCK_APPLIED_STYLE: VideoStudioAppliedStyle = {
+  id: 'style_ab12',
+  style_id: 'style_ab12',
+  name: 'Podcast dọc nhịp nhanh PodsCare',
+  filename: 'mau_reels_podscare_chuan.mp4',
+  analyzed_ms: 62400,
+  duration_ms: 62400,
+  aspect: '9:16',
+  resolution: '1080×1920',
+  summary: [
+    {
+      key: 'pacing',
+      label: 'Nhịp cắt & khoảng lặng',
+      text: 'Nhịp cắt: nhanh, nghỉ giữa câu khoảng 0,24 giây (tối đa 0,65 giây)',
+      confidence: 'measured',
+      confidence_label_vi: 'Chắc chắn',
+      enabled: true,
+    },
+    {
+      key: 'captions',
+      label: 'Phụ đề',
+      text: 'Phụ đề: 3 từ mỗi dòng, giữa phía dưới, từ khóa tô vàng',
+      confidence: 'estimated',
+      confidence_label_vi: 'Ước lượng',
+      enabled: true,
+    },
+    {
+      key: 'hook',
+      label: 'Phần mở đầu',
+      text: 'Phần mở đầu: câu hỏi, khoảng 6,2 giây, có chữ tiêu đề đầu',
+      confidence: 'estimated',
+      confidence_label_vi: 'Ước lượng',
+      enabled: true,
+    },
+    {
+      key: 'audio',
+      label: 'Âm lượng',
+      text: 'Âm lượng: -14,2 LUFS (đỉnh tối đa -1,0 dBTP)',
+      confidence: 'measured',
+      confidence_label_vi: 'Chắc chắn',
+      enabled: true,
+    },
+    {
+      key: 'punchin',
+      label: 'Nhấn khung hình',
+      text: 'Nhấn khung hình: phóng nhẹ 108%, cách nhau tối thiểu 5,5 giây',
+      confidence: 'estimated',
+      confidence_label_vi: 'Ước lượng',
+      enabled: true,
+    },
+  ],
+  toggles: { ...DEFAULT_STYLE_TOGGLES },
+  profile: MOCK_DEFAULT_STYLE_PROFILE,
+  unsupported: ['nhạc nền', 'hiệu ứng', 'màu phim'],
+  unsupported_notice: 'Chưa áp dụng được: nhạc nền, hiệu ứng, màu phim',
+  warnings: [],
+  saved: true,
+};
+
+export const MOCK_SAVED_STYLES_LIST: SavedStyleListItem[] = [
+  {
+    id: 'style_ab12',
+    style_id: 'style_ab12',
+    name: 'Podcast dọc nhịp nhanh PodsCare',
+    filename: 'mau_reels_podscare_chuan.mp4',
+    analyzed_ms: 62400,
+    duration_ms: 62400,
+    aspect: '9:16',
+    resolution: '1080×1920',
+    summary: MOCK_APPLIED_STYLE.summary,
+    toggles: { ...DEFAULT_STYLE_TOGGLES },
+    format: MOCK_DEFAULT_STYLE_PROFILE.format,
+    source: MOCK_DEFAULT_STYLE_PROFILE.source,
+    profile: MOCK_DEFAULT_STYLE_PROFILE,
+    saved: true,
+  },
+];
+
+export const MOCK_STYLE_MATCH_ITEMS: VideoStudioStyleMatchItem[] = [
+  {
+    key: 'loudness_lufs',
+    metric: 'loudness_lufs',
+    label: 'Âm lượng',
+    sample_value: '-14,2 LUFS',
+    output_value: '-14,0 LUFS',
+    target_value: -14.2,
+    actual_value: -14.0,
+    unit: 'LUFS',
+    tolerance: '±1,0 LU',
+    deviation: '+0,2 LU',
+    within_tolerance: true,
+    severity: 'scored',
+    status: 'matched',
+    note: 'Khớp mục tiêu âm lượng trong dung sai ±1,0 LU.',
+  },
+  {
+    key: 'pause_median_ms',
+    metric: 'pause_median_ms',
+    label: 'Khoảng lặng giữa câu',
+    sample_value: '240 ms',
+    output_value: '265 ms',
+    target_value: 240,
+    actual_value: 265,
+    unit: 'ms',
+    tolerance: '±30%',
+    deviation: '+10,4%',
+    within_tolerance: true,
+    severity: 'scored',
+    status: 'matched',
+    note: 'Độ lệch +10,4% nằm trong ngưỡng dung sai ±30%.',
+  },
+  {
+    key: 'hook_duration_ms',
+    metric: 'hook_duration_ms',
+    label: 'Độ dài mở đầu (Hook)',
+    sample_value: '6,2 giây',
+    output_value: '5,8 giây',
+    target_value: 6200,
+    actual_value: 5800,
+    unit: 'ms',
+    tolerance: '±1,5 giây',
+    deviation: '-0,4s',
+    within_tolerance: true,
+    severity: 'scored',
+    status: 'matched',
+    note: 'Độ dài mở đầu chênh 0,4 giây, nằm trong ngưỡng ±1,5 giây.',
+  },
+  {
+    key: 'captions_layout',
+    metric: 'captions_layout',
+    label: 'Phụ đề',
+    sample_value: '3 từ/dòng · cuối giữa',
+    output_value: '3 từ/dòng · cuối giữa',
+    target_value: '3 từ/dòng · bottom_center',
+    actual_value: '3 từ/dòng · bottom_center',
+    unit: 'layout',
+    tolerance: '±1 từ/dòng & cùng vị trí',
+    deviation: '0 từ/dòng · cùng vị trí',
+    within_tolerance: true,
+    severity: 'scored',
+    status: 'matched',
+    note: 'Cùng vị trí cuối giữa màn hình và số từ mỗi dòng khớp mục tiêu.',
+  },
+  {
+    key: 'shots_per_min',
+    metric: 'shots_per_min',
+    label: 'Nhịp cắt (tham khảo)',
+    sample_value: '18,2 cảnh/phút',
+    output_value: '14,5 cảnh/phút',
+    target_value: 18.2,
+    actual_value: 14.5,
+    unit: 'shots/min',
+    tolerance: '±30% (chỉ báo thông tin)',
+    deviation: '-20,3%',
+    within_tolerance: true,
+    severity: 'informational',
+    status: 'info',
+    note: 'Chỉ số tham khảo phụ thuộc vào mật độ nói vấp của video gốc.',
+  },
+];
+
+export const MOCK_STYLE_MATCH_REPORT: StyleMatchReport = {
+  schema_version: '1.0',
+  project_id: DEFAULT_PROJECT_ID,
+  style_id: 'style_ab12',
+  overall_status: 'pass',
+  summary:
+    'Các chỉ số âm lượng, khoảng nghỉ, độ dài mở đầu và phụ đề đều nằm trong ngưỡng dung sai so với video mẫu.',
+  items: MOCK_STYLE_MATCH_ITEMS,
+};
+
 /**
  * 3. Trạng thái Kết quả (`result`) chuẩn theo Hợp đồng dữ liệu mục 5
  */
@@ -435,6 +723,9 @@ export const MOCK_SIMPLE_RESULT_DATA: SimpleStudioResult = {
       timestamp_ms: 65000,
     },
   ],
+  style: MOCK_APPLIED_STYLE,
+  style_match: MOCK_STYLE_MATCH_ITEMS,
+  style_match_report: MOCK_STYLE_MATCH_REPORT,
 };
 
 /**

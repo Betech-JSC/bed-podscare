@@ -23,6 +23,7 @@ import type {
   VideoStudioCutItem,
   VideoStudioJobResult,
   VideoStudioResultHookItem,
+  VideoStudioStyleMatchItem,
   VideoStudioWarningItem,
 } from '@/src/lib/video-studio/types';
 
@@ -68,6 +69,8 @@ export interface SimpleResultStateProps {
   onSelectCutIndex?: (index: number, cut: NormalizedCutEntry) => void;
   /** Hiển thị mặc định danh sách chi tiết các chỗ đã cắt (mặc định: false = thu gọn) */
   defaultExpandDetails?: boolean;
+  /** Hiển thị mặc định mục đối chiếu "So với video mẫu" khi có dữ liệu (mặc định: true) */
+  defaultExpandStyleMatch?: boolean;
   className?: string;
 }
 
@@ -143,6 +146,7 @@ export function SimpleResultState({
   selectedCutIndex: controlledCutIndex,
   onSelectCutIndex,
   defaultExpandDetails = false,
+  defaultExpandStyleMatch = true,
   className = '',
 }: SimpleResultStateProps) {
   const hookPromptInputId = useId();
@@ -214,6 +218,8 @@ export function SimpleResultState({
   const [seekFeedbackLabel, setSeekFeedbackLabel] = useState<string | null>(null);
   const [capcutActionFeedback, setCapcutActionFeedback] = useState<string | null>(null);
   const [isDetailsExpanded, setIsDetailsExpanded] = useState<boolean>(defaultExpandDetails);
+  const [isStyleMatchExpanded, setIsStyleMatchExpanded] =
+    useState<boolean>(defaultExpandStyleMatch);
   const [internalCutIndex, setInternalCutIndex] = useState<number>(0);
 
   useEffect(() => {
@@ -308,26 +314,70 @@ export function SimpleResultState({
     useFallbackCutMaster,
   ]);
 
-  // Gom mọi cảnh báo vào một khối "Lưu ý" duy nhất
+  // Chuẩn hóa danh sách đối chiếu "So với video mẫu" (`result.style_match` / `result.style_match_report.items`)
+  const styleMatchItems: VideoStudioStyleMatchItem[] = useMemo(() => {
+    const directList = Array.isArray(result?.style_match) ? result.style_match : [];
+    if (directList.length > 0) {
+      return directList;
+    }
+    const reportItems = Array.isArray(result?.style_match_report?.items)
+      ? result.style_match_report!.items
+      : [];
+    return reportItems;
+  }, [result?.style_match, result?.style_match_report]);
+
+  const hasSampleStyleSection = useMemo(
+    () => Boolean(result?.style || styleMatchItems.length > 0),
+    [result?.style, styleMatchItems.length]
+  );
+
+  const styleMatchSummaryBadge = useMemo(() => {
+    const scoredItems = styleMatchItems.filter(
+      (it) => it.status !== 'skipped' && it.severity !== 'informational'
+    );
+    const pool = scoredItems.length > 0 ? scoredItems : styleMatchItems;
+    if (pool.length === 0) return null;
+    const matchedCount = pool.filter((it) => it.within_tolerance).length;
+    return `Đạt ${matchedCount}/${pool.length} chỉ số`;
+  }, [styleMatchItems]);
+
+  // Gom mọi cảnh báo vào một khối "Lưu ý" duy nhất (bao gồm cả cảnh báo từ video mẫu:
+  // lệch tỉ lệ khung hình, video mẫu > 5 phút, không có lời nói, thiếu OCR/mô hình thị giác)
   const mergedWarnings: NormalizedWarningRow[] = useMemo(() => {
-    const rawList: ReadonlyArray<SimpleResultWarning | VideoStudioWarningItem> = Array.isArray(
+    const baseWarnings: ReadonlyArray<SimpleResultWarning | VideoStudioWarningItem> = Array.isArray(
       result?.warnings
     )
       ? result.warnings
       : [];
+    const styleWarnings: ReadonlyArray<SimpleResultWarning | VideoStudioWarningItem> = Array.isArray(
+      result?.style?.warnings
+    )
+      ? result.style.warnings
+      : [];
 
-    const rows: NormalizedWarningRow[] = rawList
-      .filter((w) => w && typeof w.message === 'string' && w.message.trim().length > 0)
-      .map((w, idx) => ({
-        id: `${w.code || 'warn'}_${idx}`,
-        code: String(w.code || 'notice'),
-        message: w.message.trim(),
+    const combinedRaw = [...baseWarnings, ...styleWarnings];
+    const rows: NormalizedWarningRow[] = [];
+    const seenKeys = new Set<string>();
+
+    combinedRaw.forEach((w, idx) => {
+      if (!w || typeof w.message !== 'string' || !w.message.trim()) return;
+      const code = String(w.code || 'notice').trim();
+      const message = w.message.trim();
+      const dedupeKey = `${code}::${message}`;
+      if (seenKeys.has(dedupeKey)) return;
+      seenKeys.add(dedupeKey);
+
+      rows.push({
+        id: `${code || 'warn'}_${idx}`,
+        code,
+        message,
         action: w.action ? String(w.action).trim() : undefined,
         timestampMs:
           typeof w.timestamp_ms === 'number' && Number.isFinite(w.timestamp_ms)
             ? w.timestamp_ms
             : undefined,
-      }));
+      });
+    });
 
     if (
       localPromptWarning &&
@@ -346,7 +396,7 @@ export function SimpleResultState({
     }
 
     return rows;
-  }, [localPromptWarning, result?.warnings]);
+  }, [localPromptWarning, result?.style, result?.warnings]);
 
   // Tua trình phát video xem trước đến vị trí tương ứng
   const handleSeekPreview = useCallback(
@@ -594,22 +644,34 @@ export function SimpleResultState({
                     <label
                       key={hook.id}
                       data-testid={`hook-radio-option-${idx + 1}`}
-                      className={`block p-3.5 rounded-[6px] border cursor-pointer transition-colors ${
+                      className={`block min-h-[44px] p-3.5 rounded-[6px] border cursor-pointer transition-colors select-none focus-within:outline focus-within:outline-2 focus-within:outline-offset-2 focus-within:outline-[#176b51] ${
                         isChecked
                           ? 'border-[#176b51] bg-[#e9f4ef]/60'
                           : 'border-[#d5e0d7] bg-[#ffffff] hover:bg-[#f6f8f6]'
                       }`}
                     >
                       <div className="flex flex-wrap items-center justify-between gap-2">
-                        <div className="inline-flex items-center gap-2.5 min-h-[24px]">
+                        <div className="inline-flex items-center gap-2.5 min-h-[28px]">
                           <input
                             type="radio"
                             name="result_hook_choice"
                             value={hook.id}
                             checked={isChecked}
                             onChange={() => handleRadioSelectHook(hook.id)}
-                            className="accent-[#176b51] w-4 h-4 flex-none"
+                            className="sr-only"
                           />
+                          <span
+                            aria-hidden="true"
+                            className={`w-5 h-5 rounded-full border inline-flex items-center justify-center flex-none transition-colors ${
+                              isChecked
+                                ? 'border-[#176b51] bg-[#176b51]'
+                                : 'border-[#4a5d54] bg-[#ffffff]'
+                            }`}
+                          >
+                            {isChecked && (
+                              <span className="w-2 h-2 rounded-full bg-[#ffffff]" />
+                            )}
+                          </span>
                           <span className="text-[15px] leading-[22px] font-semibold text-[#17231f]">
                             {idx + 1}. {hook.label}
                           </span>
@@ -625,7 +687,7 @@ export function SimpleResultState({
                         )}
                       </div>
 
-                      <p className="mt-1.5 pl-6 text-[15px] leading-[24px] text-[#17231f] max-w-[68ch]">
+                      <p className="mt-1.5 pl-7 text-[15px] leading-[24px] text-[#17231f] max-w-[68ch]">
                         “{hook.text}”
                       </p>
                     </label>
@@ -676,7 +738,7 @@ export function SimpleResultState({
                 </button>
 
                 {customHookClipName && (
-                  <span className="inline-flex items-center gap-2 px-3 min-h-[38px] rounded-[6px] bg-[#f6f8f6] border border-[#d5e0d7] text-[13px] leading-[20px] text-[#17231f]">
+                  <span className="inline-flex items-center gap-2 pl-3 pr-1 min-h-[44px] rounded-[6px] bg-[#f6f8f6] border border-[#d5e0d7] text-[13px] leading-[20px] text-[#17231f]">
                     <span className="font-mono text-[12px] leading-[18px] truncate max-w-[220px]">
                       {customHookClipName}
                     </span>
@@ -690,7 +752,7 @@ export function SimpleResultState({
                           hookClipFileInputRef.current.value = '';
                         }
                       }}
-                      className="text-[12px] leading-[18px] text-[#4a5d54] hover:text-[#17231f]"
+                      className="min-h-[44px] min-w-[44px] px-3 inline-flex items-center justify-center rounded-[4px] text-[12px] leading-[18px] font-medium text-[#4a5d54] hover:text-[#17231f] hover:bg-[#e9eeeb]"
                       aria-label="Bỏ clip mở đầu riêng đã chọn"
                     >
                       Bỏ ×
@@ -955,7 +1017,146 @@ export function SimpleResultState({
         </section>
       )}
 
-      {/* Danh sách chi tiết (`▸ Xem chi tiết các chỗ đã cắt`) + Nút "Cắt video khác" */}
+      {/* Mục thu gọn "So với video mẫu" (dạng danh sách dòng/thẻ, không dùng bảng nhiều cột) */}
+      {hasSampleStyleSection && (
+        <section
+          aria-label="So với video mẫu"
+          data-testid="style-match-section"
+          className="bg-[#ffffff] border border-[#e9eeeb] rounded-[6px] p-4 sm:p-5 space-y-4"
+        >
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <button
+              type="button"
+              data-testid="toggle-style-match-button"
+              aria-expanded={isStyleMatchExpanded}
+              onClick={() => setIsStyleMatchExpanded((prev) => !prev)}
+              className="min-h-[44px] px-3 rounded-[6px] border border-[#d5e0d7] bg-[#ffffff] hover:bg-[#f6f8f6] text-[15px] leading-[22px] font-heading font-semibold text-[#17231f] inline-flex items-center gap-2 transition-colors text-left"
+            >
+              <span aria-hidden="true">{isStyleMatchExpanded ? '▾' : '▸'}</span>
+              <span>
+                So với video mẫu
+                {result?.style?.name ? `: “${result.style.name}”` : ''}
+                {result?.style?.filename ? ` (${result.style.filename})` : ''}
+              </span>
+            </button>
+
+            {styleMatchSummaryBadge && (
+              <span
+                data-testid="style-match-summary-badge"
+                className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-[4px] border border-[#176b51]/35 bg-[#e9f4ef] text-[12px] leading-[18px] font-medium text-[#176b51]"
+              >
+                <span aria-hidden="true">✓</span>
+                <span>{styleMatchSummaryBadge}</span>
+              </span>
+            )}
+          </div>
+
+          {isStyleMatchExpanded && (
+            <div
+              data-testid="style-match-content"
+              className="pt-3 border-t border-[#e9eeeb] space-y-3"
+            >
+              {result?.style_match_report?.summary && (
+                <p className="text-[13px] leading-[20px] text-[#4a5d54]">
+                  {result.style_match_report.summary}
+                </p>
+              )}
+
+              {styleMatchItems.length > 0 ? (
+                <ul
+                  data-testid="style-match-items-list"
+                  className="divide-y divide-[#e9eeeb] border border-[#d5e0d7] rounded-[6px] bg-[#ffffff]"
+                >
+                  {styleMatchItems.map((item, idx) => {
+                    const isSkipped = item.status === 'skipped';
+                    const isInformational =
+                      item.severity === 'informational' || item.status === 'info';
+                    const isMatched = Boolean(item.within_tolerance);
+
+                    const statusBadgeLabel = isSkipped
+                      ? '— Đã tắt'
+                      : isInformational
+                      ? isMatched
+                        ? '✓ Đạt · Tham khảo'
+                        : '! Lệch · Tham khảo'
+                      : isMatched
+                      ? '✓ Đạt'
+                      : '! Lệch';
+
+                    const statusBadgeClass = isSkipped
+                      ? 'border-[#d5e0d7] bg-[#f6f8f6] text-[#4a5d54]'
+                      : isMatched
+                      ? 'border-[#176b51]/40 bg-[#e9f4ef] text-[#176b51]'
+                      : 'border-[#d5c19a] bg-[#faf3e7] text-[#8f5d14]';
+
+                    return (
+                      <li
+                        key={item.key || `style_match_${idx}`}
+                        data-testid={`style-match-item-${item.key || idx}`}
+                        className="p-3.5 sm:p-4 space-y-1.5"
+                      >
+                        <div className="flex flex-wrap items-center justify-between gap-2">
+                          <span className="text-[15px] leading-[22px] font-semibold text-[#17231f]">
+                            {item.label}
+                          </span>
+                          <span
+                            data-testid={`style-match-status-${item.key || idx}`}
+                            className={`inline-flex items-center px-2.5 py-0.5 rounded-[4px] border text-[12px] leading-[18px] font-medium ${statusBadgeClass}`}
+                          >
+                            {statusBadgeLabel}
+                          </span>
+                        </div>
+
+                        <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-[13px] leading-[20px] text-[#17231f]">
+                          <span>
+                            <span className="text-[#4a5d54]">Mẫu: </span>
+                            <span className="font-mono text-[12px] leading-[18px] font-medium">
+                              {String(item.sample_value)}
+                            </span>
+                          </span>
+                          <span aria-hidden="true" className="text-[#4a5d54]">
+                            →
+                          </span>
+                          <span>
+                            <span className="text-[#4a5d54]">Video của bạn: </span>
+                            <span className="font-mono text-[12px] leading-[18px] font-medium">
+                              {String(item.output_value)}
+                            </span>
+                          </span>
+                          {(item.deviation || item.tolerance) && (
+                            <span className="text-[12px] leading-[18px] text-[#4a5d54] font-mono">
+                              ({[item.deviation, item.tolerance ? `dung sai ${item.tolerance}` : '']
+                                .filter(Boolean)
+                                .join(' · ')})
+                            </span>
+                          )}
+                        </div>
+
+                        {item.note && (
+                          <p className="text-[12px] leading-[18px] text-[#4a5d54] max-w-[68ch]">
+                            {item.note}
+                          </p>
+                        )}
+                      </li>
+                    );
+                  })}
+                </ul>
+              ) : (
+                <p className="text-[13px] leading-[20px] text-[#4a5d54]">
+                  Đã áp dụng phong cách “{result?.style?.name || 'Video mẫu'}”.
+                </p>
+              )}
+
+              <p className="text-[12px] leading-[18px] text-[#4a5d54]">
+                {result?.style?.unsupported_notice ||
+                  'Chưa áp dụng được: nhạc nền, hiệu ứng, màu phim'}
+              </p>
+            </div>
+          )}
+        </section>
+      )}
+
+      {/* Danh sách chi tiết (`▸ Xem chi tiết các chỗ đã cắt`) */}
       <section
         aria-label="Chi tiết các chỗ đã cắt"
         className="bg-[#ffffff] border border-[#e9eeeb] rounded-[6px] p-4 sm:p-5 space-y-4"
@@ -973,17 +1174,6 @@ export function SimpleResultState({
               Xem chi tiết các chỗ đã cắt ({normalizedCuts.length})
             </span>
           </button>
-
-          {onResetToPrepare && (
-            <button
-              type="button"
-              data-testid="reset-to-prepare-bottom-button"
-              onClick={onResetToPrepare}
-              className="px-4 min-h-[44px] rounded-[6px] border border-[#d5e0d7] bg-[#ffffff] hover:bg-[#f6f8f6] text-[13px] leading-[20px] font-medium text-[#17231f] transition-colors"
-            >
-              Cắt video khác
-            </button>
-          )}
         </div>
 
         {isDetailsExpanded && (
@@ -1029,12 +1219,8 @@ export function SimpleResultState({
                             {String(cut.cutIndex).padStart(2, '0')}
                           </td>
                           <td className="py-3 px-3 font-mono text-[12px] leading-[18px] tabular-nums text-[#17231f] whitespace-nowrap">
-                            {formatDurationClock(cut.src_start_ms)} –{' '}
-                            {formatDurationClock(cut.src_end_ms)}
-                            <span className="ml-1.5 text-[#4a5d54]">
-                              ({formatDurationClockTenths(cut.src_start_ms)}–
-                              {formatDurationClockTenths(cut.src_end_ms)})
-                            </span>
+                            {formatDurationClockTenths(cut.src_start_ms)} –{' '}
+                            {formatDurationClockTenths(cut.src_end_ms)}
                           </td>
                           <td className="py-3 px-3 font-mono text-[12px] leading-[18px] tabular-nums text-[#4a5d54] whitespace-nowrap">
                             {formatDurationSecondsLabel(cut.duration_ms, 'giây')}
