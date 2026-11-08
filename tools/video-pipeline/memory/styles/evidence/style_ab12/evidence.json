@@ -1,0 +1,201 @@
+{
+  "style_id": "style_ab12",
+  "name": "Podcast Dọc Nhịp Nhanh (Mẫu PodsCare)",
+  "source": {
+    "sha256": "1764b204867c986bddc71e1c5f6ceda064dac17f5414a0602d2e66ce807f2698",
+    "duration_ms": 28000,
+    "analyzed_ms": 28000
+  },
+  "confidence": {
+    "format": "measured",
+    "pacing": "measured",
+    "hook": "estimated",
+    "captions": "assumed",
+    "audio": "estimated",
+    "titlecard": "estimated",
+    "punchin": "estimated"
+  },
+  "warnings": [
+    "Môi trường thiếu ffprobe; hệ thống dùng bộ đọc nhị phân MP4/WAV fallback để trích xuất format.",
+    "Môi trường thiếu ffmpeg; thông số âm thanh (LUFS, Peak, LRA, ducking) được ước lượng trực tiếp từ mẫu PCM WAV.",
+    "Môi trường thiếu công cụ OCR (tesseract, ffmpeg); thông số captions được giảm cấp có thông báo (confidence = assumed) và giữ nguyên luồng xử lý."
+  ],
+  "evidence": {
+    "format": {
+      "detector": "mp4_binary_atom_parser",
+      "stream_index": 0,
+      "codec_name": "h264",
+      "codec": "h264",
+      "width": 1080,
+      "height": 1920,
+      "fps": 30.3,
+      "aspect": "9:16",
+      "duration_ms": 28000,
+      "atoms_found": [
+        "ftyp",
+        "moov",
+        "mvhd",
+        "trak",
+        "tkhd",
+        "mdia",
+        "mdhd",
+        "minf",
+        "stbl",
+        "stsd",
+        "stts",
+        "mdat"
+      ],
+      "sample_frames": [
+        0
+      ]
+    },
+    "pacing": {
+      "detector": "stem_words_json",
+      "cut_detector": "sidecar_cuts_json",
+      "no_speech": false,
+      "word_count": 24,
+      "pause_samples_ms": [
+        240,
+        250,
+        3520,
+        5800
+      ],
+      "cut_timestamps_ms": [
+        1500,
+        6200,
+        12500,
+        15200
+      ],
+      "jump_cut_timestamps_ms": [
+        1500,
+        6200,
+        12500,
+        15200
+      ],
+      "scene_threshold": 0.28
+    },
+    "hook": {
+      "start_ms": 0,
+      "end_ms": 6200,
+      "duration_target_ms": 6200,
+      "style": "question",
+      "opening_type": "question",
+      "matched_cues": [
+        "?",
+        "tại sao"
+      ],
+      "first_sentence": "Tại sao tai nghe AirPods Pro bị rè một bên? Nguyên nhân chính là màng loa",
+      "matched_repeat_ms": [
+        14200,
+        16100
+      ],
+      "repeat_similarity": 1.0,
+      "text_overlay_detected": false
+    },
+    "captions": {
+      "detector": "graceful_fallback_no_ocr",
+      "ocr_available": false,
+      "vision_available": false,
+      "missing_tools": [
+        "tesseract",
+        "ffmpeg"
+      ],
+      "sampled_frames_count": 14,
+      "sample_timestamps_ms": [
+        0,
+        2000,
+        4000,
+        6000,
+        8000,
+        10000,
+        12000,
+        14000,
+        16000,
+        18000,
+        20000,
+        22000,
+        24000,
+        26000
+      ],
+      "bottom_pct": 82.0,
+      "max_words_per_line": 3,
+      "uppercase_emphasis": false,
+      "uppercase_ratio": 0.0,
+      "primary_color": "#FFFFFF",
+      "highlight_color": "#FFD60A",
+      "bbox_norm": [
+        0.12,
+        0.76,
+        0.88,
+        0.86
+      ]
+    },
+    "audio": {
+      "detector": "pcm_wav_rms_ebur128_fallback",
+      "filter": "pcm_window_rms_400ms",
+      "window_ms": [
+        0,
+        28000
+      ],
+      "lufs": -16.7,
+      "true_peak_db": -10.75,
+      "lra": 2.47,
+      "music_bed_detected": false,
+      "ducking_db": 0.0,
+      "is_silent": false,
+      "speech_windows_ratio": 1.0
+    },
+    "titlecard": {
+      "enabled": true,
+      "present": true,
+      "start_ms": 0,
+      "end_ms": 1500,
+      "duration_ms": 1500,
+      "position": "center",
+      "sample_frames": [
+        0,
+        15,
+        45
+      ]
+    },
+    "punchin": {
+      "detected": true,
+      "scale_pct": 108.0,
+      "frequency_per_min": 4.29,
+      "events": [
+        {
+          "start_ms": 6200,
+          "end_ms": 9200,
+          "estimated_scale": 1.08,
+          "frame_pair": [
+            184,
+            188
+          ]
+        },
+        {
+          "start_ms": 15200,
+          "end_ms": 18200,
+          "estimated_scale": 1.08,
+          "frame_pair": [
+            454,
+            458
+          ]
+        }
+      ]
+    },
+    "warnings": [
+      "Môi trường thiếu ffprobe; hệ thống dùng bộ đọc nhị phân MP4/WAV fallback để trích xuất format.",
+      "Môi trường thiếu ffmpeg; thông số âm thanh (LUFS, Peak, LRA, ducking) được ước lượng trực tiếp từ mẫu PCM WAV.",
+      "Môi trường thiếu công cụ OCR (tesseract, ffmpeg); thông số captions được giảm cấp có thông báo (confidence = assumed) và giữ nguyên luồng xử lý."
+    ],
+    "_meta": {
+      "filename": "sample_spoken.mp4",
+      "sample_path": "/private/var/folders/nr/895xtwsn3hb89jn80f0lngw40000gn/T/ps1_self_test_i2p3chor/sample_spoken.mp4",
+      "cache_hit": false,
+      "max_analyze_ms": 300000,
+      "updated_at": "2026-11-08T16:44:57Z"
+    },
+    "evidence_path": "/Users/macbookpro2020/bed-podscare/tools/video-pipeline/memory/styles/evidence/style_ab12/evidence.json"
+  },
+  "generated_at": "2026-11-08T16:44:57Z"
+}

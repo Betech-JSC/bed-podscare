@@ -9,10 +9,10 @@
 - [x] S0.5 Đặc tả bảng dung sai kiểm tra độ khớp `work/style_match.json` (Loudness `±1.0 LU`, Pause median `±30%`, Hook duration `±1,5s`, Captions `±1` từ/dòng & cùng vị trí, `shots/min` `±30%` chỉ báo thông tin) trong `design.md`.
 - [x] S0.6 Vẽ wireframe ASCII ở 3 cỡ màn hình (`1440px`, `768px`, `390px`) cho khối `"Phong cách theo video mẫu (không bắt buộc)"`, mục thu gọn `"So với video mẫu"`, và khu vực cấu hình sau khi gỡ công tắc `"Chế độ chuyên sâu"`.
 
-## 1. Giai đoạn S1 — Bộ phân tích phong cách từ video mẫu (`ps1_style_analyzer.py`)
+## 1. Giai đoạn S1 — Bộ phân tích phong cách từ video mẫu (`ps1_style_extract.py` / `ps1_style_analyzer.py`)
 
-- [ ] S1.1 Xây dựng `tools/video-pipeline/phases/ps1_style_analyzer.py` phân tích tối đa `90s` đầu của video mẫu (`ffprobe`, `ebur128`, STT `words.json`, scene cut & vùng phụ đề) để xuất `style_profile.json` có đầy đủ `confidence` và `evidence`.
-- [ ] S1.2 Hỗ trợ lưu trữ và quản lý các hồ sơ phong cách tái sử dụng trong `tools/video-pipeline/memory/styles/<style_id>.json` (chống trùng lặp theo `source.sha256`) và kiểm chứng qua `--self-test`.
+- [x] S1.1 Xây dựng `tools/video-pipeline/phases/ps1_style_extract.py` (cùng wrapper tương thích `ps1_style_analyzer.py`) phân tích tối đa 5 phút đầu (`300.000 ms`) của video mẫu (`ffprobe`, `ebur128`, STT `words.json`, scene cut & vùng phụ đề) để xuất `style_profile.json` có đầy đủ `confidence` và `evidence`.
+- [x] S1.2 Hỗ trợ lưu trữ và quản lý các hồ sơ phong cách tái sử dụng trong `tools/video-pipeline/memory/styles/<style_id>.json` (chống trùng lặp theo `source.sha256` kèm bằng chứng `evidence/<style_id>/evidence.json`) và kiểm chứng qua `--self-test` + unit tests.
 
 ## 2. Giai đoạn S2 — Bộ hợp nhất tham số 4 tầng & truy vết (`ps2_style_applier.py`)
 
@@ -26,6 +26,6 @@
 
 ## 4. Giai đoạn S4 — Giao diện `/video-studio`, API Phong cách mẫu & Gỡ công tắc Chế độ chuyên sâu
 
-- [ ] S4.1 Bổ sung API phân tích/lưu/liệt kê phong cách video mẫu trong `apps/web/src/app/api/video-studio/` và mở rộng `run`/`result` routes để nhận `styleProfile` + `enabledStyleGroups` và trả về `styleMatch` + `profileTrace`.
-- [ ] S4.2 Gỡ bỏ công tắc `"Chế độ chuyên sâu"` khỏi `SimpleStudioHeader.tsx` và `apps/web/src/app/video-studio/page.tsx`.
-- [ ] S4.3 Xây dựng khối `"Phong cách theo video mẫu (không bắt buộc)"` trong `SimplePrepareState.tsx` và mục thu gọn `"So với video mẫu"` trong `SimpleResultState.tsx` theo đúng wireframe ASCII ở 3 kích thước `1440px`, `768px`, `390px`, kiểm chứng bằng `npm run build` và trình duyệt thật.
+- [x] S4.1 Bổ sung API phân tích/lưu/liệt kê phong cách video mẫu trong `apps/web/src/app/api/video-studio/` và mở rộng `run`/`result` routes để nhận `styleProfile` + `enabledStyleGroups` và trả về `styleMatch` + `profileTrace`.
+- [x] S4.2 Gỡ bỏ công tắc `"Chế độ chuyên sâu"` khỏi `SimpleStudioHeader.tsx` và `apps/web/src/app/video-studio/page.tsx`.
+- [x] S4.3 Xây dựng khối `"Phong cách theo video mẫu (không bắt buộc)"` trong `SimplePrepareState.tsx` và mục thu gọn `"So với video mẫu"` trong `SimpleResultState.tsx` theo đúng wireframe ASCII ở 3 kích thước `1440px`, `768px`, `390px`, kiểm chứng bằng `npm run build` và trình duyệt thật.
