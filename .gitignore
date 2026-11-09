@@ -37,3 +37,5 @@ vendor/
 graphify-out/
 .claude/
 config.bat
+/.vscode
+.env
