@@ -319,3 +319,18 @@ Route::prefix('v1')->group(function () {
         });
     });
 });
+
+// --- 3. THREADS AUTO-PUBLISHING SYSTEM ROUTES (Track 1 & Track 3) ---
+if (file_exists(__DIR__ . '/threads_accounts.php')) {
+    require __DIR__ . '/threads_accounts.php';
+}
+
+if (file_exists(__DIR__ . '/threads_posts.php')) {
+    $threadsPostsRouteContent = (string) file_get_contents(__DIR__ . '/threads_posts.php');
+    if (str_contains($threadsPostsRouteContent, "'v1") || str_contains($threadsPostsRouteContent, '"v1')) {
+        require __DIR__ . '/threads_posts.php';
+    } else {
+        Route::prefix('v1')->group(__DIR__ . '/threads_posts.php');
+    }
+}
+

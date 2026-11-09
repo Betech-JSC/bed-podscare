@@ -28,6 +28,12 @@ pnpm-debug.log*
 .DS_Store
 *.pem
 scratch_*
+scratch/
+*threads_live*
+
+# Python Cache
+__pycache__/
+*.py[cod]
 
 # Cache & Build
 .next-dev/

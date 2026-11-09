@@ -35,3 +35,8 @@ Schedule::command('sanctum:prune-expired --hours=24')->daily();
 // Dọn dẹp các failed queue jobs cũ quá 48 giờ
 Schedule::command('queue:prune-failed --hours=48')->daily();
 
+// Threads Auto-Publishing System: Gia hạn Long-Lived Token (< 14 ngày) hàng ngày & Quét lịch xuất bản mỗi phút
+Schedule::command('threads:refresh-tokens')->dailyAt('02:30')->withoutOverlapping();
+Schedule::command('threads:run-scheduler')->everyMinute()->withoutOverlapping();
+
+

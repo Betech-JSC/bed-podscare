@@ -5,6 +5,17 @@ export function middleware(request: NextRequest) {
   const { pathname, search } = request.nextUrl;
   const sessionToken = request.cookies.get('podscare_session_token')?.value;
 
+  // Cho phép truy cập trực tiếp /video-studio, /api/video-studio và /threads trên domain hiện tại không cần đăng nhập hay tạo subdomain mới
+  if (
+    pathname === '/video-studio' ||
+    pathname.startsWith('/video-studio/') ||
+    pathname.startsWith('/api/video-studio') ||
+    pathname === '/threads' ||
+    pathname.startsWith('/threads/')
+  ) {
+    return NextResponse.next();
+  }
+
   const isLoginPage = pathname === '/login';
 
   // Bỏ việc ép redirect cứng sang /dashboard chỉ dựa vào cookie thô!
