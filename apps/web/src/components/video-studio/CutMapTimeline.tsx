@@ -674,11 +674,11 @@ export function CutMapTimeline({
             <span className="text-[12px] leading-[18px] text-[#4a5d54]">
               Vuốt ngang dải bản đồ hoặc đổi chế độ xem:
             </span>
-            <div className="inline-flex rounded-[6px] border border-[#d5e0d7] bg-[#f6f8f6] p-0.5">
+            <div className="inline-flex rounded-[6px] border border-[#d5e0d7] bg-[#f6f8f6] p-0.5 shrink-0">
               <button
                 type="button"
                 onClick={() => setMobileCompactMode('timeline')}
-                className={`px-2.5 min-h-[36px] rounded-[4px] text-[12px] leading-[18px] font-medium ${
+                className={`px-3 min-h-[44px] rounded-[4px] text-[12px] leading-[18px] font-medium whitespace-nowrap ${
                   mobileCompactMode === 'timeline'
                     ? 'bg-[#ffffff] text-[#176b51] border border-[#d5e0d7]'
                     : 'text-[#4a5d54]'
@@ -689,7 +689,7 @@ export function CutMapTimeline({
               <button
                 type="button"
                 onClick={() => setMobileCompactMode('list')}
-                className={`px-2.5 min-h-[36px] rounded-[4px] text-[12px] leading-[18px] font-medium ${
+                className={`px-3 min-h-[44px] rounded-[4px] text-[12px] leading-[18px] font-medium whitespace-nowrap ${
                   mobileCompactMode === 'list'
                     ? 'bg-[#ffffff] text-[#176b51] border border-[#d5e0d7]'
                     : 'text-[#4a5d54]'
@@ -708,25 +708,23 @@ export function CutMapTimeline({
           } overflow-x-auto pb-2 scroll-smooth`}
         >
           <div
+            className={blocks.length > 1 ? 'min-w-[640px]' : 'w-full'}
             style={{
               minWidth:
                 blocks.length > 6
-                  ? `${Math.max(560, blocks.length * 46)}px`
+                  ? `${Math.max(640, blocks.length * 48)}px`
+                  : blocks.length > 1
+                  ? '640px'
                   : '100%',
             }}
           >
-            {/* Mốc thời gian định hướng đầu – giữa – cuối */}
+            {/* Mốc thời gian định hướng đầu – giữa – cuối (nằm trong cùng khối min-w-[640px] với dải băng) */}
             <div
               aria-hidden="true"
               className="flex items-center justify-between font-mono text-[12px] leading-[18px] tabular-nums text-[#4a5d54] mb-1.5 select-none"
             >
               {quarterMarkers.map((mark, idx) => (
-                <span
-                  key={idx}
-                  className={
-                    idx === 1 || idx === 3 ? 'hidden md:inline-block' : 'inline-block'
-                  }
-                >
+                <span key={idx} className="inline-block whitespace-nowrap">
                   {mark}
                 </span>
               ))}
@@ -744,6 +742,7 @@ export function CutMapTimeline({
                   resolvedSourceDurationMs > 0
                     ? (block.duration_ms / resolvedSourceDurationMs) * 100
                     : 100;
+                const showSecondLabelLine = rawPercent >= 14;
 
                 if (block.kind === 'kept') {
                   return (
@@ -764,27 +763,42 @@ export function CutMapTimeline({
                         minWidth: blocks.length === 1 ? '100%' : '44px',
                       }}
                       className="min-h-[52px] px-2 py-1.5 bg-[#176b51] hover:bg-[#10583f] text-[#ffffff] border-r border-[#ffffff]/25 last:border-r-0 flex flex-col justify-center items-center text-center transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[#ffffff]"
-                      title={`Giữ đoạn ${block.keptIndex}: ${formatDurationClock(
+                      title={`Giữ đoạn ${block.keptIndex}: ${formatDurationClockTenths(
                         block.start_ms
-                      )} – ${formatDurationClock(block.end_ms)} (${formatDurationSecondsLabel(
+                      )} – ${formatDurationClockTenths(block.end_ms)} (${formatDurationSecondsLabel(
                         block.duration_ms,
                         'giây'
                       )})`}
-                      aria-label={`Đoạn giữ lại ${block.keptIndex}: từ ${formatDurationClock(
+                      aria-label={`Đoạn giữ lại ${block.keptIndex}: từ ${formatDurationClockTenths(
                         block.start_ms
-                      )} đến ${formatDurationClock(block.end_ms)}, thời lượng ${formatDurationSecondsLabel(
+                      )} đến ${formatDurationClockTenths(block.end_ms)}, thời lượng ${formatDurationSecondsLabel(
                         block.duration_ms,
                         'giây'
                       )}`}
                     >
-                      <span className="text-[12px] leading-[18px] font-medium truncate max-w-full">
-                        {blocks.length === 1
-                          ? `Giữ nguyên toàn bộ (${formatDurationClock(block.end_ms)})`
-                          : `Giữ #${block.keptIndex}`}
-                      </span>
-                      <span className="font-mono text-[12px] leading-[18px] tabular-nums opacity-95">
-                        {formatDurationSecondsLabel(block.duration_ms, 's')}
-                      </span>
+                      {blocks.length === 1 ? (
+                        <>
+                          <span className="text-[12px] leading-[18px] font-medium whitespace-nowrap">
+                            Giữ nguyên toàn bộ ({formatDurationClock(block.end_ms)})
+                          </span>
+                          <span className="font-mono text-[12px] leading-[18px] tabular-nums opacity-95 whitespace-nowrap">
+                            {formatDurationSecondsLabel(block.duration_ms, 's')}
+                          </span>
+                        </>
+                      ) : showSecondLabelLine ? (
+                        <>
+                          <span className="text-[12px] leading-[18px] font-medium whitespace-nowrap">
+                            Giữ #{block.keptIndex}
+                          </span>
+                          <span className="font-mono text-[12px] leading-[18px] tabular-nums opacity-95 whitespace-nowrap">
+                            {formatDurationSecondsLabel(block.duration_ms, 's')}
+                          </span>
+                        </>
+                      ) : (
+                        <span className="font-mono text-[12px] leading-[18px] tabular-nums font-medium whitespace-nowrap">
+                          {formatDurationSecondsLabel(block.duration_ms, 's')}
+                        </span>
+                      )}
                     </button>
                   );
                 }
@@ -806,9 +820,9 @@ export function CutMapTimeline({
                     data-cut-type={cut.type}
                     data-ultra-short={cut.isUltraShort ? 'true' : 'false'}
                     aria-pressed={isSelected}
-                    aria-label={`Chỗ cắt #${cut.cutIndex}: ${formatDurationClock(
+                    aria-label={`Chỗ cắt #${cut.cutIndex}: ${formatDurationClockTenths(
                       cut.src_start_ms
-                    )} – ${formatDurationClock(cut.src_end_ms)}, loại ${
+                    )} – ${formatDurationClockTenths(cut.src_end_ms)}, loại ${
                       cut.category.labelVi
                     }, lý do: ${cut.reason}`}
                     onClick={() => handleActivateCut(zeroIdx, true)}
@@ -826,16 +840,18 @@ export function CutMapTimeline({
                         ? 'ring-2 ring-inset ring-[#17231f] font-semibold'
                         : 'hover:opacity-95 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[#176b51]'
                     }`}
-                    title={`${formatDurationClock(cut.src_start_ms)} – ${formatDurationClock(
+                    title={`${formatDurationClockTenths(cut.src_start_ms)} – ${formatDurationClockTenths(
                       cut.src_end_ms
                     )} · ${cut.category.badgeLabel}: ${cut.reason}`}
                   >
                     <span className="font-mono text-[12px] leading-[18px] tabular-nums font-semibold whitespace-nowrap">
                       {cut.category.symbol} {formatDurationSecondsLabel(cut.duration_ms, 's')}
                     </span>
-                    <span className="text-[12px] leading-[18px] font-medium truncate max-w-full">
-                      {cut.category.labelVi}
-                    </span>
+                    {showSecondLabelLine && (
+                      <span className="text-[12px] leading-[18px] font-medium whitespace-nowrap">
+                        {cut.category.labelVi}
+                      </span>
+                    )}
                   </button>
                 );
               })}
@@ -861,9 +877,9 @@ export function CutMapTimeline({
                 >
                   <div className="min-w-0">
                     <div className="font-mono text-[12px] leading-[18px] tabular-nums font-semibold text-[#17231f]">
-                      #{cut.cutIndex} · {formatDurationClock(cut.src_start_ms)} –{' '}
-                      {formatDurationClock(cut.src_end_ms)} (
-                      {formatDurationSecondsLabel(cut.duration_ms, 's')})
+                      #{cut.cutIndex} · {formatDurationClockTenths(cut.src_start_ms)} –{' '}
+                      {formatDurationClockTenths(cut.src_end_ms)} (
+                      {formatDurationSecondsLabel(cut.duration_ms, 'giây')})
                     </div>
                     <div className="text-[13px] leading-[20px] text-[#4a5d54] truncate">
                       {cut.reason}
@@ -894,12 +910,8 @@ export function CutMapTimeline({
               <div className="flex flex-wrap items-center gap-2">
                 <span className="font-mono text-[13px] leading-[20px] tabular-nums font-semibold text-[#17231f]">
                   Chỗ cắt #{activeCut.cutIndex}/{normalizedCuts.length}:{' '}
-                  {formatDurationClock(activeCut.src_start_ms)} –{' '}
-                  {formatDurationClock(activeCut.src_end_ms)}
-                </span>
-                <span className="font-mono text-[12px] leading-[18px] tabular-nums text-[#4a5d54]">
-                  ({formatDurationClockTenths(activeCut.src_start_ms)} –{' '}
-                  {formatDurationClockTenths(activeCut.src_end_ms)} ·{' '}
+                  {formatDurationClockTenths(activeCut.src_start_ms)} –{' '}
+                  {formatDurationClockTenths(activeCut.src_end_ms)} (
                   {formatDurationSecondsLabel(activeCut.duration_ms, 'giây')})
                 </span>
                 <span
@@ -967,8 +979,7 @@ export function CutMapTimeline({
             data-testid="cut-map-zero-cuts-panel"
             className="p-4 rounded-[6px] border border-[#e9eeeb] bg-[#f6f8f6] text-[15px] leading-[24px] text-[#4a5d54]"
           >
-            Đã kiểm tra toàn bộ {formatDurationClock(resolvedSourceDurationMs)} video gốc: không có
-            chỗ nói vấp, khoảng lặng dài hay từ đệm cần cắt.
+            Video không có đoạn vấp hoặc im lặng cần cắt — giữ nguyên 100% thời lượng gốc.
           </div>
         )}
       </section>

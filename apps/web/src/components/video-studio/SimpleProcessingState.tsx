@@ -244,7 +244,7 @@ function getStepStatusMeta(status: VideoStudioStepStatus): {
         labelVi: 'Đang chạy',
         badgeClass: 'bg-[#e9f4ef] text-[#176b51] border-[#176b51]',
         symbolClass:
-          'bg-[#e9f4ef] text-[#176b51] border-[#176b51] animate-pulse motion-reduce:animate-none',
+          'bg-[#e9f4ef] text-[#176b51] border-[#176b51]',
         rowClass: 'bg-[#f6f8f6]/70',
       };
     case 'error':
@@ -360,13 +360,31 @@ export function SimpleProcessingState({
       ? 35
       : null;
 
+  const overallProgressPercent = useMemo(() => {
+    if (isUploading || (typeof clampedUploadPercent === 'number' && clampedUploadPercent < 100)) {
+      return clampedUploadPercent ?? 35;
+    }
+    if (normalizedSteps.length === 0) return 0;
+    const total = normalizedSteps.reduce((acc, item) => {
+      if (item.status === 'done') return acc + 100;
+      if (item.status === 'running') {
+        return acc + Math.max(15, Math.min(95, Number(item.percent) || 50));
+      }
+      return acc;
+    }, 0);
+    return Math.max(5, Math.min(100, Math.round(total / normalizedSteps.length)));
+  }, [clampedUploadPercent, isUploading, normalizedSteps]);
+
+  const isUploadBarActive =
+    isUploading || (typeof clampedUploadPercent === 'number' && clampedUploadPercent < 100);
+
   return (
     <section
       aria-label="Đang cắt video"
       className={`w-full max-w-[760px] mx-auto bg-[#ffffff] border border-[#d5e0d7] rounded-[10px] divide-y divide-[#e9eeeb] text-[#17231f] ${className}`}
     >
-      {/* ĐẦU KHUNG: Tiêu đề "Đang cắt video" + Dòng tóm tắt biểu mẫu đã khóa (không sửa được) */}
-      <div className="p-5 sm:p-6 space-y-2">
+      {/* ĐẦU KHUNG: Tiêu đề "Đang cắt video" + Dòng tóm tắt biểu mẫu đã khóa + 1 thanh tiến trình tổng duy nhất */}
+      <div className="p-5 sm:p-6 space-y-3">
         <div className="flex flex-wrap items-center justify-between gap-2">
           <h2 className="font-heading text-[18px] leading-[26px] font-bold text-[#17231f]">
             Đang cắt video
@@ -406,34 +424,34 @@ export function SimpleProcessingState({
             {scriptSummaryLabel}
           </span>
         </div>
-      </div>
 
-      {/* THANH TIẾN TRÌNH TẢI LÊN (Khi đang tải file video lên máy chủ) */}
-      {(isUploading ||
-        (typeof clampedUploadPercent === 'number' &&
-          clampedUploadPercent < 100)) && (
-        <div className="px-5 py-4 sm:px-6 bg-[#f6f8f6] space-y-2">
+        {/* THANH TIẾN TRÌNH TỔNG DUY NHẤT Ở ĐẦU THẺ (không vẽ thanh tiến trình con trùng lặp trong từng bước) */}
+        <div className="pt-1 space-y-1.5">
           <div className="flex items-center justify-between text-[13px] leading-[20px] font-medium">
-            <span className="text-[#17231f]">Đang tải video lên máy chủ...</span>
-            <span className="font-mono tabular-nums text-[12px] leading-[18px] text-[#4a5d54]">
-              {clampedUploadPercent ?? 35}%
+            <span className="text-[#4a5d54]">
+              {isUploadBarActive ? 'Đang tải video lên máy chủ...' : 'Tiến độ xử lý tổng thể'}
+            </span>
+            <span className="font-mono tabular-nums text-[12px] leading-[18px] text-[#176b51]">
+              {overallProgressPercent}%
             </span>
           </div>
           <div
             role="progressbar"
-            aria-valuenow={clampedUploadPercent ?? 35}
+            aria-valuenow={overallProgressPercent}
             aria-valuemin={0}
             aria-valuemax={100}
-            aria-label="Tiến trình tải video lên"
+            aria-label={
+              isUploadBarActive ? 'Tiến trình tải video lên' : 'Tiến độ xử lý tổng thể'
+            }
             className="w-full h-2 rounded-full bg-[#e9eeeb] overflow-hidden"
           >
             <div
               className="h-full bg-[#176b51] transition-all duration-300 motion-reduce:transition-none"
-              style={{ width: `${clampedUploadPercent ?? 35}%` }}
+              style={{ width: `${overallProgressPercent}%` }}
             />
           </div>
         </div>
-      )}
+      </div>
 
       {/* DANH SÁCH 5 BƯỚC TUẦN TỰ (1 -> 5) */}
       <ol
@@ -505,30 +523,6 @@ export function SimpleProcessingState({
                   <span>{statusMeta.labelVi}</span>
                 </span>
               </div>
-
-              {/* Thanh tiến trình nhỏ cho bước đang chạy (tôn trọng prefers-reduced-motion) */}
-              {stepItem.status === 'running' && (
-                <div className="mt-3 pl-9">
-                  <div
-                    role="progressbar"
-                    aria-valuenow={stepItem.percent || 45}
-                    aria-valuemin={0}
-                    aria-valuemax={100}
-                    aria-label={`Tiến độ bước ${stepNum}: ${stepItem.label}`}
-                    className="w-full h-1.5 rounded-full bg-[#e9eeeb] overflow-hidden"
-                  >
-                    <div
-                      className="h-full bg-[#176b51] transition-all duration-300 motion-reduce:transition-none"
-                      style={{
-                        width: `${Math.max(
-                          12,
-                          Math.min(100, stepItem.percent || 45)
-                        )}%`,
-                      }}
-                    />
-                  </div>
-                </div>
-              )}
 
               {/* KHỐI LỖI NGAY BÊN TRONG BƯỚC ĐÓ (Không dùng toast chung chung) */}
               {stepItem.status === 'error' && errorObj && (

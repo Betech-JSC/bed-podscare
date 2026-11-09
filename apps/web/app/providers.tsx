@@ -1,6 +1,7 @@
 'use client';
 
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
+import { usePathname } from 'next/navigation';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { ToastProvider, ConfirmProvider, useToast, resolveOrderStatus } from '@podscare/ui';
 import type { UserRole, UserProfile, TenantInfo, RepairOrder, DeviceProfile, OrderDateFilter } from '@podscare/types';
@@ -164,7 +165,7 @@ export const ChunkLoadErrorHandler: React.FC = () => {
   return null;
 };
 
-export const Providers: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+const PodsCareProvidersCore: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [queryClient] = useState(
     () =>
       new QueryClient({
@@ -1107,4 +1108,12 @@ export const Providers: React.FC<{ children: React.ReactNode }> = ({ children })
       </PodsCareContext.Provider>
     </QueryClientProvider>
   );
+};
+
+export const Providers: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+  const pathname = usePathname();
+  if (pathname?.startsWith('/video-studio') || pathname?.startsWith('/threads')) {
+    return <>{children}</>;
+  }
+  return <PodsCareProvidersCore>{children}</PodsCareProvidersCore>;
 };

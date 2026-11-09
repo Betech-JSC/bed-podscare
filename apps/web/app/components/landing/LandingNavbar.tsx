@@ -87,6 +87,12 @@ export const LandingNavbar: React.FC<LandingNavbarProps> = ({ isAuthenticated = 
           >
             Liên hệ
           </a>
+          <Link
+            href="/video-studio"
+            className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-[#e9f4ef] text-[#176b51] border border-[#c8eadb] text-[12px] font-bold hover:bg-[#176b51] hover:text-white transition-colors"
+          >
+            <span>AI Video Studio</span>
+          </Link>
         </nav>
 
         {/* Action Buttons */}
@@ -174,6 +180,13 @@ export const LandingNavbar: React.FC<LandingNavbarProps> = ({ isAuthenticated = 
             >
               Liên hệ
             </a>
+            <Link
+              href="/video-studio"
+              onClick={() => setMobileMenuOpen(false)}
+              className="py-2 px-3 rounded-lg bg-[#e9f4ef] text-[#176b51] font-bold hover:bg-[#d7ede3] transition-colors"
+            >
+              AI Video Studio (P0–P9)
+            </Link>
           </nav>
 
           <div className="flex flex-col gap-2.5 pt-1">
