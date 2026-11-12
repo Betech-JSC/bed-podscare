@@ -31,12 +31,15 @@ const nextConfig = {
         ],
       },
       {
-        // Cho phép cache tối đa các file tĩnh có hash
+        // Cho phép cache tối đa các file tĩnh có hash ở production, tắt cache ở dev để tránh kẹt chunk cũ
         source: '/_next/static/:path*',
         headers: [
           {
             key: 'Cache-Control',
-            value: 'public, max-age=31536000, immutable',
+            value:
+              process.env.NODE_ENV === 'production'
+                ? 'public, max-age=31536000, immutable'
+                : 'no-store, no-cache, must-revalidate, max-age=0',
           },
         ],
       },

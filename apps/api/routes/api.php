@@ -334,3 +334,8 @@ if (file_exists(__DIR__ . '/threads_posts.php')) {
     }
 }
 
+// --- 4. THREADS TRAFFIC DISCOVERY & MULTI-ACCOUNT SEEDING ROUTES ---
+if (file_exists(__DIR__ . '/threads_seeding.php')) {
+    require __DIR__ . '/threads_seeding.php';
+}
+

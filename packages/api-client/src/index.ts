@@ -25,3 +25,4 @@ export * from './services/supplier.service';
 export * from './hooks/use-repairs';
 export * from './hooks/use-devices';
 export * from './hooks/use-qc';
+export * from './threads-seeding';

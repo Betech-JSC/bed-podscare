@@ -80,6 +80,14 @@ class ThreadsAccount extends Model
     }
 
     /**
+     * Quan hệ 1-n tới danh sách seeding jobs của tài khoản.
+     */
+    public function seedingJobs(): HasMany
+    {
+        return $this->hasMany(ThreadsSeedingJob::class, 'account_id');
+    }
+
+    /**
      * Gán và mã hóa Access Token bằng AES-256-GCM.
      */
     public function setAccessToken(?string $plainToken): self

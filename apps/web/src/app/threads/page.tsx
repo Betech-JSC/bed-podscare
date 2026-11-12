@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import Link from 'next/link';
 import { Icon } from '@podscare/ui';
 import {
   countUtf8Chars,
@@ -434,6 +435,17 @@ export default function ThreadsWorkspacePage() {
           </div>
 
           <div className="flex items-center gap-2 shrink-0">
+            <Link
+              href="/threads/seeding"
+              className="h-[34px] px-3 rounded-[7px] bg-[#eaf5ef] border border-[#cde2d8] text-[#176b51] hover:bg-[#d8ecdf] text-[12px] font-semibold inline-flex items-center gap-1.5 transition-colors"
+            >
+              <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <circle cx="11" cy="11" r="8" />
+                <line x1="21" y1="21" x2="16.65" y2="16.65" />
+              </svg>
+              <span>Seeding & Khám phá</span>
+            </Link>
+
             <button
               type="button"
               onClick={() => {

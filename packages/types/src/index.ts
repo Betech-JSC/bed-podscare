@@ -12,3 +12,5 @@ export * from './warranty';
 export * from './payment';
 export * from './shift';
 export * from './supplier';
+export * from './threads-seeding';
+
