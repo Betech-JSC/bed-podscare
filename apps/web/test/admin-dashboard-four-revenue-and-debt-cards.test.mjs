@@ -442,7 +442,7 @@ describe('OpenSpec: admin-dashboard-four-revenue-and-debt-cards Frontend Verific
     );
   });
 
-  test('OpenSpec: intake-date-revenue-and-excel-export (Tasks 2.1, 2.2, 2.3, 2.4): Date range filter (from_date -> to_date), all active statuses support, and Excel report export with STT, Họ tên, Mã máy, Tiền, and TỔNG TIỀN footer', () => {
+  test('OpenSpec: standardize-dashboard-excel-export (Tasks 2.1, 2.2, 2.3): Date range filter (from_date -> to_date), full customer/device/repair Excel export (one device per row, zero prices)', () => {
     const kpiTypesContent = fs.readFileSync(path.join(repoRoot, 'packages/types/src/kpi.ts'), 'utf-8');
     const kpiServiceContent = fs.readFileSync(
       path.join(repoRoot, 'packages/api-client/src/services/kpi.service.ts'),
@@ -450,20 +450,46 @@ describe('OpenSpec: admin-dashboard-four-revenue-and-debt-cards Frontend Verific
     );
     const dashboardContent = readDashboardAll();
 
-    // Task 2.1: Types & API client support from_date, to_date, created_at
+    // Task 2.1: Types & API client support from_date, to_date, created_at and full customer/device/repair fields
     assert.ok(
       kpiTypesContent.includes('from_date?: string;') &&
         kpiTypesContent.includes('to_date?: string;') &&
         kpiTypesContent.includes('created_at?: string | null;'),
       'packages/types/src/kpi.ts must include from_date, to_date, and created_at'
     );
+    for (const field of [
+      'customer_email?:',
+      'customer_address?:',
+      'customer_type?:',
+      'customer_source?:',
+      'customer_notes?:',
+      'shipping_address?:',
+      'intake_batch_code?:',
+      'order_type?:',
+      'device_category?:',
+      'serial_number?:',
+      'accessories?:',
+      'issue_description?:',
+      'additional_services?:',
+      'repair_note?:',
+      'parts_used_summary?:',
+      'parts_needed?:',
+      'technician_name?:',
+      'branch_name?:',
+    ]) {
+      assert.ok(
+        kpiTypesContent.includes(field),
+        `packages/types/src/kpi.ts RevenueOrderBreakdownItem must include ${field}`
+      );
+    }
+
     assert.ok(
       kpiServiceContent.includes('from_date?: string;') &&
         kpiServiceContent.includes('to_date?: string;'),
       'packages/api-client/src/services/kpi.service.ts getDashboardKpi must accept from_date and to_date'
     );
 
-    // Task 2.2: Date range filter inputs on AdminDashboardView & RevenueDrilldownModal and API query params
+    // Date range filter inputs on AdminDashboardView & RevenueDrilldownModal and API query params
     assert.ok(
       dashboardContent.includes('data-testid="dashboard-from-date-input"') &&
         dashboardContent.includes('data-testid="dashboard-to-date-input"') &&
@@ -477,12 +503,18 @@ describe('OpenSpec: admin-dashboard-four-revenue-and-debt-cards Frontend Verific
       'DashboardPage must pass from_date and to_date to kpiService.getDashboardKpi'
     );
 
-    // Task 2.3: Export Excel buttons on AdminDashboardView and RevenueDrilldownModal
+    // Export Excel buttons on AdminDashboardView and RevenueDrilldownModal (kept unchanged, no total price in toast)
     assert.ok(
       dashboardContent.includes('data-testid="admin-export-excel-btn"') &&
         dashboardContent.includes('data-testid="drilldown-export-excel-btn"') &&
+        dashboardContent.includes('Xuất báo cáo') &&
         dashboardContent.includes('Xuất Excel'),
-      'AdminDashboardView and RevenueDrilldownModal must provide Excel export buttons'
+      'AdminDashboardView and RevenueDrilldownModal must preserve the two Excel export buttons'
+    );
+    assert.ok(
+      dashboardContent.includes('Đã xuất file Excel (${exported.rowCount} đơn sửa chữa)') &&
+        !dashboardContent.includes('Tổng tiền: ${formatVND(exported.totalAmount)}'),
+      'DashboardPage toast after Excel export must not display totalAmount'
     );
 
     // Runtime verification of buildRevenueExcelWorkbook & formatOrderStatusForReport
@@ -493,39 +525,98 @@ describe('OpenSpec: admin-dashboard-four-revenue-and-debt-cards Frontend Verific
     const sampleOrders = [
       {
         id: 101,
-        order_code: 'RO-261022-001',
+        order_code: 'PCQ-01',
+        intake_batch_code: 'IB26-001',
+        order_type: 'in_store',
         customer_name: 'Nguyễn Văn An',
         customer_phone: '0901234567',
+        customer_email: 'an.nguyen@example.com',
+        customer_address: '12 Nguyễn Huệ, Q1, TP.HCM',
+        shipping_address: null,
+        customer_type: 'vip',
+        customer_source: 'Zalo OA',
+        customer_notes: 'Khách hẹn lấy sau 17h',
+        device_category: 'AirPods',
         device_name: 'AirPods Pro 2',
+        serial_number: '0099887766AA',
+        accessories: 'Hộp sạc + cáp USB-C',
+        issue_description: 'Rè tai trái, pin tụt nhanh',
+        additional_services: [
+          { id: 1, name: 'Vệ sinh hộp sạc', price: 150000, note: 'Làm sạch lưới loa' },
+        ],
+        repair_note: 'Đã thay pin tai trái',
+        parts_used_summary: 'Pin AirPods Pro 2 x1',
+        parts_needed: null,
+        technician_name: 'KTV Minh',
+        branch_name: 'Chi nhánh Quận 1',
         status: 'inspecting',
         total_price: 400000,
         collected_amount: 0,
         uncollected_amount: 400000,
         created_at: '2026-10-22T09:15:00+07:00',
+        handed_over_at: null,
       },
       {
         id: 102,
-        order_code: 'RO-261022-002',
-        customer_name: 'Trần Thị Bình',
-        customer_phone: '0909888777',
-        device_name: 'AirPods 3',
+        order_code: 'PCQ-02',
+        intake_batch_code: 'IB26-001',
+        order_type: 'cod',
+        customer_name: 'Nguyễn Văn An',
+        customer_phone: '0901234567',
+        customer_email: 'an.nguyen@example.com',
+        customer_address: '12 Nguyễn Huệ, Q1, TP.HCM',
+        shipping_address: '88 Lê Lợi, Q1, TP.HCM',
+        customer_type: 'vip',
+        customer_source: 'Zalo OA',
+        customer_notes: 'Khách hẹn lấy sau 17h',
+        device_category: 'Apple Watch',
+        device_name: 'Apple Watch S8',
+        serial_number: 'AW88776655',
+        accessories: 'Chỉ thân máy',
+        issue_description: 'Vỡ mặt kính ngoài',
+        additional_services: [{ id: 2, name: 'Dán PPF bảo vệ', price: 250000 }],
+        repair_note: 'Đang ép kính',
+        parts_used_summary: null,
+        parts_needed: 'Kính Apple Watch S8 45mm',
+        technician_name: 'KTV Tuấn',
+        branch_name: 'Chi nhánh Quận 1',
         status: 'in_repair',
         total_price: 600000,
         collected_amount: 200000,
         uncollected_amount: 400000,
         created_at: '2026-10-22T11:30:00+07:00',
+        handed_over_at: null,
       },
       {
         id: 103,
         order_code: 'RO-261022-003',
+        intake_batch_code: null,
+        order_type: 'warranty',
         customer_name: 'Lê Hoàng Cường',
         customer_phone: '0912333444',
+        customer_email: null,
+        customer_address: null,
+        shipping_address: null,
+        customer_type: 'retail',
+        customer_source: 'Khách cũ giới thiệu',
+        customer_notes: null,
+        device_category: 'AirPods',
         device_name: 'AirPods Max',
+        serial_number: 'AMX554433',
+        accessories: 'Smart Case',
+        issue_description: 'Mất kết nối Bluetooth',
+        additional_services: [],
+        repair_note: 'Bảo hành vệ sinh chân tiếp xúc',
+        parts_used_summary: null,
+        parts_needed: null,
+        technician_name: 'KTV Minh',
+        branch_name: 'Chi nhánh Quận 1',
         status: 'completed',
         total_price: 500000,
         collected_amount: 500000,
         uncollected_amount: 0,
         created_at: '2026-10-22T15:45:00+07:00',
+        handed_over_at: '2026-10-22T18:00:00+07:00',
       },
     ];
 
@@ -537,26 +628,111 @@ describe('OpenSpec: admin-dashboard-four-revenue-and-debt-cards Frontend Verific
       branchName: 'Chi nhánh Quận 1',
     });
 
-    assert.equal(workbook.rowCount, 3, 'Workbook must contain 3 rows');
-    assert.equal(workbook.totalAmount, 1500000, 'Workbook totalAmount must equal 1,500,000');
+    assert.equal(workbook.rowCount, 3, 'Workbook must export 1 row per device (3 rows)');
+    assert.equal(workbook.totalAmount, 0, 'Workbook totalAmount must be 0 (no price aggregation)');
     assert.equal(
       workbook.fileName,
-      'bao-cao-doanh-thu-podscare-2026-10-22.xls',
-      'Workbook file name must reflect selected date'
+      'danh-sach-don-sua-chua-2026-10-22.xls',
+      'Workbook file name must use danh-sach-don-sua-chua-<date>.xls'
     );
     assert.ok(workbook.content.startsWith('\uFEFF'), 'Workbook content must start with UTF-8 BOM');
-    assert.ok(workbook.content.includes('>STT<'), 'Workbook must contain column STT');
-    assert.ok(workbook.content.includes('>Họ tên<'), 'Workbook must contain column Họ tên');
-    assert.ok(workbook.content.includes('>Mã máy<'), 'Workbook must contain column Mã máy');
-    assert.ok(workbook.content.includes('>Tiền<'), 'Workbook must contain column Tiền');
     assert.ok(
-      workbook.content.includes('RO-261022-001 - AirPods Pro 2'),
-      'Workbook must format Mã máy as <order_code> - <device_name>'
+      workbook.content.includes('DANH SÁCH ĐƠN SỬA CHỮA &amp; THÔNG TIN KHÁCH HÀNG') ||
+        workbook.content.includes('DANH SÁCH ĐƠN SỬA CHỮA & THÔNG TIN KHÁCH HÀNG'),
+      'Workbook title must be DANH SÁCH ĐƠN SỬA CHỮA & THÔNG TIN KHÁCH HÀNG'
     );
+
+    const expectedColumnHeaders = [
+      '>STT<',
+      '>Mã đơn<',
+      '>Mã đợt gộp<',
+      '>Hình thức<',
+      '>Ngày tiếp nhận<',
+      '>Ngày bàn giao<',
+      '>Họ tên khách<',
+      '>Số điện thoại<',
+      '>Email<',
+      '>Địa chỉ khách<',
+      '>Địa chỉ giao nhận (COD/BH)<',
+      '>Loại khách<',
+      '>Nguồn khách<',
+      '>Ghi chú khách hàng<',
+      '>Danh mục<',
+      '>Thiết bị<',
+      '>Serial Number<',
+      '>Phụ kiện bàn giao<',
+      '>Sửa những gì / Lỗi khách báo<',
+      '>Dịch vụ làm thêm<',
+      '>Ghi chú sửa chữa / Linh kiện<',
+      '>Trạng thái<',
+      '>Kỹ thuật viên<',
+      '>Chi nhánh<',
+    ];
+    for (const colHeader of expectedColumnHeaders) {
+      assert.ok(
+        workbook.content.includes(colHeader),
+        `Workbook must contain column header ${colHeader}`
+      );
+    }
+
+    // Two devices with the same intake_batch_code (IB26-001) must appear as 2 separate rows
+    const batchMatches = workbook.content.match(/IB26-001/g) || [];
+    assert.equal(batchMatches.length, 2, 'Two devices in the same batch must render 2 separate rows');
     assert.ok(
-      workbook.content.includes('TỔNG TIỀN') && workbook.content.includes('data-value="1500000"'),
-      'Workbook footer must contain TỔNG TIỀN with exact total sum 1500000'
+      workbook.content.includes('PCQ-01') &&
+        workbook.content.includes('AirPods Pro 2') &&
+        workbook.content.includes('PCQ-02') &&
+        workbook.content.includes('Apple Watch S8'),
+      'Workbook must contain both devices from the same intake batch'
     );
+
+    // Customer, device, repair & text-format preservation checks
+    assert.ok(
+      workbook.content.includes('an.nguyen@example.com') &&
+        workbook.content.includes('12 Nguyễn Huệ, Q1, TP.HCM') &&
+        workbook.content.includes('88 Lê Lợi, Q1, TP.HCM') &&
+        workbook.content.includes('Khách VIP') &&
+        workbook.content.includes('Zalo OA') &&
+        workbook.content.includes('Khách hẹn lấy sau 17h') &&
+        workbook.content.includes('Tại quầy') &&
+        workbook.content.includes('Đơn COD') &&
+        workbook.content.includes('Bảo hành') &&
+        workbook.content.includes('0099887766AA') &&
+        workbook.content.includes('Hộp sạc + cáp USB-C') &&
+        workbook.content.includes('Rè tai trái, pin tụt nhanh') &&
+        workbook.content.includes('Vệ sinh hộp sạc') &&
+        workbook.content.includes('Dán PPF bảo vệ') &&
+        workbook.content.includes('Pin AirPods Pro 2 x1') &&
+        workbook.content.includes('Kính Apple Watch S8 45mm') &&
+        workbook.content.includes('KTV Minh') &&
+        workbook.content.includes('Chi nhánh Quận 1') &&
+        workbook.content.includes("mso-number-format:'\\@'"),
+      'Workbook must render full customer, device, repair details and text format for phone/serial'
+    );
+
+    // Strict Zero-Price assertions
+    for (const forbidden of [
+      '>Tiền<',
+      'TỔNG TIỀN',
+      '400000',
+      '400.000',
+      '600000',
+      '600.000',
+      '500000',
+      '500.000',
+      '1500000',
+      '1.500.000',
+      '150000',
+      '150.000',
+      '250000',
+      '250.000',
+      '₫',
+    ]) {
+      assert.ok(
+        !workbook.content.includes(forbidden),
+        `Workbook must NOT contain price or currency token: ${forbidden}`
+      );
+    }
   });
 });
 

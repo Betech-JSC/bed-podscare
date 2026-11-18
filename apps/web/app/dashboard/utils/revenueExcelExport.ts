@@ -36,10 +36,34 @@ const STATUS_LABELS: Record<string, string> = {
   rejected: 'Từ chối sửa',
 };
 
+const ORDER_TYPE_LABELS: Record<string, string> = {
+  in_store: 'Tại quầy',
+  cod: 'Đơn COD',
+  warranty: 'Bảo hành',
+};
+
+const CUSTOMER_TYPE_LABELS: Record<string, string> = {
+  retail: 'Khách lẻ',
+  dealer: 'Đại lý',
+  vip: 'Khách VIP',
+};
+
 export function formatOrderStatusForReport(status?: string | null): string {
   if (!status) return 'Tiếp nhận mới';
   const clean = status.trim();
   return STATUS_LABELS[clean] || clean;
+}
+
+export function formatOrderTypeForReport(orderType?: string | null): string {
+  if (!orderType || !orderType.trim()) return '—';
+  const clean = orderType.trim();
+  return ORDER_TYPE_LABELS[clean] || clean;
+}
+
+export function formatCustomerTypeForReport(customerType?: string | null): string {
+  if (!customerType || !customerType.trim()) return '—';
+  const clean = customerType.trim();
+  return CUSTOMER_TYPE_LABELS[clean] || clean;
 }
 
 export function formatIntakeDateForReport(isoOrDate?: string | null): string {
@@ -62,10 +86,10 @@ export function formatIntakeDateForReport(isoOrDate?: string | null): string {
   }
 }
 
-export function formatVndNumber(amount?: number | string | null): string {
-  const num = Math.round(Number(amount || 0));
-  if (!Number.isFinite(num)) return '0 ₫';
-  return `${num.toLocaleString('vi-VN')} ₫`;
+function displayOrDash(value: unknown): string {
+  if (value === null || value === undefined) return '—';
+  const text = String(value).trim();
+  return text.length > 0 ? text : '—';
 }
 
 function escapeHtml(value: unknown): string {
@@ -77,18 +101,70 @@ function escapeHtml(value: unknown): string {
     .replace(/'/g, '&#39;');
 }
 
+function formatAdditionalServicesNames(
+  services?: RevenueOrderBreakdownItem['additional_services']
+): string {
+  if (!Array.isArray(services) || services.length === 0) return '—';
+  const names = services
+    .map((service) => (service && typeof service.name === 'string' ? service.name.trim() : ''))
+    .filter((name) => name.length > 0);
+  return names.length > 0 ? names.join(', ') : '—';
+}
+
+function formatRepairAndPartsNotes(item: RevenueOrderBreakdownItem): string {
+  const segments: string[] = [];
+  const repairNote = typeof item.repair_note === 'string' ? item.repair_note.trim() : '';
+  const partsUsed =
+    typeof item.parts_used_summary === 'string' ? item.parts_used_summary.trim() : '';
+  const partsNeeded = typeof item.parts_needed === 'string' ? item.parts_needed.trim() : '';
+
+  if (repairNote) {
+    segments.push(`Ghi chú KTV: ${repairNote}`);
+  }
+  if (partsUsed) {
+    segments.push(`Linh kiện đã dùng: ${partsUsed}`);
+  }
+  if (partsNeeded) {
+    segments.push(`Linh kiện cần: ${partsNeeded}`);
+  }
+  return segments.length > 0 ? segments.join(' | ') : '—';
+}
+
+const REPORT_COLUMNS: Array<{ label: string; width: string; align: 'center' | 'left' }> = [
+  { label: 'STT', width: '52px', align: 'center' },
+  { label: 'Mã đơn', width: '130px', align: 'left' },
+  { label: 'Mã đợt gộp', width: '120px', align: 'left' },
+  { label: 'Hình thức', width: '100px', align: 'center' },
+  { label: 'Ngày tiếp nhận', width: '120px', align: 'center' },
+  { label: 'Ngày bàn giao', width: '120px', align: 'center' },
+  { label: 'Họ tên khách', width: '180px', align: 'left' },
+  { label: 'Số điện thoại', width: '125px', align: 'left' },
+  { label: 'Email', width: '190px', align: 'left' },
+  { label: 'Địa chỉ khách', width: '220px', align: 'left' },
+  { label: 'Địa chỉ giao nhận (COD/BH)', width: '230px', align: 'left' },
+  { label: 'Loại khách', width: '110px', align: 'center' },
+  { label: 'Nguồn khách', width: '120px', align: 'left' },
+  { label: 'Ghi chú khách hàng', width: '200px', align: 'left' },
+  { label: 'Danh mục', width: '130px', align: 'left' },
+  { label: 'Thiết bị', width: '190px', align: 'left' },
+  { label: 'Serial Number', width: '150px', align: 'left' },
+  { label: 'Phụ kiện bàn giao', width: '170px', align: 'left' },
+  { label: 'Sửa những gì / Lỗi khách báo', width: '260px', align: 'left' },
+  { label: 'Dịch vụ làm thêm', width: '210px', align: 'left' },
+  { label: 'Ghi chú sửa chữa / Linh kiện', width: '260px', align: 'left' },
+  { label: 'Trạng thái', width: '130px', align: 'center' },
+  { label: 'Kỹ thuật viên', width: '150px', align: 'left' },
+  { label: 'Chi nhánh', width: '150px', align: 'left' },
+];
+
 export function buildRevenueExcelWorkbook(
   options: RevenueExcelExportOptions
 ): RevenueExcelWorkbookResult {
   const items = Array.isArray(options.items) ? options.items : [];
-  const totalAmount = items.reduce(
-    (sum, item) => sum + Math.round(Number(item.total_price || 0)),
-    0
-  );
 
   const fromDateClean = (options.fromDate || '').trim();
   const toDateClean = (options.toDate || '').trim();
-  const prefix = options.fileNamePrefix || 'bao-cao-doanh-thu-podscare';
+  const prefix = options.fileNamePrefix || 'danh-sach-don-sua-chua';
   const dateSuffix =
     fromDateClean && toDateClean
       ? fromDateClean === toDateClean
@@ -101,37 +177,78 @@ export function buildRevenueExcelWorkbook(
   const rowsHtml = items
     .map((item, idx) => {
       const stt = idx + 1;
-      const customerName = item.customer_name || 'Khách lẻ';
-      const orderCode = String(item.order_code || item.id || '');
-      const deviceName = item.device_name || 'Thiết bị';
+      const orderCode = displayOrDash(item.order_code || item.id);
+      const batchCode = displayOrDash(item.intake_batch_code);
+      const orderTypeLabel = formatOrderTypeForReport(item.order_type);
+      const intakeDate = displayOrDash(formatIntakeDateForReport(item.created_at));
+      const handoverDate = displayOrDash(formatIntakeDateForReport(item.handed_over_at));
+      const customerName = displayOrDash(item.customer_name || 'Khách lẻ');
+      const customerPhone = displayOrDash(item.customer_phone);
+      const customerEmail = displayOrDash(item.customer_email);
+      const customerAddress = displayOrDash(item.customer_address);
+      const shippingAddress = displayOrDash(item.shipping_address);
+      const customerType = formatCustomerTypeForReport(item.customer_type);
+      const customerSource = displayOrDash(item.customer_source);
+      const customerNotes = displayOrDash(item.customer_notes);
+      const deviceCategory = displayOrDash(item.device_category);
+      const deviceName = displayOrDash(item.device_name || 'Thiết bị');
+      const serialNumber = displayOrDash(item.serial_number);
+      const accessories = displayOrDash(item.accessories);
+      const issueDescription = displayOrDash(item.issue_description);
+      const additionalServices = formatAdditionalServicesNames(item.additional_services);
+      const repairAndParts = formatRepairAndPartsNotes(item);
       const statusLabel = formatOrderStatusForReport(item.status);
-      const intakeDate = formatIntakeDateForReport(item.created_at || item.completed_at);
-      const machineCodeDisplay = `${orderCode} - ${deviceName}${
-        intakeDate ? ` (${intakeDate} · ${statusLabel})` : ` (${statusLabel})`
-      }`;
-      const priceVal = Math.round(Number(item.total_price || 0));
+      const technicianName = displayOrDash(item.technician_name);
+      const branchName = displayOrDash(item.branch_name || options.branchName);
+
+      const cellStyle = 'border:1px solid #d8e2dc; padding:6px 10px; vertical-align:top;';
 
       return `
         <tr>
-          <td style="text-align:center; border:1px solid #d8e2dc; padding:6px 10px;">${stt}</td>
-          <td style="text-align:left; border:1px solid #d8e2dc; padding:6px 10px;">${escapeHtml(customerName)}</td>
-          <td style="text-align:left; border:1px solid #d8e2dc; padding:6px 10px;">${escapeHtml(machineCodeDisplay)}</td>
-          <td style="text-align:right; border:1px solid #d8e2dc; padding:6px 10px; mso-number-format:'\\#\\,\\#\\#0'; font-weight:600;" data-value="${priceVal}">${escapeHtml(formatVndNumber(priceVal))}</td>
+          <td style="text-align:center; ${cellStyle}">${stt}</td>
+          <td style="text-align:left; ${cellStyle} font-family:monospace; font-weight:bold; color:#176b51; mso-number-format:'\\@';">${escapeHtml(orderCode)}</td>
+          <td style="text-align:left; ${cellStyle} font-family:monospace; mso-number-format:'\\@';">${escapeHtml(batchCode)}</td>
+          <td style="text-align:center; ${cellStyle}">${escapeHtml(orderTypeLabel)}</td>
+          <td style="text-align:center; ${cellStyle} mso-number-format:'\\@';">${escapeHtml(intakeDate)}</td>
+          <td style="text-align:center; ${cellStyle} mso-number-format:'\\@';">${escapeHtml(handoverDate)}</td>
+          <td style="text-align:left; ${cellStyle} font-weight:600;">${escapeHtml(customerName)}</td>
+          <td style="text-align:left; ${cellStyle} mso-number-format:'\\@';">${escapeHtml(customerPhone)}</td>
+          <td style="text-align:left; ${cellStyle}">${escapeHtml(customerEmail)}</td>
+          <td style="text-align:left; ${cellStyle}">${escapeHtml(customerAddress)}</td>
+          <td style="text-align:left; ${cellStyle}">${escapeHtml(shippingAddress)}</td>
+          <td style="text-align:center; ${cellStyle}">${escapeHtml(customerType)}</td>
+          <td style="text-align:left; ${cellStyle}">${escapeHtml(customerSource)}</td>
+          <td style="text-align:left; ${cellStyle}">${escapeHtml(customerNotes)}</td>
+          <td style="text-align:left; ${cellStyle}">${escapeHtml(deviceCategory)}</td>
+          <td style="text-align:left; ${cellStyle} font-weight:600;">${escapeHtml(deviceName)}</td>
+          <td style="text-align:left; ${cellStyle} font-family:monospace; mso-number-format:'\\@';">${escapeHtml(serialNumber)}</td>
+          <td style="text-align:left; ${cellStyle}">${escapeHtml(accessories)}</td>
+          <td style="text-align:left; ${cellStyle}">${escapeHtml(issueDescription)}</td>
+          <td style="text-align:left; ${cellStyle}">${escapeHtml(additionalServices)}</td>
+          <td style="text-align:left; ${cellStyle}">${escapeHtml(repairAndParts)}</td>
+          <td style="text-align:center; ${cellStyle}">${escapeHtml(statusLabel)}</td>
+          <td style="text-align:left; ${cellStyle}">${escapeHtml(technicianName)}</td>
+          <td style="text-align:left; ${cellStyle}">${escapeHtml(branchName)}</td>
         </tr>`;
     })
     .join('');
 
+  const colCount = REPORT_COLUMNS.length;
   const emptyRowHtml =
     items.length === 0
       ? `
         <tr>
-          <td colspan="4" style="text-align:center; border:1px solid #d8e2dc; padding:12px; color:#81908a;">
-            Không có đơn hàng phát sinh trong kỳ (${escapeHtml(options.periodLabel)})
+          <td colspan="${colCount}" style="text-align:center; border:1px solid #d8e2dc; padding:12px; color:#81908a;">
+            Không có đơn sửa chữa nào trong kỳ (${escapeHtml(options.periodLabel)})
           </td>
         </tr>`
       : '';
 
   const branchInfo = options.branchName ? ` — Chi nhánh: ${options.branchName}` : '';
+  const headersHtml = REPORT_COLUMNS.map(
+    (col) =>
+      `<th style="width:${col.width}; text-align:${col.align}; border:1px solid #cde4d8; padding:8px;">${escapeHtml(col.label)}</th>`
+  ).join('\n        ');
 
   const htmlContent = `\uFEFF<html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:x="urn:schemas-microsoft-com:office:excel" xmlns="http://www.w3.org/TR/REC-html40">
 <head>
@@ -142,7 +259,7 @@ export function buildRevenueExcelWorkbook(
     <x:ExcelWorkbook>
       <x:ExcelWorksheets>
         <x:ExcelWorksheet>
-          <x:Name>BaoCaoDoanhThu</x:Name>
+          <x:Name>DanhSachDonSuaChua</x:Name>
           <x:WorksheetOptions>
             <x:DisplayGridlines/>
           </x:WorksheetOptions>
@@ -152,30 +269,21 @@ export function buildRevenueExcelWorkbook(
   </xml>
   <![endif]-->
 </head>
-<body style="font-family: 'DM Sans', Arial, sans-serif; font-size: 12pt; color: #17231f;">
+<body style="font-family: 'DM Sans', Arial, sans-serif; font-size: 11pt; color: #17231f;">
   <table border="1" cellspacing="0" cellpadding="6" style="border-collapse:collapse; width:100%;">
     <thead>
       <tr>
-        <th colspan="4" style="background-color:#176b51; color:#ffffff; font-size:14pt; font-weight:bold; text-align:center; padding:10px; border:1px solid #176b51;">
-          BÁO CÁO DOANH THU ĐƠN HÀNG (${escapeHtml(options.periodLabel)})${escapeHtml(branchInfo)}
+        <th colspan="${colCount}" style="background-color:#176b51; color:#ffffff; font-size:13pt; font-weight:bold; text-align:center; padding:10px; border:1px solid #176b51;">
+          DANH SÁCH ĐƠN SỬA CHỮA &amp; THÔNG TIN KHÁCH HÀNG (${escapeHtml(options.periodLabel)})${escapeHtml(branchInfo)}
         </th>
       </tr>
       <tr style="background-color:#e9f4ef; color:#176b51; font-weight:bold;">
-        <th style="width:60px; text-align:center; border:1px solid #cde4d8; padding:8px;">STT</th>
-        <th style="width:220px; text-align:left; border:1px solid #cde4d8; padding:8px;">Họ tên</th>
-        <th style="width:360px; text-align:left; border:1px solid #cde4d8; padding:8px;">Mã máy</th>
-        <th style="width:160px; text-align:right; border:1px solid #cde4d8; padding:8px;">Tiền</th>
+        ${headersHtml}
       </tr>
     </thead>
     <tbody>
       ${rowsHtml || emptyRowHtml}
     </tbody>
-    <tfoot>
-      <tr style="background-color:#faf1df; font-weight:bold; color:#17231f;">
-        <td colspan="3" style="text-align:right; border:1px solid #f2deba; padding:8px 10px; font-weight:bold;">TỔNG TIỀN</td>
-        <td style="text-align:right; border:1px solid #f2deba; padding:8px 10px; font-weight:bold; color:#176b51; mso-number-format:'\\#\\,\\#\\#0';" data-value="${totalAmount}">${escapeHtml(formatVndNumber(totalAmount))}</td>
-      </tr>
-    </tfoot>
   </table>
 </body>
 </html>`;
@@ -183,7 +291,7 @@ export function buildRevenueExcelWorkbook(
   return {
     content: htmlContent,
     fileName,
-    totalAmount,
+    totalAmount: 0,
     rowCount: items.length,
   };
 }

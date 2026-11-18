@@ -820,11 +820,29 @@ class KpiController extends Controller
                 'repair_orders.repair_completed_at',
                 'repair_orders.created_at',
                 'repair_orders.updated_at',
+                'repair_orders.intake_batch_code',
+                'repair_orders.order_type',
+                'repair_orders.serial_number',
+                'repair_orders.accessories',
+                'repair_orders.issue_description',
+                'repair_orders.shipping_address',
+                'repair_orders.additional_services',
+                'repair_orders.repair_note',
+                'repair_orders.parts_used_summary',
+                'repair_orders.parts_needed',
                 DB::raw('customers.name as joined_customer_name'),
                 DB::raw('customers.phone as joined_customer_phone'),
                 DB::raw('customers.orders_count as joined_customer_orders_count'),
+                DB::raw('customers.email as joined_customer_email'),
+                DB::raw('customers.address as joined_customer_address'),
+                DB::raw('customers.customer_type as joined_customer_type'),
+                DB::raw('customers.source as joined_customer_source'),
+                DB::raw('customers.notes as joined_customer_notes'),
                 DB::raw('dm.name as joined_device_name'),
                 DB::raw('dm.model_code as joined_model_code'),
+                DB::raw('dm.category as joined_device_category'),
+                DB::raw('branches.name as joined_branch_name'),
+                DB::raw('tech_users.name as joined_technician_name'),
             ];
 
             $finishedOrderRelations = [
@@ -839,6 +857,8 @@ class KpiController extends Controller
             $monthlyFinishedOrders = (clone $baseQuery)
                 ->leftJoin('customers', 'repair_orders.customer_id', '=', 'customers.id')
                 ->leftJoin('device_models as dm', 'repair_orders.device_model_id', '=', 'dm.id')
+                ->leftJoin('branches', 'repair_orders.branch_id', '=', 'branches.id')
+                ->leftJoin('users as tech_users', 'repair_orders.technician_id', '=', 'tech_users.id')
                 ->select($finishedOrderColumns)
                 ->whereNotIn('repair_orders.status', ['cancelled', 'rejected'])
                 ->whereBetween('repair_orders.created_at', [$startOfMonth, $endOfMonth])
@@ -861,6 +881,8 @@ class KpiController extends Controller
                 $selectedDateFinishedOrders = (clone $baseQuery)
                     ->leftJoin('customers', 'repair_orders.customer_id', '=', 'customers.id')
                     ->leftJoin('device_models as dm', 'repair_orders.device_model_id', '=', 'dm.id')
+                    ->leftJoin('branches', 'repair_orders.branch_id', '=', 'branches.id')
+                    ->leftJoin('users as tech_users', 'repair_orders.technician_id', '=', 'tech_users.id')
                     ->select($finishedOrderColumns)
                     ->whereNotIn('repair_orders.status', ['cancelled', 'rejected'])
                     ->whereBetween('repair_orders.created_at', [$fromDateStart, $toDateEnd])
@@ -958,9 +980,27 @@ class KpiController extends Controller
                         'customer_id'                  => $order->customer_id,
                         'customer_name'                => $order->joined_customer_name ?? $order->customer_name ?? 'Khách lẻ',
                         'customer_phone'               => $order->joined_customer_phone ?? $order->customer_phone ?? '',
+                        'customer_email'               => $order->joined_customer_email ?? null,
+                        'customer_address'             => $order->joined_customer_address ?? null,
+                        'customer_type'                => $order->joined_customer_type ?? null,
+                        'customer_source'              => $order->joined_customer_source ?? null,
+                        'customer_notes'               => $order->joined_customer_notes ?? null,
                         'customer_orders_count'        => $customerOrdersCount,
+                        'shipping_address'             => $order->shipping_address ?? null,
+                        'intake_batch_code'            => $order->intake_batch_code ?? null,
+                        'order_type'                   => $order->order_type ?? 'in_store',
                         'device_name'                  => $order->joined_device_name ?? $order->device_name ?? 'Thiết bị',
+                        'device_category'              => $order->joined_device_category ?? null,
                         'model_code'                   => $order->joined_model_code ?? null,
+                        'serial_number'                => $order->serial_number ?? null,
+                        'accessories'                  => $order->accessories ?? null,
+                        'issue_description'            => $order->issue_description ?? null,
+                        'additional_services'          => is_array($order->additional_services) ? $order->additional_services : (is_string($order->additional_services) ? (json_decode($order->additional_services, true) ?? []) : []),
+                        'repair_note'                  => $order->repair_note ?? null,
+                        'parts_used_summary'           => $order->parts_used_summary ?? null,
+                        'parts_needed'                 => $order->parts_needed ?? null,
+                        'technician_name'              => $order->joined_technician_name ?? null,
+                        'branch_name'                  => $order->joined_branch_name ?? null,
                         'status'                       => $order->status,
                         'total_price'                  => $effectiveOrderTotal,
                         'total_price_formatted'        => $formatCurrency($effectiveOrderTotal),

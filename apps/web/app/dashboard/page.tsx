@@ -643,7 +643,7 @@ export default function DashboardPage() {
       });
 
       toast(
-        `Đã xuất file Excel (${exported.rowCount} đơn · Tổng tiền: ${formatVND(exported.totalAmount)})`,
+        `Đã xuất file Excel (${exported.rowCount} đơn sửa chữa)`,
         'success'
       );
     },
