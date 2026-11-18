@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useEffect, useState } from 'react';
+import React, { useEffect } from 'react';
 import {
   Input,
   Select,
@@ -15,7 +15,6 @@ import {
   sanitizeInputLive,
 } from '@podscare/ui';
 import type { ChecklistStatus } from '@podscare/types';
-import type { CommonIssueItem } from '@podscare/api-client';
 import {
   type IntakeDeviceItem,
   CATEGORY_HANDOVER_PARTS,
@@ -25,7 +24,9 @@ import {
 } from './IntakeWizardModal';
 import {
   POPULAR_APPLE_WATCH_SIZES,
-  filterCommonIssues,
+  AIRPODS_REPAIR_SCOPE_OPTIONS,
+  extractAirPodsScopeFromIssueText,
+  toggleAirPodsScopeTagInIssueText,
   enrichCommonIssueWithParts,
   mergeLinkedPartsFromIssues,
   formatLinkedPartsSummary,
@@ -48,12 +49,17 @@ export interface IntakeQuickConsoleProps {
   onCskhChange: (val: string) => void;
   categories: string[];
   availableModels: { name: string; model?: string }[];
-  device: IntakeDeviceItem;
-  onUpdateDevice: (updater: Partial<IntakeDeviceItem> | ((prev: IntakeDeviceItem) => IntakeDeviceItem)) => void;
-  onCategoryChange: (cat: string) => void;
-  onDeviceModelChange?: (model: string) => void;
-  commonIssues: CommonIssueItem[];
-  onChipClick: (chip: CommonIssueItem) => void;
+  devices: IntakeDeviceItem[];
+  activeDeviceIndex: number;
+  onSelectDevice: (index: number) => void;
+  onAddDevice: () => void;
+  onRemoveDevice: (index: number) => void;
+  onUpdateDeviceAt: (
+    index: number,
+    updater: Partial<IntakeDeviceItem> | ((prev: IntakeDeviceItem) => IntakeDeviceItem)
+  ) => void;
+  onCategoryChangeAt: (index: number, cat: string) => void;
+  onDeviceModelChangeAt: (index: number, model: string) => void;
   effectiveChecks: string[];
   warrantyMonths: 3 | 6 | 9 | 12;
   onWarrantyMonthsChange: (m: 3 | 6 | 9 | 12) => void;
@@ -75,12 +81,14 @@ export const IntakeQuickConsole: React.FC<IntakeQuickConsoleProps> = ({
   onCskhChange,
   categories,
   availableModels,
-  device,
-  onUpdateDevice,
-  onCategoryChange,
-  onDeviceModelChange,
-  commonIssues,
-  onChipClick,
+  devices,
+  activeDeviceIndex,
+  onSelectDevice,
+  onAddDevice,
+  onRemoveDevice,
+  onUpdateDeviceAt,
+  onCategoryChangeAt,
+  onDeviceModelChangeAt,
   effectiveChecks,
   warrantyMonths,
   onWarrantyMonthsChange,
@@ -97,6 +105,12 @@ export const IntakeQuickConsole: React.FC<IntakeQuickConsoleProps> = ({
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [onSubmitAndPrint]);
+
+  const safeIndex = Math.max(0, Math.min(activeDeviceIndex, Math.max(0, devices.length - 1)));
+  const device = devices[safeIndex] || devices[0];
+  const onUpdateDevice = (
+    updater: Partial<IntakeDeviceItem> | ((prev: IntakeDeviceItem) => IntakeDeviceItem)
+  ) => onUpdateDeviceAt(safeIndex, updater);
 
   const selectedParts = parseHardwarePartsFromText(device.accessories);
   const handoverPartDefs =
@@ -119,28 +133,39 @@ export const IntakeQuickConsole: React.FC<IntakeQuickConsoleProps> = ({
     }
     return opts;
   })();
-  const [quickIssueFilter, setQuickIssueFilter] = useState('');
 
-  const filteredIssues = filterCommonIssues(
-    commonIssues,
-    quickIssueFilter,
-    device.category,
-    device.watchSize,
-    device.device
-  );
+  const activeAirPodsScope =
+    device.category === 'AirPods' ? extractAirPodsScopeFromIssueText(device.issue) : null;
 
-  const activeIssueObjects = device.issue.trim()
-    ? filteredIssues.filter((item) =>
-        device.issue.toLowerCase().includes(item.issue_name.toLowerCase())
-      )
-    : [];
+  const updateIssueWithInferredParts = (nextIssue: string) => {
+    const inferred = inferLinkedPartsFromOrderText(
+      nextIssue,
+      device.category,
+      device.watchSize,
+      device.device
+    );
+    const nextPartsSummary = formatLinkedPartsSummary(inferred.linkedParts, device.watchSize);
+    const nextKeys = inferred.matchedIssues.map((iss) =>
+      buildDeviceIssueSelectionKey(device.category, device.device, iss.issue_name)
+    );
+    onUpdateDevice({
+      issue: nextIssue,
+      selectedIssues: inferred.matchedIssues,
+      selectedIssueKeys: nextKeys,
+      partsNeeded: nextPartsSummary,
+    });
+  };
 
   const handleSelectWatchSize = (size: string) => {
     const nextAccessories = applyWatchSizeTagToText(device.accessories, size);
-    const enrichedSelected = (device.selectedIssues && device.selectedIssues.length > 0
-      ? device.selectedIssues
-      : activeIssueObjects
-    ).map((iss) => enrichCommonIssueWithParts(iss, 'Apple Watch', size, device.device));
+    const baseIssues =
+      device.selectedIssues && device.selectedIssues.length > 0
+        ? device.selectedIssues
+        : inferLinkedPartsFromOrderText(device.issue, 'Apple Watch', size, device.device)
+            .matchedIssues;
+    const enrichedSelected = baseIssues.map((iss) =>
+      enrichCommonIssueWithParts(iss, 'Apple Watch', size, device.device)
+    );
     const mergedParts = mergeLinkedPartsFromIssues(
       enrichedSelected,
       'Apple Watch',
@@ -155,6 +180,11 @@ export const IntakeQuickConsole: React.FC<IntakeQuickConsoleProps> = ({
       partsNeeded: nextPartsNeeded || device.partsNeeded,
     });
   };
+
+  const totalEstimatedPrice = devices.reduce(
+    (sum, d) => sum + (typeof d.price === 'number' ? d.price : Number(d.price) || 0),
+    0
+  );
 
   return (
     <div
@@ -223,52 +253,102 @@ export const IntakeQuickConsole: React.FC<IntakeQuickConsoleProps> = ({
         </section>
 
         <section className="bg-white p-4 rounded-[10px] border border-[#e9eeeb] space-y-3">
-          <h3 className="font-heading font-bold text-xs uppercase tracking-wider text-[#17231f] flex items-center gap-1.5 pb-2 border-b border-[#e9eeeb] m-0">
-            <Icon
-              name={
-                device.category === 'Apple Watch'
-                  ? 'watch'
-                  : device.category === 'Apple Pencil'
-                  ? 'edit'
-                  : 'headphones'
-              }
-              size={14}
-              className="text-[#176b51]"
-            />
-            <span>
-              2. Thiết bị & Thành phần bàn giao (
-              {device.category === 'AirPods' ? 'L / R / Case' : device.category})
+          <div className="flex flex-wrap items-center justify-between gap-2 pb-2 border-b border-[#e9eeeb]">
+            <h3 className="font-heading font-bold text-xs uppercase tracking-wider text-[#17231f] flex items-center gap-1.5 m-0">
+              <Icon
+                name={
+                  device.category === 'Apple Watch'
+                    ? 'watch'
+                    : device.category === 'Apple Pencil'
+                    ? 'edit'
+                    : 'headphones'
+                }
+                size={14}
+                className="text-[#176b51]"
+              />
+              <span>
+                2. Thiết bị & Thành phần bàn giao (
+                {device.category === 'AirPods' ? 'L / R / Case' : device.category})
+              </span>
+            </h3>
+            <span className="text-[11px] font-mono font-bold text-[#176b51] bg-[#e9f4ef] px-2 py-0.5 rounded border border-[#cde4d8]">
+              {devices.length} thiết bị
             </span>
-          </h3>
+          </div>
+
+          {/* Multi-device tabs & add/remove controls */}
+          <div
+            data-testid="quick-multi-device-tabs"
+            className="flex flex-wrap items-center justify-between gap-2 p-2 rounded-[8px] bg-[#f6f8f6] border border-[#e9eeeb]"
+          >
+            <div className="flex flex-wrap items-center gap-1.5">
+              {devices.map((d, idx) => {
+                const isActive = idx === safeIndex;
+                const hasDevError = Boolean(
+                  errors[`issue_${d.id}`] ||
+                    errors[`price_${d.id}`] ||
+                    errors[`device_${d.id}`] ||
+                    errors[`category_${d.id}`]
+                );
+                return (
+                  <button
+                    key={d.id}
+                    type="button"
+                    data-testid={`quick-device-tab-${idx}`}
+                    onClick={() => onSelectDevice(idx)}
+                    className={`px-2.5 py-1 rounded-[6px] text-xs font-bold border transition-colors cursor-pointer flex items-center gap-1.5 ${
+                      isActive
+                        ? 'bg-[#176b51] text-white border-[#176b51]'
+                        : hasDevError
+                        ? 'bg-[#fbefed] text-[#bc5b52] border-[#f5c2c2]'
+                        : 'bg-white text-[#17231f] border-[#e9eeeb] hover:bg-[#e9f4ef] hover:border-[#176b51]'
+                    }`}
+                  >
+                    <span>Thiết bị #{idx + 1}</span>
+                    <span
+                      className={`text-[10px] font-normal truncate max-w-[110px] ${
+                        isActive ? 'text-white/85' : 'text-[#81908a]'
+                      }`}
+                    >
+                      · {d.device}
+                    </span>
+                  </button>
+                );
+              })}
+              <button
+                type="button"
+                data-testid="quick-add-device-btn"
+                onClick={onAddDevice}
+                className="px-2.5 py-1 rounded-[6px] text-xs font-bold border border-dashed border-[#176b51] text-[#176b51] bg-white hover:bg-[#e9f4ef] transition-colors cursor-pointer flex items-center gap-1"
+              >
+                <Icon name="plus" size={12} />
+                <span>Thêm thiết bị</span>
+              </button>
+            </div>
+            {devices.length > 1 && (
+              <button
+                type="button"
+                data-testid="quick-remove-device-btn"
+                onClick={() => onRemoveDevice(safeIndex)}
+                className="px-2 py-1 rounded-[6px] text-xs font-bold text-[#bc5b52] bg-[#fbefed] hover:bg-[#f7deda] border border-[#f5c2c2] transition-colors cursor-pointer flex items-center gap-1"
+              >
+                <Icon name="trash" size={12} />
+                <span>Xóa thiết bị</span>
+              </button>
+            )}
+          </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
             <Select
               label="Danh mục *"
               value={device.category}
-              onChange={(e) => {
-                setQuickIssueFilter('');
-                onCategoryChange(e.target.value);
-              }}
+              onChange={(e) => onCategoryChangeAt(safeIndex, e.target.value)}
               options={categories.map((c) => ({ value: c, label: c }))}
             />
             <Select
               label="Dòng máy *"
               value={canonicalSelectedModel}
-              onChange={(e) => {
-                const nextModel = e.target.value;
-                setQuickIssueFilter('');
-                if (onDeviceModelChange) {
-                  onDeviceModelChange(nextModel);
-                } else {
-                  onUpdateDevice({
-                    device: nextModel,
-                    issue: '',
-                    selectedIssues: [],
-                    selectedIssueKeys: [],
-                    partsNeeded: '',
-                  });
-                }
-              }}
+              onChange={(e) => onDeviceModelChangeAt(safeIndex, e.target.value)}
               options={selectModelOptions}
             />
             <Input
@@ -397,86 +477,45 @@ export const IntakeQuickConsole: React.FC<IntakeQuickConsoleProps> = ({
             <Textarea
               label="Mô tả lỗi khách báo *"
               value={device.issue}
-              onChange={(e) => {
-                const val = e.target.value;
-                const inferred = inferLinkedPartsFromOrderText(
-                  val,
-                  device.category,
-                  device.watchSize,
-                  device.device
-                );
-                const nextPartsSummary = formatLinkedPartsSummary(
-                  inferred.linkedParts,
-                  device.watchSize
-                );
-                const nextKeys = inferred.matchedIssues.map((iss) =>
-                  buildDeviceIssueSelectionKey(device.category, device.device, iss.issue_name)
-                );
-                onUpdateDevice({
-                  issue: val,
-                  selectedIssues: inferred.matchedIssues,
-                  selectedIssueKeys: nextKeys,
-                  partsNeeded: nextPartsSummary,
-                });
-              }}
+              onChange={(e) => updateIssueWithInferredParts(e.target.value)}
               placeholder="Ví dụ: Tai trái mất nguồn, bật ANC rè..."
-              error={errors.issue || errors[`issue_${device.id}`]}
+              error={errors[`issue_${device.id}`] || (safeIndex === 0 ? errors.issue : undefined)}
             />
 
-            {/* Chọn nhanh lỗi thường gặp (Chỉ note nhanh lỗi, không hiển thị giải thích kho) */}
-            <div className="space-y-2 pt-1">
-              <div className="flex flex-wrap items-center justify-between gap-2">
-                <span className="text-[11px] font-bold text-[#176b51] uppercase tracking-wide">
-                  Lỗi thường gặp ({device.category} · {device.device}):
+            {device.category === 'AirPods' && (
+              <div
+                data-testid="quick-airpods-ear-scope-selector"
+                className="flex flex-wrap items-center gap-1.5 p-2 rounded-[8px] bg-[#f6f8f6] border border-[#e9eeeb]"
+              >
+                <span className="text-[11px] font-bold text-[#17231f] mr-1">
+                  Phạm vi sửa AirPods:
                 </span>
-                <span className="text-[11px] text-[#81908a]">
-                  ({filteredIssues.length} mẫu lỗi)
-                </span>
+                {AIRPODS_REPAIR_SCOPE_OPTIONS.map((scopeOpt) => {
+                  const isScopeActive = activeAirPodsScope === scopeOpt.key;
+                  return (
+                    <button
+                      key={scopeOpt.key}
+                      type="button"
+                      data-testid={`quick-airpods-scope-btn-${scopeOpt.key}`}
+                      onClick={() => {
+                        const nextIssue = toggleAirPodsScopeTagInIssueText(
+                          device.issue,
+                          scopeOpt.key
+                        );
+                        updateIssueWithInferredParts(nextIssue);
+                      }}
+                      className={`px-2.5 py-1 rounded-[6px] text-[11px] font-bold border transition-colors cursor-pointer ${
+                        isScopeActive
+                          ? 'bg-[#176b51] text-white border-[#176b51]'
+                          : 'bg-white text-[#5c6964] border-[#e9eeeb] hover:bg-[#e9f4ef] hover:text-[#176b51]'
+                      }`}
+                    >
+                      {scopeOpt.label}
+                    </button>
+                  );
+                })}
               </div>
-
-              <Input
-                data-testid="quick-intake-issue-filter-input"
-                value={quickIssueFilter}
-                onChange={(e) => setQuickIssueFilter(e.target.value)}
-                placeholder="Gõ lọc nhanh lỗi thường gặp (VD: pin, rè ANC, nhỏ tiếng, cảm ứng...)"
-              />
-
-              {filteredIssues.length > 0 ? (
-                <div className="flex flex-wrap gap-1.5">
-                  {filteredIssues.map((chip) => {
-                    const chipKey = buildDeviceIssueSelectionKey(
-                      device.category,
-                      device.device,
-                      chip.issue_name
-                    );
-                    const active =
-                      Boolean(device.issue.trim()) &&
-                      ((Array.isArray(device.selectedIssueKeys) &&
-                        device.selectedIssueKeys.includes(chipKey)) ||
-                        device.issue.toLowerCase().includes(chip.issue_name.toLowerCase()));
-                    return (
-                      <button
-                        key={chipKey}
-                        type="button"
-                        data-issue-key={chipKey}
-                        onClick={() => onChipClick(chip)}
-                        className={`text-[11px] px-2.5 py-1.5 rounded-[12px] border transition-colors cursor-pointer flex items-center gap-1.5 text-left ${
-                          active
-                            ? 'bg-[#e9f4ef] border-[#176b51] text-[#176b51] font-bold shadow-2xs'
-                            : 'bg-[#f6f8f6] border-[#e9eeeb] text-[#5c6964] hover:border-[#176b51]'
-                        }`}
-                      >
-                        <span>{active ? '✓' : '+'} {chip.issue_name}</span>
-                      </button>
-                    );
-                  })}
-                </div>
-              ) : (
-                <div className="text-xs text-[#81908a] italic py-1">
-                  Không tìm thấy mẫu lỗi khớp từ khóa &ldquo;{quickIssueFilter}&rdquo;.
-                </div>
-              )}
-            </div>
+            )}
           </div>
         </section>
       </div>
@@ -487,7 +526,9 @@ export const IntakeQuickConsole: React.FC<IntakeQuickConsoleProps> = ({
           <div className="flex items-center justify-between pb-2 border-b border-[#e9eeeb]">
             <h3 className="font-heading font-bold text-xs uppercase tracking-wider text-[#17231f] flex items-center gap-1.5 m-0">
               <Icon name="check" size={14} className="text-[#176b51]" />
-              <span>3. Checklist Test Quầy (Phím 1 / 2 / 3)</span>
+              <span>
+                3. Checklist Test Quầy{devices.length > 1 ? ` · Máy #${safeIndex + 1}` : ''} (Phím 1 / 2 / 3)
+              </span>
             </h3>
             <span className="text-[11px] font-mono text-[#176b51] bg-[#e9f4ef] px-2 py-0.5 rounded font-bold">
               {effectiveChecks.length} mục
@@ -515,7 +556,9 @@ export const IntakeQuickConsole: React.FC<IntakeQuickConsoleProps> = ({
         <section className="bg-white p-4 rounded-[10px] border border-[#e9eeeb] space-y-3">
           <h3 className="font-heading font-bold text-xs uppercase tracking-wider text-[#17231f] flex items-center gap-1.5 pb-2 border-b border-[#e9eeeb] m-0">
             <Icon name="tag" size={14} className="text-[#176b51]" />
-            <span>4. Báo giá dự kiến & Bảo hành</span>
+            <span>
+              4. Báo giá dự kiến{devices.length > 1 ? ` (Máy #${safeIndex + 1})` : ''} & Bảo hành
+            </span>
           </h3>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -526,6 +569,7 @@ export const IntakeQuickConsole: React.FC<IntakeQuickConsoleProps> = ({
                 onUpdateDevice({ price: formatted ? val : '' });
               }}
               placeholder="0 (nếu chờ kiểm tra)"
+              error={errors[`price_${device.id}`] || (safeIndex === 0 ? errors.price : undefined)}
             />
             <Input
               label="Ghi chú ngoại hình / báo giá"
@@ -559,11 +603,18 @@ export const IntakeQuickConsole: React.FC<IntakeQuickConsoleProps> = ({
 
           <div className="p-3 rounded-[8px] bg-[#e9f4ef] border border-[#cce3d8] flex items-center justify-between">
             <div>
-              <span className="text-xs font-bold text-[#176b51] block">Tổng tạm tính</span>
-              <span className="text-[11px] text-[#5c6964]">Phím tắt: Ctrl/Cmd + Enter để Lưu & In</span>
+              <span className="text-xs font-bold text-[#176b51] block">
+                Tổng tạm tính{devices.length > 1 ? ` (${devices.length} thiết bị)` : ''}
+              </span>
+              <span className="text-[11px] text-[#5c6964]">
+                Phím tắt: Ctrl/Cmd + Enter để Lưu & In
+              </span>
             </div>
-            <strong className="font-mono text-base font-bold text-[#176b51] tabular-nums">
-              {formatVND(typeof device.price === 'number' ? device.price : 0)}
+            <strong
+              data-testid="quick-console-total-price"
+              className="font-mono text-base font-bold text-[#176b51] tabular-nums"
+            >
+              {formatVND(totalEstimatedPrice)}
             </strong>
           </div>
         </section>

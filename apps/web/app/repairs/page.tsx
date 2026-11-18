@@ -34,6 +34,10 @@ import { useSilentPrint, PrintButtonDropdown } from '../components/print';
 import { RepairQueuePane } from './components/RepairQueuePane';
 import { RepairCanvasPane } from './components/RepairCanvasPane';
 import {
+  groupOrdersForDisplay,
+  validateOrdersForBatchGrouping,
+} from './utils/orderBatchGrouping';
+import {
   inferLinkedPartsFromOrderText,
   formatLinkedPartsSummary,
   extractWatchSizeFromText,
@@ -118,7 +122,8 @@ function RepairsPageContent() {
   const [isReturningOrder, setIsReturningOrder] = useState<boolean>(false);
   const [isTransitioning, setIsTransitioning] = useState(false);
   const [isFulfillingSpecialPart, setIsFulfillingSpecialPart] = useState(false);
-  const { printReceipt, isPrinting: isSilentPrinting } = useSilentPrint();
+  const [isGroupingOrders, setIsGroupingOrders] = useState(false);
+  const { printReceipt, currentFormat, isPrinting: isSilentPrinting } = useSilentPrint();
 
   // Additional services state (CSKH & Admin)
   const [showAddServiceForm, setShowAddServiceForm] = useState(false);
@@ -206,11 +211,8 @@ function RepairsPageContent() {
 
   const isRepairsLoading = isLoading || isFetching;
 
-  const rawMappedOrders: RepairOrder[] = useMemo(() => {
-    const raw = apiOrdersData?.data || apiOrdersData;
-    const list = Array.isArray(raw) ? raw : [];
-
-    return list.map((o: any) => {
+  const mapRawOrder = React.useCallback(
+    (o: any, includeBatch = true, fallbackOrder?: any): RepairOrder => {
       const rawStatus = o.status === 'qc_pending' ? 'waiting_qc' : o.status;
       const mappedStatus = resolveOrderStatus(rawStatus || o.status);
       const paidSum = Array.isArray(o.payments)
@@ -218,12 +220,65 @@ function RepairsPageContent() {
             .filter((p: any) => p?.status === 'paid')
             .reduce((sum: number, p: any) => sum + (Number(p?.amount) || 0), 0)
         : normalizeVndPrice(Number(o.paid_amount ?? o.paidAmount ?? 0) || 0);
+
+      const mappedChecks = Array.isArray(o.intake_checklists)
+        ? o.intake_checklists.map((c: any) => ({
+            label: c.item_name || c.label || '',
+            status:
+              c.status === 'pass' ||
+              c.status === 'passed' ||
+              c.status === 'good' ||
+              c.status === 'Hoạt động'
+                ? ('Hoạt động' as const)
+                : c.status === 'fail' || c.status === 'failed' || c.status === 'Lỗi'
+                ? ('Lỗi' as const)
+                : ('Không kiểm tra' as const),
+          }))
+        : Array.isArray(o.checks)
+        ? o.checks
+        : [];
+
+      const rawBatch = includeBatch ? o.batch_orders || o.batchOrders : undefined;
+      const mappedBatchOrders =
+        Array.isArray(rawBatch) && rawBatch.length > 0
+          ? rawBatch.map((bo: any) => mapRawOrder(bo, false, o))
+          : undefined;
+
+      const resolvedOrderType =
+        o.order_type || o.orderType || fallbackOrder?.order_type || fallbackOrder?.orderType || 'in_store';
+      const resolvedBranchName =
+        o.branch?.name ||
+        o.branchName ||
+        (typeof o.branch === 'string' ? o.branch : undefined) ||
+        fallbackOrder?.branch?.name ||
+        fallbackOrder?.branchName ||
+        (typeof fallbackOrder?.branch === 'string' ? fallbackOrder.branch : undefined) ||
+        'Chi nhánh FIXO';
+      const resolvedBranchId =
+        o.branch_id || o.branch?.id || o.branchId || fallbackOrder?.branch_id || fallbackOrder?.branch?.id || fallbackOrder?.branchId || 1;
+      const resolvedDate = (() => {
+        const dateVal =
+          dateType === 'completed_at'
+            ? o.handed_over_at || o.updated_at || o.created_at
+            : o.created_at;
+        return dateVal
+          ? new Intl.DateTimeFormat('vi-VN').format(new Date(dateVal))
+          : o.date || fallbackOrder?.date || 'Hôm nay';
+      })();
+      const resolvedTestNote =
+        o.test_note ||
+        o.testNote ||
+        (Array.isArray(o.intake_checklists)
+          ? o.intake_checklists.find((c: any) => c.note)?.note
+          : '') ||
+        '';
+
       return {
         id: o.order_code || String(o.id),
-        order_type: o.order_type || o.orderType || 'in_store',
-        orderType: o.order_type || o.orderType || 'in_store',
-        name: o.customer?.name || o.name || 'Khách lẻ',
-        phone: o.customer?.phone || o.phone || '',
+        order_type: resolvedOrderType,
+        orderType: resolvedOrderType,
+        name: o.customer?.name || o.name || fallbackOrder?.customer?.name || fallbackOrder?.name || 'Khách lẻ',
+        phone: o.customer?.phone || o.phone || fallbackOrder?.customer?.phone || fallbackOrder?.phone || '',
         deviceCategory: o.device_model?.category || o.deviceCategory || 'AirPods',
         device: o.device_model?.name || o.device || 'AirPods',
         serial: o.serial_number || o.serial || 'Chưa cập nhật',
@@ -245,28 +300,29 @@ function RepairsPageContent() {
             ? Number(o.initial_price)
             : Number(o.total_price) || Number(o.price) || 0
         ),
-        additional_services: Array.isArray(o.additional_services) ? o.additional_services : (Array.isArray(o.additionalServices) ? o.additionalServices : []),
-        additionalServices: Array.isArray(o.additional_services) ? o.additional_services : (Array.isArray(o.additionalServices) ? o.additionalServices : []),
+        additional_services: Array.isArray(o.additional_services)
+          ? o.additional_services
+          : Array.isArray(o.additionalServices)
+          ? o.additionalServices
+          : [],
+        additionalServices: Array.isArray(o.additional_services)
+          ? o.additional_services
+          : Array.isArray(o.additionalServices)
+          ? o.additionalServices
+          : [],
         device_model_id: o.device_model_id || o.device_model?.id || null,
         tech: o.technician?.name || o.tech || 'Chưa phân công',
         technicianId: o.technician_id ?? o.technician?.id ?? o.technicianId ?? null,
         technician_id: o.technician_id ?? o.technician?.id ?? o.technician_id ?? null,
-        date: (() => {
-          const dateVal =
-            dateType === 'completed_at'
-              ? o.handed_over_at || o.updated_at || o.created_at
-              : o.created_at;
-          return dateVal
-            ? new Intl.DateTimeFormat('vi-VN').format(new Date(dateVal))
-            : o.date || 'Hôm nay';
-        })(),
-        branch: o.branch?.name || o.branch || 'Chi nhánh FIXO',
-        branchId: o.branch_id || o.branch?.id || o.branchId || 1,
-        branchName: o.branch?.name || o.branchName || 'Chi nhánh FIXO',
+        date: resolvedDate,
+        branch: resolvedBranchName,
+        branchId: resolvedBranchId,
+        branchName: resolvedBranchName,
         accessories: o.accessories,
         appearance: o.appearance_notes || o.appearance,
-        testNote: o.test_note || o.testNote || (Array.isArray(o.intake_checklists) ? o.intake_checklists.find((c: any) => c.note)?.note : '') || '',
-        test_note: o.test_note || o.testNote || '',
+        checks: mappedChecks,
+        testNote: resolvedTestNote,
+        test_note: resolvedTestNote,
         repairNote: o.repair_note || o.repairNote,
         partsUsed: o.parts_used_summary || o.partsUsed,
         parts_needed: o.parts_needed ?? o.partsNeeded,
@@ -279,8 +335,10 @@ function RepairsPageContent() {
         specialPartsRequestedAt: o.special_parts_requested_at ?? o.specialPartsRequestedAt,
         special_parts_fulfilled_at: o.special_parts_fulfilled_at ?? o.specialPartsFulfilledAt,
         specialPartsFulfilledAt: o.special_parts_fulfilled_at ?? o.specialPartsFulfilledAt,
-        warranty_terms_days: o.warranty_terms_days ?? (o.warranty_months ? Number(o.warranty_months) * 30 : undefined),
-        warranty_months: o.warranty_months ?? (o.warranty_terms_days ? Math.round(Number(o.warranty_terms_days) / 30) : undefined),
+        warranty_terms_days:
+          o.warranty_terms_days ?? (o.warranty_months ? Number(o.warranty_months) * 30 : undefined),
+        warranty_months:
+          o.warranty_months ?? (o.warranty_terms_days ? Math.round(Number(o.warranty_terms_days) / 30) : undefined),
         paused_at: o.paused_at ?? o.pausedAt,
         pausedAt: o.paused_at ?? o.pausedAt,
         finalCheck: o.final_check_result || o.finalCheck,
@@ -290,14 +348,28 @@ function RepairsPageContent() {
         completedAt: o.repair_completed_at || o.completedAt,
         customerApprovedAt: o.customer_approved_at || o.customerApprovedAt,
         createdAt: o.created_at || o.createdAt,
-        intake_batch_code: o.intake_batch_code,
-        batchOrders: o.batch_orders || o.batchOrders,
+        createdBy:
+          o.created_by_user?.name ||
+          o.createdBy ||
+          fallbackOrder?.created_by_user?.name ||
+          fallbackOrder?.createdBy ||
+          'FIXO',
+        intake_batch_code: o.intake_batch_code || fallbackOrder?.intake_batch_code,
+        batchOrders: mappedBatchOrders,
         shipping_address: o.shipping_address || o.shippingAddress || null,
         shippingAddress: o.shipping_address || o.shippingAddress || null,
-        tenant: o.tenant || tenantBranding || currentUser?.tenant || undefined,
+        tenant: o.tenant || tenantBranding || currentUser?.tenant || fallbackOrder?.tenant || undefined,
       };
-    });
-  }, [apiOrdersData, dateType, tenantBranding, currentUser?.tenant]);
+    },
+    [dateType, tenantBranding, currentUser?.tenant]
+  );
+
+  const rawMappedOrders: RepairOrder[] = useMemo(() => {
+    const raw = apiOrdersData?.data || apiOrdersData;
+    const list = Array.isArray(raw) ? raw : [];
+
+    return list.map((o: any) => mapRawOrder(o, true));
+  }, [apiOrdersData, mapRawOrder]);
 
   const statusReconciliationCounts = useMemo(() => {
     const allCount = rawMappedOrders.length;
@@ -444,7 +516,9 @@ function RepairsPageContent() {
     setPage(1);
   }, [orderTypeFilter, statusFilter, search, dateFilter, selectedDate, dateType, branchId]);
 
-  const total = filteredOrders.length;
+  const groupedOrderRows = useMemo(() => groupOrdersForDisplay(filteredOrders), [filteredOrders]);
+
+  const total = groupedOrderRows.length;
   const lastPage = useMemo(() => {
     if (perPage === 'all') return 1;
     const size = Math.max(1, Number(perPage) || 15);
@@ -556,14 +630,106 @@ function RepairsPageContent() {
       return selectedOrder.batchOrders;
     }
     if (selectedOrder.intake_batch_code) {
-      const allCandidateOrders = filteredOrders.length > 0 ? filteredOrders : orders;
+      const allCandidateOrders =
+        rawMappedOrders.length > 0
+          ? rawMappedOrders
+          : filteredOrders.length > 0
+          ? filteredOrders
+          : orders;
       const siblings = allCandidateOrders.filter(
         (o: RepairOrder) => o.intake_batch_code === selectedOrder.intake_batch_code
       );
       if (siblings.length > 1) return siblings;
     }
     return undefined;
-  }, [selectedOrder, filteredOrders, orders]);
+  }, [selectedOrder, rawMappedOrders, filteredOrders, orders]);
+
+  const handleGroupOrdersBatch = async (
+    selectedOrdersToGroup: RepairOrder[],
+    shouldPrint: boolean
+  ): Promise<boolean> => {
+    const validation = validateOrdersForBatchGrouping(selectedOrdersToGroup);
+    if (!validation.valid) {
+      toast(validation.reason || 'Không thể gộp nhóm các đơn đã chọn.', 'error');
+      return false;
+    }
+
+    setIsGroupingOrders(true);
+    try {
+      const orderIds = selectedOrdersToGroup.map((o) => o.id);
+      const res = await repairService.groupOrdersBatch(orderIds);
+      const payload = res?.data || res;
+      const rawUpdatedOrders = Array.isArray(payload?.orders)
+        ? payload.orders
+        : Array.isArray(payload)
+        ? payload
+        : null;
+      const resolvedBatchCode =
+        payload?.intake_batch_code ||
+        (rawUpdatedOrders && rawUpdatedOrders[0]?.intake_batch_code) ||
+        `IB26-${Date.now().toString().slice(-6)}`;
+
+      const mergedOrdersBase: RepairOrder[] = rawUpdatedOrders
+        ? rawUpdatedOrders.map((rawItem: any) => {
+            const mapped = mapRawOrder(rawItem, false);
+            const fallback = selectedOrdersToGroup.find((s) => s.id === mapped.id);
+            return fallback
+              ? {
+                  ...fallback,
+                  ...mapped,
+                  checks: mapped.checks && mapped.checks.length > 0 ? mapped.checks : fallback.checks,
+                  intake_batch_code: mapped.intake_batch_code || resolvedBatchCode,
+                }
+              : {
+                  ...mapped,
+                  intake_batch_code: mapped.intake_batch_code || resolvedBatchCode,
+                };
+          })
+        : selectedOrdersToGroup.map((o) => ({
+            ...o,
+            intake_batch_code: resolvedBatchCode,
+          }));
+
+      const mergedOrders: RepairOrder[] = mergedOrdersBase.map((ord) => ({
+        ...ord,
+        batchOrders: mergedOrdersBase,
+      }));
+
+      for (const ord of mergedOrders) {
+        updateOrder(ord);
+      }
+      if (selectedOrder) {
+        const matchedSelected = mergedOrders.find((m) => m.id === selectedOrder.id);
+        if (matchedSelected) {
+          setSelectedOrder(matchedSelected);
+        }
+      }
+
+      await refetch();
+      if (invalidateOrders) await invalidateOrders();
+
+      toast(`Đã gộp ${mergedOrders.length} thiết bị vào nhóm ${resolvedBatchCode}.`, 'success');
+
+      if (shouldPrint && mergedOrders.length > 0) {
+        toast(
+          `Đang gửi lệnh in phiếu gộp ${mergedOrders.length} thiết bị (${currentFormat.toUpperCase()})...`,
+          'info'
+        );
+        printReceipt(mergedOrders, currentFormat);
+      }
+      return true;
+    } catch (err: any) {
+      const errMsg =
+        err?.response?.data?.message ||
+        err?.data?.message ||
+        err?.message ||
+        'Không thể gộp nhóm đơn hàng.';
+      toast(errMsg, 'error');
+      return false;
+    } finally {
+      setIsGroupingOrders(false);
+    }
+  };
 
   const moneyFormatted = (n: number) => (n ? formatVND(n) : '—');
 
@@ -1049,6 +1215,8 @@ function RepairsPageContent() {
           to={to}
           isTechRole={isTechRole}
           isFulfillingSpecialPart={isFulfillingSpecialPart}
+          isGroupingOrders={isGroupingOrders}
+          onGroupOrders={handleGroupOrdersBatch}
           onSelectOrder={(order) => setSelectedOrder(order)}
           onOpenIntakeModal={() => setIntakeModalOpen(true)}
           onOpenTechComplete={(order) => setTechCompleteOrder(order)}
@@ -1207,7 +1375,21 @@ function RepairsPageContent() {
           <RepairCanvasPane
             order={selectedOrder}
             batchOrders={selectedOrderBatchOrders}
-            onSelectOrder={setSelectedOrder}
+            onSelectOrder={(bo) => {
+              const preservedBatch =
+                bo.batchOrders && bo.batchOrders.length > 1
+                  ? bo.batchOrders
+                  : selectedOrderBatchOrders;
+              setSelectedOrder(
+                preservedBatch && preservedBatch.length > 1
+                  ? {
+                      ...bo,
+                      intake_batch_code: bo.intake_batch_code || selectedOrder?.intake_batch_code,
+                      batchOrders: preservedBatch,
+                    }
+                  : bo
+              );
+            }}
             role={role}
             isTechRole={isTechRole}
             canManageAdditionalServices={canManageAdditionalServices}

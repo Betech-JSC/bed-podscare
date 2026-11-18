@@ -126,6 +126,13 @@ Route::prefix('v1')->group(function () {
         Route::get('/repairs', [OrderController::class, 'index'])->name('api.v1.repairs.index');
         Route::post('/orders', [OrderController::class, 'store'])->name('api.v1.orders.store');
         Route::post('/repairs', [OrderController::class, 'store'])->name('api.v1.repairs.store');
+
+        // Batch group multiple orders of the same customer (placed BEFORE /orders/{id} & /repairs/{id})
+        Route::middleware('role:admin,cskh,super_admin,inventory,qc')->group(function () {
+            Route::post('/orders/batch-group', [OrderController::class, 'batchGroup'])->name('api.v1.orders.batch_group');
+            Route::post('/repairs/batch-group', [OrderController::class, 'batchGroup'])->name('api.v1.repairs.batch_group');
+        });
+
         Route::get('/orders/{id}', [OrderController::class, 'show'])->name('api.v1.orders.show');
         Route::get('/repairs/{id}', [OrderController::class, 'show'])->name('api.v1.repairs.show');
         Route::put('/orders/{id}', [OrderController::class, 'update'])->name('api.v1.orders.update');

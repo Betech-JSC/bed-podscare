@@ -15,6 +15,7 @@ import {
 } from '@podscare/ui';
 import type { RepairOrder, OrderDateFilter } from '@podscare/types';
 import { normalizeStatusCode, canCompleteTechnicalRepair } from '../fsm';
+import { groupOrdersForDisplay } from '../utils/orderBatchGrouping';
 
 export interface RepairQueuePaneProps {
   orderTypeFilter: 'all' | 'in_store' | 'cod' | 'warranty' | 'special_parts';
@@ -65,6 +66,8 @@ export interface RepairQueuePaneProps {
   to?: number | null;
   isTechRole: boolean;
   isFulfillingSpecialPart: boolean;
+  isGroupingOrders?: boolean;
+  onGroupOrders?: (selectedOrders: RepairOrder[], shouldPrint: boolean) => Promise<boolean>;
   onSelectOrder: (order: RepairOrder) => void;
   onOpenIntakeModal: () => void;
   onOpenTechComplete: (order: RepairOrder) => void;
@@ -111,6 +114,8 @@ export const RepairQueuePane: React.FC<RepairQueuePaneProps> = ({
   to: externalTo,
   isTechRole,
   isFulfillingSpecialPart,
+  isGroupingOrders = false,
+  onGroupOrders,
   onSelectOrder,
   onOpenIntakeModal,
   onOpenTechComplete,
@@ -121,13 +126,16 @@ export const RepairQueuePane: React.FC<RepairQueuePaneProps> = ({
 }) => {
   const [internalPage, setInternalPage] = useState<number>(1);
   const [internalPerPage, setInternalPerPage] = useState<number | 'all'>(15);
+  const [selectedRowKeys, setSelectedRowKeys] = useState<string[]>([]);
+
+  const groupedRows = useMemo(() => groupOrdersForDisplay(filteredOrders), [filteredOrders]);
 
   const page = externalPage ?? internalPage;
   const setPage = externalSetPage ?? setInternalPage;
   const perPage = externalPerPage ?? internalPerPage;
   const setPerPage = externalSetPerPage ?? setInternalPerPage;
 
-  const total = externalTotal ?? filteredOrders.length;
+  const total = externalTotal ?? groupedRows.length;
   const lastPage = useMemo(() => {
     if (externalLastPage !== undefined) return externalLastPage;
     if (perPage === 'all') return 1;
@@ -163,11 +171,34 @@ export const RepairQueuePane: React.FC<RepairQueuePaneProps> = ({
     return Math.max(0, (currentPage - 1) * size);
   }, [perPage, currentPage]);
 
-  const paginatedOrders = useMemo(() => {
-    if (perPage === 'all') return filteredOrders;
+  const paginatedRows = useMemo(() => {
+    if (perPage === 'all') return groupedRows;
     const size = Math.max(1, Number(perPage) || 15);
-    return filteredOrders.slice(pageOffset, pageOffset + size);
-  }, [filteredOrders, perPage, pageOffset]);
+    return groupedRows.slice(pageOffset, pageOffset + size);
+  }, [groupedRows, perPage, pageOffset]);
+
+  const selectedRows = useMemo(
+    () => groupedRows.filter((row) => selectedRowKeys.includes(row.rowKey)),
+    [groupedRows, selectedRowKeys]
+  );
+  const selectedOrdersForGroup = useMemo(
+    () => selectedRows.flatMap((row) => row.orders),
+    [selectedRows]
+  );
+
+  const toggleRowSelection = (rowKey: string) => {
+    setSelectedRowKeys((prev) =>
+      prev.includes(rowKey) ? prev.filter((k) => k !== rowKey) : [...prev, rowKey]
+    );
+  };
+
+  const handleGroupAction = async (shouldPrint: boolean) => {
+    if (!onGroupOrders || selectedOrdersForGroup.length < 2 || isGroupingOrders) return;
+    const ok = await onGroupOrders(selectedOrdersForGroup, shouldPrint);
+    if (ok) {
+      setSelectedRowKeys([]);
+    }
+  };
 
   return (
     <div className="bg-white rounded-[12px] border border-[#e9eeeb] p-5 sm:p-6 shadow-xs">
@@ -513,235 +544,465 @@ export const RepairQueuePane: React.FC<RepairQueuePaneProps> = ({
           }}
         />
       ) : (
-        <div className="overflow-x-auto -mx-5 sm:mx-0">
-          <table className="w-full text-left border-collapse min-w-[760px]">
-            <thead>
-              <tr className="border-y border-[#e9eeeb] bg-[#f6f8f6] text-xs font-bold text-[#81908a] uppercase tracking-wider h-10">
-                <th className="px-3 py-2 text-center w-12 text-xs font-bold text-[#81908a] uppercase tracking-wider">
-                  STT
-                </th>
-                <th className="px-4">Mã đơn</th>
-                <th className="px-4">Khách hàng</th>
-                <th className="px-4">Thiết bị & lỗi</th>
-                <th className="px-4">Trạng thái</th>
-                {!isTechRole && <th className="px-4">Chi phí</th>}
-                <th className="px-4">Kỹ thuật viên</th>
-                <th className="px-4">Ngày nhận & Kho</th>
-                <th className="px-4 text-right">Thao tác</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-[#e9eeeb] text-sm text-[#17231f]">
-              {paginatedOrders.map((o, idx) => (
-                <tr
-                  key={o.id}
-                  onClick={() => onSelectOrder(o)}
-                  className="h-14 hover:bg-[#f6f8f6] cursor-pointer transition-colors"
+        <div className="space-y-3">
+          {!isTechRole && selectedRows.length > 0 && (
+            <div
+              data-testid="batch-group-action-bar"
+              className="flex flex-wrap items-center justify-between gap-3 p-3 rounded-[10px] bg-[#e9f4ef] border border-[#cde4d8]"
+            >
+              <div className="flex items-center gap-2 text-xs text-[#17231f]">
+                <Icon name="package" size={16} className="text-[#176b51]" />
+                <span>
+                  Đã chọn <strong className="font-mono text-[#176b51]">{selectedRows.length}</strong> dòng
+                  {' '}({selectedOrdersForGroup.length} thiết bị)
+                </span>
+                {selectedRows.length < 2 && (
+                  <span className="text-[#81908a]">
+                    · Chọn thêm ít nhất 1 dòng cùng khách hàng để gộp nhóm
+                  </span>
+                )}
+              </div>
+              <div className="flex flex-wrap items-center gap-2">
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => setSelectedRowKeys([])}
+                  disabled={isGroupingOrders}
                 >
-                  <td
-                    data-testid="order-row-stt"
-                    className="px-3 py-3 text-center text-xs font-semibold text-[#81908a] font-mono tabular-nums"
-                  >
-                    {pageOffset > 0 ? filteredOrders.length - (pageOffset + idx) : filteredOrders.length - idx}
-                  </td>
-                  <td className="px-4">
-                    <div className="font-mono font-bold text-[#176b51]">{o.id}</div>
-                    <div className="mt-1">
-                      {o.order_type === 'warranty' || o.orderType === 'warranty' ? (
-                        <span
-                          data-testid="badge-order-type-warranty"
-                          className="inline-flex items-center gap-0.5 text-[10px] font-bold text-[#176b51] bg-[#e9f4ef] px-1.5 py-0.5 rounded border border-[#cde4d8]"
-                        >
-                          Bảo hành
-                        </span>
-                      ) : o.order_type === 'cod' || o.orderType === 'cod' ? (
-                        <span
-                          data-testid="badge-order-type-cod"
-                          className="inline-flex items-center gap-0.5 text-[10px] font-bold text-[#b77a21] bg-[#faf1df] px-1.5 py-0.5 rounded border border-[#f2deba]"
-                        >
-                          Đơn COD
-                        </span>
-                      ) : (
-                        <span
-                          data-testid="badge-order-type-in-store"
-                          className="inline-flex items-center gap-0.5 text-[10px] font-bold text-[#176b51] bg-[#e9f4ef] px-1.5 py-0.5 rounded border border-[#cde4d8]"
-                        >
-                          Tại quầy
-                        </span>
-                      )}
-                    </div>
-                  </td>
-                  <td className="px-4">
-                    <div className="flex items-center gap-2.5">
-                      <Avatar initials={o.name} variant={(idx % 4) as any} size="sm" />
-                      <div>
-                        <b className="block text-[#17231f] font-semibold">{o.name}</b>
-                        <small className="block text-[#81908a] text-xs font-mono">{o.phone}</small>
-                      </div>
-                    </div>
-                  </td>
-                  <td className="px-4">
-                    <span className="font-semibold text-[#17231f] block">{o.device}</span>
-                    <small className="text-[#81908a] text-xs block truncate max-w-[220px]">
-                      {o.issue}
-                    </small>
-                  </td>
-                  <td className="px-4">
-                    <div className="space-y-1">
-                      <StatusTag label={o.status} type={o.statusType} />
-                      {o.special_parts_status === 'pending' || o.specialPartsStatus === 'pending' ? (
-                        <div
-                          data-testid={`badge-special-part-pending-${o.id}`}
-                          className="inline-flex items-center gap-1 text-[11px] font-bold text-red-700 bg-red-50 px-2 py-0.5 rounded border border-red-300 max-w-[210px] truncate shadow-2xs"
-                          title={`Linh kiện cần mua ngoài: ${
-                            o.special_parts_needed || o.specialPartsNeeded || 'Chưa cập nhật'
-                          }`}
-                        >
-                          <Icon name="bell" size={12} className="text-red-600 flex-none" />
-                          <span className="truncate">
-                            Cần mua ngoài: {o.special_parts_needed || o.specialPartsNeeded || 'Cần tìm mua'}
-                          </span>
-                        </div>
-                      ) : o.special_parts_status === 'purchased' || o.specialPartsStatus === 'purchased' ? (
-                        <div
-                          data-testid={`badge-special-part-purchased-${o.id}`}
-                          className="inline-flex items-center gap-1 text-[11px] font-bold text-[#176b51] bg-[#e9f4ef] px-2 py-0.5 rounded border border-[#cde4d8] max-w-[210px] truncate"
-                          title="Quầy đã mua xong linh kiện"
-                        >
-                          <Icon name="check" size={12} className="text-[#176b51]" />
-                          <span className="truncate">Đã mua linh kiện</span>
-                        </div>
-                      ) : o.parts_needed || o.partsNeeded || normalizeStatusCode(o.status) === 'waiting_parts' ? (
-                        <div
-                          className="inline-flex items-center gap-1 text-[11px] font-semibold text-[#b77a21] bg-[#faf1df] px-2 py-0.5 rounded border border-[#f2deba] max-w-[190px] truncate"
-                          title={`Linh kiện yêu cầu: ${o.parts_needed || o.partsNeeded || 'Chưa cập nhật'}`}
-                        >
-                          <Icon name="package" size={12} />
-                          <span className="truncate">
-                            Cần: {o.parts_needed || o.partsNeeded || 'Chờ linh kiện'}
-                          </span>
-                        </div>
-                      ) : null}
-                    </div>
-                  </td>
+                  Bỏ chọn
+                </Button>
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  data-testid="batch-group-only-btn"
+                  disabled={selectedRows.length < 2 || isGroupingOrders}
+                  onClick={() => handleGroupAction(false)}
+                >
+                  {isGroupingOrders ? 'Đang gộp...' : 'Gộp thành 1 nhóm'}
+                </Button>
+                <Button
+                  variant="primary"
+                  size="sm"
+                  icon="printer"
+                  data-testid="batch-group-and-print-btn"
+                  disabled={selectedRows.length < 2 || isGroupingOrders}
+                  onClick={() => handleGroupAction(true)}
+                >
+                  {isGroupingOrders ? 'Đang xử lý...' : 'Gộp nhóm & In phiếu'}
+                </Button>
+              </div>
+            </div>
+          )}
+
+          <div className="overflow-x-auto -mx-5 sm:mx-0">
+            <table className="w-full text-left border-collapse min-w-[760px]">
+              <thead>
+                <tr className="border-y border-[#e9eeeb] bg-[#f6f8f6] text-xs font-bold text-[#81908a] uppercase tracking-wider h-10">
                   {!isTechRole && (
-                    <td className="px-4 font-semibold text-[#17231f] font-mono tabular-nums">
-                      {moneyFormatted(o.price)}
-                    </td>
+                    <th className="px-3 py-2 text-center w-10 text-xs font-bold text-[#81908a] uppercase tracking-wider">
+                      Chọn
+                    </th>
                   )}
-                  <td className="px-4 text-[#4a5c54]">{o.tech}</td>
-                  <td className="px-4 text-[#81908a]">
-                    <span className="block font-medium font-mono tabular-nums">{o.date}</span>
-                    <span className="inline-block mt-0.5 text-xs font-mono font-bold text-[#176b51] bg-[#e9f4ef] px-1.5 py-0.5 rounded">
-                      {o.branchName || o.branch}
-                    </span>
-                  </td>
-                  <td className="px-4 text-right">
-                    <div className="flex items-center justify-end gap-1.5">
-                      {canCompleteTechnicalRepair(o.status, role || currentUserRole) && (
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          data-testid={`row-tech-complete-btn-${o.id}`}
-                          className="text-xs bg-[#e9f4ef] text-[#176b51] border-[#cde4d8] hover:bg-[#d8ede1] font-bold flex items-center gap-1 whitespace-nowrap cursor-pointer"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            onOpenTechComplete(o);
-                          }}
-                        >
-                          <Icon name="check" size={12} />
-                          <span>Hoàn thành sửa chữa</span>
-                        </Button>
-                      )}
-
-                      {['ready_for_return', 'waiting_pickup', 'in_repair', 'waiting_qc'].includes(
-                        normalizeStatusCode(o.status)
-                      ) ? (
-                        <Button
-                          variant="primary"
-                          size="sm"
-                          data-testid={`row-checkout-btn-${o.id}`}
-                          className="bg-[#176b51] hover:bg-[#10583f] text-white font-bold text-xs px-2.5 py-1 flex items-center gap-1 shadow-xs whitespace-nowrap cursor-pointer"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            onOpenCheckout(o);
-                          }}
-                        >
-                          <Icon name="payments" size={12} />
-                          <span>Thanh toán</span>
-                        </Button>
-                      ) : normalizeStatusCode(o.status) === 'completed' ? (
-                        <span
-                          data-testid={`row-paid-badge-${o.id}`}
-                          className="text-[11px] font-semibold text-[#81908a] bg-[#f6f8f6] px-2 py-0.5 rounded border border-[#e9eeeb] whitespace-nowrap"
-                        >
-                          Đã thu
-                        </span>
-                      ) : null}
-
-                      {normalizeStatusCode(o.status) === 'waiting_parts' && (
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          className="text-xs bg-[#e9f4ef] text-[#176b51] border-[#cde4d8] hover:bg-[#d8ede1] font-bold whitespace-nowrap"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            onResumeOrder(o);
-                          }}
-                        >
-                          Đã có linh kiện
-                        </Button>
-                      )}
-
-                      {(o.special_parts_status === 'pending' || o.specialPartsStatus === 'pending') && (
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          data-testid={`row-fulfill-special-part-btn-${o.id}`}
-                          disabled={isFulfillingSpecialPart}
-                          className="text-xs bg-[#faf1df] text-[#b77a21] border-[#f2deba] hover:bg-[#f2deba] font-bold whitespace-nowrap"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            onFulfillSpecialPart(o);
-                          }}
-                        >
-                          Đã mua linh kiện
-                        </Button>
-                      )}
-
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        data-testid={`row-action-btn-${o.id}`}
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          onSelectOrder(o);
-                        }}
-                      >
-                        ···
-                      </Button>
-                    </div>
-                  </td>
+                  <th className="px-3 py-2 text-center w-12 text-xs font-bold text-[#81908a] uppercase tracking-wider">
+                    STT
+                  </th>
+                  <th className="px-4">Mã đơn</th>
+                  <th className="px-4">Khách hàng</th>
+                  <th className="px-4">Thiết bị & lỗi</th>
+                  <th className="px-4">Trạng thái</th>
+                  {!isTechRole && <th className="px-4">Chi phí</th>}
+                  <th className="px-4">Kỹ thuật viên</th>
+                  <th className="px-4">Ngày nhận & Kho</th>
+                  <th className="px-4 text-right">Thao tác</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody className="divide-y divide-[#e9eeeb] text-sm text-[#17231f]">
+                {paginatedRows.map((row, idx) => {
+                  const o = row.primaryOrder;
+                  const isRowSelected = selectedRowKeys.includes(row.rowKey);
+                  const techActionOrder =
+                    row.orders.find((sub) =>
+                      canCompleteTechnicalRepair(sub.status, role || currentUserRole)
+                    ) || null;
+                  const checkoutActionOrder =
+                    row.orders.find((sub) =>
+                      ['ready_for_return', 'waiting_pickup', 'in_repair', 'waiting_qc'].includes(
+                        normalizeStatusCode(sub.status)
+                      )
+                    ) || null;
+                  const allCompleted = row.orders.every(
+                    (sub) => normalizeStatusCode(sub.status) === 'completed'
+                  );
+                  const waitingPartsOrder =
+                    row.orders.find((sub) => normalizeStatusCode(sub.status) === 'waiting_parts') ||
+                    null;
+                  const specialPartPendingOrder =
+                    row.orders.find(
+                      (sub) =>
+                        sub.special_parts_status === 'pending' ||
+                        sub.specialPartsStatus === 'pending'
+                    ) || null;
+                  const uniqueTechs = Array.from(
+                    new Set(row.orders.map((sub) => sub.tech).filter(Boolean))
+                  );
 
-          <PaginationBar
-            testIdPrefix="repairs"
-            currentPage={currentPage}
-            lastPage={lastPage}
-            total={total}
-            from={from}
-            to={to}
-            perPage={perPage}
-            onPageChange={(nextPage) => setPage(nextPage)}
-            onPerPageChange={(nextPerPage) => {
-              setPerPage(nextPerPage);
-              setPage(1);
-            }}
-            itemLabel="đơn sửa chữa"
-            isLoading={isRepairsLoading}
-          />
+                  return (
+                    <tr
+                      key={row.rowKey}
+                      data-testid={row.isBatch ? `batch-row-${row.batchCode}` : `order-row-${o.id}`}
+                      onClick={() => onSelectOrder(o)}
+                      className={`h-14 hover:bg-[#f6f8f6] cursor-pointer transition-colors ${
+                        isRowSelected ? 'bg-[#f4faf7]' : ''
+                      }`}
+                    >
+                      {!isTechRole && (
+                        <td
+                          className="px-3 py-3 text-center align-top"
+                          onClick={(e) => e.stopPropagation()}
+                        >
+                          <input
+                            type="checkbox"
+                            data-testid={`select-order-checkbox-${o.id}`}
+                            aria-label={`Chọn đơn ${o.id}`}
+                            checked={isRowSelected}
+                            onClick={(e) => e.stopPropagation()}
+                            onChange={() => toggleRowSelection(row.rowKey)}
+                            className="w-4 h-4 rounded border-[#b8d0c5] text-[#176b51] focus:ring-[#176b51] cursor-pointer mt-1"
+                          />
+                        </td>
+                      )}
+                      <td
+                        data-testid="order-row-stt"
+                        className="px-3 py-3 text-center text-xs font-semibold text-[#81908a] font-mono tabular-nums align-top"
+                      >
+                        {pageOffset > 0
+                          ? groupedRows.length - (pageOffset + idx)
+                          : groupedRows.length - idx}
+                      </td>
+                      <td className="px-4 py-2.5 align-top">
+                        {row.isBatch ? (
+                          <div className="space-y-1">
+                            <span
+                              data-testid={`batch-code-badge-${row.batchCode}`}
+                              className="inline-flex items-center gap-1 text-[10px] font-mono font-bold text-[#176b51] bg-[#e9f4ef] px-1.5 py-0.5 rounded border border-[#cde4d8]"
+                            >
+                              {row.batchCode} · {row.orders.length} máy
+                            </span>
+                            <div className="space-y-0.5">
+                              {row.orders.map((sub) => (
+                                <div
+                                  key={sub.id}
+                                  className="font-mono font-bold text-xs text-[#176b51]"
+                                >
+                                  {sub.id}
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        ) : (
+                          <div className="font-mono font-bold text-[#176b51]">{o.id}</div>
+                        )}
+                        <div className="mt-1">
+                          {o.order_type === 'warranty' || o.orderType === 'warranty' ? (
+                            <span
+                              data-testid="badge-order-type-warranty"
+                              className="inline-flex items-center gap-0.5 text-[10px] font-bold text-[#176b51] bg-[#e9f4ef] px-1.5 py-0.5 rounded border border-[#cde4d8]"
+                            >
+                              Bảo hành
+                            </span>
+                          ) : o.order_type === 'cod' || o.orderType === 'cod' ? (
+                            <span
+                              data-testid="badge-order-type-cod"
+                              className="inline-flex items-center gap-0.5 text-[10px] font-bold text-[#b77a21] bg-[#faf1df] px-1.5 py-0.5 rounded border border-[#f2deba]"
+                            >
+                              Đơn COD
+                            </span>
+                          ) : (
+                            <span
+                              data-testid="badge-order-type-in-store"
+                              className="inline-flex items-center gap-0.5 text-[10px] font-bold text-[#176b51] bg-[#e9f4ef] px-1.5 py-0.5 rounded border border-[#cde4d8]"
+                            >
+                              Tại quầy
+                            </span>
+                          )}
+                        </div>
+                      </td>
+                      <td className="px-4 py-2.5 align-top">
+                        <div className="flex items-center gap-2.5">
+                          <Avatar initials={o.name} variant={(idx % 4) as any} size="sm" />
+                          <div>
+                            <b className="block text-[#17231f] font-semibold">{o.name}</b>
+                            <small className="block text-[#81908a] text-xs font-mono">
+                              {o.phone}
+                            </small>
+                          </div>
+                        </div>
+                      </td>
+                      <td className="px-4 py-2.5 align-top">
+                        {row.isBatch ? (
+                          <div className="space-y-1.5">
+                            {row.orders.map((sub, subIdx) => (
+                              <div key={sub.id} className="leading-snug">
+                                <span className="font-semibold text-[#17231f] text-xs block">
+                                  [{subIdx + 1}] {sub.device}
+                                </span>
+                                <small className="text-[#81908a] text-xs block truncate max-w-[230px]">
+                                  {sub.issue}
+                                </small>
+                              </div>
+                            ))}
+                          </div>
+                        ) : (
+                          <>
+                            <span className="font-semibold text-[#17231f] block">{o.device}</span>
+                            <small className="text-[#81908a] text-xs block truncate max-w-[220px]">
+                              {o.issue}
+                            </small>
+                          </>
+                        )}
+                      </td>
+                      <td className="px-4 py-2.5 align-top">
+                        {row.isBatch ? (
+                          <div className="space-y-1.5">
+                            {row.orders.map((sub, subIdx) => (
+                              <div key={sub.id} className="space-y-0.5">
+                                <div className="flex items-center gap-1.5 flex-wrap">
+                                  <span className="text-[10px] font-mono font-bold text-[#81908a]">
+                                    [{subIdx + 1}]
+                                  </span>
+                                  <StatusTag label={sub.status} type={sub.statusType} />
+                                </div>
+                                {sub.special_parts_status === 'pending' ||
+                                sub.specialPartsStatus === 'pending' ? (
+                                  <div
+                                    data-testid={`badge-special-part-pending-${sub.id}`}
+                                    className="inline-flex items-center gap-1 text-[11px] font-bold text-red-700 bg-red-50 px-2 py-0.5 rounded border border-red-300 max-w-[210px] truncate shadow-2xs"
+                                    title={`Linh kiện cần mua ngoài: ${
+                                      sub.special_parts_needed ||
+                                      sub.specialPartsNeeded ||
+                                      'Chưa cập nhật'
+                                    }`}
+                                  >
+                                    <Icon name="bell" size={12} className="text-red-600 flex-none" />
+                                    <span className="truncate">
+                                      Cần mua ngoài:{' '}
+                                      {sub.special_parts_needed ||
+                                        sub.specialPartsNeeded ||
+                                        'Cần tìm mua'}
+                                    </span>
+                                  </div>
+                                ) : sub.special_parts_status === 'purchased' ||
+                                  sub.specialPartsStatus === 'purchased' ? (
+                                  <div
+                                    data-testid={`badge-special-part-purchased-${sub.id}`}
+                                    className="inline-flex items-center gap-1 text-[11px] font-bold text-[#176b51] bg-[#e9f4ef] px-2 py-0.5 rounded border border-[#cde4d8] max-w-[210px] truncate"
+                                    title="Quầy đã mua xong linh kiện"
+                                  >
+                                    <Icon name="check" size={12} className="text-[#176b51]" />
+                                    <span className="truncate">Đã mua linh kiện</span>
+                                  </div>
+                                ) : sub.parts_needed ||
+                                  sub.partsNeeded ||
+                                  normalizeStatusCode(sub.status) === 'waiting_parts' ? (
+                                  <div
+                                    className="inline-flex items-center gap-1 text-[11px] font-semibold text-[#b77a21] bg-[#faf1df] px-2 py-0.5 rounded border border-[#f2deba] max-w-[190px] truncate"
+                                    title={`Linh kiện yêu cầu: ${
+                                      sub.parts_needed || sub.partsNeeded || 'Chưa cập nhật'
+                                    }`}
+                                  >
+                                    <Icon name="package" size={12} />
+                                    <span className="truncate">
+                                      Cần: {sub.parts_needed || sub.partsNeeded || 'Chờ linh kiện'}
+                                    </span>
+                                  </div>
+                                ) : null}
+                              </div>
+                            ))}
+                          </div>
+                        ) : (
+                          <div className="space-y-1">
+                            <StatusTag label={o.status} type={o.statusType} />
+                            {o.special_parts_status === 'pending' ||
+                            o.specialPartsStatus === 'pending' ? (
+                              <div
+                                data-testid={`badge-special-part-pending-${o.id}`}
+                                className="inline-flex items-center gap-1 text-[11px] font-bold text-red-700 bg-red-50 px-2 py-0.5 rounded border border-red-300 max-w-[210px] truncate shadow-2xs"
+                                title={`Linh kiện cần mua ngoài: ${
+                                  o.special_parts_needed ||
+                                  o.specialPartsNeeded ||
+                                  'Chưa cập nhật'
+                                }`}
+                              >
+                                <Icon name="bell" size={12} className="text-red-600 flex-none" />
+                                <span className="truncate">
+                                  Cần mua ngoài:{' '}
+                                  {o.special_parts_needed || o.specialPartsNeeded || 'Cần tìm mua'}
+                                </span>
+                              </div>
+                            ) : o.special_parts_status === 'purchased' ||
+                              o.specialPartsStatus === 'purchased' ? (
+                              <div
+                                data-testid={`badge-special-part-purchased-${o.id}`}
+                                className="inline-flex items-center gap-1 text-[11px] font-bold text-[#176b51] bg-[#e9f4ef] px-2 py-0.5 rounded border border-[#cde4d8] max-w-[210px] truncate"
+                                title="Quầy đã mua xong linh kiện"
+                              >
+                                <Icon name="check" size={12} className="text-[#176b51]" />
+                                <span className="truncate">Đã mua linh kiện</span>
+                              </div>
+                            ) : o.parts_needed ||
+                              o.partsNeeded ||
+                              normalizeStatusCode(o.status) === 'waiting_parts' ? (
+                              <div
+                                className="inline-flex items-center gap-1 text-[11px] font-semibold text-[#b77a21] bg-[#faf1df] px-2 py-0.5 rounded border border-[#f2deba] max-w-[190px] truncate"
+                                title={`Linh kiện yêu cầu: ${
+                                  o.parts_needed || o.partsNeeded || 'Chưa cập nhật'
+                                }`}
+                              >
+                                <Icon name="package" size={12} />
+                                <span className="truncate">
+                                  Cần: {o.parts_needed || o.partsNeeded || 'Chờ linh kiện'}
+                                </span>
+                              </div>
+                            ) : null}
+                          </div>
+                        )}
+                      </td>
+                      {!isTechRole && (
+                        <td className="px-4 py-2.5 align-top font-semibold text-[#17231f] font-mono tabular-nums">
+                          {row.isBatch ? (
+                            <div>
+                              <div>{moneyFormatted(row.totalPrice)}</div>
+                              <span className="block text-[10px] font-sans font-medium text-[#81908a]">
+                                Tổng {row.orders.length} máy
+                              </span>
+                            </div>
+                          ) : (
+                            moneyFormatted(o.price)
+                          )}
+                        </td>
+                      )}
+                      <td className="px-4 py-2.5 align-top text-[#4a5c54]">
+                        {row.isBatch && uniqueTechs.length > 1
+                          ? uniqueTechs.join(', ')
+                          : o.tech}
+                      </td>
+                      <td className="px-4 py-2.5 align-top text-[#81908a]">
+                        <span className="block font-medium font-mono tabular-nums">{o.date}</span>
+                        <span className="inline-block mt-0.5 text-xs font-mono font-bold text-[#176b51] bg-[#e9f4ef] px-1.5 py-0.5 rounded">
+                          {o.branchName || o.branch}
+                        </span>
+                      </td>
+                      <td className="px-4 py-2.5 align-top text-right">
+                        <div className="flex items-center justify-end gap-1.5">
+                          {techActionOrder && (
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              data-testid={`row-tech-complete-btn-${techActionOrder.id}`}
+                              className="text-xs bg-[#e9f4ef] text-[#176b51] border-[#cde4d8] hover:bg-[#d8ede1] font-bold flex items-center gap-1 whitespace-nowrap cursor-pointer"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                onOpenTechComplete(techActionOrder);
+                              }}
+                            >
+                              <Icon name="check" size={12} />
+                              <span>Hoàn thành sửa chữa</span>
+                            </Button>
+                          )}
+
+                          {checkoutActionOrder ? (
+                            <Button
+                              variant="primary"
+                              size="sm"
+                              data-testid={`row-checkout-btn-${checkoutActionOrder.id}`}
+                              className="bg-[#176b51] hover:bg-[#10583f] text-white font-bold text-xs px-2.5 py-1 flex items-center gap-1 shadow-xs whitespace-nowrap cursor-pointer"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                onOpenCheckout(checkoutActionOrder);
+                              }}
+                            >
+                              <Icon name="payments" size={12} />
+                              <span>Thanh toán</span>
+                            </Button>
+                          ) : allCompleted ? (
+                            <span
+                              data-testid={`row-paid-badge-${o.id}`}
+                              className="text-[11px] font-semibold text-[#81908a] bg-[#f6f8f6] px-2 py-0.5 rounded border border-[#e9eeeb] whitespace-nowrap"
+                            >
+                              Đã thu
+                            </span>
+                          ) : null}
+
+                          {waitingPartsOrder && (
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              className="text-xs bg-[#e9f4ef] text-[#176b51] border-[#cde4d8] hover:bg-[#d8ede1] font-bold whitespace-nowrap"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                if (row.isBatch && waitingPartsOrder) {
+                                  onResumeOrder(waitingPartsOrder);
+                                } else {
+                                  onResumeOrder(o);
+                                }
+                              }}
+                            >
+                              Đã có linh kiện
+                            </Button>
+                          )}
+
+                          {specialPartPendingOrder && (
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              data-testid={`row-fulfill-special-part-btn-${specialPartPendingOrder.id}`}
+                              disabled={isFulfillingSpecialPart}
+                              className="text-xs bg-[#faf1df] text-[#b77a21] border-[#f2deba] hover:bg-[#f2deba] font-bold whitespace-nowrap"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                onFulfillSpecialPart(specialPartPendingOrder);
+                              }}
+                            >
+                              Đã mua linh kiện
+                            </Button>
+                          )}
+
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            data-testid={`row-action-btn-${o.id}`}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              onSelectOrder(o);
+                            }}
+                          >
+                            ···
+                          </Button>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+
+            <PaginationBar
+              testIdPrefix="repairs"
+              currentPage={currentPage}
+              lastPage={lastPage}
+              total={total}
+              from={from}
+              to={to}
+              perPage={perPage}
+              onPageChange={(nextPage) => setPage(nextPage)}
+              onPerPageChange={(nextPerPage) => {
+                setPerPage(nextPerPage);
+                setPage(1);
+              }}
+              itemLabel="đơn sửa chữa"
+              isLoading={isRepairsLoading}
+            />
+          </div>
         </div>
       )}
     </div>

@@ -8,29 +8,26 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const intakeWizardPath = path.resolve(__dirname, '../app/components/IntakeWizardModal.tsx');
 
-test('1. IntakeWizardModal: Common Issue Chips MUST NOT display price tags', () => {
+test('1. IntakeWizardModal & IntakeQuickConsole: Common Issue Chips removed and no price tags rendered', () => {
   assert.ok(fs.existsSync(intakeWizardPath), 'IntakeWizardModal.tsx phải tồn tại');
   const content = fs.readFileSync(intakeWizardPath, 'utf-8');
+  const quickPath = path.resolve(__dirname, '../app/components/IntakeQuickConsole.tsx');
+  const quickContent = fs.readFileSync(quickPath, 'utf-8');
 
-  // Verify that the common issue chips section does NOT contain any price formatting or currency symbols
-  const chipSectionRegex = /\{(?:commonIssues|enrichedAndFiltered)\.map\(\(chip, idx\) => \{([\s\S]*?)\}\)\}/;
-  const match = content.match(chipSectionRegex);
-  assert.ok(match, 'Phải tìm thấy khối render commonIssues/enrichedAndFiltered.map');
-
-  const chipRenderBody = match[1];
   assert.strictEqual(
-    chipRenderBody.includes('₫'),
+    content.includes('intake-issue-filter-input'),
     false,
-    'Chip Lỗi thường gặp tuyệt đối không được chứa ký tự đơn vị tiền tệ "₫"'
+    'IntakeWizardModal đã bỏ khối Lỗi thường gặp'
   );
   assert.strictEqual(
-    chipRenderBody.includes('estimated_cost'),
+    quickContent.includes('quick-intake-issue-filter-input'),
     false,
-    'Chip Lỗi thường gặp không được render estimated_cost'
+    'IntakeQuickConsole đã bỏ khối Lỗi thường gặp'
   );
-  assert.ok(
-    chipRenderBody.includes('{chip.issue_name}'),
-    'Chip phải hiển thị tên lỗi chip.issue_name'
+  assert.strictEqual(
+    content.includes('estimated_cost') || quickContent.includes('estimated_cost'),
+    false,
+    'Giao diện tiếp nhận không được render estimated_cost'
   );
 });
 

@@ -2074,3 +2074,51 @@ export function parsePartsSummaryToItems(
 
   return items;
 }
+
+export type AirPodsScopeKey = 'L' | 'R' | 'LR' | 'CASE';
+
+export const AIRPODS_REPAIR_SCOPE_OPTIONS: ReadonlyArray<{
+  key: AirPodsScopeKey;
+  label: string;
+  tag: string;
+}> = [
+  { key: 'L', label: 'Tai Trái (L)', tag: '[Tai Trái (L)]' },
+  { key: 'R', label: 'Tai Phải (R)', tag: '[Tai Phải (R)]' },
+  { key: 'LR', label: 'Cả 2 tai (L + R)', tag: '[Cả 2 tai (L + R)]' },
+  { key: 'CASE', label: 'Hộp sạc (Case)', tag: '[Hộp sạc (Case)]' },
+];
+
+const AIRPODS_LEADING_SCOPE_REGEX =
+  /^\s*\[(Tai Trái \(L\)|Tai Phải \(R\)|Cả 2 tai \(L \+ R\)|Hộp sạc \(Case\))\]\s*/i;
+
+/**
+ * Đọc phạm vi AirPods đang gắn ở đầu chuỗi mô tả lỗi (nếu có).
+ */
+export function extractAirPodsScopeFromIssueText(text?: string | null): AirPodsScopeKey | null {
+  if (!text) return null;
+  const match = text.match(AIRPODS_LEADING_SCOPE_REGEX);
+  if (!match) return null;
+  const matchedLabel = match[1].toLowerCase();
+  const found = AIRPODS_REPAIR_SCOPE_OPTIONS.find(
+    (opt) => opt.label.toLowerCase() === matchedLabel
+  );
+  return found ? found.key : null;
+}
+
+/**
+ * Gắn, thay thế hoặc bỏ chọn tag phạm vi AirPods ở đầu mô tả lỗi mà vẫn giữ nguyên nội dung phía sau.
+ */
+export function toggleAirPodsScopeTagInIssueText(
+  text: string | undefined | null,
+  scopeKey: AirPodsScopeKey
+): string {
+  const raw = text || '';
+  const currentScope = extractAirPodsScopeFromIssueText(raw);
+  const body = raw.replace(AIRPODS_LEADING_SCOPE_REGEX, '');
+  if (currentScope === scopeKey) {
+    return body;
+  }
+  const opt = AIRPODS_REPAIR_SCOPE_OPTIONS.find((item) => item.key === scopeKey);
+  if (!opt) return raw;
+  return `${opt.tag} ${body}`;
+}

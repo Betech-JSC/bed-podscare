@@ -55,6 +55,81 @@ export default function PrintReceiptPage() {
     setStoredPrintFormat(newFormat);
   };
 
+  const mapApiOrderToPrintOrder = (o: any, parentFallback?: any): RepairOrder => {
+    const mappedStatus = resolveOrderStatus(o.status);
+
+    const mappedChecks = Array.isArray(o.intake_checklists)
+      ? o.intake_checklists.map((c: any) => ({
+          label: c.item_name || c.label || '',
+          status:
+            c.status === 'pass' || c.status === 'passed' || c.status === 'good' || c.status === 'Hoạt động'
+              ? ('Hoạt động' as const)
+              : c.status === 'fail' || c.status === 'failed' || c.status === 'Lỗi'
+              ? ('Lỗi' as const)
+              : ('Không kiểm tra' as const),
+        }))
+      : Array.isArray(o.checks)
+      ? o.checks
+      : [];
+
+    const mappedPhotos = Array.isArray(o.intake_photos)
+      ? o.intake_photos.map((p: any) => ({
+          name: p.photo_type || 'Ảnh thiết bị',
+          url: p.photo_url || p.file_path || p.url,
+        }))
+      : Array.isArray(o.photos)
+      ? o.photos.map((p: any) => ({
+          name: p.name || p.photo_type || 'Ảnh thiết bị',
+          url: p.photo_url || p.file_path || p.url,
+        }))
+      : [];
+
+    return {
+      id: o.order_code || String(o.id),
+      order_type: o.order_type || o.orderType || parentFallback?.order_type || parentFallback?.orderType,
+      orderType: o.order_type || o.orderType || parentFallback?.order_type || parentFallback?.orderType,
+      name: o.customer?.name || o.name || parentFallback?.customer?.name || parentFallback?.name || 'Khách hàng',
+      phone: o.customer?.phone || o.phone || parentFallback?.customer?.phone || parentFallback?.phone || '',
+      deviceCategory: o.device_model?.category || o.deviceCategory || 'AirPods',
+      device: o.device_model?.name || o.device || 'Thiết bị Apple',
+      serial: o.serial_number || o.serial || 'Chưa cập nhật',
+      issue: o.issue_description || o.issue || 'Kiểm tra tổng quát',
+      status: mappedStatus.label,
+      statusType: mappedStatus.type,
+      price: Number(o.total_price) || Number(o.estimated_price) || Number(o.price) || 0,
+      priceNote: o.price_note || o.priceNote,
+      tech: o.technician?.name || o.tech || 'Chưa phân công',
+      date: o.created_at
+        ? new Intl.DateTimeFormat('vi-VN').format(new Date(o.created_at))
+        : o.date || 'Hôm nay',
+      branch:
+        o.branch?.name ||
+        (typeof o.branch === 'string' ? o.branch : undefined) ||
+        parentFallback?.branch?.name ||
+        'Chi nhánh FIXO',
+      appearance: o.appearance_notes || o.appearance || 'Không ghi chú',
+      accessories: o.accessories || 'Không gửi kèm',
+      testNote:
+        o.test_note ||
+        o.testNote ||
+        (Array.isArray(o.intake_checklists) ? o.intake_checklists.find((c: any) => c.note)?.note : '') ||
+        '',
+      test_note: o.test_note || o.testNote || '',
+      warranty_terms_days: o.warranty_terms_days ?? (o.warranty_months ? Number(o.warranty_months) * 30 : 90),
+      warranty_months: o.warranty_months ?? (o.warranty_terms_days ? Math.round(Number(o.warranty_terms_days) / 30) : 3),
+      checks: mappedChecks,
+      photos: mappedPhotos,
+      createdBy:
+        o.created_by_user?.name ||
+        o.createdBy ||
+        parentFallback?.created_by_user?.name ||
+        parentFallback?.createdBy ||
+        'FIXO',
+      intake_batch_code: o.intake_batch_code || parentFallback?.intake_batch_code,
+      tenant: o.tenant || tenantBranding || currentUser?.tenant || parentFallback?.tenant || undefined,
+    };
+  };
+
   const { data: order, isLoading, isError } = useQuery<RepairOrder | null>({
     queryKey: ['repair-print', id],
     queryFn: async () => {
@@ -67,10 +142,29 @@ export default function PrintReceiptPage() {
         existing.checks.length > 0 &&
         existing.createdBy
       ) {
-        return {
-          ...existing,
-          tenant: existing.tenant || tenantBranding || currentUser?.tenant || undefined,
-        };
+        if (existing.batchOrders && existing.batchOrders.length > 1) {
+          return {
+            ...existing,
+            tenant: existing.tenant || tenantBranding || currentUser?.tenant || undefined,
+          };
+        }
+        if (existing.intake_batch_code) {
+          const siblings = orders.filter(
+            (item) => item.intake_batch_code === existing.intake_batch_code
+          );
+          if (siblings.length > 1) {
+            return {
+              ...existing,
+              batchOrders: siblings,
+              tenant: existing.tenant || tenantBranding || currentUser?.tenant || undefined,
+            };
+          }
+        } else {
+          return {
+            ...existing,
+            tenant: existing.tenant || tenantBranding || currentUser?.tenant || undefined,
+          };
+        }
       }
 
       // Otherwise fetch dynamically from API with dual-lookup (integer ID or order_code)
@@ -78,62 +172,15 @@ export default function PrintReceiptPage() {
       const o = res?.data || res;
       if (!o) return null;
 
-      const mappedStatus = resolveOrderStatus(o.status);
-
-      const mappedChecks = Array.isArray(o.intake_checklists)
-        ? o.intake_checklists.map((c: any) => ({
-            label: c.item_name,
-            status:
-              c.status === 'pass' || c.status === 'passed' || c.status === 'good' || c.status === 'Hoạt động'
-                ? ('Hoạt động' as const)
-                : c.status === 'fail' || c.status === 'failed' || c.status === 'Lỗi'
-                ? ('Lỗi' as const)
-                : ('Không kiểm tra' as const),
-          }))
-        : Array.isArray(o.checks)
-        ? o.checks
-        : [];
-
-      const mappedPhotos = Array.isArray(o.intake_photos)
-        ? o.intake_photos.map((p: any) => ({
-            name: p.photo_type || 'Ảnh thiết bị',
-            url: p.photo_url || p.file_path || p.url,
-          }))
-        : Array.isArray(o.photos)
-        ? o.photos.map((p: any) => ({
-            name: p.name || p.photo_type || 'Ảnh thiết bị',
-            url: p.photo_url || p.file_path || p.url,
-          }))
-        : [];
-
-      const mapped: RepairOrder = {
-        id: o.order_code || String(o.id),
-        name: o.customer?.name || 'Khách hàng',
-        phone: o.customer?.phone || '',
-        deviceCategory: o.device_model?.category || 'AirPods',
-        device: o.device_model?.name || 'Thiết bị Apple',
-        serial: o.serial_number || 'Chưa cập nhật',
-        issue: o.issue_description || 'Kiểm tra tổng quát',
-        status: mappedStatus.label,
-        statusType: mappedStatus.type,
-        price: Number(o.total_price) || Number(o.estimated_price) || 0,
-        priceNote: o.price_note,
-        tech: o.technician?.name || 'Chưa phân công',
-        date: o.created_at
-          ? new Intl.DateTimeFormat('vi-VN').format(new Date(o.created_at))
-          : 'Hôm nay',
-        branch: o.branch?.name || 'Chi nhánh FIXO',
-        appearance: o.appearance_notes || 'Không ghi chú',
-        accessories: o.accessories || 'Không gửi kèm',
-        testNote: o.test_note || o.testNote || (Array.isArray(o.intake_checklists) ? o.intake_checklists.find((c: any) => c.note)?.note : '') || '',
-        test_note: o.test_note || o.testNote || '',
-        warranty_terms_days: o.warranty_terms_days ?? (o.warranty_months ? Number(o.warranty_months) * 30 : 90),
-        warranty_months: o.warranty_months ?? (o.warranty_terms_days ? Math.round(Number(o.warranty_terms_days) / 30) : 3),
-        checks: mappedChecks,
-        photos: mappedPhotos,
-        createdBy: o.created_by_user?.name || o.createdBy || 'FIXO',
-        tenant: o.tenant || tenantBranding || currentUser?.tenant || undefined,
-      };
+      const mapped = mapApiOrderToPrintOrder(o);
+      const rawBatch = Array.isArray(o.batch_orders)
+        ? o.batch_orders
+        : Array.isArray(o.batchOrders)
+        ? o.batchOrders
+        : null;
+      if (rawBatch && rawBatch.length > 1) {
+        mapped.batchOrders = rawBatch.map((bo: any) => mapApiOrderToPrintOrder(bo, o));
+      }
       return mapped;
     },
     enabled: Boolean(id),
@@ -168,8 +215,11 @@ export default function PrintReceiptPage() {
     );
   }
 
+  const batchOrders =
+    order.batchOrders && order.batchOrders.length > 1 ? order.batchOrders : undefined;
+
   const handlePrint = () => {
-    printReceipt(order, format);
+    printReceipt(batchOrders || order, format);
   };
 
   return (
@@ -223,9 +273,13 @@ export default function PrintReceiptPage() {
       {/* Printable Sheet View - Quy chuẩn khổ A4 2 liên: max-h-[132mm], đường cắt print:h-[10mm], ký hiệu ✂ */}
       <div id="printSheetWrapper" className="max-w-[820px] mx-auto print:max-w-none print:w-full">
         {format === 'k80' ? (
-          <ThermalK80Receipt order={order} slipMode="dual" />
+          batchOrders ? (
+            <ThermalK80Receipt order={order} orders={batchOrders} slipMode="dual" />
+          ) : (
+            <ThermalK80Receipt order={order} slipMode="dual" />
+          )
         ) : (
-          <A4ReceiptTemplate order={order} />
+          <A4ReceiptTemplate order={order} orders={batchOrders} />
         )}
       </div>
     </div>

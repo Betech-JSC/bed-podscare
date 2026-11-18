@@ -231,6 +231,12 @@ export class RepairService {
   ): Promise<any> {
     return this.http.post(`/api/v1/orders/${orderId}/refund`, payload);
   }
+
+  async groupOrdersBatch(orderIds: (string | number)[]): Promise<any> {
+    return this.http.post('/api/v1/orders/batch-group', {
+      order_ids: orderIds,
+    });
+  }
 }
 
 export const repairService = new RepairService();

@@ -178,12 +178,20 @@ export const PrintButtonDropdown: React.FC<PrintButtonDropdownProps> = ({
   const handlePrintDefault = () => {
     const pref = getStoredPrintFormat();
     setCurrentFormat(pref);
-    onPrint(order, pref);
+    if (hasBatch && effectiveBatchOrders) {
+      onPrint(effectiveBatchOrders, pref);
+    } else {
+      onPrint(order, pref);
+    }
   };
 
   const handlePrintSpecific = (format: PrintFormat) => {
     setDropdownOpen(false);
-    onPrint(order, format);
+    if (hasBatch && effectiveBatchOrders) {
+      onPrint(effectiveBatchOrders, format);
+    } else {
+      onPrint(order, format);
+    }
   };
 
   return (
@@ -197,7 +205,13 @@ export const PrintButtonDropdown: React.FC<PrintButtonDropdownProps> = ({
         className="rounded-r-none border-r-0 flex items-center gap-1.5"
       >
         <Icon name="printer" size={14} />
-        <span>{isPrinting ? 'Đang in...' : buttonText}</span>
+        <span>
+          {isPrinting
+            ? 'Đang in...'
+            : hasBatch && effectiveBatchOrders
+            ? `In phiếu gộp (${effectiveBatchOrders.length} máy)`
+            : buttonText}
+        </span>
         <span className="text-[10px] uppercase font-mono px-1 py-0.2 bg-black/10 rounded ml-1 font-bold">
           {currentFormat}
         </span>
@@ -233,7 +247,7 @@ export const PrintButtonDropdown: React.FC<PrintButtonDropdownProps> = ({
         <div
           className={`absolute right-0 ${
             direction === 'up' ? 'bottom-full mb-1.5' : 'top-full mt-1.5'
-          } w-52 bg-white rounded-[10px] shadow-lg border border-[#e2e9e5] p-1.5 z-50 animate-in fade-in zoom-in-95 duration-100`}
+          } w-64 bg-white rounded-[10px] shadow-lg border border-[#e2e9e5] p-1.5 z-50 animate-in fade-in zoom-in-95 duration-100`}
         >
           <div className="text-[10px] font-bold text-[#83958c] uppercase px-2 py-1 tracking-wider">
             Chọn khổ in ngay
@@ -278,6 +292,7 @@ export const PrintButtonDropdown: React.FC<PrintButtonDropdownProps> = ({
               </div>
               <button
                 type="button"
+                data-testid="print-batch-combined-btn"
                 onClick={() => {
                   setDropdownOpen(false);
                   onPrint(effectiveBatchOrders, currentFormat);
@@ -290,6 +305,20 @@ export const PrintButtonDropdown: React.FC<PrintButtonDropdownProps> = ({
                 </span>
                 <span className="text-[9px] uppercase font-mono font-bold bg-[#176b58] text-white px-1.5 py-0.5 rounded">
                   {currentFormat}
+                </span>
+              </button>
+              <button
+                type="button"
+                data-testid="print-single-device-only-btn"
+                onClick={() => {
+                  setDropdownOpen(false);
+                  onPrint(order, currentFormat);
+                }}
+                className="w-full text-left px-2.5 py-1.5 rounded-[6px] text-xs hover:bg-[#f0f7f3] text-[#4a5c54] font-medium flex items-center justify-between transition-colors cursor-pointer mt-0.5"
+              >
+                <span className="flex items-center gap-1.5">
+                  <Icon name="receipt" size={14} className="text-[#556960]" />
+                  <span>{`In riêng phiếu máy này (${order.id})`}</span>
                 </span>
               </button>
             </>

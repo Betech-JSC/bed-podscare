@@ -34,11 +34,30 @@ class OrderController extends Controller
         $this->orderCodeService = $orderCodeService ?? app(OrderCodeService::class);
     }
     /**
+     * Danh sách quan hệ lồng nhau cần tải cho các đơn cùng đợt (batchOrders).
+     *
+     * @return array<int, string>
+     */
+    protected function batchOrderRelations(): array
+    {
+        return [
+            'batchOrders.deviceModel',
+            'batchOrders.customer',
+            'batchOrders.technician',
+            'batchOrders.branch',
+            'batchOrders.payments',
+            'batchOrders.intakeChecklists',
+            'batchOrders.createdByUser:id,name,role',
+            'batchOrders.tenant:id,name,code,logo_url,hotline,receipt_footer_note',
+        ];
+    }
+
+    /**
      * Danh sách đơn sửa chữa với bộ lọc.
      */
     public function index(Request $request): JsonResponse
     {
-        $query = RepairOrder::with([
+        $query = RepairOrder::with(array_merge([
             'customer',
             'deviceModel',
             'branch',
@@ -47,7 +66,7 @@ class OrderController extends Controller
             'createdByUser:id,name,role',
             'tenant:id,name,code,logo_url,hotline,receipt_footer_note',
             'payments',
-        ]);
+        ], $this->batchOrderRelations()));
 
         $status = $request->input('status');
         $statusesInput = $request->input('statuses');
@@ -803,10 +822,148 @@ class OrderController extends Controller
         $this->authorizeOrderBranch($order, $request->user());
 
         if ($order->intake_batch_code) {
-            $order->load(['batchOrders.deviceModel', 'batchOrders.customer']);
+            $order->load(array_merge($this->batchOrderRelations(), [
+                'batchOrders.warranties',
+            ]));
         }
 
         return $this->success($order, 'Lấy chi tiết đơn sửa chữa thành công.');
+    }
+
+    /**
+     * Gộp nhiều đơn sửa chữa cùng khách hàng, cùng chi nhánh thành một nhóm tiếp nhận chung (intake_batch_code).
+     */
+    public function batchGroup(Request $request): JsonResponse
+    {
+        $user = $request->user();
+        if (! $user || ! in_array($user->role, ['admin', 'cskh', 'super_admin', 'inventory', 'qc'], true)) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Bạn không có quyền thực hiện thao tác này.',
+            ], 403);
+        }
+
+        $validated = $request->validate([
+            'order_ids'   => ['required', 'array', 'min:2'],
+            'order_ids.*' => [
+                'required',
+                function (string $attribute, mixed $value, \Closure $fail): void {
+                    if (! is_int($value) && ! is_string($value)) {
+                        $fail('Mã đơn hàng phải là số nguyên hoặc chuỗi.');
+                        return;
+                    }
+                    if (is_string($value) && trim($value) === '') {
+                        $fail('Mã đơn hàng không được để trống.');
+                    }
+                },
+            ],
+        ]);
+
+        $ordersById = [];
+        foreach ($validated['order_ids'] as $rawIdentifier) {
+            $identifier = is_string($rawIdentifier) ? trim($rawIdentifier) : $rawIdentifier;
+            $order = $this->resolveOrder($identifier);
+
+            if (! $order) {
+                return $this->failure("Không tìm thấy đơn sửa chữa: {$identifier}.", 422);
+            }
+
+            $ordersById[$order->id] = $order;
+        }
+
+        $orders = collect(array_values($ordersById));
+        if ($orders->count() < 2) {
+            return $this->failure('Cần ít nhất 2 đơn sửa chữa hợp lệ để gộp nhóm.', 422);
+        }
+
+        foreach ($orders as $order) {
+            $this->authorizeOrderBranch($order, $user);
+        }
+
+        $branchIds = $orders->pluck('branch_id')->unique();
+        if ($branchIds->contains(null) || $branchIds->count() !== 1) {
+            return $this->failure('Chỉ có thể gộp các đơn trong cùng một chi nhánh.', 422);
+        }
+
+        $customerIds = $orders->pluck('customer_id');
+        if ($customerIds->contains(null) || $customerIds->unique()->count() !== 1) {
+            return $this->failure('Chỉ có thể gộp các đơn của cùng một khách hàng.', 422);
+        }
+
+        $selectedIds = $orders->pluck('id')->map(fn ($id) => (int) $id)->values()->all();
+
+        $batchCode = DB::transaction(function () use ($selectedIds, $user, $request) {
+            $lockedOrders = RepairOrder::whereIn('id', $selectedIds)
+                ->lockForUpdate()
+                ->orderBy('id')
+                ->get();
+
+            $existingCodes = $lockedOrders
+                ->pluck('intake_batch_code')
+                ->filter(fn ($code) => is_string($code) && trim($code) !== '')
+                ->unique()
+                ->values();
+
+            $canReuseExisting = $existingCodes->count() === 1
+                && $lockedOrders->every(fn (RepairOrder $o) => ! empty($o->intake_batch_code))
+                && ! RepairOrder::withoutGlobalScopes()
+                    ->where('intake_batch_code', $existingCodes->first())
+                    ->whereNotIn('id', $selectedIds)
+                    ->exists();
+
+            if ($canReuseExisting) {
+                $resolvedCode = (string) $existingCodes->first();
+            } else {
+                do {
+                    $resolvedCode = 'IB26-' . now('Asia/Ho_Chi_Minh')->format('dmy') . strtoupper(Str::random(4));
+                } while (RepairOrder::withoutGlobalScopes()->where('intake_batch_code', $resolvedCode)->exists());
+            }
+
+            RepairOrder::whereIn('id', $selectedIds)->update([
+                'intake_batch_code' => $resolvedCode,
+            ]);
+
+            $firstOrder = $lockedOrders->first();
+            $orderCodes = $lockedOrders->pluck('order_code')->filter()->values()->all();
+            $orderCodesText = implode(', ', $orderCodes);
+
+            AuditLog::create([
+                'tenant_id'      => $firstOrder?->tenant_id,
+                'user_id'        => $user->id,
+                'user_name'      => $user->name,
+                'action'         => 'Gộp nhóm đơn tiếp nhận',
+                'auditable_type' => 'RepairOrder',
+                'auditable_id'   => $firstOrder?->id ?? $selectedIds[0],
+                'details'        => "Gộp " . count($selectedIds) . " đơn ({$orderCodesText}) vào nhóm tiếp nhận {$resolvedCode}",
+                'metadata'       => [
+                    'intake_batch_code' => $resolvedCode,
+                    'order_ids'         => $selectedIds,
+                    'order_codes'       => $orderCodes,
+                ],
+                'ip_address'     => $request->ip(),
+            ]);
+
+            return $resolvedCode;
+        });
+
+        $updatedOrders = RepairOrder::with(array_merge([
+            'customer',
+            'deviceModel',
+            'branch',
+            'technician',
+            'intakeChecklists',
+            'payments',
+            'createdByUser:id,name,role',
+            'tenant:id,name,code,logo_url,hotline,receipt_footer_note',
+        ], $this->batchOrderRelations()))
+            ->whereIn('id', $selectedIds)
+            ->orderBy('id')
+            ->get();
+
+        return $this->success([
+            'intake_batch_code' => $batchCode,
+            'orders'            => $updatedOrders,
+        ], 'Đã gộp nhóm thiết bị thành công.');
     }
 
     /**

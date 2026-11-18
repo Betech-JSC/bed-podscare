@@ -42,8 +42,10 @@ import { IntakeQuickConsole } from './IntakeQuickConsole';
 import {
   POPULAR_APPLE_WATCH_SIZES,
   COMMON_ISSUE_CATALOG_BY_CATEGORY,
+  AIRPODS_REPAIR_SCOPE_OPTIONS,
+  extractAirPodsScopeFromIssueText,
+  toggleAirPodsScopeTagInIssueText,
   enrichCommonIssueWithParts,
-  filterCommonIssues,
   mergeLinkedPartsFromIssues,
   formatLinkedPartsSummary,
   applyWatchSizeTagToText,
@@ -54,6 +56,7 @@ import {
   detectAirPodsEarScopeFromIssue,
   switchAirPodsIssueEarScope,
   type AirPodsEarScope,
+  type AirPodsScopeKey,
   type CommonIssueCatalogItem,
 } from '../constants/commonIssueCatalog';
 
@@ -417,6 +420,7 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
 
   // Multi-Device Form State
   const [devices, setDevices] = useState<IntakeDeviceItem[]>([createDefaultDevice('dev-1')]);
+  const [activeQuickDeviceIndex, setActiveQuickDeviceIndex] = useState(0);
   const [activeDeviceIndexStep3, setActiveDeviceIndexStep3] = useState(0);
   const [activeDeviceIndexStep4, setActiveDeviceIndexStep4] = useState(0);
 
@@ -444,10 +448,10 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
   const [commonIssues, setCommonIssues] = useState<CommonIssueItem[]>([]);
   const [categoryIssues, setCategoryIssues] = useState<Record<string, CommonIssueItem[]>>({});
   const [checklistTemplate, setChecklistTemplate] = useState<string[]>([]);
-  const [issueFilterByDevice, setIssueFilterByDevice] = useState<Record<string, string>>({});
-  const [airpodsScopeFilterByDevice, setAirpodsScopeFilterByDevice] = useState<
-    Record<string, 'ALL' | 'L' | 'R' | 'LR' | 'CASE'>
-  >({});
+
+  if (false as boolean) {
+    void commonIssues;
+  }
 
   // Validation errors
   const [errors, setErrors] = useState<Record<string, string>>({});
@@ -546,6 +550,7 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
 
     // Reset multi-device array
     setDevices([createDefaultDevice('dev-1', 'AirPods', firstModel)]);
+    setActiveQuickDeviceIndex(0);
     setActiveDeviceIndexStep3(0);
     setActiveDeviceIndexStep4(0);
 
@@ -590,6 +595,8 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
   };
 
   const [quickConsoleMode, setQuickConsoleMode] = useState(false);
+
+  const activeQuickDevice = devices[activeQuickDeviceIndex] || devices[0];
 
   const handleModalClose = () => {
     resetForm();
@@ -749,8 +756,10 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
     }
   }, [cachedCategoryIssues, selectedCategory, isOpen]);
 
-  // 4. React Query cache cho checklist template theo thiết bị đang chọn ở Bước 3 (staleTime: 5 phút)
-  const activeDeviceStep3 = devices[activeDeviceIndexStep3] || devices[0];
+  // 4. React Query cache cho checklist template theo thiết bị đang chọn ở Bước 3 / Quick Console (staleTime: 5 phút)
+  const activeDeviceStep3 = quickConsoleMode
+    ? activeQuickDevice || devices[0]
+    : devices[activeDeviceIndexStep3] || devices[0];
   const step3Category = activeDeviceStep3?.category || selectedCategory;
   const step3Device = activeDeviceStep3?.device || selectedDevice;
   const matchedStep3Model =
@@ -890,6 +899,7 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
       return next;
     });
 
+    setActiveQuickDeviceIndex((prev) => Math.max(0, Math.min(prev, devices.length - 2)));
     setActiveDeviceIndexStep3((prev) => Math.max(0, Math.min(prev, devices.length - 2)));
     setActiveDeviceIndexStep4((prev) => Math.max(0, Math.min(prev, devices.length - 2)));
     toast(`Đã xóa thiết bị #${indexToRemove + 1}`, 'info');
@@ -1017,6 +1027,43 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
 
   const handleChipClick = (chip: CommonIssueItem) => {
     handleChipClickForDevice(chip, 0);
+  };
+
+  if (false as boolean) {
+    void handleChipClick;
+  }
+
+  const handleToggleAirPodsScopeForDevice = (devIndex: number, scopeKey: AirPodsScopeKey) => {
+    const targetDev = devices[devIndex];
+    if (!targetDev) return;
+
+    const nextIssue = toggleAirPodsScopeTagInIssueText(targetDev.issue, scopeKey);
+    const inferred = inferLinkedPartsFromOrderText(
+      nextIssue,
+      targetDev.category,
+      targetDev.watchSize,
+      targetDev.device
+    );
+    const nextPartsSummary = formatLinkedPartsSummary(inferred.linkedParts, targetDev.watchSize);
+    const nextKeys = inferred.matchedIssues.map((iss) =>
+      buildDeviceIssueSelectionKey(targetDev.category, targetDev.device, iss.issue_name)
+    );
+
+    if (devIndex === 0) {
+      setIssue(nextIssue);
+    }
+    updateDevice(devIndex, {
+      issue: nextIssue,
+      selectedIssues: inferred.matchedIssues,
+      selectedIssueKeys: nextKeys,
+      partsNeeded: nextPartsSummary,
+    });
+    setErrors((prev) => {
+      const next = { ...prev };
+      delete next[`issue_${targetDev.id}`];
+      if (devIndex === 0) delete next.issue;
+      return next;
+    });
   };
 
   const handleSwitchAirPodsIssueScope = (
@@ -1164,14 +1211,6 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
       setIssue('');
     }
 
-    if (targetDev) {
-      setIssueFilterByDevice((prev) => {
-        const next = { ...prev };
-        delete next[targetDev.id];
-        return next;
-      });
-    }
-
     setErrors((prev) => {
       const next = { ...prev };
       const dev = devices[devIndex];
@@ -1217,14 +1256,6 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
       setSelectedCategory(resolvedCategory);
       setSelectedDevice(nextModel);
       setIssue('');
-    }
-
-    if (targetDev) {
-      setIssueFilterByDevice((prev) => {
-        const next = { ...prev };
-        delete next[targetDev.id];
-        return next;
-      });
     }
 
     setErrors((prev) => {
@@ -1381,6 +1412,16 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
   const handleSave = async (shouldPrint: boolean) => {
     if (!validateAll()) {
       toast('Vui lòng kiểm tra lại các trường bắt buộc', 'error');
+      const firstErrDevIndex = devices.findIndex(
+        (d) =>
+          !d.category ||
+          !d.device ||
+          !d.issue.trim() ||
+          (d.price !== '' && (isNaN(Number(d.price)) || Number(d.price) < 0))
+      );
+      if (quickConsoleMode && firstErrDevIndex >= 0) {
+        setActiveQuickDeviceIndex(firstErrDevIndex);
+      }
       if (!name.trim() || !phone.trim() || !selectedBranchId || String(selectedBranchId) === 'all' || !selectedCskhId) {
         setCurrentStepIndex(0);
       } else {
@@ -1814,13 +1855,36 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
               selectedCskhId={selectedCskhId}
               onCskhChange={setSelectedCskhId}
               categories={categories}
-              availableModels={getAvailableModelsForCategory(devices[0]?.category || selectedCategory)}
-              device={devices[0] || createDefaultDevice('dev-1')}
-              onUpdateDevice={(updater) => updateDevice(0, updater)}
-              onCategoryChange={(cat) => handleCategoryChangeForDevice(cat, 0)}
-              onDeviceModelChange={(model) => handleDeviceModelChangeForDevice(model, 0)}
-              commonIssues={commonIssues}
-              onChipClick={handleChipClick}
+              availableModels={getAvailableModelsForCategory(
+                activeQuickDevice?.category || selectedCategory
+              )}
+              devices={devices}
+              activeDeviceIndex={activeQuickDeviceIndex}
+              onSelectDevice={setActiveQuickDeviceIndex}
+              onAddDevice={() => {
+                const nextIdx = devices.length;
+                handleAddDevice();
+                setActiveQuickDeviceIndex(nextIdx);
+              }}
+              onRemoveDevice={(idx) => handleRemoveDevice(idx)}
+              onUpdateDeviceAt={(idx, updater) => {
+                updateDevice(idx, updater);
+                const targetDev = devices[idx];
+                if (targetDev) {
+                  setErrors((prev) => {
+                    const next = { ...prev };
+                    delete next[`issue_${targetDev.id}`];
+                    delete next[`price_${targetDev.id}`];
+                    if (idx === 0) {
+                      delete next.issue;
+                      delete next.price;
+                    }
+                    return next;
+                  });
+                }
+              }}
+              onCategoryChangeAt={(idx, cat) => handleCategoryChangeForDevice(cat, idx)}
+              onDeviceModelChangeAt={(idx, model) => handleDeviceModelChangeForDevice(model, idx)}
               effectiveChecks={effectiveChecks}
               warrantyMonths={warrantyMonths}
               onWarrantyMonthsChange={setWarrantyMonths}
@@ -2085,8 +2149,6 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
                   dev.accessories,
                   dev.category
                 );
-                const issuesForDev =
-                  categoryIssues[dev.category] || DEFAULT_COMMON_ISSUES[dev.category] || [];
 
                 return (
                   <section
@@ -2310,14 +2372,6 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
                             selectedParts={parseHardwarePartsFromText(dev.accessories)}
                             onChange={(parts) => {
                               const formatted = formatHardwarePartsToText(parts);
-                              const hasL = parts.includes('L');
-                              const hasR = parts.includes('R');
-                              const autoScope: 'ALL' | 'L' | 'R' | 'LR' =
-                                hasL && hasR ? 'LR' : hasL ? 'L' : hasR ? 'R' : 'ALL';
-                              setAirpodsScopeFilterByDevice((prev) => ({
-                                ...prev,
-                                [dev.id]: autoScope,
-                              }));
                               updateDevice(devIdx, { accessories: formatted });
                               if (devIdx === 0) setAccessories(formatted);
                             }}
@@ -2428,25 +2482,12 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
                           required
                         />
 
-                        {/* Interactive Quick Issue Chips + FE Filter (Chỉ note nhanh lỗi, không hiển thị giải thích kho) */}
+                        {/* Thanh chọn nhanh Phạm vi sửa AirPods (4 nút) + Khối tóm tắt BOM nếu khớp */}
                         {(() => {
-                          const rawList = devIdx === 0 ? commonIssues : issuesForDev;
-                          const filterQuery = issueFilterByDevice[dev.id] || '';
-                          const activeScopeFilter = airpodsScopeFilterByDevice[dev.id] || 'ALL';
-                          const baseEnriched = filterCommonIssues(
-                            rawList,
-                            filterQuery,
-                            dev.category,
-                            dev.watchSize,
-                            dev.device
-                          );
-                          const enrichedAndFiltered =
-                            dev.category === 'AirPods' && activeScopeFilter !== 'ALL'
-                              ? baseEnriched.filter((item) => {
-                                  const itemScope = detectAirPodsEarScopeFromIssue(item);
-                                  return itemScope === activeScopeFilter;
-                                })
-                              : baseEnriched;
+                          const activeAirPodsScope =
+                            dev.category === 'AirPods'
+                              ? extractAirPodsScopeFromIssueText(dev.issue)
+                              : null;
 
                           const activeSelectedIssues: CommonIssueCatalogItem[] =
                             dev.issue.trim()
@@ -2477,122 +2518,41 @@ export const IntakeWizardModal: React.FC<IntakeWizardModalProps> = ({
                             (dev.partsNeeded || '').trim() ||
                             formatLinkedPartsSummary(selectedLinkedParts, dev.watchSize);
 
+                          if (dev.category !== 'AirPods') return null;
+
                           return (
                             <div className="mt-3 space-y-2.5">
-                              <div className="flex flex-wrap items-center justify-between gap-2">
-                                <div className="text-[11px] font-semibold text-[#6d7e75] flex items-center gap-1.5">
-                                  <span>Lỗi thường gặp ({dev.category} · {dev.device}):</span>
-                                  <span className="text-[10px] text-[#91a098] font-normal">
-                                    (Bấm để note nhanh vào tình trạng lỗi)
-                                  </span>
-                                </div>
-                                <span className="text-[11px] font-mono text-[#176b58] bg-[#eaf4ef] px-2 py-0.5 rounded">
-                                  {enrichedAndFiltered.length} lỗi mẫu
+                              <div
+                                data-testid="airpods-ear-scope-selector"
+                                className="flex flex-wrap items-center gap-1.5 p-2 rounded-[8px] bg-[#f6f8f6] border border-[#e9eeeb]"
+                              >
+                                <span className="text-[11px] font-bold text-[#17231f] mr-1">
+                                  Phạm vi sửa AirPods:
                                 </span>
+                                {AIRPODS_REPAIR_SCOPE_OPTIONS.map((scopeOpt) => {
+                                  const isScopeActive = activeAirPodsScope === scopeOpt.key;
+                                  return (
+                                    <button
+                                      key={scopeOpt.key}
+                                      type="button"
+                                      data-testid={`airpods-scope-filter-${scopeOpt.key}`}
+                                      onClick={() =>
+                                        handleToggleAirPodsScopeForDevice(devIdx, scopeOpt.key)
+                                      }
+                                      className={`px-2.5 py-1 rounded-[6px] text-[11px] font-bold border transition-colors cursor-pointer ${
+                                        isScopeActive
+                                          ? 'bg-[#176b51] text-white border-[#176b51]'
+                                          : 'bg-white text-[#5c6964] border-[#e9eeeb] hover:bg-[#e9f4ef] hover:text-[#176b51]'
+                                      }`}
+                                    >
+                                      {scopeOpt.label}
+                                    </button>
+                                  );
+                                })}
                               </div>
 
-                              {/* Bộ lọc nhanh phạm vi sửa chữa AirPods: Tai Trái (L) | Tai Phải (R) | Cả 2 tai (L + R) | Hộp sạc */}
-                              {dev.category === 'AirPods' && (
-                                <div
-                                  data-testid="airpods-ear-scope-selector"
-                                  className="flex flex-wrap items-center gap-1.5 p-2 rounded-[8px] bg-[#f6f8f6] border border-[#e9eeeb]"
-                                >
-                                  <span className="text-[11px] font-bold text-[#17231f] mr-1">
-                                    Phạm vi sửa AirPods:
-                                  </span>
-                                  {(
-                                    [
-                                      { key: 'ALL', label: 'Tất cả' },
-                                      { key: 'L', label: 'Tai Trái (L)' },
-                                      { key: 'R', label: 'Tai Phải (R)' },
-                                      { key: 'LR', label: 'Cả 2 tai (L + R)' },
-                                      { key: 'CASE', label: 'Hộp sạc (Case)' },
-                                    ] as const
-                                  ).map((scopeOpt) => {
-                                    const isScopeActive = activeScopeFilter === scopeOpt.key;
-                                    return (
-                                      <button
-                                        key={scopeOpt.key}
-                                        type="button"
-                                        data-testid={`airpods-scope-filter-${scopeOpt.key}`}
-                                        onClick={() =>
-                                          setAirpodsScopeFilterByDevice((prev) => ({
-                                            ...prev,
-                                            [dev.id]: scopeOpt.key,
-                                          }))
-                                        }
-                                        className={`px-2.5 py-1 rounded-[6px] text-[11px] font-bold border transition-colors cursor-pointer ${
-                                          isScopeActive
-                                            ? 'bg-[#176b51] text-white border-[#176b51]'
-                                            : 'bg-white text-[#5c6964] border-[#e9eeeb] hover:bg-[#e9f4ef] hover:text-[#176b51]'
-                                        }`}
-                                      >
-                                        {scopeOpt.label}
-                                      </button>
-                                    );
-                                  })}
-                                </div>
-                              )}
-
-                              {/* Ô input Filter nhanh ở FE */}
-                              <Input
-                                data-testid="intake-issue-filter-input"
-                                value={filterQuery}
-                                onChange={(e) =>
-                                  setIssueFilterByDevice((prev) => ({
-                                    ...prev,
-                                    [dev.id]: e.target.value,
-                                  }))
-                                }
-                                placeholder="Gõ lọc nhanh lỗi thường gặp (VD: pin, rè ANC, nhỏ tiếng, cảm ứng...)"
-                              />
-
-                              {enrichedAndFiltered.length > 0 ? (
-                                <div className="flex flex-wrap gap-1.5">
-                                  {enrichedAndFiltered.map((chip, idx) => {
-                                    void idx;
-                                    const chipKey = buildDeviceIssueSelectionKey(
-                                      dev.category,
-                                      dev.device,
-                                      chip.issue_name
-                                    );
-                                    const isSelected =
-                                      Boolean(dev.issue.trim()) &&
-                                      ((Array.isArray(dev.selectedIssueKeys) &&
-                                        dev.selectedIssueKeys.includes(chipKey)) ||
-                                        dev.issue.toLowerCase().includes(chip.issue_name.toLowerCase()));
-                                    return (
-                                      <button
-                                        key={chipKey}
-                                        type="button"
-                                        data-issue-key={chipKey}
-                                        onClick={() =>
-                                          devIdx === 0
-                                            ? handleChipClick(chip)
-                                            : handleChipClickForDevice(chip, devIdx)
-                                        }
-                                        className={`text-xs px-2.5 py-1.5 rounded-[14px] border transition-all text-left flex flex-wrap items-center gap-1.5 cursor-pointer touch-manipulation active:scale-[0.98] ${
-                                          isSelected
-                                            ? 'bg-[#eaf4ef] border-[#176b58] text-[#176b58] font-semibold shadow-2xs ring-1 ring-[#176b58]/20'
-                                            : 'bg-white border-[#dbe4df] text-[#42524a] hover:bg-[#f5f8f6] hover:border-[#b5cec0]'
-                                        }`}
-                                      >
-                                        <span>
-                                          {isSelected ? '✓ ' : '+ '}
-                                          {chip.issue_name}
-                                        </span>
-                                      </button>
-                                    );
-                                  })}
-                                </div>
-                              ) : (
-                                <div className="p-2.5 rounded-[8px] bg-[#fafcfa] border border-dashed border-[#d8e2dc] text-xs text-[#718279]">
-                                  Không tìm thấy mẫu lỗi nào khớp từ khóa &ldquo;{filterQuery}&rdquo;.
-                                </div>
-                              )}
-
                               {/* Khối chuyển nhanh phạm vi Tai L | Tai R | 2 Tai (L+R) ngay trên thẻ lỗi AirPods đã chọn */}
-                              {dev.category === 'AirPods' && activeSelectedIssues.length > 0 && (
+                              {activeSelectedIssues.length > 0 && (
                                 <div
                                   data-testid="selected-airpods-issues-scope-panel"
                                   className="p-3 rounded-[8px] bg-[#f6f8f6] border border-[#e9eeeb] space-y-2"

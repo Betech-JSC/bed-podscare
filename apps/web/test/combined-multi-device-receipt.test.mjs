@@ -13,6 +13,10 @@ import {
   renderCombinedThermalK80HTML,
   formatMoney,
 } from '../app/components/print/thermalK80HtmlBuilder.ts';
+import {
+  groupOrdersForDisplay,
+  validateOrdersForBatchGrouping,
+} from '../app/repairs/utils/orderBatchGrouping.ts';
 
 
 
@@ -277,5 +281,124 @@ test('3. Single-Flight Print Job & Intake Wizard Logic Guard', async (t) => {
       content.includes('intake_batch_code'),
       'Phải hiển thị dải thông tin đợt tiếp nhận'
     );
+  });
+
+  await t.test('Kiểm tra IntakeQuickConsole hỗ trợ đa thiết bị & tổng tạm tính tất cả thiết bị', () => {
+    const quickPath = path.resolve(__dirname, '../app/components/IntakeQuickConsole.tsx');
+    const wizardPath = path.resolve(__dirname, '../app/components/IntakeWizardModal.tsx');
+    const quickContent = fs.readFileSync(quickPath, 'utf-8');
+    const wizardContent = fs.readFileSync(wizardPath, 'utf-8');
+
+    assert.ok(
+      quickContent.includes('devices: IntakeDeviceItem[]') &&
+        quickContent.includes('activeDeviceIndex: number') &&
+        quickContent.includes('onSelectDevice:') &&
+        quickContent.includes('onAddDevice:') &&
+        quickContent.includes('onRemoveDevice:') &&
+        quickContent.includes('onUpdateDeviceAt:'),
+      'IntakeQuickConsoleProps phải hỗ trợ quản lý nhiều thiết bị'
+    );
+    assert.ok(
+      quickContent.includes('data-testid="quick-multi-device-tabs"') &&
+        quickContent.includes('data-testid="quick-add-device-btn"') &&
+        quickContent.includes('data-testid="quick-remove-device-btn"') &&
+        quickContent.includes('devices.reduce('),
+      'IntakeQuickConsole phải hiển thị tab Thiết bị #1/#2, nút Thêm/Xóa thiết bị và Tổng tạm tính của cả nhóm'
+    );
+    assert.ok(
+      wizardContent.includes('devices={devices}') &&
+        wizardContent.includes('activeDeviceIndex={activeQuickDeviceIndex}') &&
+        wizardContent.includes('onUpdateDeviceAt={'),
+      'IntakeWizardModal phải truyền state đa thiết bị dùng chung xuống IntakeQuickConsole'
+    );
+  });
+
+  await t.test('Kiểm tra PrintButtonDropdown mặc định in phiếu gộp khi hasBatch và /print/[id] hỗ trợ batch_orders', () => {
+    const dropdownPath = path.resolve(__dirname, '../app/components/print/PrintFormatModal.tsx');
+    const printPagePath = path.resolve(__dirname, '../app/print/[id]/page.tsx');
+    const dropdownContent = fs.readFileSync(dropdownPath, 'utf-8');
+    const printPageContent = fs.readFileSync(printPagePath, 'utf-8');
+
+    assert.ok(
+      dropdownContent.includes('if (hasBatch && effectiveBatchOrders)') &&
+        dropdownContent.includes('onPrint(effectiveBatchOrders, pref)') &&
+        dropdownContent.includes('onPrint(effectiveBatchOrders, format)') &&
+        dropdownContent.includes('In phiếu gộp (${effectiveBatchOrders.length} máy)') &&
+        dropdownContent.includes('In riêng phiếu máy này (${order.id})'),
+      'PrintButtonDropdown phải mặc định in gộp tất cả thiết bị khi hasBatch === true và có tùy chọn phụ in riêng 1 máy'
+    );
+    assert.ok(
+      printPageContent.includes('o.batch_orders') &&
+        printPageContent.includes('orders={batchOrders}') &&
+        printPageContent.includes('printReceipt(batchOrders || order, format)'),
+      '/print/[id]/page.tsx phải map batch_orders và truyền orders={batchOrders} vào template in'
+    );
+  });
+
+  await t.test('Kiểm tra groupOrdersForDisplay, validateOrdersForBatchGrouping, RepairQueuePane & repairService.groupOrdersBatch', () => {
+    const queuePanePath = path.resolve(__dirname, '../app/repairs/components/RepairQueuePane.tsx');
+    const repairsPagePath = path.resolve(__dirname, '../app/repairs/page.tsx');
+    const repairServicePath = path.resolve(__dirname, '../../../packages/api-client/src/services/repair.service.ts');
+
+    const queuePaneContent = fs.readFileSync(queuePanePath, 'utf-8');
+    const repairsPageContent = fs.readFileSync(repairsPagePath, 'utf-8');
+    const repairServiceContent = fs.readFileSync(repairServicePath, 'utf-8');
+
+    assert.ok(
+      repairServiceContent.includes('groupOrdersBatch(') &&
+        repairServiceContent.includes('/api/v1/orders/batch-group'),
+      'repair.service.ts phải có method groupOrdersBatch gọi POST /api/v1/orders/batch-group'
+    );
+    assert.ok(
+      queuePaneContent.includes('groupOrdersForDisplay(filteredOrders)') &&
+        queuePaneContent.includes('data-testid="batch-group-action-bar"') &&
+        queuePaneContent.includes('data-testid="batch-group-only-btn"') &&
+        queuePaneContent.includes('data-testid="batch-group-and-print-btn"') &&
+        queuePaneContent.includes('Tổng {row.orders.length} máy'),
+      'RepairQueuePane phải gom dòng cùng intake_batch_code trước khi phân trang và hỗ trợ chọn nhiều đơn để gộp nhóm'
+    );
+    assert.ok(
+      repairsPageContent.includes('groupOrdersForDisplay(filteredOrders)') &&
+        repairsPageContent.includes('validateOrdersForBatchGrouping') &&
+        repairsPageContent.includes('repairService.groupOrdersBatch('),
+      'repairs/page.tsx phải gom dòng trước khi tính phân trang và gọi repairService.groupOrdersBatch'
+    );
+
+    // Test logic groupOrdersForDisplay gom 3 đơn cùng batch thành 1 dòng + giữ nguyên đơn lẻ
+    const singleOrder = {
+      ...mockOrder1,
+      id: 'FX26-2001',
+      intake_batch_code: undefined,
+      price: 200000,
+    };
+    const grouped = groupOrdersForDisplay([mockOrder1, singleOrder, mockOrder2, mockOrder3]);
+    assert.equal(grouped.length, 2, '3 đơn cùng batch + 1 đơn lẻ phải gom thành đúng 2 dòng');
+    assert.equal(grouped[0].isBatch, true);
+    assert.equal(grouped[0].batchCode, mockBatchCode);
+    assert.equal(grouped[0].orders.length, 3);
+    assert.equal(grouped[0].totalPrice, 1600000);
+    assert.equal(grouped[1].isBatch, false);
+    assert.equal(grouped[1].orders[0].id, 'FX26-2001');
+
+    // Test validateOrdersForBatchGrouping: cùng khách & cùng chi nhánh -> valid
+    const sameCustomerOrders = [
+      { ...mockOrder1, phone: '0909 123 456', branchId: 1, branchName: 'Chi nhánh Q1' },
+      { ...mockOrder2, phone: '+84909123456', branchId: 1, branchName: 'Chi nhánh Q1' },
+    ];
+    assert.deepEqual(validateOrdersForBatchGrouping(sameCustomerOrders), { valid: true });
+
+    // Khác khách -> invalid
+    const diffCustomer = validateOrdersForBatchGrouping([
+      { ...mockOrder1, phone: '0909123456', branchId: 1 },
+      { ...mockOrder2, phone: '0988777666', branchId: 1 },
+    ]);
+    assert.equal(diffCustomer.valid, false);
+
+    // Khác chi nhánh -> invalid
+    const diffBranch = validateOrdersForBatchGrouping([
+      { ...mockOrder1, phone: '0909123456', branchId: 1, branchName: 'Quận 1' },
+      { ...mockOrder2, phone: '0909123456', branchId: 2, branchName: 'Quận 3' },
+    ]);
+    assert.equal(diffBranch.valid, false);
   });
 });

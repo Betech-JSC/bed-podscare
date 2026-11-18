@@ -24,6 +24,9 @@ import {
   resolveAirPodsModelPrefix,
   resolveAirPodsLRPartsForModel,
   switchAirPodsIssueEarScope,
+  AIRPODS_REPAIR_SCOPE_OPTIONS,
+  extractAirPodsScopeFromIssueText,
+  toggleAirPodsScopeTagInIssueText,
 } from '../app/constants/commonIssueCatalog.ts';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -424,23 +427,42 @@ describe('Independent Tester: Common Issue Catalog (Real Warehouse SKUs), Linked
     );
 
     // 5.3 IntakeWizardModal & IntakeQuickConsole:
-    // - Ẩn hoàn toàn khung giải thích kho trên form tạo đơn (không hiển thị intake-issue-object-preview / quick-intake-issue-object-preview / parts_needed input)
-    // - Chỉ hiển thị gọn tên lỗi trên các chip chọn nhanh để note nhanh lỗi
+    // - Bỏ hoàn toàn khối "Lỗi thường gặp" (filter input & danh sách chip lỗi mẫu) và không hiển thị khung giải thích kho
+    // - Giữ thanh 4 nút "Phạm vi sửa AirPods" ở cả Wizard 5 bước và POS Quick Console, tự gắn tag [Tai Trái (L)] / [Tai Phải (R)] / [Cả 2 tai (L + R)] / [Hộp sạc (Case)] vào đầu mô tả lỗi
     // - Vẫn giữ logic ngầm tổng hợp parts_needed khi Lưu đơn (handleSave) để Backend tự động trừ kho
     assert.ok(
-      intakeWizardContent.includes('data-testid="intake-issue-filter-input"') &&
+      !intakeWizardContent.includes('data-testid="intake-issue-filter-input"') &&
+        !intakeWizardContent.includes('Lỗi thường gặp (') &&
+        intakeWizardContent.includes('data-testid="airpods-ear-scope-selector"') &&
+        !intakeWizardContent.includes("key: 'ALL'") &&
         !intakeWizardContent.includes('data-testid="intake-issue-object-preview"') &&
         !intakeWizardContent.includes('data-testid="intake-linked-parts-needed-input"') &&
         intakeWizardContent.includes('parts_needed: effectivePartsNeeded'),
-      'IntakeWizardModal không hiển thị khung giải thích kho trên form tiếp nhận nhưng vẫn ngầm tính parts_needed khi Lưu đơn'
+      'IntakeWizardModal phải bỏ khối Lỗi thường gặp, giữ thanh 4 nút Phạm vi sửa AirPods và vẫn ngầm tính parts_needed khi Lưu đơn'
     );
     assert.ok(
       intakeQuickContent.includes('data-testid="quick-apple-watch-size-selector"') &&
-        intakeQuickContent.includes('data-testid="quick-intake-issue-filter-input"') &&
+        !intakeQuickContent.includes('data-testid="quick-intake-issue-filter-input"') &&
+        !intakeQuickContent.includes('Lỗi thường gặp (') &&
+        intakeQuickContent.includes('data-testid="quick-airpods-ear-scope-selector"') &&
         !intakeQuickContent.includes('data-testid="quick-intake-issue-object-preview"') &&
         !intakeQuickContent.includes('data-testid="quick-intake-linked-parts-needed-input"'),
-      'IntakeQuickConsole chỉ note nhanh các lỗi trên giao diện tiếp nhận, không hiển thị khung giải thích kho'
+      'IntakeQuickConsole phải bỏ khối Lỗi thường gặp, bổ sung thanh 4 nút Phạm vi sửa AirPods và không hiển thị khung giải thích kho'
     );
+
+    // Kiểm tra logic toggleAirPodsScopeTagInIssueText & extractAirPodsScopeFromIssueText (4 nút)
+    assert.equal(AIRPODS_REPAIR_SCOPE_OPTIONS.length, 4, 'Phạm vi sửa AirPods phải có đúng 4 nút');
+    assert.deepEqual(
+      AIRPODS_REPAIR_SCOPE_OPTIONS.map((o) => o.label),
+      ['Tai Trái (L)', 'Tai Phải (R)', 'Cả 2 tai (L + R)', 'Hộp sạc (Case)']
+    );
+    const taggedLeft = toggleAirPodsScopeTagInIssueText('Pin chai, tụt nhanh', 'L');
+    assert.equal(taggedLeft, '[Tai Trái (L)] Pin chai, tụt nhanh');
+    assert.equal(extractAirPodsScopeFromIssueText(taggedLeft), 'L');
+    const replacedBoth = toggleAirPodsScopeTagInIssueText(taggedLeft, 'LR');
+    assert.equal(replacedBoth, '[Cả 2 tai (L + R)] Pin chai, tụt nhanh');
+    const untagged = toggleAirPodsScopeTagInIssueText(replacedBoth, 'LR');
+    assert.equal(untagged, 'Pin chai, tụt nhanh');
 
     // 5.4 TechOrderDetailModal & BomInspector
     assert.ok(
