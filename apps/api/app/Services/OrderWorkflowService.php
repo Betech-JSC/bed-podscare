@@ -1502,26 +1502,30 @@ class OrderWorkflowService extends BaseWorkflowService
 
         $eventTimestamp = now()->toIso8601String();
         DB::afterCommit(function () use ($notif, $model, $notificationData, $eventTimestamp) {
-            $resolvedTenantId = $notif->tenant_id !== null
-                ? (int) $notif->tenant_id
-                : ($model->tenant_id !== null ? (int) $model->tenant_id : null);
+            try {
+                $resolvedTenantId = $notif->tenant_id !== null
+                    ? (int) $notif->tenant_id
+                    : ($model->tenant_id !== null ? (int) $model->tenant_id : null);
 
-            OrderOperationalEvent::dispatch(
-                $notif->id,
-                $model->id,
-                $model->order_code,
-                $notificationData['title'],
-                $notificationData['message'],
-                $notificationData['severity'],
-                $eventTimestamp,
-                "/repairs?id={$model->id}",
-                $model->branch_id !== null ? (int) $model->branch_id : null,
-                $notificationData['role'],
-                $notif->user_id !== null ? (int) $notif->user_id : null,
-                $notificationData['type'],
-                $notificationData['event'],
-                $resolvedTenantId
-            );
+                OrderOperationalEvent::dispatch(
+                    $notif->id,
+                    $model->id,
+                    $model->order_code,
+                    $notificationData['title'],
+                    $notificationData['message'],
+                    $notificationData['severity'],
+                    $eventTimestamp,
+                    "/repairs?id={$model->id}",
+                    $model->branch_id !== null ? (int) $model->branch_id : null,
+                    $notificationData['role'],
+                    $notif->user_id !== null ? (int) $notif->user_id : null,
+                    $notificationData['type'],
+                    $notificationData['event'],
+                    $resolvedTenantId
+                );
+            } catch (\Throwable $e) {
+                report($e);
+            }
         });
     }
 }
